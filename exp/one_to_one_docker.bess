@@ -1,0 +1,195 @@
+import binascii
+import glob
+import multiprocessing
+import os
+import platform
+import scapy.all as scapy
+import shlex
+import socket
+import subprocess
+import sys
+import time
+import yaml
+
+if 'SQD_HOME' in os.environ:
+    SQD_HOME = os.environ['SQD_HOME']
+else:
+    SQD_HOME = '/proj/uic-dcs-PG0/sqd-code'
+
+EXP_HOME = os.path.join(SQD_HOME, 'exp/one-server-docker')
+sys.path.insert(0, os.path.abspath(EXP_HOME))
+from common_one_server_docker import *  # I need to do something about this later
+
+TX_QUEUE_COUNT = 1
+RX_QUEUE_COUNT = 1
+TX_QSIZE = 2048
+RX_QSIZE = 2048
+VPORT = True # Used to look at both VPort and VHost. Not used (yet?)
+
+DEF_EXP_CONFIG = os.path.join(EXP_HOME, 'configs/test2.yaml') #Is this really working?
+EXP_CONFIG = str($BESS_EXP_CONFIG!DEF_EXP_CONFIG)
+cdict = yaml.load(open(EXP_CONFIG))
+config = One2OneConfig(cdict)
+
+BACKPRESSURE = config.backpressure
+print("Backpressure: {}".format(BACKPRESSURE))
+
+
+# TODO: Deal with switching later
+assert(len(config.containers) == 2)
+src_config = config.containers[0]
+dst_config = config.containers[1]
+print("everything looks good for now", src_config.name, dst_config.name)
+
+# DEBUGGING
+#bess.set_debug(True)
+
+class VhostConf(object):
+    def __init__(self, *initial_data, **kwargs):
+        for dictionary in initial_data:
+            for key in dictionary:
+                setattr(self, key, dictionary[key])
+        for key in kwargs:
+            setattr(self, key, kwargs[key])
+def gen_vhost_conf(cntr_config, i):
+    cmd = 'docker inspect --format \'{{.State.Pid}}\' ' + cntr_config.name
+    cntr_pid = int(subprocess.check_output(cmd, shell=True))
+    print('cntr_pid', cntr_pid)
+
+    vhost_conf_dict = {
+        'name': cntr_config.iface,
+        'addr': cntr_config.ip,
+        'mac': '00:8c:fa:00:A0:{:02x}'.format(i),
+        'cntr_pid': cntr_pid,
+        'cntr_name': cntr_config.name,
+    }
+    vhost_conf = VhostConf(vhost_conf_dict)
+    vhost_conf.addr_prefix = vhost_conf.addr + '/24'
+    assert(RX_QSIZE == TX_QSIZE)
+    QSIZE = RX_QSIZE
+    vhost_conf.vdev_str = 'virtio_user%d,path=/dev/vhost-net,queues=%d,' \
+        'queue_size=%d,iface=%s,mac=%s' % \
+        (i, TX_QUEUE_COUNT, QSIZE, vhost_conf.name, vhost_conf.mac)
+    return vhost_conf
+
+def config_vport(vhost_conf):
+    v = VPort(ifname=vhost_conf.name, ip_addrs=[vhost_conf.addr_prefix],
+        num_inc_q=TX_QUEUE_COUNT, num_out_q=RX_QUEUE_COUNT,
+        docker=vhost_conf.cntr_name)
+
+    #ip_cmd_prefix = ''
+    #ip_cmd_prefix = 'sudo ip netns exec %s ' % vhost_conf.netns
+    ip_cmd_prefix = 'nsenter -t %d -n ' % vhost_conf.cntr_pid
+
+    subprocess.check_call('%s ip link set dev %s down' % \
+        (ip_cmd_prefix, vhost_conf.name), shell=True)
+    subprocess.check_call('%s ip link set dev %s promisc on' % \
+        (ip_cmd_prefix, vhost_conf.name), shell=True)
+    subprocess.check_call('%s ip link set %s address %s' % \
+        (ip_cmd_prefix, vhost_conf.name, vhost_conf.mac), shell=True)
+    subprocess.check_call('%s ip link set dev %s up' % \
+        (ip_cmd_prefix, vhost_conf.name), shell=True)
+    return v
+
+#TODO: This does not work correctly yet. It also may not be needed for the experiments.
+def config_virtio_user(vhost_conf):
+    v = PMDPort(name=vhost_conf.name, vdev=vhost_conf.vdev_str, num_inc_q=TX_QUEUE_COUNT,
+        num_out_q=RX_QUEUE_COUNT)
+
+    ip_cmd_prefix = ''
+    #ip_cmd_prefix = 'sudo ip netns exec %s ' % vhost_conf.netns
+    #subprocess.check_call('ip link set %s netns %s' % (vhost_conf.name,
+    #    vhost_conf.netns), shell=True)
+
+    subprocess.check_call('%s ip addr add %s/24 dev %s' % (ip_cmd_prefix,
+        vhost_conf.addr_prefix, vhost_conf.name), shell=True)
+    subprocess.check_call('%s ip link set %s address %s' % (ip_cmd_prefix,
+        vhost_conf.name, vhost_conf.mac), shell=True)
+    subprocess.check_call('%s ip link set dev %s up' % (ip_cmd_prefix,
+        vhost_conf.name), shell=True)
+    subprocess.check_call('%s ip link set dev %s promisc on' % (ip_cmd_prefix,
+        vhost_conf.name), shell=True)
+    #subprocess.check_call('%s ethtool -K %s tso off' % (ip_cmd_prefix,
+    #    vhost_conf.name), shell=True)
+    #print("WARNING! Disabling TSO for VIRTIO-USER!")
+    return v
+
+
+# Reset everything at the start
+#XXX: Note: I doubt both of these are necessary or are even considered
+# "correct"
+bess.reset_all()
+#bess.resume_all()
+bess.pause_all()
+
+# Try out using different workers for inc and out
+bess.add_worker(0, 0)
+
+#for i in range(20):
+#	bess.add_worker(i,i)
+
+bess.pause_all()
+
+# Skip configuring the scheduler
+
+# Setup the PMD port
+#host_if = VPort(ifname='eth_host', ip_addrs=['10.255.99.1/24'])
+
+
+#myport::PMDPort(port_id=0, num_inc_q=1, num_out_q=1)
+
+# Get config for each vhost
+v1_vhost_conf = gen_vhost_conf(src_config, 1)
+v2_vhost_conf = gen_vhost_conf(dst_config, 2)
+
+# Create a vhost as an interface on the host for each tenant
+if VPORT:
+    v1 = config_vport(v1_vhost_conf)
+    v2 = config_vport(v2_vhost_conf)
+    v2_vhost_conf.name = "alireza"
+    v2_vhost_conf.ctrn_name = "salam"
+    v3 = config_vport(v2_vhost_conf)
+    print(v1_vhost_conf.name)
+    print("HEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEER")
+else:
+    v1 = config_virtio_user(v1_vhost_conf)
+    v2 = config_virtio_user(v2_vhost_conf)
+
+# Merge all incoming traffic from the vport into a single PMD output port/queue
+#XXX: Note: This only works with Vanilla BESS.  Loom/SQD BESS allows the kernel
+# to offload checksumming to BESS.
+#v1_inc::PortInc(port=v1.name) ->  v2_out::PortOut(port=v2.name)
+#v2_inc::PortInc(port=v2.name) ->  v1_out::PortOut(port=v1.name)
+
+# Note: This does not succeed in generating any backpressure because PortOut
+# just drops packets
+#v1_inc::PortInc(port=v1.name) -> IPChecksum() -> L4Checksum() -> \
+#    Queue(backpressure=BACKPRESSURE) -> v2_out::PortOut(port=v2.name)
+#v2_inc::PortInc(port=v2.name) -> IPChecksum() -> L4Checksum() -> \
+#    Queue(backpressure=BACKPRESSURE) -> v1_out::PortOut(port=v1.name)
+
+if BACKPRESSURE:
+    v1_inc::PortInc(port=v1.name) -> IPChecksum() -> L4Checksum() -> \
+        v2_out::BackpressurePortOut(port=v2.name)
+    v2_inc::PortInc(port=v2.name) -> IPChecksum() -> L4Checksum() -> \
+        v1_out::BackpressurePortOut(port=v1.name)
+else:
+    v1_inc::PortInc(port=v1.name) -> IPChecksum() -> L4Checksum() -> \
+        v2_out::PortOut(port=v2.name)
+    v2_inc::PortInc(port=v2.name) -> IPChecksum() -> L4Checksum() -> \
+        v1_out::PortOut(port=v1.name)
+
+    #input0::QueueInc(port=myport, qid=0)
+    
+    #input0 > IPChecksum() -> L4Checksum() -> \
+    #    v1_out::PortOut(port=v1.name)
+
+    #output0::QueueOut(port=myport, qid=0)
+
+    #v1_inc::PortInc(port=v1.name) -> IPChecksum() -> L4Checksum() -> \
+    #    output0(port=myport, qid=0)
+
+bess.resume_all()
+
+# DEBUG
+#print('Two ports now share one PMD: {} <-> {} and {} <-> {}'.format(v1, p, v2, p))
