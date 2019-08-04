@@ -87,6 +87,16 @@ BESS_HOME = '/proj/uic-dcs-PG0/bess'
 
 MOON_HOME = '/proj/uic-dsc-PG0/'
 
+class VhostConf(object):
+    def __init__(self, *initial_data, **kwargs):
+        for dictionary in initial_data:
+            for key in dictionary:
+                setattr(self, key, dictionary[key])
+        for key in kwargs:
+            setattr(self, key, kwargs[key])
+
+
+
 def docker_network_setup(network_name):
     print("Network Setup")
     cmd = 'docker network rm %s' %network_name
@@ -175,10 +185,21 @@ def run_iperf_experiment():
     finish_iperf_experiment(SERVER_EXP_CONFIG)
 
 def bess_config(config_path):
-    config_path = "/proj/uic-dcs-PG0/bess/bessctl/conf/port/alireza.bess"
+    config_path = "/proj/uic-dcs-PG0/post-loom/code/bess/bessctl/conf/port/alireza.bess"
     cmd = 'sudo bessctl/bessctl -- daemon start -- run file %s' %config_path
     print cmd
     bessctl_proc = subprocess.check_call(cmd, cwd=BESS_HOME, shell=True)
+
+def make_sink_app(dpdk_home):
+    cmd = 'make -C examples/skeleton RTE_SDK=$(pwd) RTE_TARGET=build O=$(pwd)/build/examples/skeleton'
+    make_proc = subprocess.check_call(cmd, cwd=dpdk_home, shell=True)
+
+def sink_app():
+    DPDK_HOME='/proj/uic-dcs-PG0/dpdk-stable-18.11.2/'
+    make_sink_app()
+    cmd_fw_sink = 'sudo ./build/examples/skeleton/basicfwd -l 0 -n 4 --vdev "eth_vhost2,iface=/tmp/my_vhost2,queues=1" --proc-type auto'
+    subprocess.check_call(cmd_fw_sink, cwd=DPDK_HOME, shell=True)
+    #subprocess.Popen([cmd_fw_sink], stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
 
 def moongen_run():
    cmd = 'sudo ./moongen-simple start load-latency:0:0:rate=10Mp/s,time=3m'
@@ -187,19 +208,17 @@ def moongen_run():
 
 def packet_gen():
     PACKET_GEN_HOME='/proj/uic-dcs-PG0/pktgen-dpdk'
-    DPDK_HOME='/proj/uic-dcs-PG0/dpdk-stable-18.11.2/' #build/examples/skeleton/build
-
-    #cmd = 'sudo ./app/x86_64-native-linuxapp-gcc/pktgen -l 0 -n 3 --vdev "eth_vhost1,iface=/tmp/my_vhost1.sock,queues=2" --vdev "eth_vhost1,iface=/tmp/my_vhost2.sock,queues=2" -- -m "[1].1, [1].1"'
-    cmd_PG = 'sudo ./app/x86_64-native-linuxapp-gcc/pktgen -l 0 -n 3 --vdev "eth_vhost1,iface=/tmp/my_vhost1,queues=2" -- -m "[1].1, [1].1"'
-    #subprocess.check_call(cmd_PG, cwd=PACKET_GEN_HOME, shell=True)
-    cmd_fw_sink = 'sudo ./build/examples/skeleton/build/basicfwd -l 2 -n 4 --vdev "eth_vhost2,iface=/tmp/my_vhost2,queues=2"'
-    subprocess.check_call(cmd_fw_sink, cwd=DPDK_HOME, shell=True)
+    #cmd_PG = 'sudo ./app/x86_64-native-linuxapp-gcc/pktgen -l 0 -n 3 --vdev "eth_vhost1,iface=/tmp/my_vhost1,queues=1" -- -m "[1].1, [1].1"'
+    cmd_PG = './tools/run.py default'
+    subprocess.check_call(cmd_PG, cwd=PACKET_GEN_HOME, shell=True)
 
 
-
+os.environ["RTE_SDK"] = "/proj/uic-dcs-PG0/dpdk-stable-18.11.2/"
+os.environ["RTE_TARGET"] = "x86_64-native-linuxapp-gcc"
 
 #docker_stop_all()
 #setup_testbed()
 bess_config(BESS_CONFIG_PATH)
-packet_gen()
+#sink_app()
+#packet_gen()
 #run_iperf_experiment()

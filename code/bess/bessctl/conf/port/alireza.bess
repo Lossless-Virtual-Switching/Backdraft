@@ -34,6 +34,42 @@ import subprocess
 TX_QUEUE_COUNT = 1
 RX_QUEUE_COUNT = 1
 
+
+def config_virtio_user(vhost_conf):
+    v = PMDPort(name=vhost_conf.name, vdev=vhost_conf.vdev_str, num_inc_q=TX_QUEUE_COUNT,
+        num_out_q=RX_QUEUE_COUNT)
+
+    ip_cmd_prefix = ''
+    #ip_cmd_prefix = 'sudo ip netns exec %s ' % vhost_conf.netns
+    #subprocess.check_call('ip link set %s netns %s' % (vhost_conf.name,
+    #    vhost_conf.netns), shell=True)
+
+    subprocess.check_call('%s ip link set dev %s down' % (ip_cmd_prefix,
+        vhost_conf.name), shell=True)
+    subprocess.check_call('%s ip link set dev %s promisc on' % (ip_cmd_prefix,
+        vhost_conf.name), shell=True)
+    subprocess.check_call('%s ip addr add %s/24 dev %s' % (ip_cmd_prefix,
+        vhost_conf.addr_prefix, vhost_conf.name), shell=True)
+    subprocess.check_call('%s ip link set %s address %s' % (ip_cmd_prefix,
+        vhost_conf.name, vhost_conf.mac), shell=True)
+    subprocess.check_call('%s ip link set dev %s up' % (ip_cmd_prefix,
+        vhost_conf.name), shell=True)
+
+    #subprocess.check_call('%s ethtool -K %s tso off' % (ip_cmd_prefix,
+    #    vhost_conf.name), shell=True)
+    #print("WARNING! Disabling TSO for VIRTIO-USER!")
+    return v
+
+
+class VhostConf(object):
+    def __init__(self, *initial_data, **kwargs):
+        for dictionary in initial_data:
+            for key in dictionary:
+                setattr(self, key, dictionary[key])
+        for key in kwargs:
+            setattr(self, key, kwargs[key])
+
+
 bess.reset_all()
 bess.resume_all()
 #bess.pause_all()
@@ -44,12 +80,25 @@ cmd = 'sudo rm /tmp/my_vhost*'
 subprocess.call(cmd, shell=True)
 
 #p = PMDPort(port_id=0)
-my_vhost1 = PMDPort(name='my_vhost1', vdev='eth_vhost1,iface=/tmp/my_vhost1.sock,queues=2', 
-	num_inc_q=TX_QUEUE_COUNT,
-	num_out_q=RX_QUEUE_COUNT)
-my_vhost2 = PMDPort(name='my_vhost2', vdev='eth_vhost2,iface=/tmp/my_vhost2.sock,queues=2', 
-	num_inc_q=TX_QUEUE_COUNT,
-	num_out_q=RX_QUEUE_COUNT)
+
+
+#my_vhost1 = config_virtio_user({'name': 'my_vhost1',
+#				'mac': '56:48:4f:53:54:00',
+#				'addr_prefix': '192.168.100.1',
+#				'vdev_str': 'eth_vhost1,iface=/tmp/my_vhost1.sock,queues=1,mac=%s' %'56:48:4f:53:54:00'
+#				})
+
+#my_vhost2 = config_virtio_user({'name': 'my_vhost2',
+#                               'mac': '56:48:4f:53:54:01',
+#                                'addr_prefix': '192.168.100.2',
+#				'vdev_str': 'eth_vhost2,iface=/tmp/my_vhost2.sock,queues=1,mac=%s' %'56:48:4f:53:54:01'
+#                                })
+
+my_vhost1 = PMDPort(name='my_vhost1', vdev='net_vhost1,iface=/tmp/my_vhost1.sock,queues=1', num_inc_q=TX_QUEUE_COUNT, num_out_q=RX_QUEUE_COUNT)
+my_vhost2 = PMDPort(name='my_vhost2', vdev='net_vhost2,iface=/tmp/my_vhost2.sock,queues=1', num_inc_q=TX_QUEUE_COUNT, num_out_q=RX_QUEUE_COUNT)
+
+
+
 #v_bob = VPort(ifname='eth_bob', docker='vport_test', ip_addrs=['10.255.99.2/24', 'fdd4:955b:82c1:0cb7::1/64'])
 #v_alice = VPort(ifname='eth_alice', ip_addrs=['10.10.1.15/24'])
 
