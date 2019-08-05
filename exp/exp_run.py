@@ -196,15 +196,17 @@ def make_sink_app(dpdk_home):
 
 def sink_app():
     DPDK_HOME='/proj/uic-dcs-PG0/dpdk-stable-18.11.2/'
-    make_sink_app()
-    cmd_fw_sink = 'sudo ./build/examples/skeleton/basicfwd -l 0 -n 4 --vdev "eth_vhost2,iface=/tmp/my_vhost2,queues=1" --proc-type auto'
+    make_sink_app(DPDK_HOME)
+    #cmd_fw_sink = 'sudo ./build/examples/skeleton/basicfwd -l 0 -n 4 --vdev "eth_vhost3,iface=/tmp/my_vhost3.sock,queues=1" --proc-type auto'
+    cmd_fw_sink = 'sudo ./build/examples/skeleton/basicfwd -l 0 -n 4 --vdev "virtio_user0,path=/tmp/my_vhost2.sock,queues=1" --proc-type auto'
     subprocess.check_call(cmd_fw_sink, cwd=DPDK_HOME, shell=True)
     #subprocess.Popen([cmd_fw_sink], stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
 
 def moongen_run():
-   cmd = 'sudo ./moongen-simple start load-latency:0:0:rate=10Mp/s,time=3m'
-   print cmd
-   moon_gen_proc = subprocess.check_call(cmd, cwd=BESS_HOME, shell=True)
+    MOON_HOME="/proj/uic-dcs-PG0/MoonGen/"
+    cmd = 'sudo ./moongen-simple start load-latency:"virtio_user0,path=/tmp/my_vhost1.sock,queues=1":"virtio_user0,path=/tmp/my_vhost1.sock,queues=1":rate=10Mp/s,time=3m'
+    print cmd
+    moon_gen_proc = subprocess.check_call(cmd, cwd=MOON_HOME, shell=True)
 
 def packet_gen():
     PACKET_GEN_HOME='/proj/uic-dcs-PG0/pktgen-dpdk'
@@ -219,6 +221,7 @@ os.environ["RTE_TARGET"] = "x86_64-native-linuxapp-gcc"
 #docker_stop_all()
 #setup_testbed()
 bess_config(BESS_CONFIG_PATH)
+#moongen_run()
 #sink_app()
 #packet_gen()
 #run_iperf_experiment()
