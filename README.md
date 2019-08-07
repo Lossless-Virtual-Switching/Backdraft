@@ -1,8 +1,6 @@
 # post_loom
 
 
-## for todo please check the `todo.txt`
-
 #### Software Versions
 I'm using `dpdk-stable-17.11.6` which seem to be LTS and used in BESS as the default DPDK. Also the BESS is just the latest commit.
 
