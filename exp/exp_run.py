@@ -194,14 +194,12 @@ def make_sink_app(dpdk_home):
     cmd = 'make -C examples/skeleton RTE_SDK=$(pwd) RTE_TARGET=build O=$(pwd)/build/examples/skeleton'
     make_proc = subprocess.check_call(cmd, cwd=dpdk_home, shell=True)
 
-def sink_app():
+def sink_app(just_compile):
     DPDK_HOME='/proj/uic-dcs-PG0/dpdk-stable-17.11.6/'
     make_sink_app(DPDK_HOME)
-    #cmd_fw_sink = 'sudo ./build/examples/skeleton/basicfwd -l 0 -n 4 --vdev "eth_vhost3,iface=/tmp/my_vhost3.sock,queues=1" --proc-type auto'
-    #cmd_fw_sink = 'sudo ./build/examples/skeleton/basicfwd -l 0 -n 4 --vdev "virtio_user0,path=/tmp/my_vhost2.sock,queues=1" --proc-type auto'
-    #cmd_fw_sink = 'sudo ./build/examples/skeleton/basicfwd -l 0-1 -n 4 --vdev="virtio_user0,path=/users/alireza/my_vhost0.sock,queues=1" --log-level=8 --socket-mem 1024,1024 --no-pci --proc-type auto'
     cmd_fw_sink = 'sudo ./build/examples/skeleton/basicfwd -l 0-1 -n 4 --vdev="virtio_user0,path=/users/alireza/my_vhost0.sock,queues=1" --log-level=8 --socket-mem 1024,1024 --proc-type auto'
-    subprocess.check_call(cmd_fw_sink, cwd=DPDK_HOME, shell=True)
+    if(not just_compile):
+        subprocess.check_call(cmd_fw_sink, cwd=DPDK_HOME, shell=True)
     #subprocess.Popen([cmd_fw_sink], stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
 
 def moongen_run():
@@ -212,8 +210,8 @@ def moongen_run():
 
 def packet_gen():
     PACKET_GEN_HOME='/proj/uic-dcs-PG0/pktgen-dpdk'
-    #cmd_PG = 'sudo ./app/x86_64-native-linuxapp-gcc/pktgen -l 0 -n 3 --vdev "eth_vhost1,iface=/tmp/my_vhost1,queues=1" -- -m "[1].1, [1].1"'
-    cmd_PG = './tools/run.py default'
+    cmd_PG = 'sudo ./app/x86_64-native-linuxapp-gcc/app/pktgen -l 0,1 -n 4 --vdev="virtio_user0,path=/users/alireza/my_vhost1.sock,queues=1" --log-level=8 --socket-mem 1024,1024 --proc-type auto -b 81:00.1 -b 81:00.0 -- -T -P -m [1].0 -s 0:pcap/large.pcap -f themes/black-yellow.theme'
+    #cmd_PG = './tools/run.py default'
     subprocess.check_call(cmd_PG, cwd=PACKET_GEN_HOME, shell=True)
 
 
@@ -224,6 +222,6 @@ os.environ["RTE_TARGET"] = "x86_64-native-linuxapp-gcc"
 #setup_testbed()
 bess_config(BESS_CONFIG_PATH)
 #moongen_run()
-sink_app()
-#packet_gen()
+#sink_app(True)
+packet_gen()
 #run_iperf_experiment()

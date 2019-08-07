@@ -86,7 +86,7 @@ subprocess.call(cmd, shell=True)
 #                                })
 
 my_vhost0 = PMDPort(name='my_vhost0', vdev='net_vhost0,iface=/users/alireza/my_vhost0.sock,queues=1', num_inc_q=TX_QUEUE_COUNT, num_out_q=RX_QUEUE_COUNT)
-#my_vhost2 = PMDPort(name='my_vhost2', vdev='eth_vhost2,iface=/tmp/my_vhost2.sock,queues=1', num_inc_q=TX_QUEUE_COUNT, num_out_q=RX_QUEUE_COUNT)
+my_vhost1 = PMDPort(name='my_vhost1', vdev='net_vhost1,iface=/users/alireza/my_vhost1.sock,queues=1', num_inc_q=TX_QUEUE_COUNT, num_out_q=RX_QUEUE_COUNT)
 
 
 
@@ -107,6 +107,11 @@ my_vhost0 = PMDPort(name='my_vhost0', vdev='net_vhost0,iface=/users/alireza/my_v
 
 my_flow = FlowGen(template=pkt_data, pps=1000, flow_rate = 10, flow_duration = 5.0, arrival='uniform', duration='uniform', quick_rampup=True, ip_src_range=100000)
 #Source() -> Dump(name='my_dump', interval=1) -> PortOut(port=my_vhost0.name)
-my_flow -> PortOut(port=my_vhost0.name)
+#my_flow -> PortOut(port=my_vhost0.name)
 #PortInc(port=my_vhost0.name) -> Dump(name='my_dump_1', interval=1) -> Sink()
-PortInc(port=my_vhost0.name) -> Sink()
+
+
+#PortInc(port=my_vhost0.name) -> Sink()
+
+PortInc(port=my_vhost1.name) -> PortOut(port=my_vhost0.name)
+#my_flow -> PortOut(port=my_vhost0.name)
