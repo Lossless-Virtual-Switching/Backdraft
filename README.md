@@ -5,7 +5,7 @@
 I'm using `dpdk-stable-17.11.6` which seem to be LTS and used in BESS as the default DPDK. Also the BESS is just the latest commit.
 
 #### Good github issues for BESS
-[Issuse 1](https://github.com/NetSys/bess/issues/934)
+[Issue 1](https://github.com/NetSys/bess/issues/934)
 
 #### Huge page config in the grub
 `GRUB_CMDLINE_LINUX_DEFAULT="default_hugepagesz=1G hugepagesz=1G hugepages=50"`

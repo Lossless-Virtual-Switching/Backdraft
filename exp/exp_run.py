@@ -195,10 +195,12 @@ def make_sink_app(dpdk_home):
     make_proc = subprocess.check_call(cmd, cwd=dpdk_home, shell=True)
 
 def sink_app():
-    DPDK_HOME='/proj/uic-dcs-PG0/dpdk-stable-18.11.2/'
+    DPDK_HOME='/proj/uic-dcs-PG0/dpdk-stable-17.11.6/'
     make_sink_app(DPDK_HOME)
     #cmd_fw_sink = 'sudo ./build/examples/skeleton/basicfwd -l 0 -n 4 --vdev "eth_vhost3,iface=/tmp/my_vhost3.sock,queues=1" --proc-type auto'
-    cmd_fw_sink = 'sudo ./build/examples/skeleton/basicfwd -l 0 -n 4 --vdev "virtio_user0,path=/tmp/my_vhost2.sock,queues=1" --proc-type auto'
+    #cmd_fw_sink = 'sudo ./build/examples/skeleton/basicfwd -l 0 -n 4 --vdev "virtio_user0,path=/tmp/my_vhost2.sock,queues=1" --proc-type auto'
+    #cmd_fw_sink = 'sudo ./build/examples/skeleton/basicfwd -l 0-1 -n 4 --vdev="virtio_user0,path=/users/alireza/my_vhost0.sock,queues=1" --log-level=8 --socket-mem 1024,1024 --no-pci --proc-type auto'
+    cmd_fw_sink = 'sudo ./build/examples/skeleton/basicfwd -l 0-1 -n 4 --vdev="virtio_user0,path=/users/alireza/my_vhost0.sock,queues=1" --log-level=8 --socket-mem 1024,1024 --proc-type auto'
     subprocess.check_call(cmd_fw_sink, cwd=DPDK_HOME, shell=True)
     #subprocess.Popen([cmd_fw_sink], stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
 
@@ -222,6 +224,6 @@ os.environ["RTE_TARGET"] = "x86_64-native-linuxapp-gcc"
 #setup_testbed()
 bess_config(BESS_CONFIG_PATH)
 #moongen_run()
-#sink_app()
+sink_app()
 #packet_gen()
 #run_iperf_experiment()
