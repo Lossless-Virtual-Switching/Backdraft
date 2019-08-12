@@ -210,7 +210,7 @@ def moongen_run():
 
 def packet_gen():
     PACKET_GEN_HOME='/proj/uic-dcs-PG0/pktgen-dpdk'
-    cmd_PG = 'sudo ./app/x86_64-native-linuxapp-gcc/app/pktgen -l 0,1 -n 4 --vdev="virtio_user0,path=/users/alireza/my_vhost1.sock,queues=1" --log-level=8 --socket-mem 1024,1024 --proc-type auto -b 81:00.1 -b 81:00.0 -- -T -P -m [1].0 -s 0:pcap/large.pcap -f themes/black-yellow.theme'
+    cmd_PG = 'sudo ./app/x86_64-native-linuxapp-gcc/app/pktgen -l 0,1,2 -n 4 --vdev="virtio_user0,path=/users/alireza/my_vhost1.sock,queues=2" --log-level=8 --socket-mem 1024,1024 --proc-type auto -b 81:00.1 -b 81:00.0 -- -T -P -m [1-2].0 -s 0:pcap/large.pcap -f themes/black-yellow.theme'
     #cmd_PG = './tools/run.py default'
     subprocess.check_call(cmd_PG, cwd=PACKET_GEN_HOME, shell=True)
 
@@ -220,7 +220,7 @@ os.environ["RTE_TARGET"] = "x86_64-native-linuxapp-gcc"
 
 #docker_stop_all()
 #setup_testbed()
-bess_config(BESS_CONFIG_PATH)
+#bess_config(BESS_CONFIG_PATH)
 #moongen_run()
 #sink_app(True)
 packet_gen()
