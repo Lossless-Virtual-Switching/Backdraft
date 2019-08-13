@@ -1,0 +1,8 @@
+.DS_Store
+*.swp
+*.swo
+*.swn
+doc/html/
+*.log
+*.csv
+*.mscap
