@@ -220,8 +220,8 @@ os.environ["RTE_TARGET"] = "x86_64-native-linuxapp-gcc"
 
 #docker_stop_all()
 #setup_testbed()
-#bess_config(BESS_CONFIG_PATH)
+bess_config(BESS_CONFIG_PATH)
 #moongen_run()
-#sink_app(True)
-packet_gen()
+sink_app(False)
+#packet_gen()
 #run_iperf_experiment()
