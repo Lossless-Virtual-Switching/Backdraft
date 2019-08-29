@@ -195,16 +195,17 @@ def make_sink_app(dpdk_home):
     make_proc = subprocess.check_call(cmd, cwd=dpdk_home, shell=True)
 
 def sink_app(just_compile):
-    DPDK_HOME='/proj/uic-dcs-PG0/dpdk-stable-17.11.6/'
+    #DPDK_HOME='/proj/uic-dcs-PG0/dpdk-stable-17.11.6/'
+    DPDK_HOME='/proj/uic-dcs-PG0/post-loom/code/dpdk/'
     make_sink_app(DPDK_HOME)
-    cmd_fw_sink = 'sudo ./build/examples/skeleton/basicfwd -l 0-1 -n 4 --vdev="virtio_user0,path=/users/alireza/my_vhost0.sock,queues=1" --log-level=8 --socket-mem 1024,1024 --proc-type auto'
+    cmd_fw_sink = 'sudo ./build/examples/skeleton/basicfwd -l 0-1 -n 4 --vdev="virtio_user0,path=/users/alireza/my_vhost0.sock,queues=1" --log-level=8 --socket-mem 1024,1024 --proc-type auto -- -p 1'
     if(not just_compile):
         subprocess.check_call(cmd_fw_sink, cwd=DPDK_HOME, shell=True)
     #subprocess.Popen([cmd_fw_sink], stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
 
 def moongen_run():
     MOON_HOME="/proj/uic-dcs-PG0/MoonGen/"
-    cmd = 'sudo ./moongen-simple start load-latency:"virtio_user0,path=/tmp/my_vhost1.sock,queues=1":"virtio_user0,path=/tmp/my_vhost1.sock,queues=1":rate=10Mp/s,time=3m'
+    cmd = 'sudo ./build/MoonGen examples/l3-load-latency.lua 1 1 -r 500 -f 1 -s 64'
     print cmd
     moon_gen_proc = subprocess.check_call(cmd, cwd=MOON_HOME, shell=True)
 
