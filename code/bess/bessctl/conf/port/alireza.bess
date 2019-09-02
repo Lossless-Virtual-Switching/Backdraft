@@ -30,88 +30,32 @@
 
 import os
 import subprocess
-import scapy.all as scapy
-import time
-
-pkt_size = int($SN_PKT_SIZE!'60')
-assert(60 <= pkt_size <= 1522)
-
-#use scapy to build a packet template
-eth = scapy.Ether(src='02:1e:67:9f:4d:ae', dst='ee:27:12:6f:a9:46')
-ip = scapy.IP(src='10.0.0.1', dst='10.0.0.2')   # dst IP is overwritten
-#tcp = scapy.TCP(sport=10001, dport=10002)
-udp = scapy.UDP(sport=10001, dport=10002)
-payload = ('hello' + '0123456789' * 200)[:pkt_size-len(eth/ip/udp)]
-pkt = eth/ip/udp/payload
-pkt_data = str(pkt)
-
-#FlowGen(template=pkt_data, pps=1000, flow_rate = 10, flow_duration = 5.0, arrival='uniform', duration='uniform', quick_rampup=True, ip_src_range=100000)
 
 TX_QUEUE_COUNT = 1
 RX_QUEUE_COUNT = 1
 
-
-
-class VhostConf(object):
-    def __init__(self, *initial_data, **kwargs):
-        for dictionary in initial_data:
-            for key in dictionary:
-                setattr(self, key, dictionary[key])
-        for key in kwargs:
-            setattr(self, key, kwargs[key])
-
-
-#bess.reset_all()
-#bess.resume_all()
+bess.reset_all()
+bess.resume_all()
 #bess.pause_all()
 
 
 
-cmd = 'sudo rm /users/alireza/my_vhost*'
+cmd = 'sudo rm /tmp/my_vhost*'
 subprocess.call(cmd, shell=True)
 
 #p = PMDPort(port_id=0)
-
-
-#my_vhost1 = config_virtio_user({'name': 'my_vhost1',
-#				'mac': '56:48:4f:53:54:00',
-#				'addr_prefix': '192.168.100.1',
-#				'vdev_str': 'eth_vhost1,iface=/tmp/my_vhost1.sock,queues=1,mac=%s' %'56:48:4f:53:54:00'
-#				})
-
-#my_vhost2 = config_virtio_user({'name': 'my_vhost2',
-#                               'mac': '56:48:4f:53:54:01',
-#                                'addr_prefix': '192.168.100.2',
-#				'vdev_str': 'eth_vhost2,iface=/tmp/my_vhost2.sock,queues=1,mac=%s' %'56:48:4f:53:54:01'
-#                                })
-
-my_vhost0 = PMDPort(name='my_vhost0', vdev='net_vhost0,iface=/users/alireza/my_vhost0.sock,queues=1', num_inc_q=TX_QUEUE_COUNT, num_out_q=RX_QUEUE_COUNT)
-my_vhost1 = PMDPort(name='my_vhost1', vdev='net_vhost1,iface=/users/alireza/my_vhost1.sock,queues=1', num_inc_q=TX_QUEUE_COUNT, num_out_q=RX_QUEUE_COUNT)
-
-
-
+my_vhost1 = PMDPort(name='my_vhost1', vdev='eth_vhost1,iface=/tmp/my_vhost1.sock,queues=2', 
+	num_inc_q=TX_QUEUE_COUNT,
+	num_out_q=RX_QUEUE_COUNT)
+my_vhost2 = PMDPort(name='my_vhost2', vdev='eth_vhost2,iface=/tmp/my_vhost2.sock,queues=2', 
+	num_inc_q=TX_QUEUE_COUNT,
+	num_out_q=RX_QUEUE_COUNT)
 #v_bob = VPort(ifname='eth_bob', docker='vport_test', ip_addrs=['10.255.99.2/24', 'fdd4:955b:82c1:0cb7::1/64'])
 #v_alice = VPort(ifname='eth_alice', ip_addrs=['10.10.1.15/24'])
 
-#PortInc(port=my_vhost1.name) -> PortOut(port=my_vhost2.name)
-#FlowGen(template=pkt_data, pps=1000, flow_rate = 10, flow_duration = 5.0, arrival='uniform', duration='uniform', quick_rampup=True, ip_src_range=100000) -> PortOut(port=my_vhost2.name)
-#Source() -> PortOut(port=my_vhost2.name)
-#FlowGen(template=pkt_data, pps=1000, flow_rate = 10, flow_duration = 5.0, arrival='uniform', duration='uniform', quick_rampup=True, ip_src_range=100000) -> QueueOut(port=my_vhost2.name, qid=0)
-#PortInc(port=my_vhost2.name) -> Sink()
-#QueueInc(port=my_vhost2.name, qid=0) -> QueueOut(port=my_vhost1.name, qid=0)
+PortInc(port=my_vhost1.name) -> PortOut(port=my_vhost2.name)
+PortInc(port=my_vhost2.name) -> PortOut(port=my_vhost1.name)
 
 #bess.resume_all()
 
 #bess.reset_all()
-#
-
-my_flow = FlowGen(template=pkt_data, pps=1000, flow_rate = 10, flow_duration = 5.0, arrival='uniform', duration='uniform', quick_rampup=True, ip_src_range=100000)
-#Source() -> Dump(name='my_dump', interval=1) -> PortOut(port=my_vhost0.name)
-#my_flow -> PortOut(port=my_vhost0.name)
-#PortInc(port=my_vhost0.name) -> Dump(name='my_dump_1', interval=1) -> Sink()
-
-
-#PortInc(port=my_vhost0.name) -> Sink()
-
-PortInc(port=my_vhost1.name) -> PortOut(port=my_vhost0.name)
-#my_flow -> PortOut(port=my_vhost0.name)

@@ -185,7 +185,7 @@ def run_iperf_experiment():
     finish_iperf_experiment(SERVER_EXP_CONFIG)
 
 def bess_config(config_path):
-    config_path = "/proj/uic-dcs-PG0/post-loom/code/bess/bessctl/conf/port/alireza.bess"
+    config_path = "/proj/uic-dcs-PG0/post-loom/code/bess/bessctl/conf/port/alireza_1.bess"
     cmd = 'sudo bessctl/bessctl -- daemon start -- run file %s' %config_path
     print cmd
     bessctl_proc = subprocess.check_call(cmd, cwd=BESS_HOME, shell=True)
@@ -195,17 +195,19 @@ def make_sink_app(dpdk_home):
     make_proc = subprocess.check_call(cmd, cwd=dpdk_home, shell=True)
 
 def sink_app(just_compile):
-    #DPDK_HOME='/proj/uic-dcs-PG0/dpdk-stable-17.11.6/'
-    DPDK_HOME='/proj/uic-dcs-PG0/post-loom/code/dpdk/'
+    DPDK_HOME='/proj/uic-dcs-PG0/dpdk-stable-17.11.6/'
+    #DPDK_HOME='/proj/uic-dcs-PG0/post-loom/code/dpdk/'
     make_sink_app(DPDK_HOME)
-    cmd_fw_sink = 'sudo ./build/examples/skeleton/basicfwd -l 0-1 -n 4 --vdev="virtio_user0,path=/users/alireza/my_vhost0.sock,queues=1" --log-level=8 --socket-mem 1024,1024 --proc-type auto -- -p 1'
+    #cmd_fw_sink = 'sudo ./build/examples/skeleton/basicfwd -l 0-1 -n 4 --vdev="virtio_user0,path=/users/alireza/my_vhost0.sock,queues=1" --log-level=8 --socket-mem 1024,1024 --proc-type auto -b 0000:81:00.1 -- -p 0x1 no-mac-updating'
+    cmd_fw_sink = 'sudo ./build/examples/skeleton/basicfwd -l 0-1 -n 4 --vdev="virtio_user0,path=/users/alireza/my_vhost0.sock,queues=1" --log-level=8 --socket-mem 1024,1024 --proc-type auto'
     if(not just_compile):
         subprocess.check_call(cmd_fw_sink, cwd=DPDK_HOME, shell=True)
     #subprocess.Popen([cmd_fw_sink], stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
 
 def moongen_run():
-    MOON_HOME="/proj/uic-dcs-PG0/MoonGen/"
-    cmd = 'sudo ./build/MoonGen examples/l3-load-latency.lua 1 1 -r 500 -f 1 -s 64'
+    MOON_HOME="/proj/uic-dcs-PG0/moongen/"
+    #cmd = 'sudo ./build/MoonGen examples/l3-load-latency.lua 1 1 -r 500 -f 1 -s 64'
+    cmd = 'sudo ./build/MoonGen examples/l2-load-latency-a.lua --dpdk-config=dpdk-conf-default.lua 0 1 -r 50'
     print cmd
     moon_gen_proc = subprocess.check_call(cmd, cwd=MOON_HOME, shell=True)
 
@@ -216,13 +218,13 @@ def packet_gen():
     subprocess.check_call(cmd_PG, cwd=PACKET_GEN_HOME, shell=True)
 
 
-os.environ["RTE_SDK"] = "/proj/uic-dcs-PG0/dpdk-stable-18.11.2/"
+os.environ["RTE_SDK"] = "/proj/uic-dcs-PG0/post-loom/code/dpdk/"
 os.environ["RTE_TARGET"] = "x86_64-native-linuxapp-gcc"
 
 #docker_stop_all()
 #setup_testbed()
 bess_config(BESS_CONFIG_PATH)
-#moongen_run()
-sink_app(False)
+moongen_run()
+#sink_app(False)
 #packet_gen()
 #run_iperf_experiment()
