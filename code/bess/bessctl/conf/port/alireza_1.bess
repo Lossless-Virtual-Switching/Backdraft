@@ -47,8 +47,8 @@ pkt_data = str(pkt)
 
 #FlowGen(template=pkt_data, pps=1000, flow_rate = 10, flow_duration = 5.0, arrival='uniform', duration='uniform', quick_rampup=True, ip_src_range=100000)
 
-TX_QUEUE_COUNT = 1
-RX_QUEUE_COUNT = 1
+TX_QUEUE_COUNT = 2
+RX_QUEUE_COUNT = 2
 
 
 
@@ -85,8 +85,8 @@ subprocess.call(cmd, shell=True)
 #				'vdev_str': 'eth_vhost2,iface=/tmp/my_vhost2.sock,queues=1,mac=%s' %'56:48:4f:53:54:01'
 #                                })
 
-my_vhost0 = PMDPort(name='my_vhost0', vdev='net_vhost0,iface=/users/alireza/my_vhost0.sock,queues=1', num_inc_q=TX_QUEUE_COUNT, num_out_q=RX_QUEUE_COUNT)
-my_vhost1 = PMDPort(name='my_vhost1', vdev='net_vhost1,iface=/users/alireza/my_vhost1.sock,queues=1', num_inc_q=TX_QUEUE_COUNT, num_out_q=RX_QUEUE_COUNT)
+my_vhost0 = PMDPort(name='my_vhost0', vdev='net_vhost0,iface=/users/alireza/my_vhost0.sock,queues=2', num_inc_q=2, num_out_q=2)
+my_vhost1 = PMDPort(name='my_vhost1', vdev='net_vhost1,iface=/users/alireza/my_vhost1.sock,queues=1', num_inc_q=1, num_out_q=1)
 
 
 

@@ -1,0 +1,7 @@
+{
+	"exp_duration": 30,
+	"sender_dev": 0,
+	"receiver_dev": 1,
+	"main_workload_rate": 1,
+	"background_workload_rate": 1
+}

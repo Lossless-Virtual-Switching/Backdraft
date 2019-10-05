@@ -5,18 +5,13 @@ import csv
 import glob
 import json
 import math
-import numpy
 import os
-import paramiko
 import platform
 import re
-import scipy
-import scipy.stats
-import scipy.interpolate
 import shlex
 import subprocess
 import sys
-import yaml
+import json
 
 from time import sleep
 
@@ -83,7 +78,7 @@ SERVER_EXP_CONFIG = {
 
 BESS_CONFIG_PATH = '/proj/uic-dcs-PG0/post_loom/one_to_one_docker.bess'
 
-BESS_HOME = '/proj/uic-dcs-PG0/bess'
+BESS_HOME = '/proj/uic-dcs-PG0/post-loom/code/bess'
 
 MOON_HOME = '/proj/uic-dsc-PG0/'
 
@@ -206,8 +201,18 @@ def sink_app(just_compile):
 
 def moongen_run():
     MOON_HOME="/proj/uic-dcs-PG0/moongen/"
+    config = load_exp_conf("config/exp_config.json")
     #cmd = 'sudo ./build/MoonGen examples/l3-load-latency.lua 1 1 -r 500 -f 1 -s 64'
-    cmd = 'sudo ./build/MoonGen examples/l2-load-latency-a.lua --dpdk-config=dpdk-conf-default.lua 0 1 -r 50'
+    #cmd = 'sudo ./build/MoonGen examples/l2-load-latency-a.lua --dpdk-config=dpdk-conf-default.lua 0 1 -r 400 --brate 1 -t 30'
+    #cmd = 'sudo ./build/MoonGen examples/l2-load-latency-line-rate.lua --dpdk-config=dpdk-conf-default.lua 0 1 -r 1 --brate 1 -t 30'
+    cmd = 'sudo ./build/MoonGen examples/l2-load-latency-line-rate.lua --dpdk-config=dpdk-conf-default.lua {sender_dev} {receiver_dev} -r {main_workload_rate} --brate {background_workload_rate} -t {exp_duration}'.format(
+            sender_dev = config['sender_dev'],
+            receiver_dev = config['receiver_dev'],
+            main_workload_rate = config['main_workload_rate'],
+            background_workload_rate = config['background_workload_rate'],
+            exp_duration = config['exp_duration'],
+            )
+
     print cmd
     moon_gen_proc = subprocess.check_call(cmd, cwd=MOON_HOME, shell=True)
 
@@ -216,6 +221,12 @@ def packet_gen():
     cmd_PG = 'sudo ./app/x86_64-native-linuxapp-gcc/app/pktgen -l 0,1,2 -n 4 --vdev="virtio_user0,path=/users/alireza/my_vhost1.sock,queues=2" --log-level=8 --socket-mem 1024,1024 --proc-type auto -b 81:00.1 -b 81:00.0 -- -T -P -m [1-2].0 -s 0:pcap/large.pcap -f themes/black-yellow.theme'
     #cmd_PG = './tools/run.py default'
     subprocess.check_call(cmd_PG, cwd=PACKET_GEN_HOME, shell=True)
+
+def load_exp_conf(config_path):
+    with open(config_path) as config_file:
+        data = json.load(config_file)
+    return data
+    
 
 
 os.environ["RTE_SDK"] = "/proj/uic-dcs-PG0/post-loom/code/dpdk/"
