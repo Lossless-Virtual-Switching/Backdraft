@@ -180,7 +180,7 @@ def run_iperf_experiment():
     finish_iperf_experiment(SERVER_EXP_CONFIG)
 
 def bess_config(config_path):
-    config_path = "/proj/uic-dcs-PG0/post-loom/code/bess/bessctl/conf/port/alireza_1.bess"
+    config_path = "/proj/uic-dcs-PG0/post-loom/code/bess/bessctl/conf/port/dcfc_sw.bess"
     cmd = 'sudo bessctl/bessctl -- daemon start -- run file %s' %config_path
     print cmd
     bessctl_proc = subprocess.check_call(cmd, cwd=BESS_HOME, shell=True)
@@ -203,14 +203,14 @@ def moongen_run():
     MOON_HOME="/proj/uic-dcs-PG0/moongen/"
     config = load_exp_conf("config/exp_config.json")
     #cmd = 'sudo ./build/MoonGen examples/l3-load-latency.lua 1 1 -r 500 -f 1 -s 64'
-    #cmd = 'sudo ./build/MoonGen examples/l2-load-latency-a.lua --dpdk-config=dpdk-conf-default.lua 0 1 -r 400 --brate 1 -t 30'
-    #cmd = 'sudo ./build/MoonGen examples/l2-load-latency-line-rate.lua --dpdk-config=dpdk-conf-default.lua 0 1 -r 1 --brate 1 -t 30'
-    cmd = 'sudo ./build/MoonGen examples/l2-load-latency-line-rate.lua --dpdk-config=dpdk-conf-default.lua {sender_dev} {receiver_dev} -r {main_workload_rate} --brate {background_workload_rate} -t {exp_duration}'.format(
+    cmd = 'sudo ./build/MoonGen examples/{script_to_load} --dpdk-config={dpdk_conf} {sender_dev} {receiver_dev} -r {main_workload_rate} --brate {background_workload_rate} -t {exp_duration}'.format(
             sender_dev = config['sender_dev'],
             receiver_dev = config['receiver_dev'],
             main_workload_rate = config['main_workload_rate'],
             background_workload_rate = config['background_workload_rate'],
             exp_duration = config['exp_duration'],
+            script_to_load = config['script'],
+            dpdk_conf = config['dpdk_config']
             )
 
     print cmd

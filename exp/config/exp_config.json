@@ -3,5 +3,7 @@
 	"sender_dev": 0,
 	"receiver_dev": 1,
 	"main_workload_rate": 1,
-	"background_workload_rate": 1
+	"background_workload_rate": 4,
+	"script": "l3-load-latency-line-rate.lua",
+	"dpdk_config": "dpdk-conf-default.lua"
 }
