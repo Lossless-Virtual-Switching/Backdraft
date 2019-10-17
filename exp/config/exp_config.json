@@ -1,9 +1,19 @@
 {
-	"exp_duration": 30,
-	"sender_dev": 0,
-	"receiver_dev": 1,
-	"main_workload_rate": 1,
-	"background_workload_rate": 4,
-	"script": "l3-load-latency-line-rate.lua",
-	"dpdk_config": "dpdk-conf-default.lua"
+	"moongen": { 
+		
+		"exp_duration": 30,
+		"sender_dev": 0,
+		"receiver_dev": 1,
+		"main_workload_rate": 1,
+		"background_workload_rate": 4,
+		"script": "dcfc-native-app.lua",
+		"dpdk_config": "dpdk-conf-default.lua"
+	},
+
+	"bess": { 
+		
+		"send_dev": { "tx": 1, "rx": 3},
+		"recv_dev": { "tx": 2, "rx": 1}
+	}
+
 }

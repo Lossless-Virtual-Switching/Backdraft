@@ -180,6 +180,9 @@ def run_iperf_experiment():
     finish_iperf_experiment(SERVER_EXP_CONFIG)
 
 def bess_config(config_path):
+    #config = load_exp_conf("config/exp_config.json")
+    #config = config.bess
+    param_path = "config/exp_config.json"
     config_path = "/proj/uic-dcs-PG0/post-loom/code/bess/bessctl/conf/port/dcfc_sw.bess"
     cmd = 'sudo bessctl/bessctl -- daemon start -- run file %s' %config_path
     print cmd
@@ -202,6 +205,7 @@ def sink_app(just_compile):
 def moongen_run():
     MOON_HOME="/proj/uic-dcs-PG0/moongen/"
     config = load_exp_conf("config/exp_config.json")
+    config = VhostConf(config).moongen
     #cmd = 'sudo ./build/MoonGen examples/l3-load-latency.lua 1 1 -r 500 -f 1 -s 64'
     cmd = 'sudo ./build/MoonGen examples/{script_to_load} --dpdk-config={dpdk_conf} {sender_dev} {receiver_dev} -r {main_workload_rate} --brate {background_workload_rate} -t {exp_duration}'.format(
             sender_dev = config['sender_dev'],
@@ -226,8 +230,14 @@ def load_exp_conf(config_path):
     with open(config_path) as config_file:
         data = json.load(config_file)
     return data
-    
 
+class VhostConf(object):
+    def __init__(self, *initial_data, **kwargs):
+        for dictionary in initial_data:
+            for key in dictionary:
+                setattr(self, key, dictionary[key])
+        for key in kwargs:
+            setattr(self, key, kwargs[key])
 
 os.environ["RTE_SDK"] = "/proj/uic-dcs-PG0/post-loom/code/dpdk/"
 os.environ["RTE_TARGET"] = "x86_64-native-linuxapp-gcc"
