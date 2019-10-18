@@ -239,8 +239,8 @@ class VhostConf(object):
         for key in kwargs:
             setattr(self, key, kwargs[key])
 
-os.environ["RTE_SDK"] = "/proj/uic-dcs-PG0/post-loom/code/dpdk/"
-os.environ["RTE_TARGET"] = "x86_64-native-linuxapp-gcc"
+#os.environ["RTE_SDK"] = "/proj/uic-dcs-PG0/post-loom/code/dpdk/"
+#os.environ["RTE_TARGET"] = "x86_64-native-linuxapp-gcc"
 
 #docker_stop_all()
 #setup_testbed()

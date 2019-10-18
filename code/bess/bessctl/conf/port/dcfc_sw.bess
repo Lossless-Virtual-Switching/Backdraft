@@ -38,11 +38,6 @@ import sys
 pkt_size = int($SN_PKT_SIZE!'60')
 assert(60 <= pkt_size <= 1522)
 
-TX_QUEUE_COUNT = 2
-RX_QUEUE_COUNT = 2
-
-
-
 class VhostConf(object):
     def __init__(self, *initial_data, **kwargs):
         for dictionary in initial_data:
@@ -70,28 +65,27 @@ config = load_exp_conf("/proj/uic-dcs-PG0/post-loom/exp/config/exp_config.json")
 config = VhostConf(config).bess
 config = VhostConf(config)
 
-print(config.send_dev['rx'])
-print(config.send_dev['tx'])
-print(config.recv_dev['rx'])
-print(config.recv_dev['tx'])
+print("sender rx ", config.send_dev['rx'])
+print("sender tx ", config.send_dev['tx'])
+print("receiver rx ", config.recv_dev['rx'])
+print("receiver tx ", config.recv_dev['tx'])
 
-my_vhost0 = PMDPort(name='my_vhost0', vdev='net_vhost0,iface=/users/alireza/my_vhost0.sock,queues=' + str(config.send_dev['tx'] + config.send_dev['rx']), num_inc_q=config.send_dev['rx'], num_out_q=config.send_dev['tx'])
-my_vhost1 = PMDPort(name='my_vhost1', vdev='net_vhost1,iface=/users/alireza/my_vhost1.sock,queues=' + str(config.recv_dev['tx'] + config.recv_dev['rx']), num_inc_q=config.recv_dev['rx'], num_out_q=config.recv_dev['tx'])
+my_vhost0 = PMDPort(name='my_vhost0', vdev='net_vhost0,iface=/users/alireza/my_vhost0.sock,queues=' + str(config.send_q), num_inc_q=config.send_dev['rx'], num_out_q=config.send_dev['tx'])
+#my_vhost0 = PMDPort(name='my_vhost0', vdev='net_vhost0,iface=/users/alireza/my_vhost0.sock,queues=' + str(config.send_q))
+my_vhost1 = PMDPort(name='my_vhost1', vdev='net_vhost1,iface=/users/alireza/my_vhost1.sock,queues=' + str(config.recv_q), num_inc_q=config.recv_dev['rx'], num_out_q=config.recv_dev['tx'])
+#my_vhost1 = PMDPort(name='my_vhost1', vdev='net_vhost1,iface=/users/alireza/my_vhost1.sock,queues=' + str(config.recv_q))
 
-#bess.add_worker(wid=0, core=0)
-#bess.add_tc('host_to_nf', policy='round_robin', wid=0)
-#bess.add_tc('nf_to_host', policy='round_robin', wid=0)
 
-#PortInc(port=my_vhost0.name) -> PortOut(port=my_vhost1.name)
+#PortInc(port=my_vhost0.name) -> PortOut(port=my_vhost1.name) Good Days
 
+#Here we are setting up the pause messages
+QueueInc(port=my_vhost1.name, qid=0) -> QueueOut(port=my_vhost0.name, qid=0)
+QueueInc(port=my_vhost0.name, qid=0) -> QueueOut(port=my_vhost1.name, qid=0)
+
+#Real Switching
 merger = Merge()
 input1 = QueueInc(port=my_vhost0.name, qid=1)
 input2 = QueueInc(port=my_vhost0.name, qid=2)
 input1 -> 0:merger
 input2 -> 1:merger
 merger -> QueueOut(port=my_vhost1.name, qid=1)
-
-#QueueInc(port=my_vhost0.name, qid=2) -> QueueOut(port=my_vhost1.name, qid=1)
-#QueueInc(port=my_vhost0.name, qid=2) -> QueueOut(port=my_vhost1.name, qid=1)
-
-QueueInc(port=my_vhost1.name, qid=0) -> QueueOut(port=my_vhost0.name, qid=0)

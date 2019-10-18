@@ -13,7 +13,9 @@
 	"bess": { 
 		
 		"send_dev": { "tx": 1, "rx": 3},
-		"recv_dev": { "tx": 2, "rx": 1}
+		"recv_dev": { "tx": 2, "rx": 1},
+		"send_q": 3,
+		"recv_q": 2
 	}
 
 }
