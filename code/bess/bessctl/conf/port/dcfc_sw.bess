@@ -70,19 +70,27 @@ print("sender tx ", config.send_dev['tx'])
 print("receiver rx ", config.recv_dev['rx'])
 print("receiver tx ", config.recv_dev['tx'])
 
+for i in range(2):
+	bess.add_worker(wid=i, core=i*2)
+
 my_vhost0 = PMDPort(name='my_vhost0', vdev='net_vhost0,iface=/users/alireza/my_vhost0.sock,queues=' + str(config.send_q), num_inc_q=config.send_dev['rx'], num_out_q=config.send_dev['tx'])
 my_vhost1 = PMDPort(name='my_vhost1', vdev='net_vhost1,iface=/users/alireza/my_vhost1.sock,queues=' + str(config.recv_q), num_inc_q=config.recv_dev['rx'], num_out_q=config.recv_dev['tx'])
 
 #Here we are setting up the pause messages
-QueueInc(port=my_vhost1.name, qid=0) -> QueueOut(port=my_vhost0.name, qid=0)
-QueueInc(port=my_vhost0.name, qid=0) -> QueueOut(port=my_vhost1.name, qid=0)
+pause_src0::QueueInc(port=my_vhost1.name, qid=0) -> QueueOut(port=my_vhost0.name, qid=0)
+pause_src1::QueueInc(port=my_vhost0.name, qid=0) -> QueueOut(port=my_vhost1.name, qid=0)
+
+pause_src0.attach_task(wid=0)
+pause_src1.attach_task(wid=0)
+
 
 #Some Plumbing
 merger = Merge()
 input1 = QueueInc(port=my_vhost0.name, qid=1)
+input1.attach_task(wid=1)
 input2 = QueueInc(port=my_vhost0.name, qid=2)
-input3 = QueueInc(port=my_vhost0.name, qid=3)
+input2.attach_task(wid=1)
 input1 -> 0:merger
 input2 -> 1:merger
 merger -> QueueOut(port=my_vhost1.name, qid=1)
-input3 -> QueueOut(port=my_vhost1.name, qid=2)
+

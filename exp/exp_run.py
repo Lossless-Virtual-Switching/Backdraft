@@ -207,13 +207,14 @@ def moongen_run():
     config = load_exp_conf("config/exp_config.json")
     config = VhostConf(config).moongen
     #cmd = 'sudo ./build/MoonGen examples/l3-load-latency.lua 1 1 -r 500 -f 1 -s 64'
-    cmd = 'sudo ./build/MoonGen examples/{script_to_load} --dpdk-config={dpdk_conf} {sender_dev} {receiver_dev} -r {main_workload_rate} --brate {background_workload_rate} -t {exp_duration}'.format(
+    cmd = 'sudo ./build/MoonGen examples/{script_to_load} --dpdk-config={dpdk_conf} {sender_dev} {receiver_dev} --edrop {enable_drop} -r {main_workload_rate} --brate {background_workload_rate} -t {exp_duration}'.format(
             sender_dev = config['sender_dev'],
             receiver_dev = config['receiver_dev'],
             main_workload_rate = config['main_workload_rate'],
             background_workload_rate = config['background_workload_rate'],
             exp_duration = config['exp_duration'],
             script_to_load = config['script'],
+            enable_drop = config['drop'],
             dpdk_conf = config['dpdk_config']
             )
 
@@ -262,5 +263,5 @@ class VhostConf(object):
 #os.environ["RTE_TARGET"] = "x86_64-native-linuxapp-gcc"
 
 bess_config(BESS_CONFIG_PATH)
-#moongen_run()
+moongen_run()
 #analysis_manual("/proj/uic-dcs-PG0/post-loom/exp/results/")
