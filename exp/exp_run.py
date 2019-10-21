@@ -217,8 +217,27 @@ def moongen_run():
             dpdk_conf = config['dpdk_config']
             )
 
-    print cmd
+    print(cmd)
     moon_gen_proc = subprocess.check_call(cmd, cwd=MOON_HOME, shell=True)
+    print("Moongen exits")
+    moongen_post_exp()
+
+def moongen_post_exp():
+    results_dir = "/proj/uic-dcs-PG0/post-loom/exp/results"
+    cmd = "count=`ls -1 pings* | wc -l` && mv pings.txt pings_${count}.txt"
+    subprocess.check_call(cmd, cwd=results_dir, shell=True)
+    analysis(results_dir)
+
+def analysis(results_dir):
+    analysis_dir = "/proj/uic-dcs-PG0/post-loom/exp/analysis"
+    cmd = "count=`ls -1  {0}/pings* | wc -l` && python3 analysis.py {0} {0}/pings_$count.txt".format(results_dir)
+    subprocess.check_call(cmd, cwd=analysis_dir, shell=True)
+
+def analysis_manual(results_dir):
+    analysis_dir = "/proj/uic-dcs-PG0/post-loom/exp/analysis"
+    pings = results_dir + "/" + "pings_3.txt"
+    cmd = "python3 analysis.py {0} {1}".format(results_dir, pings)
+    subprocess.check_call(cmd, cwd=analysis_dir, shell=True)
 
 def packet_gen():
     PACKET_GEN_HOME='/proj/uic-dcs-PG0/pktgen-dpdk'
@@ -242,10 +261,6 @@ class VhostConf(object):
 #os.environ["RTE_SDK"] = "/proj/uic-dcs-PG0/post-loom/code/dpdk/"
 #os.environ["RTE_TARGET"] = "x86_64-native-linuxapp-gcc"
 
-#docker_stop_all()
-#setup_testbed()
 bess_config(BESS_CONFIG_PATH)
-moongen_run()
-#sink_app(False)
-#packet_gen()
-#run_iperf_experiment()
+#moongen_run()
+#analysis_manual("/proj/uic-dcs-PG0/post-loom/exp/results/")
