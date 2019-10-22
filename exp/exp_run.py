@@ -223,15 +223,33 @@ def moongen_run():
     print("Moongen exits")
     moongen_post_exp()
 
-def moongen_post_exp():
+def moongen_run_exp(config):
+    MOON_HOME="/proj/uic-dcs-PG0/moongen/"
+    cmd = 'sudo ./build/MoonGen examples/{script_to_load} --dpdk-config={dpdk_conf} {sender_dev} {receiver_dev} --edrop {enable_drop} -r {main_workload_rate} --brate {background_workload_rate} -t {exp_duration}'.format(
+            sender_dev = config['sender_dev'],
+            receiver_dev = config['receiver_dev'],
+            main_workload_rate = config['main_workload_rate'],
+            background_workload_rate = config['background_workload_rate'],
+            exp_duration = config['exp_duration'],
+            script_to_load = config['script'],
+            enable_drop = config['drop'],
+            dpdk_conf = config['dpdk_config']
+            )
+
+    print(cmd)
+    moon_gen_proc = subprocess.check_call(cmd, cwd=MOON_HOME, shell=True)
+    print("Moongen exits")
+    moongen_post_exp(config)
+
+def moongen_post_exp(config):
     results_dir = "/proj/uic-dcs-PG0/post-loom/exp/results"
     cmd = "count=`ls -1 pings* | wc -l` && mv pings.txt pings_${count}.txt"
     subprocess.check_call(cmd, cwd=results_dir, shell=True)
-    analysis(results_dir)
+    analysis(results_dir, config)
 
-def analysis(results_dir):
+def analysis(results_dir, config):
     analysis_dir = "/proj/uic-dcs-PG0/post-loom/exp/analysis"
-    cmd = "count=`ls -1  {0}/pings* | wc -l` && python3 analysis.py {0} {0}/pings_$count.txt".format(results_dir)
+    cmd = "count=`ls -1  {0}/pings* | wc -l` && python3 analysis.py {0} {0}/pings_$count.txt {1} {2}".format(results_dir, config['background_workload_rate'], config['drop'])
     subprocess.check_call(cmd, cwd=analysis_dir, shell=True)
 
 def analysis_manual(results_dir):
@@ -251,6 +269,44 @@ def load_exp_conf(config_path):
         data = json.load(config_file)
     return data
 
+
+def drop_latency_experiment():
+    #bess_config(BESS_CONFIG_PATH) #TODO: I need to involve the config from here
+ 
+    config = VhostConf(load_exp_conf("config/exp_config.json"))
+    plot_data_cleanup(config.plot)
+    
+    for j in range(2):
+        config.moongen['drop'] = j
+        i = 0.5 
+        while(i < 7):
+            config.moongen['background_workload_rate'] = i
+            moongen_run_exp(config.moongen)
+            i = i + 0.5
+    
+    draw_latency_drop_plots(config.plot)
+
+def plot_data_cleanup(config):
+    PLOT_HOME = config['plot_dir']
+    drawer = config['drawer']
+    cmd = "rm {0} {1} {2} {3} {4}".format(config['latency_0'],
+            config['drop_0'], config['latency_1'],
+            config['drop_1'], config['background_rate'])
+    subprocess.call(cmd, cwd=PLOT_HOME, shell=True)
+
+def draw_latency_drop_plots(config):
+    PLOT_HOME = config['plot_dir']
+    drawer = config['drawer']
+    cmd = 'python3 {0} {1} {2} {3} {4} {5}'.format(config['drawer'], config['latency_0'],
+            config['drop_0'], config['latency_1'],
+            config['drop_1'], config['background_rate'])
+    subprocess.check_call(cmd, cwd=PLOT_HOME, shell=True)
+
+def redraw_latency_drop_plot():
+    config = VhostConf(load_exp_conf("config/exp_config.json"))
+    draw_latency_drop_plots(config.plot)
+
+
 class VhostConf(object):
     def __init__(self, *initial_data, **kwargs):
         for dictionary in initial_data:
@@ -262,6 +318,8 @@ class VhostConf(object):
 #os.environ["RTE_SDK"] = "/proj/uic-dcs-PG0/post-loom/code/dpdk/"
 #os.environ["RTE_TARGET"] = "x86_64-native-linuxapp-gcc"
 
-bess_config(BESS_CONFIG_PATH)
-moongen_run()
+#bess_config(BESS_CONFIG_PATH)
+#moongen_run()
 #analysis_manual("/proj/uic-dcs-PG0/post-loom/exp/results/")
+#drop_latency_experiment()
+redraw_latency_drop_plot()
