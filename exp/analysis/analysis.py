@@ -1,20 +1,30 @@
 import numpy as np
 import sys
 import os
+#import argparse
 
-# 42_rx.csv  43_rx.csv  BG_tx.csv  FG_tx.csv
+#TODO: I need a class for parsing my input stuff, ohh python has something!
 
 if(len(sys.argv) < 5):
     print("usage: python3 <results_dir> <latency_file_path> <background_workload_rate> <drop>")
     exit(1)
+'''    
+valid_path = os.path.exist(sys.argv[1] and 
+        os.path.exist(sys.argv[2]) and 
+        os.path.exist(sys.argv[3]) and 
+        os.path.exist(sys.argv[4])
 
-drop_stat = sys.argv[4]
-brate = sys.argv[3]
+if(not valid_path):
+    exit(1)
+'''
+
+rx_high = np.loadtxt(os.path.join(sys.argv[1], '42_rx.csv'), delimiter=',', usecols=(3, 6), skiprows=1)
+rx_low = np.loadtxt(os.path.join(sys.argv[1], '43_rx.csv'), delimiter=',', usecols=(3, 6), skiprows=1)
+tx_low = np.loadtxt(os.path.join(sys.argv[1], 'BG_tx.csv'), delimiter=',', usecols=(3, 6), skiprows=1)
+tx_high = np.loadtxt(os.path.join(sys.argv[1], 'FG_tx.csv'), delimiter=',' ,usecols=(3, 6), skiprows=1)
 data = np.loadtxt(sys.argv[2], skiprows=500)
-rx_high = np.loadtxt(sys.argv[1] + '/42_rx.csv', delimiter=',', usecols=(3, 6), skiprows=1)
-rx_low = np.loadtxt(sys.argv[1] + '/43_rx.csv', delimiter=',', usecols=(3, 6), skiprows=1)
-tx_low = np.loadtxt(sys.argv[1] + '/BG_tx.csv', delimiter=',', usecols=(3, 6), skiprows=1)
-tx_high = np.loadtxt(sys.argv[1] + '/FG_tx.csv', delimiter=',' ,usecols=(3, 6), skiprows=1)
+brate = sys.argv[3]
+drop_stat = sys.argv[4]
 
 
 per99 = np.percentile(data, 99)
@@ -44,12 +54,12 @@ with open('stats_{0}.txt'.format(brate), 'w') as f:
     f.write("lprtx {0} Mpps\n".format(low_prio_rate_tx))
     f.write("hprtx {0} Mpps\n".format(high_prio_rate_tx))
 
-with open('plot/latency_{0}.txt'.format(drop_stat), 'a') as f:
-    f.write("{0}\n".format(per99 * 10 ** -3))
+if(0):
+    with open('plot/latency_{0}.txt'.format(drop_stat), 'a') as f:
+        f.write("{0}\n".format(per99 * 10 ** -3))
 
-with open('plot/drop_{0}.txt'.format(drop_stat), 'a') as f:
-    f.write("{0}\n".format(high_prio_dropped_packets))
+    with open('plot/drop_{0}.txt'.format(drop_stat), 'a') as f:
+        f.write("{0}\n".format(high_prio_dropped_packets))
 
-print("SHIIIIIIIIIIIIIIIIIIIIIIIII" , brate)
-with open('plot/background_rate.txt', 'a') as f:
-       f.write("{0}\n".format(brate))
+    with open('plot/background_rate.txt', 'a') as f:
+        f.write("{0}\n".format(brate))
