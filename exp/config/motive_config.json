@@ -1,15 +1,20 @@
 {
+
+	"general": {
+		"sysbench": 1,
+		"moongen": 1,
+		"bess": 1
+	},
+
 	"moongen": { 
 		
-		"exp_duration": 300,
+		"exp_duration": 60,
 		"sender_dev": 0,
 		"receiver_dev": 1,
-		"main_workload_rate": 1,
-		"background_workload_rate": 6,
-		"script": "dcfc-native-app.lua",
+		"main_workload_rate": 4,
+		"script": "motive_1.lua",
 		"drop": 1,
-		"backpressure": 0,
-		"dpdk_config": "dpdk-conf-default.lua"
+		"dpdk_config": "dpdk-conf-motive1.lua"
 	},
 
 	"bess": { 
@@ -17,8 +22,15 @@
 		"send_dev": { "tx": 2, "rx": 2},
 		"recv_dev": { "tx": 1, "rx": 1},
 		"send_q": 2,
-		"recv_q": 1
+		"recv_q": 1,
+		"bess_config_path": "backdraft_sw_motive1.bess"
+
 	},
+
+	"sysbench": {
+		"thread_number": 4
+	},
+
 	"plot": {
 		"plot_dir": "/proj/uic-dcs-PG0/post-loom/exp/analysis/plot",
 		"drawer": "draw.py",
