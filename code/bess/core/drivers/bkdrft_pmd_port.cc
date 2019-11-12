@@ -192,7 +192,7 @@ static CommandResponse find_dpdk_vdev(const std::string &vdev,
   return CommandSuccess();
 }
 
-CommandResponse BKDRFTPMDPort::Init(const bess::pb::PMDPortArg &arg) {
+CommandResponse BKDRFTPMDPort::Init(const bess::pb::BKDRFTPMDPortArg &arg) {
   dpdk_port_t ret_port_id = DPDK_PORT_UNKNOWN;
 
   struct rte_eth_dev_info dev_info;
@@ -203,6 +203,10 @@ CommandResponse BKDRFTPMDPort::Init(const bess::pb::PMDPortArg &arg) {
   int num_txq = num_queues[PACKET_DIR_OUT];
   int num_rxq = num_queues[PACKET_DIR_INC];
 
+  //TODO: Alireza
+  //num_txq ++;
+  //num_rxq ++;
+  
   int ret;
 
   int i;
@@ -211,15 +215,15 @@ CommandResponse BKDRFTPMDPort::Init(const bess::pb::PMDPortArg &arg) {
 
   CommandResponse err;
   switch (arg.port_case()) {
-    case bess::pb::PMDPortArg::kPortId: {
+    case bess::pb::BKDRFTPMDPortArg::kPortId: {
       err = find_dpdk_port_by_id(arg.port_id(), &ret_port_id);
       break;
     }
-    case bess::pb::PMDPortArg::kPci: {
+    case bess::pb::BKDRFTPMDPortArg::kPci: {
       err = find_dpdk_port_by_pci_addr(arg.pci(), &ret_port_id, &hot_plugged_);
       break;
     }
-    case bess::pb::PMDPortArg::kVdev: {
+    case bess::pb::BKDRFTPMDPortArg::kVdev: {
       err = find_dpdk_vdev(arg.vdev(), &ret_port_id, &hot_plugged_);
       break;
     }

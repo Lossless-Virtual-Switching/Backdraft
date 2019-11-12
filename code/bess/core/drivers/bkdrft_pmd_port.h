@@ -71,7 +71,7 @@ class BKDRFTPMDPort final : public Port {
    * EXPECTS:
    * * Must specify exactly one of port_id or PCI or vdev.
    */
-  CommandResponse Init(const bess::pb::PMDPortArg &arg);
+  CommandResponse Init(const bess::pb::BKDRFTPMDPortArg &arg);
 
   /*!
    * Release the device.
