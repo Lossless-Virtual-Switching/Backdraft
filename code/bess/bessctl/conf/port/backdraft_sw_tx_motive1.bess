@@ -38,7 +38,7 @@ import sys
 pkt_size = int($SN_PKT_SIZE!'60')
 assert(60 <= pkt_size <= 1522)
 
-class VhostConf(object):
+class Conf(object):
     def __init__(self, *initial_data, **kwargs):
         for dictionary in initial_data:
             for key in dictionary:
@@ -62,6 +62,7 @@ subprocess.call(cmd, shell=True)
 
 #use scapy to build a packet template
 #eth = scapy.Ether(src='00:8C:FA:F7:58:38', dst='00:8C:FA:F7:12:E4')
+'''
 eth = scapy.Ether(src='00:8C:FA:F7:58:38', dst='00:8C:FA:F7:12:E4')
 ip = scapy.IP(src='10.0.0.1', dst='10.0.0.2')   # dst IP is overwritten
 tcp = scapy.TCP(sport=10001, dport=10002)
@@ -70,29 +71,29 @@ pkt = eth/ip/tcp/payload
 pkt_data = str(pkt)
 
 fg = FlowGen(template=pkt_data, pps=10000, flow_rate = 10, flow_duration = 5.0, arrival='uniform', duration='uniform', quick_rampup=True, ip_src_range=100000)
-
 '''
-config = load_exp_conf("/proj/uic-dcs-PG0/post-loom/exp/config/motive_config.json")
-config = VhostConf(config).bess
-config = VhostConf(config)
 
+config = load_exp_conf("/proj/uic-dcs-PG0/post-loom/exp/config/rx.json")
+config = Conf(config).bess
+config = Conf(config)
+
+
+print("Queue Status:")
 print("sender rx ", config.send_dev['rx'])
 print("sender tx ", config.send_dev['tx'])
 print("receiver rx ", config.recv_dev['rx'])
 print("receiver tx ", config.recv_dev['tx'])
-'''
+
 #for i in range(2):
+print("NUMA node device: DONE")
 bess.add_worker(wid=0, core=1)
 
-#my_vhost0 = PMDPort(name='my_vhost0', vdev='net_vhost0,iface=/users/alireza/my_vhost0.sock,queues=' + str(config.send_q), num_inc_q=config.send_dev['rx'], num_out_q=config.send_dev['tx'])
-rx_nic_port= PMDPort(port_id=0,  num_inc_q=1, num_out_q=1)
-my_vhost0 = PMDPort(name='my_vhost0', vdev='net_vhost0,iface=/users/alireza/my_vhost0.sock,queues=1', num_inc_q=1, num_out_q=1)
+my_vhost0 = PMDPort(name='my_vhost0', vdev='net_vhost0,iface=/users/alireza/my_vhost0.sock,queues=' + str(config.send_q), num_inc_q=config.send_dev['rx'], num_out_q=config.send_dev['tx'])
+rx_nic_port= PMDPort(port_id=0,  num_inc_q=1, num_out_q=1, size_inc_q=config.RX_QSIZE, size_out_q=config.TX_QSIZE)
+#my_vhost0 = PMDPort(name='my_vhost0', vdev='net_vhost0,iface=/users/alireza/my_vhost0.sock,queues=1', 
+#			num_inc_q=1, num_out_q=1, size_inc_q=RX_QSIZE, size_out_q=TX_QSIZE)
 
 #Some Plumbing
 input1 = QueueInc(port=my_vhost0.name, qid=0)
 output1 = QueueOut(port=rx_nic_port.name, qid=0)
-
-#Source() -> output1
-#fg -> output1
 input1 -> output1
-#input1 -> Sink()

@@ -192,6 +192,17 @@ static CommandResponse find_dpdk_vdev(const std::string &vdev,
   return CommandSuccess();
 }
 
+CommandResponse BKDRFTPMDPort::pause_queue_setup() {
+
+  num_queues[PACKET_DIR_INC] ++;
+  num_queues[PACKET_DIR_OUT] ++;
+
+  if(num_queues[PACKET_DIR_INC] < 2 || num_queues[PACKET_DIR_OUT] < 2)
+    return CommandFailure(ENODEV, "Cannot attach SHIT");
+
+  return CommandSuccess();
+}
+
 CommandResponse BKDRFTPMDPort::Init(const bess::pb::BKDRFTPMDPortArg &arg) {
   dpdk_port_t ret_port_id = DPDK_PORT_UNKNOWN;
 
@@ -244,6 +255,12 @@ CommandResponse BKDRFTPMDPort::Init(const bess::pb::BKDRFTPMDPortArg &arg) {
     eth_conf.lpbk_mode = 1;
   }
 
+  /*
+   * Aghax
+   * Now pause queues!
+   */
+  pause_queue_setup();
+
   /* Use defaut rx/tx configuration as provided by PMD drivers,
    * with minor tweaks */
   rte_eth_dev_info_get(ret_port_id, &dev_info);
@@ -281,6 +298,10 @@ CommandResponse BKDRFTPMDPort::Init(const bess::pb::BKDRFTPMDPortArg &arg) {
       return CommandFailure(-ret, "rte_eth_tx_queue_setup() failed");
     }
   }
+
+  // Alireza Bess queue status initialization
+  bess_queue_overloaded_ = false;
+  bess_queue_underloaded_ = true;
 
   for (i = 0; i < num_rxq; i++) {
     int sid = rte_eth_dev_socket_id(ret_port_id);
@@ -441,7 +462,8 @@ void BKDRFTPMDPort::CollectStats(bool reset) {
 }
 
 int BKDRFTPMDPort::RecvPackets(queue_t qid, bess::Packet **pkts, int cnt) {
-  return rte_eth_rx_burst(dpdk_port_id_, qid, (struct rte_mbuf **)pkts, cnt);
+  int recv = rte_eth_rx_burst(dpdk_port_id_, qid, (struct rte_mbuf **)pkts, cnt);
+  return recv;
 }
 
 int BKDRFTPMDPort::SendPackets(queue_t qid, bess::Packet **pkts, int cnt) {
@@ -464,6 +486,16 @@ Port::LinkStatus BKDRFTPMDPort::GetLinkStatus() {
                     .full_duplex = static_cast<bool>(status.link_duplex),
                     .autoneg = static_cast<bool>(status.link_autoneg),
                     .link_up = static_cast<bool>(status.link_status)};
+}
+
+void BKDRFTPMDPort::OverloadSignal() {
+  bess_queue_overloaded_ = true;
+  bess_queue_underloaded_ = false;
+}
+
+void BKDRFTPMDPort::UnderloadSignal() {
+  bess_queue_underloaded_ = true;
+  bess_queue_overloaded_ = false;
 }
 
 ADD_DRIVER(BKDRFTPMDPort, "bkdrft_pmd_port", "BackDraft DPDK poll mode driver")

@@ -87,6 +87,12 @@ class BKDRFTPMDPort final : public Port {
    */
   void CollectStats(bool reset) override;
 
+  // Alireza TODO: Writing description about this function
+  void OverloadSignal();
+
+  // Alireza TODO: Writing description about this function
+  void UnderloadSignal(); 
+
   /*!
    * Receives packets from the device.
    *
@@ -137,12 +143,23 @@ class BKDRFTPMDPort final : public Port {
     return node_placement_;
   }
 
+  /*
+   * It leaves a queue for the pause messages for now.
+   */
+  CommandResponse pause_queue_setup();
+
  private:
   /*!
    * The DPDK port ID number (set after binding).
    */
 
   dpdk_port_t dpdk_port_id_;
+
+  // Alireza TODO: documentation about this variable
+  bool bess_queue_overloaded_;
+
+  // Alireza TODO: documentation about this variable
+  bool bess_queue_underloaded_;
 
   /*!
    * True if device did not exist when bessd started and was later patched in.

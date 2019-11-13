@@ -88,12 +88,18 @@ print("receiver tx ", config.recv_dev['tx'])
 print("NUMA node device: DONE")
 bess.add_worker(wid=0, core=1)
 
-my_vhost0 = PMDPort(name='my_vhost0', vdev='net_vhost0,iface=/users/alireza/my_vhost0.sock,queues=' + str(config.send_q), num_inc_q=config.send_dev['rx'], num_out_q=config.send_dev['tx'])
-rx_nic_port= PMDPort(port_id=0,  num_inc_q=1, num_out_q=1, size_inc_q=config.RX_QSIZE, size_out_q=config.TX_QSIZE)
+#my_vhost0 = PMDPort(name='my_vhost0', vdev='net_vhost0,iface=/users/alireza/my_vhost0.sock,queues=' + str(config.send_q), num_inc_q=config.send_dev['rx'], num_out_q=config.send_dev['tx'])
+#my_vhost0 = BKDRFTPMDPort(name='my_vhost0', vdev='net_vhost0,iface=/users/alireza/my_vhost0.sock,queues=1', num_inc_q=1, num_out_q=1, size_inc_q=config.RX_QSIZE, size_out_q=config.TX_QSIZE)
+#rx_nic_port= PMDPort(port_id=0,  num_inc_q=1, num_out_q=1, size_inc_q=config.RX_QSIZE, size_out_q=config.TX_QSIZE)
+rx_nic_port= BKDRFTPMDPort(port_id=0,  num_inc_q=1, num_out_q=1, size_inc_q=config.RX_QSIZE, size_out_q=config.TX_QSIZE)
+queue = BKDRFTQueue(port=rx_nic_port.name, backpressure=False)
+#queue.attach_task(wid=0)
 #my_vhost0 = PMDPort(name='my_vhost0', vdev='net_vhost0,iface=/users/alireza/my_vhost0.sock,queues=1', 
 #			num_inc_q=1, num_out_q=1, size_inc_q=RX_QSIZE, size_out_q=TX_QSIZE)
 
 #Some Plumbing
-output1 = QueueOut(port=my_vhost0.name, qid=0)
-input1 = QueueInc(port=rx_nic_port.name, qid=0)
-input1 -> output1
+#input1 = QueueInc(port=my_vhost0.name, qid=0)
+#output1 = QueueOut(port=rx_nic_port.name, qid=0)
+#input1 -> output1
+#queue -> output1
+Source() -> queue -> Sink()
