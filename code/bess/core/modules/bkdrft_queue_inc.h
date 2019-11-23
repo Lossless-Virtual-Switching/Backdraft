@@ -41,7 +41,6 @@
 
 #define FLOW_DEBUG 0
 
-
 using bess::utils::Ipv4Prefix;
 using bess::utils::CuckooMap;
 

@@ -127,6 +127,8 @@ void BKDRFTQueueInc::PerFlowQueuing(bess::PacketBatch *batch) {
 struct task_result BKDRFTQueueInc::RunTask(Context *ctx, bess::PacketBatch *batch,
                                      void *arg) {
   Port *p = port_;
+  int err = 0;
+
 
   if (!p->conf().admin_up) {
     return {.block = true, .packets = 0, .bits = 0};
@@ -199,11 +201,6 @@ struct task_result BKDRFTQueueInc::RunTask(Context *ctx, bess::PacketBatch *batc
   return {.block = false,
           .packets = cnt,
           .bits = (received_bytes + cnt * pkt_overhead) * 8};
-}
-
-bess::PacketBatch *batch BKDRFTQueueInc::BuildaBatch(){
-  bess::PacketBatch *batch = new bess::PacketBatch(10);
-  return batch;
 }
 
 
