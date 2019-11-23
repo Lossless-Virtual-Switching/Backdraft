@@ -144,6 +144,17 @@ class BKDRFTPMDPort final : public Port {
   }
 
   /*
+  * Here I'm going to init the DCB config
+  */
+  int InitDCBPortConfig(dpdk_port_t port_id, struct rte_eth_conf conf,
+   int nb_rxq, int nb_txq);
+
+  int GetEthDCBConf(dpdk_port_t port_id, struct rte_eth_conf *eth_conf, uint8_t pfc_en);
+
+
+
+
+  /*
    * It leaves a queue for the pause messages for now.
    */
   CommandResponse pause_queue_setup();
