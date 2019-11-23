@@ -31,6 +31,7 @@
 #include "bkdrft_pmd_port.h"
 
 #include <rte_ethdev_pci.h>
+// #include <rte_log.h>
 
 #include "../utils/ether.h"
 #include "../utils/format.h"
@@ -198,7 +199,7 @@ CommandResponse BKDRFTPMDPort::pause_queue_setup() {
   num_queues[PACKET_DIR_OUT] ++;
 
   if(num_queues[PACKET_DIR_INC] < 2 || num_queues[PACKET_DIR_OUT] < 2)
-    return CommandFailure(ENODEV, "Cannot attach SHIT");
+    return CommandFailure(ENODEV, "Cannot attach these queues");
 
   return CommandSuccess();
 }
@@ -214,9 +215,11 @@ CommandResponse BKDRFTPMDPort::Init(const bess::pb::BKDRFTPMDPortArg &arg) {
   int num_txq = num_queues[PACKET_DIR_OUT];
   int num_rxq = num_queues[PACKET_DIR_INC];
 
-  //TODO: Alireza
-  //num_txq ++;
-  //num_rxq ++;
+  /*
+   * Aghax
+   * Now pause queues!
+   */
+  // pause_queue_setup();
   
   int ret;
 
@@ -255,12 +258,6 @@ CommandResponse BKDRFTPMDPort::Init(const bess::pb::BKDRFTPMDPortArg &arg) {
     eth_conf.lpbk_mode = 1;
   }
 
-  /*
-   * Aghax
-   * Now pause queues!
-   */
-  pause_queue_setup();
-
   /* Use defaut rx/tx configuration as provided by PMD drivers,
    * with minor tweaks */
   rte_eth_dev_info_get(ret_port_id, &dev_info);
@@ -285,6 +282,14 @@ CommandResponse BKDRFTPMDPort::Init(const bess::pb::BKDRFTPMDPortArg &arg) {
   if (ret != 0) {
     return CommandFailure(-ret, "rte_eth_dev_configure() failed");
   }
+
+  // Alireza Now I want to do my DCB configuration!
+  // ret = InitDCBPortConfig(ret_port_id, eth_conf, num_rxq, num_txq);
+  // if (ret != 0) {
+  //   return CommandFailure(-ret, "DCB rte_eth_dev_configure() failed");
+  // }
+  // Alireza End
+
   rte_eth_promiscuous_enable(ret_port_id);
 
   // NOTE: As of DPDK 17.02, TX queues should be initialized first.
@@ -344,6 +349,16 @@ CommandResponse BKDRFTPMDPort::Init(const bess::pb::BKDRFTPMDPortArg &arg) {
                       reinterpret_cast<ether_addr *>(conf_.mac_addr.bytes));
 
   // Reset hardware stat counters, as they may still contain previous data
+
+  for (int queue = 0; queue < num_queues[PACKET_DIR_INC]; queue++) {
+    rte_eth_dev_set_rx_queue_stats_mapping(dpdk_port_id_, queue, queue);
+  }
+  
+  for (int queue = 0; queue < num_queues[PACKET_DIR_OUT]; queue++) {
+    rte_eth_dev_set_tx_queue_stats_mapping(dpdk_port_id_, queue, queue); 
+  }
+
+
   CollectStats(true);
 
   return CommandSuccess();
@@ -462,13 +477,100 @@ void BKDRFTPMDPort::CollectStats(bool reset) {
 }
 
 int BKDRFTPMDPort::RecvPackets(queue_t qid, bess::Packet **pkts, int cnt) {
+  // struct rte_eth_stats dpdk_queue_stats;
+  // int res;
+  // packet_dir_t dir = PACKET_DIR_INC;
+
   int recv = rte_eth_rx_burst(dpdk_port_id_, qid, (struct rte_mbuf **)pkts, cnt);
+  // res = rte_eth_stats_get(dpdk_port_id_, &dpdk_queue_stats);
+  // LOG(INFO) << "before rx qid " << (int) qid;
+
+  // if(res == 0) {
+  //   // What I don't understand it that why bytes? Why not packets?
+  //   if(dpdk_queue_stats.q_ibytes[qid] - queue_stats[dir][qid].bytes + recv > 20) {
+  //     //send a pause message on queue 0
+  //   } else {
+  //     // Sounds good for now!
+  //   }
+
+  //   #ifdef 0
+  //   LOG(INFO) << "rx qid " << (int) qid
+  //             << " dpdk queue " << dpdk_queue_stats.q_ibytes[qid]
+  //             << " bess queue " << queue_stats[dir][qid].bytes
+  //             << " subtraction " << dpdk_queue_stats.q_ibytes[qid] - queue_stats[dir][qid].bytes + recv
+  //             << " ipackets " << dpdk_queue_stats.q_ipackets[qid]
+  //             << " ibytes " << dpdk_queue_stats.q_ibytes[qid]
+  //             << " opackets " << dpdk_queue_stats.q_opackets[qid]
+  //             << " obytes " << dpdk_queue_stats.q_obytes[qid]
+  //             << "rx recv " << recv;
+
+  //   qid = 0;
+
+  //   LOG(INFO) << "-----------------------------------------------";
+  //   LOG(INFO) << "rx qid " << (int) qid
+  //             << " dpdk queue " << dpdk_queue_stats.q_ibytes[qid]
+  //             << " bess queue " << queue_stats[dir][qid].bytes
+  //             << " subtraction " << dpdk_queue_stats.q_ibytes[qid] - queue_stats[dir][qid].bytes + recv
+  //             << " ipackets " << dpdk_queue_stats.q_ipackets[qid]
+  //             << " ibytes " << dpdk_queue_stats.q_ibytes[qid]
+  //             << " opackets " << dpdk_queue_stats.q_opackets[qid]
+  //             << " obytes " << dpdk_queue_stats.q_obytes[qid]
+  //             << "rx recv " << recv;
+  //   LOG(INFO) << "^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^";
+  //   #endif
+  // }
+
   return recv;
 }
 
 int BKDRFTPMDPort::SendPackets(queue_t qid, bess::Packet **pkts, int cnt) {
+  struct rte_eth_stats dpdk_queue_stats;
+  int res;
+  packet_dir_t dir = PACKET_DIR_OUT;
+
   int sent = rte_eth_tx_burst(dpdk_port_id_, qid,
                               reinterpret_cast<struct rte_mbuf **>(pkts), cnt);
+
+  // Alireza start
+  res = rte_eth_stats_get(dpdk_port_id_, &dpdk_queue_stats);
+  
+  if(res == 0) {
+    // What I don't understand it that why bytes? Why not packets?
+    // Packet sizes might vary so bytes would be the most accurate metric!
+    if(queue_stats[dir][qid].bytes + 30*10 - dpdk_queue_stats.q_obytes[qid] > 20) {
+      //send a pause message on queue 0
+    } else {
+      // Sounds good for now!
+    }
+
+    #ifdef 0
+    LOG(INFO) << "rx qid " << (int) qid
+              << " dpdk queue " << dpdk_queue_stats.q_ibytes[qid]
+              << " bess queue " << queue_stats[dir][qid].bytes
+              << " subtraction " << dpdk_queue_stats.q_ibytes[qid] - queue_stats[dir][qid].bytes + recv
+              << " ipackets " << dpdk_queue_stats.q_ipackets[qid]
+              << " ibytes " << dpdk_queue_stats.q_ibytes[qid]
+              << " opackets " << dpdk_queue_stats.q_opackets[qid]
+              << " obytes " << dpdk_queue_stats.q_obytes[qid]
+              << "rx recv " << recv;
+
+    qid = 0;
+
+    LOG(INFO) << "-----------------------------------------------";
+    LOG(INFO) << "rx qid " << (int) qid
+              << " dpdk queue " << dpdk_queue_stats.q_ibytes[qid]
+              << " bess queue " << queue_stats[dir][qid].bytes
+              << " subtraction " << dpdk_queue_stats.q_ibytes[qid] - queue_stats[dir][qid].bytes + recv
+              << " ipackets " << dpdk_queue_stats.q_ipackets[qid]
+              << " ibytes " << dpdk_queue_stats.q_ibytes[qid]
+              << " opackets " << dpdk_queue_stats.q_opackets[qid]
+              << " obytes " << dpdk_queue_stats.q_obytes[qid]
+              << "rx recv " << recv;
+    LOG(INFO) << "^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^";
+    #endif
+  }
+  // Alireza end
+
   int dropped = cnt - sent;
   queue_stats[PACKET_DIR_OUT][qid].dropped += dropped;
   queue_stats[PACKET_DIR_OUT][qid].requested_hist[cnt]++;
@@ -487,6 +589,71 @@ Port::LinkStatus BKDRFTPMDPort::GetLinkStatus() {
                     .autoneg = static_cast<bool>(status.link_autoneg),
                     .link_up = static_cast<bool>(status.link_status)};
 }
+
+int BKDRFTPMDPort::InitDCBPortConfig(dpdk_port_t port_id, struct rte_eth_conf eth_conf,
+  int nb_rxq, int nb_txq) {
+  
+  struct rte_eth_conf port_conf;
+	int retval;
+	// uint16_t i;
+  uint8_t pfc_en = 0;
+
+	memset(&port_conf, 0, sizeof(struct rte_eth_conf));
+
+	port_conf.rxmode = eth_conf.rxmode;
+	port_conf.txmode = eth_conf.txmode;
+
+  eth_conf.rxmode = eth_conf.rxmode;
+
+  retval = GetEthDCBConf(port_id, &port_conf, pfc_en);
+
+  if (retval < 0)
+	  return retval;
+
+ 	port_conf.rxmode.offloads |= DEV_RX_OFFLOAD_VLAN_FILTER;
+  rte_log_set_level(RTE_LOGTYPE_EAL, RTE_LOG_DEBUG);
+  retval = rte_eth_dev_configure(port_id, nb_rxq, nb_txq, &port_conf);
+  
+	return retval;
+}
+
+int BKDRFTPMDPort::GetEthDCBConf(dpdk_port_t port_id, struct rte_eth_conf *eth_conf, uint8_t pfc_en) {
+  uint8_t i;
+	int32_t rc;
+	struct rte_eth_rss_conf rss_conf;
+
+  struct rte_eth_dcb_rx_conf *rx_conf =
+      &eth_conf->rx_adv_conf.dcb_rx_conf;
+  struct rte_eth_dcb_tx_conf *tx_conf =
+      &eth_conf->tx_adv_conf.dcb_tx_conf;
+
+  rc = rte_eth_dev_rss_hash_conf_get(port_id, &rss_conf);
+  if (rc != 0)
+    return rc;
+
+  rx_conf->nb_tcs = ETH_4_TCS;
+  tx_conf->nb_tcs = ETH_4_TCS;
+
+  for (i = 0; i < ETH_DCB_NUM_USER_PRIORITIES; i++) {
+    rx_conf->dcb_tc[i] = i % ETH_4_TCS;
+    tx_conf->dcb_tc[i] = i % ETH_4_TCS;
+  }
+
+  rss_conf.rss_hf = 0;
+
+  eth_conf->rxmode.mq_mode = ETH_MQ_RX_DCB;
+  eth_conf->rx_adv_conf.rss_conf = rss_conf;
+  eth_conf->txmode.mq_mode = ETH_MQ_TX_DCB;
+
+  if (pfc_en)
+    eth_conf->dcb_capability_en =
+      ETH_DCB_PG_SUPPORT | ETH_DCB_PFC_SUPPORT;
+  else
+    eth_conf->dcb_capability_en = ETH_DCB_PG_SUPPORT;
+
+  return 0;
+}
+
 
 void BKDRFTPMDPort::OverloadSignal() {
   bess_queue_overloaded_ = true;
