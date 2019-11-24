@@ -35,6 +35,7 @@
 #include "../pb/module_msg.pb.h"
 #include "../port.h"
 <<<<<<< HEAD
+<<<<<<< HEAD
 #include "../utils/cuckoo_map.h"
 #include <rte_hash_crc.h>
 #include "../utils/ip.h"
@@ -44,6 +45,8 @@
 using bess::utils::Ipv4Prefix;
 using bess::utils::CuckooMap;
 
+=======
+>>>>>>> parent of 2a72ad7... bkdrft queue is now available, but just for random testing
 =======
 >>>>>>> parent of 2a72ad7... bkdrft queue is now available, but just for random testing
 

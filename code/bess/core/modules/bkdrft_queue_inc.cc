@@ -157,8 +157,12 @@ struct task_result BKDRFTQueueInc::RunTask(Context *ctx, bess::PacketBatch *batc
 }
 
 <<<<<<< HEAD
+<<<<<<< HEAD
 
 BKDRFTQueueInc::FlowId BKDRFTQueueInc::GetId(bess::Packet *pkt) {
+=======
+BKDRFTQueueInc::FlowId BKDRFTQueueInc::GetFlowId(bess::Packet *pkt) {
+>>>>>>> parent of 2a72ad7... bkdrft queue is now available, but just for random testing
 =======
 BKDRFTQueueInc::FlowId BKDRFTQueueInc::GetFlowId(bess::Packet *pkt) {
 >>>>>>> parent of 2a72ad7... bkdrft queue is now available, but just for random testing
