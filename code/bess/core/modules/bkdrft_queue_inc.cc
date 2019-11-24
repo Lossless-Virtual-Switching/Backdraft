@@ -87,43 +87,6 @@ std::string BKDRFTQueueInc::GetDesc() const {
                              port_->port_builder()->class_name().c_str());
 }
 
-void BKDRFTQueueInc::PerFlowQueuing(bess::PacketBatch *batch) {
-/* Let's manage the flows here to see what will happen
-   * in near future!
-   */
-  int err = 0;
-
-  // It can be avoided but we aren't at that level of performance optimization
-  uint32_t cnt = batch->cnt(); 
-
-  for (uint32_t i = 0; i < cnt; i++) {
-#if FLOW_DEBUG
-      if(i == 0)
-        LOG(INFO) << "cnt read packets " << cnt << "\n";  
-#endif
-    bess::Packet *pkt = batch->pkts()[i];
-    FlowId id = GetId(pkt);
-    auto it = flows_.Find(id);
-
-    // if the Flow doesn't exist create one
-    // and add the packet to the new Flow
-    if (it == nullptr) {
-#if FLOW_DEBUG
-      LOG(INFO) << "New Flow " << id.src_ip << "\n";
-#endif
-      AddNewFlow(pkt, id, &err);
-      assert(err == 0);
-    } else {
-#if FLOW_DEBUG
-      LOG(INFO) << "ENQUEUED " << id.src_ip << "\n";
-#endif
-      Enqueue(it->second, pkt, &err);
-      assert(err == 0);
-    }
-  }
-  // End of packet flow accounting!
-}
-
 struct task_result BKDRFTQueueInc::RunTask(Context *ctx, bess::PacketBatch *batch,
                                      void *arg) {
   Port *p = port_;
@@ -134,16 +97,16 @@ struct task_result BKDRFTQueueInc::RunTask(Context *ctx, bess::PacketBatch *batc
     return {.block = true, .packets = 0, .bits = 0};
   }
 
-  // if (children_overload_ > 0) {
-  //   // Alireza
-  //   // Not sure if I should send a pause message now!
-  //   // p->OverloadSignal();
-  //   return {
-  //       .block = true,
-  //       .packets = 0,
-  //       .bits = 0,
-  //   };
-  // }
+  if (children_overload_ > 0) {
+    // Alireza
+    // Not sure if I should send a pause message now!
+    // p->OverloadSignal();
+    return {
+        .block = true,
+        .packets = 0,
+        .bits = 0,
+    };
+  }
 
   const queue_t qid = (queue_t)(uintptr_t)arg;
 
@@ -154,9 +117,6 @@ struct task_result BKDRFTQueueInc::RunTask(Context *ctx, bess::PacketBatch *batc
 
   batch->set_cnt(p->RecvPackets(qid, batch->pkts(), burst));
   uint32_t cnt = batch->cnt();
-
-  PerFlowQueuing(batch); // If you remove this! Nothing happens :)
-
   p->queue_stats[PACKET_DIR_INC][qid].requested_hist[burst]++;
   p->queue_stats[PACKET_DIR_INC][qid].actual_hist[cnt]++;
   p->queue_stats[PACKET_DIR_INC][qid].diff_hist[burst - cnt]++;
@@ -181,30 +141,27 @@ struct task_result BKDRFTQueueInc::RunTask(Context *ctx, bess::PacketBatch *batc
     p->queue_stats[PACKET_DIR_INC][qid].bytes += received_bytes;
   }
 
-  // Before passing the batch for the next module I belive I need to create
-  // My batch according to the Flow accounting! I'm not sure though. Need to
-  // talk to Brent. So I just want ot put a function here to create my new batch.
-  // It sounds stupid tho! Why would be go that way?
-  
-  //batch = BuildaBatch();
-
   RunNextModule(ctx, batch);
 
-  // if (cnt < (uint32_t)burst_/2) {
-  //   SignalUnderload();
-  //   // Just send an unpause message!
-  //   // I should create some pause message packets!
-  //   // And I don't still know how!!
-  //   // p->RecvPackets(0, batch->pkts(), 1)
-  // }
+  if (cnt < (uint32_t)burst_/2) {
+    SignalUnderload();
+    // Just send an unpause message!
+    // I should create some pause message packets!
+    // And I don't still know how!!
+    // p->RecvPackets(0, batch->pkts(), 1)
+  }
 
   return {.block = false,
           .packets = cnt,
           .bits = (received_bytes + cnt * pkt_overhead) * 8};
 }
 
+<<<<<<< HEAD
 
 BKDRFTQueueInc::FlowId BKDRFTQueueInc::GetId(bess::Packet *pkt) {
+=======
+BKDRFTQueueInc::FlowId BKDRFTQueueInc::GetFlowId(bess::Packet *pkt) {
+>>>>>>> parent of 2a72ad7... bkdrft queue is now available, but just for random testing
   using bess::utils::Ethernet;
   using bess::utils::Ipv4;
   using bess::utils::Udp;
@@ -218,81 +175,6 @@ BKDRFTQueueInc::FlowId BKDRFTQueueInc::GetId(bess::Packet *pkt) {
   FlowId id = {ip->src.value(), ip->dst.value(), udp->src_port.value(),
               udp->dst_port.value(), ip->protocol};
   return id;
-}
-
-void BKDRFTQueueInc::AddNewFlow(bess::Packet *pkt, FlowId id, int *err) {
-  // creates flow
-  Flow *f = new Flow(id);
-
-  // TODO(joshua) do proper error checking
-  f->queue = AddQueue(static_cast<int>(kFlowQueueSize), err);
-
-  if (*err != 0) {
-    return;
-  }
-
-  flows_.Insert(id, f);
-
-  Enqueue(f, pkt, err);
-  if (*err != 0) {
-    return;
-  }
-
-  *err = llring_enqueue(flow_ring_, f);
-}
-
-llring *BKDRFTQueueInc::AddQueue(uint32_t slots, int *err) {
-  int bytes = llring_bytes_with_slots(slots);
-  int ret;
-
-  llring *queue = static_cast<llring *>(aligned_alloc(alignof(llring), bytes));
-  if (!queue) {
-    *err = -ENOMEM;
-    return nullptr;
-  }
-
-  ret = llring_init(queue, slots, 1, 1);
-  if (ret) {
-    std::free(queue);
-    *err = -EINVAL;
-    return nullptr;
-  }
-  return queue;
-}
-
-void BKDRFTQueueInc::RemoveFlow(Flow *f) {
-  // if (f == current_flow_) {
-  //   current_flow_ = nullptr;
-  // }
-  flows_.Remove(f->id);
-  delete f;
-}
-
-void BKDRFTQueueInc::Enqueue(Flow *f, bess::Packet *newpkt, int *err) {
-  // if the queue is full. drop the packet.
-  if (llring_count(f->queue) >= max_queue_size_) {
-    bess::Packet::Free(newpkt);
-    return;
-  }
-
-  // creates a new queue if there is not enough space for the new packet
-  // in the old queue
-  // if (llring_full(f->queue)) {
-  //   // uint32_t slots =
-  //   //     RoundToPowerTwo(llring_count(f->queue) * kQueueGrowthFactor);
-  //   // f->queue = ResizeQueue(f->queue, slots, err);
-  //   // if (*err != 0) {
-  //   //   bess::Packet::Free(newpkt);
-  //   //   return;
-  //   // }
-  //   // I just convined myself that just drop the packet is 
-  //   // case queue in full
-  // }
-
-  *err = llring_enqueue(f->queue, reinterpret_cast<void *>(newpkt));
-  if (*err == 1) {
-    bess::Packet::Free(newpkt);
-  }
 }
 
 CommandResponse BKDRFTQueueInc::CommandSetBurst(

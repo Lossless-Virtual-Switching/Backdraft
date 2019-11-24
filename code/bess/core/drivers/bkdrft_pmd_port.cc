@@ -43,6 +43,8 @@
 #define SN_HW_RXCSUM 0
 #define SN_HW_TXCSUM 0
 
+#define A_DEBUG 0
+
 static const struct rte_eth_conf default_eth_conf() {
   struct rte_eth_conf ret = rte_eth_conf();
 
@@ -477,73 +479,24 @@ void BKDRFTPMDPort::CollectStats(bool reset) {
 }
 
 int BKDRFTPMDPort::RecvPackets(queue_t qid, bess::Packet **pkts, int cnt) {
-  // struct rte_eth_stats dpdk_queue_stats;
-  // int res;
-  // packet_dir_t dir = PACKET_DIR_INC;
-
-  int recv = rte_eth_rx_burst(dpdk_port_id_, qid, (struct rte_mbuf **)pkts, cnt);
-  // res = rte_eth_stats_get(dpdk_port_id_, &dpdk_queue_stats);
-  // LOG(INFO) << "before rx qid " << (int) qid;
-
-  // if(res == 0) {
-  //   // What I don't understand it that why bytes? Why not packets?
-  //   if(dpdk_queue_stats.q_ibytes[qid] - queue_stats[dir][qid].bytes + recv > 20) {
-  //     //send a pause message on queue 0
-  //   } else {
-  //     // Sounds good for now!
-  //   }
-
-  //   #ifdef 0
-  //   LOG(INFO) << "rx qid " << (int) qid
-  //             << " dpdk queue " << dpdk_queue_stats.q_ibytes[qid]
-  //             << " bess queue " << queue_stats[dir][qid].bytes
-  //             << " subtraction " << dpdk_queue_stats.q_ibytes[qid] - queue_stats[dir][qid].bytes + recv
-  //             << " ipackets " << dpdk_queue_stats.q_ipackets[qid]
-  //             << " ibytes " << dpdk_queue_stats.q_ibytes[qid]
-  //             << " opackets " << dpdk_queue_stats.q_opackets[qid]
-  //             << " obytes " << dpdk_queue_stats.q_obytes[qid]
-  //             << "rx recv " << recv;
-
-  //   qid = 0;
-
-  //   LOG(INFO) << "-----------------------------------------------";
-  //   LOG(INFO) << "rx qid " << (int) qid
-  //             << " dpdk queue " << dpdk_queue_stats.q_ibytes[qid]
-  //             << " bess queue " << queue_stats[dir][qid].bytes
-  //             << " subtraction " << dpdk_queue_stats.q_ibytes[qid] - queue_stats[dir][qid].bytes + recv
-  //             << " ipackets " << dpdk_queue_stats.q_ipackets[qid]
-  //             << " ibytes " << dpdk_queue_stats.q_ibytes[qid]
-  //             << " opackets " << dpdk_queue_stats.q_opackets[qid]
-  //             << " obytes " << dpdk_queue_stats.q_obytes[qid]
-  //             << "rx recv " << recv;
-  //   LOG(INFO) << "^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^";
-  //   #endif
-  // }
-
-  return recv;
-}
-
-int BKDRFTPMDPort::SendPackets(queue_t qid, bess::Packet **pkts, int cnt) {
   struct rte_eth_stats dpdk_queue_stats;
   int res;
-  packet_dir_t dir = PACKET_DIR_OUT;
+  packet_dir_t dir = PACKET_DIR_INC;
 
-  int sent = rte_eth_tx_burst(dpdk_port_id_, qid,
-                              reinterpret_cast<struct rte_mbuf **>(pkts), cnt);
-
-  // Alireza start
+  int recv = rte_eth_rx_burst(dpdk_port_id_, qid, (struct rte_mbuf **)pkts, cnt);
   res = rte_eth_stats_get(dpdk_port_id_, &dpdk_queue_stats);
-  
+  LOG(INFO) << "before rx qid " << (int) qid;
+
   if(res == 0) {
     // What I don't understand it that why bytes? Why not packets?
-    // Packet sizes might vary so bytes would be the most accurate metric!
-    if(queue_stats[dir][qid].bytes + 30*10 - dpdk_queue_stats.q_obytes[qid] > 20) {
+    if(dpdk_queue_stats.q_ibytes[qid] - queue_stats[dir][qid].bytes + recv > 20) {
       //send a pause message on queue 0
+
     } else {
       // Sounds good for now!
     }
 
-    #ifdef 0
+    #ifdef A_DEBUG
     LOG(INFO) << "rx qid " << (int) qid
               << " dpdk queue " << dpdk_queue_stats.q_ibytes[qid]
               << " bess queue " << queue_stats[dir][qid].bytes
@@ -569,7 +522,59 @@ int BKDRFTPMDPort::SendPackets(queue_t qid, bess::Packet **pkts, int cnt) {
     LOG(INFO) << "^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^";
     #endif
   }
-  // Alireza end
+
+  return recv;
+}
+
+int BKDRFTPMDPort::SendPackets(queue_t qid, bess::Packet **pkts, int cnt) {
+  // struct rte_eth_stats dpdk_queue_stats;
+  // int res;
+  // packet_dir_t dir = PACKET_DIR_OUT;
+
+  int sent = rte_eth_tx_burst(dpdk_port_id_, qid,
+                              reinterpret_cast<struct rte_mbuf **>(pkts), cnt);
+
+  // // Alireza start
+  // res = rte_eth_stats_get(dpdk_port_id_, &dpdk_queue_stats);
+  
+  // if(res == 0) {
+  //   // What I don't understand that why bytes? Why not packets?
+  //   // Packet sizes might vary so bytes would be the most accurate metric!
+  //   if(queue_stats[dir][qid].bytes + 30*10 - dpdk_queue_stats.q_obytes[qid] > 20) {
+  //     //send a pause message on queue 0
+  //     res = 1;
+  //   } else {
+  //     // Sounds good for now!
+  //     res = 2;
+  //   }
+
+  //   #ifdef A_DEBUG
+  //   LOG(INFO) << "tx qid " << (int) qid
+  //             << " dpdk queue " << dpdk_queue_stats.q_ibytes[qid]
+  //             << " bess queue " << queue_stats[dir][qid].bytes
+  //             << " subtraction " << dpdk_queue_stats.q_ibytes[qid] - queue_stats[dir][qid].bytes + sent
+  //             << " ipackets " << dpdk_queue_stats.q_ipackets[qid]
+  //             << " ibytes " << dpdk_queue_stats.q_ibytes[qid]
+  //             << " opackets " << dpdk_queue_stats.q_opackets[qid]
+  //             << " obytes " << dpdk_queue_stats.q_obytes[qid]
+  //             << "tx sent " << sent;
+
+  //   qid = 0;
+
+  //   LOG(INFO) << "-----------------------------------------------";
+  //   LOG(INFO) << "tx qid " << (int) qid
+  //         << " dpdk queue " << dpdk_queue_stats.q_ibytes[qid]
+  //         << " bess queue " << queue_stats[dir][qid].bytes
+  //         << " subtraction " << dpdk_queue_stats.q_ibytes[qid] - queue_stats[dir][qid].bytes + sent
+  //         << " ipackets " << dpdk_queue_stats.q_ipackets[qid]
+  //         << " ibytes " << dpdk_queue_stats.q_ibytes[qid]
+  //         << " opackets " << dpdk_queue_stats.q_opackets[qid]
+  //         << " obytes " << dpdk_queue_stats.q_obytes[qid]
+  //         << "tx sent " << sent;
+  //   LOG(INFO) << "^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^";
+  //   #endif
+  // }
+  // // Alireza end
 
   int dropped = cnt - sent;
   queue_stats[PACKET_DIR_OUT][qid].dropped += dropped;
