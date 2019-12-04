@@ -87,12 +87,6 @@ class BKDRFTPMDPort final : public Port {
    */
   void CollectStats(bool reset) override;
 
-  // Alireza TODO: Writing description about this function
-  void OverloadSignal();
-
-  // Alireza TODO: Writing description about this function
-  void UnderloadSignal(); 
-
   /*!
    * Receives packets from the device.
    *
@@ -144,18 +138,21 @@ class BKDRFTPMDPort final : public Port {
   }
 
   /*
-  * Here I'm going to init the DCB config
+  * DCB confiuration, it is just have 4 Traffic classes at the moment,
+  * it is just for testing, however, TODO: I'll develop the interface in the
+  * BESS script so that different DCB configurations can be passed to the
+  * PMD driver without any hassle.
   */
-  int InitDCBPortConfig(dpdk_port_t port_id, struct rte_eth_conf conf,
-   int nb_rxq, int nb_txq);
+  void InitDCBPortConfig(dpdk_port_t port_id, struct rte_eth_conf * eth_conf);
 
-  int GetEthDCBConf(dpdk_port_t port_id, struct rte_eth_conf *eth_conf, uint8_t pfc_en);
-
-
-
+  /*
+   * The name is pretty verbose.
+   */
+  CommandResponse ReconfigureDCBQueueNumbers();
 
   /*
    * It leaves a queue for the pause messages for now.
+   * TODO: I need to go back to this function soon.
    */
   CommandResponse pause_queue_setup();
 
@@ -163,14 +160,10 @@ class BKDRFTPMDPort final : public Port {
   /*!
    * The DPDK port ID number (set after binding).
    */
-
   dpdk_port_t dpdk_port_id_;
 
   // Alireza TODO: documentation about this variable
-  bool bess_queue_overloaded_;
-
-  // Alireza TODO: documentation about this variable
-  bool bess_queue_underloaded_;
+  bool node_overloaded_;
 
   /*!
    * True if device did not exist when bessd started and was later patched in.
