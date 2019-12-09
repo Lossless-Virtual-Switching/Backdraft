@@ -43,11 +43,14 @@
 #define SN_HW_RXCSUM 0
 #define SN_HW_TXCSUM 0
 
-#define A_DEBUG 0
+// #define A_DEBUG 0
 #define DCB 1
 
 static const struct rte_eth_conf default_eth_conf() {
   struct rte_eth_conf ret = rte_eth_conf();
+  // struct rte_eth_dev_info dev_info;
+
+  // rte_eth_dev_info_get(dpdk_port_t, &dev_info);
 
   ret.link_speeds = ETH_LINK_SPEED_AUTONEG;
 
@@ -171,8 +174,8 @@ static CommandResponse find_dpdk_port_by_pci_addr(const std::string &pci,
 }
 
 /*
- * Note: When configuring for DCB operation, at port initialization, both the number of transmit
-  queues and the number of receive queues must be set to 128. 
+ * Note: When configuring for DCB operation, at port initialization, both the
+ number of transmit queues and the number of receive queues must be set to 128.
 */
 CommandResponse BKDRFTPMDPort::ReconfigureDCBQueueNumbers() {
   // We set the queue numbers to 128 regardless of what user has
@@ -186,7 +189,6 @@ CommandResponse BKDRFTPMDPort::ReconfigureDCBQueueNumbers() {
 
   return CommandSuccess();
 }
-
 
 // Find a DPDK vdev by name.
 // returns 0 and sets *ret_port_id to the port_id of "vdev" if it is valid and
@@ -215,11 +217,10 @@ static CommandResponse find_dpdk_vdev(const std::string &vdev,
 }
 
 CommandResponse BKDRFTPMDPort::pause_queue_setup() {
+  num_queues[PACKET_DIR_INC]++;
+  num_queues[PACKET_DIR_OUT]++;
 
-  num_queues[PACKET_DIR_INC] ++;
-  num_queues[PACKET_DIR_OUT] ++;
-
-  if(num_queues[PACKET_DIR_INC] < 2 || num_queues[PACKET_DIR_OUT] < 2)
+  if (num_queues[PACKET_DIR_INC] < 2 || num_queues[PACKET_DIR_OUT] < 2)
     return CommandFailure(ENODEV, "Cannot attach these queues");
 
   return CommandSuccess();
@@ -232,7 +233,6 @@ CommandResponse BKDRFTPMDPort::Init(const bess::pb::BKDRFTPMDPortArg &arg) {
   struct rte_eth_conf eth_conf;
   struct rte_eth_conf eth_conf_temp;
 
-  
   struct rte_eth_rxconf eth_rxconf;
   struct rte_eth_txconf eth_txconf;
 
@@ -244,7 +244,7 @@ CommandResponse BKDRFTPMDPort::Init(const bess::pb::BKDRFTPMDPortArg &arg) {
    * Now pause queues!
    */
   // pause_queue_setup();
-  
+
   int ret;
 
   int i;
@@ -278,7 +278,6 @@ CommandResponse BKDRFTPMDPort::Init(const bess::pb::BKDRFTPMDPortArg &arg) {
   }
 
   eth_conf = default_eth_conf();
-  //default_eth_conf();
 
   if (arg.loopback()) {
     eth_conf.lpbk_mode = 1;
@@ -301,10 +300,10 @@ CommandResponse BKDRFTPMDPort::Init(const bess::pb::BKDRFTPMDPortArg &arg) {
 
   eth_txconf = dev_info.default_txconf;
   eth_txconf.txq_flags = ETH_TXQ_FLAGS_NOVLANOFFL |
-                          ETH_TXQ_FLAGS_NOMULTSEGS * (1 - SN_TSO_SG) |
-                          ETH_TXQ_FLAGS_NOXSUMS * (1 - SN_HW_TXCSUM);
+                         ETH_TXQ_FLAGS_NOMULTSEGS * (1 - SN_TSO_SG) |
+                         ETH_TXQ_FLAGS_NOXSUMS * (1 - SN_HW_TXCSUM);
 
-  if(!DCB){
+  if (!DCB) {
     ret = rte_eth_dev_configure(ret_port_id, num_rxq, num_txq, &eth_conf);
     if (ret != 0) {
       return CommandFailure(-ret, "rte_eth_dev_configure() failed");
@@ -313,7 +312,7 @@ CommandResponse BKDRFTPMDPort::Init(const bess::pb::BKDRFTPMDPortArg &arg) {
     // DCB configuration starts
     ReconfigureDCBQueueNumbers();
     // Updating num_rxq and num_txq for tx and rx setup.
-    // There is nothing to do with the queue numbers in 
+    // There is nothing to do with the queue numbers in
     // the eth configuration.
     num_rxq = num_queues[PACKET_DIR_INC];
     num_txq = num_queues[PACKET_DIR_OUT];
@@ -325,8 +324,11 @@ CommandResponse BKDRFTPMDPort::Init(const bess::pb::BKDRFTPMDPortArg &arg) {
       return CommandFailure(-ret, "DCB rte_eth_dev_configure() failed");
     }
     // DCB configuration ends
+
+    // I only want just 4 queues
+    // num_rxq = 4;
+    // num_txq = 4;
   }
-  
 
   rte_eth_promiscuous_enable(ret_port_id);
 
@@ -384,14 +386,13 @@ CommandResponse BKDRFTPMDPort::Init(const bess::pb::BKDRFTPMDPortArg &arg) {
 
   // Reset hardware stat counters, as they may still contain previous data
 
-  for (int queue = 0; queue < num_queues[PACKET_DIR_INC]; queue++) {
+  for (int queue = 0; queue < num_rxq; queue++) {
     rte_eth_dev_set_rx_queue_stats_mapping(dpdk_port_id_, queue, queue);
   }
-  
-  for (int queue = 0; queue < num_queues[PACKET_DIR_OUT]; queue++) {
-    rte_eth_dev_set_tx_queue_stats_mapping(dpdk_port_id_, queue, queue); 
-  }
 
+  for (int queue = 0; queue < num_txq; queue++) {
+    rte_eth_dev_set_tx_queue_stats_mapping(dpdk_port_id_, queue, queue);
+  }
 
   CollectStats(true);
 
@@ -512,7 +513,7 @@ void BKDRFTPMDPort::CollectStats(bool reset) {
 
 int BKDRFTPMDPort::RecvPackets(queue_t qid, bess::Packet **pkts, int cnt) {
   int recv;
-  
+
   // if(node_overloaded_){
   recv = rte_eth_rx_burst(dpdk_port_id_, qid, (struct rte_mbuf **)pkts, cnt);
   // }
@@ -521,52 +522,55 @@ int BKDRFTPMDPort::RecvPackets(queue_t qid, bess::Packet **pkts, int cnt) {
 }
 
 int BKDRFTPMDPort::SendPackets(queue_t qid, bess::Packet **pkts, int cnt) {
-  struct rte_eth_stats dpdk_queue_stats;
-  int res;
-  packet_dir_t dir = PACKET_DIR_OUT;
+  // struct rte_eth_stats dpdk_queue_stats;
+  // int res;
+  // packet_dir_t dir = PACKET_DIR_OUT;
 
   int sent = rte_eth_tx_burst(dpdk_port_id_, qid,
                               reinterpret_cast<struct rte_mbuf **>(pkts), cnt);
 
   // Alireza start
-  res = rte_eth_stats_get(dpdk_port_id_, &dpdk_queue_stats);
-  
-  if(res == 0) {
-    // What I don't understand that why bytes? Why not packets?
-    // Packet sizes might vary so bytes would be the most accurate metric!
-    if(queue_stats[dir][qid].bytes + 30*10 - dpdk_queue_stats.q_obytes[qid] > 20) {
-      //send a pause message on queue 0
-      // later I should kind of use find_dev_port but now I just know
-      // that it is the port 0 that causes the congestion!
-      node_overloaded_ = true;
-    }
+  // res = rte_eth_stats_get(dpdk_port_id_, &dpdk_queue_stats);
+  // if (res == 0) {
+  //   // What I don't understand that why bytes? Why not packets?
+  //   // Packet sizes might vary so bytes would be the most accurate metric!
+  //   if (queue_stats[dir][qid].bytes + 30 * 10 -
+  //   dpdk_queue_stats.q_obytes[qid] >
+  //       20) {
+  //     // send a pause message on queue 0
+  //     // later I should kind of use find_dev_port but now I just know
+  //     // that it is the port 0 that causes the congestion!
+  //     node_overloaded_ = true;
+  //   }
 
-    #ifdef A_DEBUG
-    LOG(INFO) << "tx qid " << (int) qid
-              << " dpdk queue " << dpdk_queue_stats.q_ibytes[qid]
-              << " bess queue " << queue_stats[dir][qid].bytes
-              << " subtraction " << dpdk_queue_stats.q_ibytes[qid] - queue_stats[dir][qid].bytes + sent
-              << " ipackets " << dpdk_queue_stats.q_ipackets[qid]
-              << " ibytes " << dpdk_queue_stats.q_ibytes[qid]
-              << " opackets " << dpdk_queue_stats.q_opackets[qid]
-              << " obytes " << dpdk_queue_stats.q_obytes[qid]
-              << "tx sent " << sent;
+  //   LOG(INFO) << "tx qid " << (int)qid << " dpdk queue "
+  //             << dpdk_queue_stats.q_ibytes[qid] << " bess queue "
+  //             << queue_stats[dir][qid].bytes << " subtraction "
+  //             << dpdk_queue_stats.q_ibytes[qid] - queue_stats[dir][qid].bytes
+  //             +
+  //                    sent
+  //             << " ipackets " << dpdk_queue_stats.q_ipackets[qid] << " ibytes
+  //             "
+  //             << dpdk_queue_stats.q_ibytes[qid] << " opackets "
+  //             << dpdk_queue_stats.q_opackets[qid] << " obytes "
+  //             << dpdk_queue_stats.q_obytes[qid] << "tx sent " << sent;
 
-    qid = 0;
+  //   qid = 0;
 
-    LOG(INFO) << "-----------------------------------------------";
-    LOG(INFO) << "tx qid " << (int) qid
-          << " dpdk queue " << dpdk_queue_stats.q_ibytes[qid]
-          << " bess queue " << queue_stats[dir][qid].bytes
-          << " subtraction " << dpdk_queue_stats.q_ibytes[qid] - queue_stats[dir][qid].bytes + sent
-          << " ipackets " << dpdk_queue_stats.q_ipackets[qid]
-          << " ibytes " << dpdk_queue_stats.q_ibytes[qid]
-          << " opackets " << dpdk_queue_stats.q_opackets[qid]
-          << " obytes " << dpdk_queue_stats.q_obytes[qid]
-          << "tx sent " << sent;
-    LOG(INFO) << "^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^";
-    #endif
-  }
+  //   LOG(INFO) << "-----------------------------------------------";
+  //   LOG(INFO) << "tx qid " << (int)qid << " dpdk queue "
+  //             << dpdk_queue_stats.q_ibytes[qid] << " bess queue "
+  //             << queue_stats[dir][qid].bytes << " subtraction "
+  //             << dpdk_queue_stats.q_ibytes[qid] - queue_stats[dir][qid].bytes
+  //             +
+  //                    sent
+  //             << " ipackets " << dpdk_queue_stats.q_ipackets[qid] << " ibytes
+  //             "
+  //             << dpdk_queue_stats.q_ibytes[qid] << " opackets "
+  //             << dpdk_queue_stats.q_opackets[qid] << " obytes "
+  //             << dpdk_queue_stats.q_obytes[qid] << "tx sent " << sent;
+  //   LOG(INFO) << "^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^";
+  // }
   // Alireza end
 
   int dropped = cnt - sent;
@@ -588,43 +592,42 @@ Port::LinkStatus BKDRFTPMDPort::GetLinkStatus() {
                     .link_up = static_cast<bool>(status.link_status)};
 }
 
-void BKDRFTPMDPort::InitDCBPortConfig(dpdk_port_t port_id, 
-  struct rte_eth_conf * eth_conf) {
+void BKDRFTPMDPort::InitDCBPortConfig(dpdk_port_t port_id,
+                                      struct rte_eth_conf *eth_conf) {
   uint8_t pfc_en = 0;
   struct rte_eth_dev_info dev_info;
   struct rte_eth_rss_conf rss_conf;
+  enum rte_eth_nb_tcs tc = ETH_4_TCS;
 
   rss_conf = {
       .rss_key = NULL,
       .rss_key_len = 40,
       /* TODO: query rte_eth_dev_info_get() to set this*/
       .rss_hf = ETH_RSS_IP | ETH_RSS_UDP | ETH_RSS_TCP | ETH_RSS_SCTP,
-    };
+  };
 
   rte_eth_dev_info_get(port_id, &dev_info);
-  memset(eth_conf, 0, sizeof(
-    *eth_conf));
+  memset(eth_conf, 0, sizeof(*eth_conf));
 
   // memset(eth_conf, 0, sizeof(
   //   *eth_conf_temp));
-    
+
   eth_conf->lpbk_mode = 0;
   eth_conf->link_speeds = ETH_LINK_SPEED_AUTONEG;
   eth_conf->rxmode.mq_mode = ETH_MQ_RX_DCB;
   eth_conf->txmode.mq_mode = ETH_MQ_TX_DCB;
-  eth_conf->rx_adv_conf.rss_conf = rss_conf;
+  // eth_conf->rx_adv_conf.rss_conf = rss_conf;
 
-  eth_conf->rx_adv_conf.dcb_rx_conf.nb_tcs = ETH_4_TCS;
-  eth_conf->tx_adv_conf.dcb_tx_conf.nb_tcs = ETH_4_TCS;
+  eth_conf->rx_adv_conf.dcb_rx_conf.nb_tcs = tc;
+  eth_conf->tx_adv_conf.dcb_tx_conf.nb_tcs = tc;
 
   for (int i = 0; i < ETH_DCB_NUM_USER_PRIORITIES; i++) {
-    eth_conf->rx_adv_conf.dcb_rx_conf.dcb_tc[i] = i % ETH_4_TCS;
-    eth_conf->tx_adv_conf.dcb_tx_conf.dcb_tc[i] = i % ETH_4_TCS;
+    eth_conf->rx_adv_conf.dcb_rx_conf.dcb_tc[i] = i % tc;
+    eth_conf->tx_adv_conf.dcb_tx_conf.dcb_tc[i] = i % tc;
   }
 
   if (pfc_en)
-    eth_conf->dcb_capability_en =
-      ETH_DCB_PG_SUPPORT | ETH_DCB_PFC_SUPPORT;
+    eth_conf->dcb_capability_en = ETH_DCB_PG_SUPPORT | ETH_DCB_PFC_SUPPORT;
   else
     eth_conf->dcb_capability_en = ETH_DCB_PG_SUPPORT;
 

@@ -138,12 +138,12 @@ class BKDRFTPMDPort final : public Port {
   }
 
   /*
-  * DCB confiuration, it is just have 4 Traffic classes at the moment,
-  * it is just for testing, however, TODO: I'll develop the interface in the
-  * BESS script so that different DCB configurations can be passed to the
-  * PMD driver without any hassle.
-  */
-  void InitDCBPortConfig(dpdk_port_t port_id, struct rte_eth_conf * eth_conf);
+   * DCB confiuration, it is just have 4 Traffic classes at the moment,
+   * it is just for testing, however, TODO: I'll develop the interface in the
+   * BESS script so that different DCB configurations can be passed to the
+   * PMD driver without any hassle.
+   */
+  void InitDCBPortConfig(dpdk_port_t port_id, struct rte_eth_conf *eth_conf);
 
   /*
    * The name is pretty verbose.

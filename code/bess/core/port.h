@@ -52,7 +52,7 @@ typedef uint8_t queue_t;
 
 // I have updated this number from 32 to 200. DCB wants 128, so I just
 // put 200. Also for per flow queuing we need more than that probably.
-// If I put 256 or something then I have to change the type of queue_t to 
+// If I put 256 or something then I have to change the type of queue_t to
 // something like uint16_t(look at the line 51 in this file).
 #define MAX_QUEUES_PER_DIR 200 /* [0, 31] (for each RX/TX) */
 
