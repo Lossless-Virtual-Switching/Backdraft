@@ -522,12 +522,36 @@ int BKDRFTPMDPort::RecvPackets(queue_t qid, bess::Packet **pkts, int cnt) {
 }
 
 int BKDRFTPMDPort::SendPackets(queue_t qid, bess::Packet **pkts, int cnt) {
-  // struct rte_eth_stats dpdk_queue_stats;
-  // int res;
+  static int high_water = 100;  // It is in bytes
+  struct rte_eth_stats dpdk_queue_stats;
+  double time_to_drain;
+  int outstanding_bytes;
+  uint64_t now;
+  int res;
+  int sent;
+
   // packet_dir_t dir = PACKET_DIR_OUT;
 
-  int sent = rte_eth_tx_burst(dpdk_port_id_, qid,
-                              reinterpret_cast<struct rte_mbuf **>(pkts), cnt);
+  if (qid != 0) {
+    res = rte_eth_stats_get(dpdk_port_id_, &dpdk_queue_stats);
+    if (res != 0) {
+      outstanding_bytes = queue_stats[PACKET_DIR_OUT][qid].bytes -
+                          dpdk_queue_stats.q_obytes[qid];
+      if (outstanding_bytes >
+          high_water) {  // I can add some epsilon here to outstanding bytes
+        time_to_drain = outstanding_bytes / ETH_LINK_SPEED_10G;
+        now = rte_get_tsc_cycles();
+        while (rte_get_tsc_cycles() - now < time_to_drain)
+          ;
+        high_water = outstanding_bytes;
+      } else {
+        high_water = high_water * 1.5;  // I don't even know if that works
+      }
+    }
+  }
+
+  sent = rte_eth_tx_burst(dpdk_port_id_, qid,
+                          reinterpret_cast<struct rte_mbuf **>(pkts), cnt);
 
   // Alireza start
   // res = rte_eth_stats_get(dpdk_port_id_, &dpdk_queue_stats);
