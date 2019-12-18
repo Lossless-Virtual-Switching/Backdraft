@@ -401,6 +401,9 @@ class alignas(64) Module {
 
     overload_ = false;
   }
+  // Backdraft
+  void IncreamentOverloadChildren() { children_overload_++; }
+  void DecrementOverloadChildren() { children_overload_--; }
 
  private:
   // Module Destory, connect, task managements are only available with
@@ -453,12 +456,12 @@ class alignas(64) Module {
 
   // Parent tasks of this module in the current pipeline.
   std::vector<Module *> parent_tasks_;
-
   // # of child tasks of this module that are overloaded.
   std::atomic<int> children_overload_;
 
   // Whether the module itself is overloaded.
   bool overload_;
+  // They were here
 
   // TODO[apanda]: Move to some constraint structure?
   // Placement constraints for this module. We use this to update the task based

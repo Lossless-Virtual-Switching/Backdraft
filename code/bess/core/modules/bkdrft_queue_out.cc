@@ -33,7 +33,7 @@
 #include "../port.h"
 #include "../utils/format.h"
 
-CommandResponse BKDRFTQueueOut::Init(const bess::pb::BKDRFTQueueOutArg &arg) {
+CommandResponse BkdrftQueueOut::Init(const bess::pb::BkdrftQueueOutArg &arg) {
   const char *port_name;
   int ret;
 
@@ -54,6 +54,9 @@ CommandResponse BKDRFTQueueOut::Init(const bess::pb::BKDRFTQueueOutArg &arg) {
 
   ret = port_->AcquireQueues(reinterpret_cast<const module *>(this),
                              PACKET_DIR_OUT, &qid_, 1);
+
+  port_->bp_parent_tasks_.push_back(this);  // I should expose a function here.
+
   if (ret < 0) {
     return CommandFailure(-ret);
   }
@@ -61,20 +64,31 @@ CommandResponse BKDRFTQueueOut::Init(const bess::pb::BKDRFTQueueOutArg &arg) {
   return CommandSuccess();
 }
 
-void BKDRFTQueueOut::DeInit() {
+void BkdrftQueueOut::DeInit() {
   if (port_) {
     port_->ReleaseQueues(reinterpret_cast<const module *>(this), PACKET_DIR_OUT,
                          &qid_, 1);
+    // port_->parent_tasks_.pop();  // I should expose a function here
   }
 }
 
-std::string BKDRFTQueueOut::GetDesc() const {
+std::string BkdrftQueueOut::GetDesc() const {
   return bess::utils::Format("%s:%hhu/%s", port_->name().c_str(), qid_,
                              port_->port_builder()->class_name().c_str());
 }
 
-void BKDRFTQueueOut::ProcessBatch(Context *, bess::PacketBatch *batch) {
+void BkdrftQueueOut::ProcessBatch(Context *, bess::PacketBatch *batch) {
   Port *p = port_;
+
+  LOG(INFO) << "Queue Out: overload signal! " << children_overload_;
+
+  if (children_overload_ > 0) {
+    LOG(INFO) << "Queue Out: overload signal!";
+    SignalOverload();
+  } else {
+    LOG(INFO) << "Queue Out: underload signal!";
+    SignalUnderload();
+  }
 
   const queue_t qid = qid_;
 
@@ -83,13 +97,6 @@ void BKDRFTQueueOut::ProcessBatch(Context *, bess::PacketBatch *batch) {
 
   if (p->conf().admin_up) {
     sent_pkts = p->SendPackets(qid, batch->pkts(), batch->cnt());
-  }
-
-  if(sent_pkts > batch->cnt()/2) {
-    //
-    // There is nothing to do with the port!
-    //p->SignalOverload();
-    SignalOverload();
   }
 
   if (!(p->GetFlags() & DRIVER_FLAG_SELF_OUT_STATS)) {
@@ -109,5 +116,5 @@ void BKDRFTQueueOut::ProcessBatch(Context *, bess::PacketBatch *batch) {
   }
 }
 
-ADD_MODULE(BKDRFTQueueOut, "bkdrft_queue_out",
+ADD_MODULE(BkdrftQueueOut, "bkdrft_queue_out",
            "sends packets to a port via a specific queue")

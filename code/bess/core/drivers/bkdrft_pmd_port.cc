@@ -30,6 +30,7 @@
 
 #include "bkdrft_pmd_port.h"
 
+#include <rte_cycles.h>
 #include <rte_ethdev_pci.h>
 // #include <rte_log.h>
 
@@ -45,6 +46,8 @@
 
 // #define A_DEBUG 0
 #define DCB 1
+
+static int high_water[MAX_QUEUES_PER_DIR] = {100};  // It is in bytes
 
 static const struct rte_eth_conf default_eth_conf() {
   struct rte_eth_conf ret = rte_eth_conf();
@@ -317,6 +320,11 @@ CommandResponse BKDRFTPMDPort::Init(const bess::pb::BKDRFTPMDPortArg &arg) {
     num_rxq = num_queues[PACKET_DIR_INC];
     num_txq = num_queues[PACKET_DIR_OUT];
 
+    for (int i = 0; i < num_txq; i++)
+      high_water[i] = 100;
+
+    overload_ = false;
+
     InitDCBPortConfig(ret_port_id, &eth_conf_temp);
 
     ret = rte_eth_dev_configure(ret_port_id, num_rxq, num_txq, &eth_conf_temp);
@@ -522,36 +530,61 @@ int BKDRFTPMDPort::RecvPackets(queue_t qid, bess::Packet **pkts, int cnt) {
 }
 
 int BKDRFTPMDPort::SendPackets(queue_t qid, bess::Packet **pkts, int cnt) {
-  static int high_water = 100;  // It is in bytes
   struct rte_eth_stats dpdk_queue_stats;
   double time_to_drain;
   int outstanding_bytes;
   uint64_t now;
+  uint64_t sent_bytes = 0;
   int res;
   int sent;
 
-  // packet_dir_t dir = PACKET_DIR_OUT;
+  // This function has crazy overhead! It drops the throughput to half!
+  res = rte_eth_stats_get(dpdk_port_id_, &dpdk_queue_stats);
 
-  if (qid != 0) {
-    res = rte_eth_stats_get(dpdk_port_id_, &dpdk_queue_stats);
-    if (res != 0) {
+  if (res == 0) {
+    if (qid > 8)
       outstanding_bytes = queue_stats[PACKET_DIR_OUT][qid].bytes -
-                          dpdk_queue_stats.q_obytes[qid];
-      if (outstanding_bytes >
-          high_water) {  // I can add some epsilon here to outstanding bytes
-        time_to_drain = outstanding_bytes / ETH_LINK_SPEED_10G;
-        now = rte_get_tsc_cycles();
-        while (rte_get_tsc_cycles() - now < time_to_drain)
-          ;
-        high_water = outstanding_bytes;
-      } else {
-        high_water = high_water * 1.5;  // I don't even know if that works
+                          dpdk_queue_stats.q_obytes[qid % 16 + qid % 8];
+    else
+      outstanding_bytes = queue_stats[PACKET_DIR_OUT][qid].bytes -
+                          dpdk_queue_stats.q_obytes[qid % 16];
+
+    // LOG(INFO) << "qid " << id;
+    // LOG(INFO) << "bess queue_stats are "
+    //           << queue_stats[PACKET_DIR_OUT][qid].bytes;
+
+    // LOG(INFO) << "dpdk_queue_stats are "
+    //           << dpdk_queue_stats.q_obytes[qid % 16 + qid % 8];
+
+    LOG(INFO) << "Outstanding bytes are " << outstanding_bytes << " "
+              << high_water[qid];
+    outstanding_bytes = 1000;
+
+    if (outstanding_bytes >
+        high_water[qid]) {  // I can add some epsilon here to outstanding bytes
+      time_to_drain = outstanding_bytes / ETH_LINK_SPEED_10G;
+      LOG(INFO) << "Time to wait " << time_to_drain;
+
+      // Have to notify the upsteam link
+      SignalOverload();
+      now = rte_get_tsc_cycles();
+      while (rte_get_tsc_cycles() - now < time_to_drain)
+        ;
+      high_water[qid] *= 2;
+    } else {
+      high_water[qid] *= 0.5;  // I don't even know if that works
+      if (high_water[qid] < 100) {
+        SignalUnderload();
+        high_water[qid] = 100;
       }
     }
   }
+  // }
 
   sent = rte_eth_tx_burst(dpdk_port_id_, qid,
                           reinterpret_cast<struct rte_mbuf **>(pkts), cnt);
+
+  // LOG(INFO) << "how much have been packets sent " << sent;
 
   // Alireza start
   // res = rte_eth_stats_get(dpdk_port_id_, &dpdk_queue_stats);
@@ -597,12 +630,45 @@ int BKDRFTPMDPort::SendPackets(queue_t qid, bess::Packet **pkts, int cnt) {
   // }
   // Alireza end
 
+  for (int i = 0; i < sent; i++) {
+    sent_bytes += pkts[i]->total_len();
+  }
+
   int dropped = cnt - sent;
+  queue_stats[PACKET_DIR_OUT][qid].bytes += sent_bytes;
   queue_stats[PACKET_DIR_OUT][qid].dropped += dropped;
   queue_stats[PACKET_DIR_OUT][qid].requested_hist[cnt]++;
   queue_stats[PACKET_DIR_OUT][qid].actual_hist[sent]++;
   queue_stats[PACKET_DIR_OUT][qid].diff_hist[dropped]++;
+
   return sent;
+}
+
+void BKDRFTPMDPort::SignalOverload() {
+  LOG(INFO) << "PMD port: signal overload entered";
+
+  if (overload_) {
+    return;
+  }
+  for (auto const &module : bp_parent_tasks_) {
+    LOG(INFO) << "PMD port: signal overload increament";
+    module->IncreamentOverloadChildren();
+  }
+
+  overload_ = true;
+}
+
+void BKDRFTPMDPort::SignalUnderload() {
+  if (!overload_) {
+    return;
+  }
+
+  for (auto const &module : bp_parent_tasks_) {
+    LOG(INFO) << "PMD port: signal underload";
+    module->DecrementOverloadChildren();
+  }
+
+  overload_ = false;
 }
 
 Port::LinkStatus BKDRFTPMDPort::GetLinkStatus() {
@@ -621,7 +687,7 @@ void BKDRFTPMDPort::InitDCBPortConfig(dpdk_port_t port_id,
   uint8_t pfc_en = 0;
   struct rte_eth_dev_info dev_info;
   struct rte_eth_rss_conf rss_conf;
-  enum rte_eth_nb_tcs tc = ETH_4_TCS;
+  enum rte_eth_nb_tcs tc = ETH_8_TCS;
 
   rss_conf = {
       .rss_key = NULL,

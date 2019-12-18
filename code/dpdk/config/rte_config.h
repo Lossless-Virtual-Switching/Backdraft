@@ -51,7 +51,7 @@
 /* bsd module defines */
 #define RTE_CONTIGMEM_MAX_NUM_BUFS 64
 #define RTE_CONTIGMEM_DEFAULT_NUM_BUFS 1
-#define RTE_CONTIGMEM_DEFAULT_BUF_SIZE (512*1024*1024)
+#define RTE_CONTIGMEM_DEFAULT_BUF_SIZE (512 * 1024 * 1024)
 
 /* mempool defines */
 #define RTE_MEMPOOL_CACHE_MAX_SIZE 512
@@ -110,7 +110,7 @@
 #define RTE_MAX_VIRTIO_CRYPTO 32
 
 /* DPAA SEC max cryptodev devices*/
-#define RTE_LIBRTE_DPAA_MAX_CRYPTODEV	4
+#define RTE_LIBRTE_DPAA_MAX_CRYPTODEV 4
 
 /* fm10k defines */
 #define RTE_LIBRTE_FM10K_RX_OLFLAGS_ENABLE 1

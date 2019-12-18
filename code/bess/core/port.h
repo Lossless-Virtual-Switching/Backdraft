@@ -323,6 +323,12 @@ class Port {
    * TODO: more robust gate keeping */
   const struct module *users[PACKET_DIRS][MAX_QUEUES_PER_DIR];
 
+  /*
+   * I need the exact pointer to the modules as well!
+   * For now it is just public maybe make in private later
+   */
+  std::vector<Module *> bp_parent_tasks_;
+
   struct QueueStats queue_stats[PACKET_DIRS][MAX_QUEUES_PER_DIR];
 };
 

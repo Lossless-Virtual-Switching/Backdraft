@@ -156,14 +156,34 @@ class BKDRFTPMDPort final : public Port {
    */
   CommandResponse pause_queue_setup();
 
+  void SignalOverload();
+
+  void SignalUnderload();
+
+  /*
+   * TODO: Backdraft: It requires a lot of modification but just for the sake
+   * of testing!
+   * It should go to private side!
+   * It requires some access functions.
+   */
+  // Parent tasks of this module in the current pipeline.
+  // std::vector<Module *> parent_tasks_;
+  // std::vector<Module *> bp_parent;
+
  private:
   /*!
    * The DPDK port ID number (set after binding).
    */
   dpdk_port_t dpdk_port_id_;
 
-  // Alireza TODO: documentation about this variable
-  bool node_overloaded_;
+  /*
+   * TODO: Backdraft: It requires a lot of modification but just for the sake
+   * of testing!
+   * It should go to private side!
+   * It needs some access functions.
+   */
+  // Whether the module itself is overloaded.
+  bool overload_;
 
   /*!
    * True if device did not exist when bessd started and was later patched in.

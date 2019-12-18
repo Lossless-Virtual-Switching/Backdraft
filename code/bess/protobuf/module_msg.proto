@@ -1248,7 +1248,7 @@ message BKDRFTQueueIncArg {
  * __Input Gates__: 1
  * __Output Gates__: 0
  */
-message BKDRFTQueueOutArg {
+message BkdrftQueueOutArg {
   string port = 1; /// The portname to connect to.
   uint64 qid = 2; /// The queue on that port to write out to.
 }

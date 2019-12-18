@@ -28,20 +28,20 @@
 // ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
 // POSSIBILITY OF SUCH DAMAGE.
 
-#ifndef BESS_MODULES_QUEUEOUT_H_
-#define BESS_MODULES_QUEUEOUT_H_
+#ifndef BESS_MODULES_BKDRFTQUEUEOUT_H_
+#define BESS_MODULES_BKDRFTQUEUEOUT_H_
 
 #include "../module.h"
 #include "../pb/module_msg.pb.h"
 #include "../port.h"
 
-class BKDRFTQueueOut final : public Module {
+class BkdrftQueueOut final : public Module {
  public:
   static const gate_idx_t kNumOGates = 0;
 
-  BKDRFTQueueOut() : Module(), port_(), qid_() {}
+  BkdrftQueueOut() : Module(), port_(), qid_() {}
 
-  CommandResponse Init(const bess::pb::BKDRFTQueueOutArg &arg);
+  CommandResponse Init(const bess::pb::BkdrftQueueOutArg &arg);
 
   void DeInit() override;
 
