@@ -305,6 +305,8 @@ int Module::ConnectGate(gate_idx_t ogate_idx, Module *m_next,
   ogate->SetIgate(igate);  // an ogate allowed to be connected to a single igate
   igate->PushOgate(ogate);  // an igate can connected to multiple ogates
 
+  m_next->AddParentTask(this);
+
   return 0;
 }
 
