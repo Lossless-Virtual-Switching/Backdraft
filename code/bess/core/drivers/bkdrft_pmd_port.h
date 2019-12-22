@@ -121,6 +121,14 @@ class BKDRFTPMDPort final : public Port {
    */
   int SendPackets(queue_t qid, bess::Packet **pkts, int cnt) override;
 
+  struct FlowId {
+    uint32_t src_ip;
+    uint32_t dst_ip;
+    uint32_t src_port;
+    uint32_t dst_port;
+    uint8_t protocol;
+  };
+
   uint64_t GetFlags() const override {
     return DRIVER_FLAG_SELF_INC_STATS | DRIVER_FLAG_SELF_OUT_STATS;
   }
@@ -160,6 +168,8 @@ class BKDRFTPMDPort final : public Port {
 
   void SignalUnderload();
 
+  FlowId GetFlowId(bess::Packet *pkt);
+
   /*
    * TODO: Backdraft: It requires a lot of modification but just for the sake
    * of testing!
@@ -193,9 +203,28 @@ class BKDRFTPMDPort final : public Port {
   /*!
    * The NUMA node to which device is attached
    */
+
   placement_constraint node_placement_;
 
   std::string driver_;  // ixgbe, i40e, ...
+
+  bool upstream_paused_;
+
+  bool downsteam_overloaded_;
+  // /*
+  //  * number of active flows
+  //  */
+  // int nactive;
+
+  // /*
+  //  * half rrt + effect time
+  //  */
+  // int hrtt;
+
+  // /*
+  //  * effect time
+  //  */
+  // int etime;
 };
 
 #endif  // BESS_DRIVERS_PMD_H_

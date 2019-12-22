@@ -13,7 +13,7 @@
         "drop": 1,
         "dumper": 1,
         "dumperCount": 1,
-        "sleepTime": 500,
+        "sleepTime": 0,
         "server": 1,
         "client": 1,
         "tqueueClient": 1,

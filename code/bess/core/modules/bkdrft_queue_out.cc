@@ -80,13 +80,13 @@ std::string BkdrftQueueOut::GetDesc() const {
 void BkdrftQueueOut::ProcessBatch(Context *, bess::PacketBatch *batch) {
   Port *p = port_;
 
-  LOG(INFO) << "Queue Out: children! " << children_overload_;
+  // LOG(INFO) << "Queue Out: children! " << children_overload_;
 
   if (children_overload_ > 0) {
-    LOG(INFO) << "Queue Out: overload signal!";
+    // LOG(INFO) << "Queue Out: overload signal!";
     SignalOverload();
   } else {
-    LOG(INFO) << "Queue Out: underload signal!";
+    // LOG(INFO) << "Queue Out: underload signal!";
     SignalUnderload();
   }
 

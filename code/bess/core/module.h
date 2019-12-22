@@ -379,14 +379,14 @@ class alignas(64) Module {
   // thread safe (e.g. multiple workers should not be able to simultaneously
   // call these methods)
   void SignalOverload() {
-    LOG(INFO) << "Module: overload signal! " << overload_ << " "
-              << parent_tasks_.size();
+    // LOG(INFO) << "Module: overload signal! " << overload_ << " "
+    //           << parent_tasks_.size();
 
     if (overload_) {
       return;
     }
     for (auto const &p : parent_tasks_) {
-      LOG(INFO) << "Module: overload signal! increment ";
+      // LOG(INFO) << "Module: overload signal! increment ";
       ++(p->children_overload_);
     }
 
@@ -395,15 +395,15 @@ class alignas(64) Module {
 
   // Signals to parent task(s) that module is underloaded.
   void SignalUnderload() {
-    LOG(INFO) << "Module: underload signal! " << overload_ << " "
-              << parent_tasks_.size();
+    // LOG(INFO) << "Module: underload signal! " << overload_ << " "
+    //           << parent_tasks_.size();
 
     if (!overload_) {
       return;
     }
 
     for (auto const &p : parent_tasks_) {
-      LOG(INFO) << "Module: underload signal! decrement";
+      // LOG(INFO) << "Module: underload signal! decrement";
       --(p->children_overload_);
     }
 

@@ -36,6 +36,8 @@
 
 #include "../utils/ether.h"
 #include "../utils/format.h"
+#include "../utils/ip.h"
+#include "../utils/udp.h"
 
 /*!
  * The following are deprecated. Ignore us.
@@ -45,9 +47,10 @@
 #define SN_HW_TXCSUM 0
 
 // #define A_DEBUG 0
-#define DCB 1
+#define DCB 0
 
 static int high_water[MAX_QUEUES_PER_DIR] = {100};  // It is in bytes
+static int low_water[MAX_QUEUES_PER_DIR] = {50};    // It is in bytes
 
 static const struct rte_eth_conf default_eth_conf() {
   struct rte_eth_conf ret = rte_eth_conf();
@@ -254,6 +257,10 @@ CommandResponse BKDRFTPMDPort::Init(const bess::pb::BKDRFTPMDPortArg &arg) {
 
   int numa_node = -1;
 
+  upstream_paused_ = false;
+  downsteam_overloaded_ = false;
+  overload_ = false;
+
   CommandResponse err;
   switch (arg.port_case()) {
     case bess::pb::BKDRFTPMDPortArg::kPortId: {
@@ -320,8 +327,10 @@ CommandResponse BKDRFTPMDPort::Init(const bess::pb::BKDRFTPMDPortArg &arg) {
     num_rxq = num_queues[PACKET_DIR_INC];
     num_txq = num_queues[PACKET_DIR_OUT];
 
-    for (int i = 0; i < num_txq; i++)
+    for (int i = 0; i < num_txq; i++) {
       high_water[i] = 100;
+      low_water[i] = 100;
+    }
 
     overload_ = false;
 
@@ -509,137 +518,136 @@ void BKDRFTPMDPort::CollectStats(bool reset) {
       queue_stats[dir][qid].packets = stats.q_ipackets[qid];
       queue_stats[dir][qid].bytes = stats.q_ibytes[qid];
       queue_stats[dir][qid].dropped = stats.q_errors[qid];
+      queue_stats[dir][qid].dpdk_bytes = queue_stats[dir][qid].bytes;
     }
 
     dir = PACKET_DIR_OUT;
     for (qid = 0; qid < num_queues[dir]; qid++) {
       queue_stats[dir][qid].packets = stats.q_opackets[qid];
       queue_stats[dir][qid].bytes = stats.q_obytes[qid];
+      queue_stats[dir][qid].dpdk_bytes = queue_stats[dir][qid].bytes;
     }
   }
 }
 
 int BKDRFTPMDPort::RecvPackets(queue_t qid, bess::Packet **pkts, int cnt) {
+  using bess::utils::Ethernet;
   int recv;
+  uint64_t outstanding_bytes = 0;
 
-  // if(node_overloaded_){
+  bess::utils::be16_t my_type_p = (bess::utils::be16_t)12;
+  bess::utils::be16_t my_type_u = (bess::utils::be16_t)13;
+  // be32_t(0x1234)
+
+  bess::Packet *pause_frame;
   recv = rte_eth_rx_burst(dpdk_port_id_, qid, (struct rte_mbuf **)pkts, cnt);
-  // }
+
+  if (overload_) {
+    outstanding_bytes = queue_stats[PACKET_DIR_OUT][qid].bytes -
+                        queue_stats[PACKET_DIR_OUT][qid].dpdk_bytes;
+    // LOG(INFO) << dpdk_port_id_ << " Recv Packets Blocked " <<
+    // upstream_paused_
+    //           << " " << overload_ << " " << recv << " "
+    //           << queue_stats[PACKET_DIR_OUT][qid].bytes << " "
+    //           << queue_stats[PACKET_DIR_OUT][qid].dpdk_bytes;
+
+    if (outstanding_bytes <= 0)
+      overload_ = false;
+  }
+
+  if (overload_ && !upstream_paused_) {
+    pause_frame = pkts[0];
+    // queue_stats[PACKET_DIR_OUT][qid].bytes = 0;
+    // queue_stats[PACKET_DIR_OUT][qid].dpdk_bytes = 0;
+    Ethernet *eth = pause_frame->head_data<Ethernet *>();
+    eth->ether_type = my_type_p;
+    if (recv < cnt)  // I'm not sure if this is correct I have to revise this.
+      recv++;
+
+    upstream_paused_ = true;
+    // Timestamp of the pause time and then based on the outstanding bytes
+    // I might be able to approximate when exactly the queue drain!
+    // We have some ideas. But I think BFC is a good one.
+
+    return recv;
+  }
+
+  if (!overload_ && upstream_paused_) {
+    pause_frame = pkts[0];
+    Ethernet *eth = pause_frame->head_data<Ethernet *>();
+    eth->ether_type = my_type_u;
+
+    if (recv < cnt)  // I'm not sure if this is correct I have to revise this.
+      recv++;
+
+    upstream_paused_ = false;
+    return recv;
+  }
+
+  if (downsteam_overloaded_) {
+    // LOG(INFO) << dpdk_port_id_ << " RecvPackets Blocked " << upstream_paused_
+    // << " " << overload_ << " " << recv;
+    bess::Packet::Free(pkts, cnt);
+    recv = 0;
+  }
 
   return recv;
 }
 
 int BKDRFTPMDPort::SendPackets(queue_t qid, bess::Packet **pkts, int cnt) {
-  struct rte_eth_stats dpdk_queue_stats;
-  double time_to_drain;
-  int outstanding_bytes;
-  uint64_t now;
+  using bess::utils::Ethernet;
+  uint64_t outstanding_bytes = 0;
   uint64_t sent_bytes = 0;
-  int res;
   int sent;
+  bess::Packet *pause_frame;
 
-  // This function has crazy overhead! It drops the throughput to half!
-  res = rte_eth_stats_get(dpdk_port_id_, &dpdk_queue_stats);
-
-  if (res == 0) {
-    if (qid > 8)
-      outstanding_bytes = queue_stats[PACKET_DIR_OUT][qid].bytes -
-                          dpdk_queue_stats.q_obytes[qid % 16 + qid % 8];
-    else
-      outstanding_bytes = queue_stats[PACKET_DIR_OUT][qid].bytes -
-                          dpdk_queue_stats.q_obytes[qid % 16];
-
-    // LOG(INFO) << "qid " << id;
-    // LOG(INFO) << "bess queue_stats are "
-    //           << queue_stats[PACKET_DIR_OUT][qid].bytes;
-
-    // LOG(INFO) << "dpdk_queue_stats are "
-    //           << dpdk_queue_stats.q_obytes[qid % 16 + qid % 8];
-
-    LOG(INFO) << "Outstanding bytes are " << outstanding_bytes << " "
-              << high_water[qid];
-    outstanding_bytes = 1000;
-
-    if (outstanding_bytes >
-        high_water[qid]) {  // I can add some epsilon here to outstanding bytes
-      time_to_drain = outstanding_bytes / ETH_LINK_SPEED_10G;
-      LOG(INFO) << "Time to wait " << time_to_drain;
-
-      // Have to notify the upsteam link
-      SignalOverload();
-      now = rte_get_tsc_cycles();
-      while (rte_get_tsc_cycles() - now < time_to_drain)
-        ;
-      high_water[qid] *= 2;
-    } else {
-      high_water[qid] *= 0.5;  // I don't even know if that works
-      if (high_water[qid] < 100) {
-        SignalUnderload();
-        high_water[qid] = 100;
-      }
-    }
+  for (int i = 0; i < cnt; i++) {
+    sent_bytes += pkts[i]->total_len();
   }
-  // }
+
+  pause_frame = pkts[0];
+  if (pause_frame->head_data<Ethernet *>()->ether_type.value() == 12) {
+    // LOG(INFO) << dpdk_port_id_ << " SendPackets "
+    //           << " PAUSE FRAME DETECTED, Downsteam is overloaded "
+    //           << pause_frame->head_data<Ethernet *>()->ether_type.value();
+    downsteam_overloaded_ = true;
+  }
+
+  if (pause_frame->head_data<Ethernet *>()->ether_type.value() == 13) {
+    // LOG(INFO) << dpdk_port_id_ << " SendPackets "
+    //           << " UNPAUSE FRAME DETECTED, Downsteam is underloaded "
+    //           << pause_frame->head_data<Ethernet *>()->ether_type.value();
+    downsteam_overloaded_ = false;
+  }
 
   sent = rte_eth_tx_burst(dpdk_port_id_, qid,
                           reinterpret_cast<struct rte_mbuf **>(pkts), cnt);
 
-  // LOG(INFO) << "how much have been packets sent " << sent;
-
-  // Alireza start
-  // res = rte_eth_stats_get(dpdk_port_id_, &dpdk_queue_stats);
-  // if (res == 0) {
-  //   // What I don't understand that why bytes? Why not packets?
-  //   // Packet sizes might vary so bytes would be the most accurate metric!
-  //   if (queue_stats[dir][qid].bytes + 30 * 10 -
-  //   dpdk_queue_stats.q_obytes[qid] >
-  //       20) {
-  //     // send a pause message on queue 0
-  //     // later I should kind of use find_dev_port but now I just know
-  //     // that it is the port 0 that causes the congestion!
-  //     node_overloaded_ = true;
-  //   }
-
-  //   LOG(INFO) << "tx qid " << (int)qid << " dpdk queue "
-  //             << dpdk_queue_stats.q_ibytes[qid] << " bess queue "
-  //             << queue_stats[dir][qid].bytes << " subtraction "
-  //             << dpdk_queue_stats.q_ibytes[qid] - queue_stats[dir][qid].bytes
-  //             +
-  //                    sent
-  //             << " ipackets " << dpdk_queue_stats.q_ipackets[qid] << " ibytes
-  //             "
-  //             << dpdk_queue_stats.q_ibytes[qid] << " opackets "
-  //             << dpdk_queue_stats.q_opackets[qid] << " obytes "
-  //             << dpdk_queue_stats.q_obytes[qid] << "tx sent " << sent;
-
-  //   qid = 0;
-
-  //   LOG(INFO) << "-----------------------------------------------";
-  //   LOG(INFO) << "tx qid " << (int)qid << " dpdk queue "
-  //             << dpdk_queue_stats.q_ibytes[qid] << " bess queue "
-  //             << queue_stats[dir][qid].bytes << " subtraction "
-  //             << dpdk_queue_stats.q_ibytes[qid] - queue_stats[dir][qid].bytes
-  //             +
-  //                    sent
-  //             << " ipackets " << dpdk_queue_stats.q_ipackets[qid] << " ibytes
-  //             "
-  //             << dpdk_queue_stats.q_ibytes[qid] << " opackets "
-  //             << dpdk_queue_stats.q_opackets[qid] << " obytes "
-  //             << dpdk_queue_stats.q_obytes[qid] << "tx sent " << sent;
-  //   LOG(INFO) << "^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^";
-  // }
-  // Alireza end
-
   for (int i = 0; i < sent; i++) {
-    sent_bytes += pkts[i]->total_len();
+    queue_stats[PACKET_DIR_OUT][qid].dpdk_bytes += pkts[i]->total_len();
   }
 
+  // }
   int dropped = cnt - sent;
+
+  // queue_stats[PACKET_DIR_OUT][qid].dpdk_bytes += sent;
+  // Backdraft
   queue_stats[PACKET_DIR_OUT][qid].bytes += sent_bytes;
   queue_stats[PACKET_DIR_OUT][qid].dropped += dropped;
   queue_stats[PACKET_DIR_OUT][qid].requested_hist[cnt]++;
   queue_stats[PACKET_DIR_OUT][qid].actual_hist[sent]++;
   queue_stats[PACKET_DIR_OUT][qid].diff_hist[dropped]++;
+  // }
+
+  // if (!overload_) {
+  outstanding_bytes = queue_stats[PACKET_DIR_OUT][qid].bytes -
+                      queue_stats[PACKET_DIR_OUT][qid].dpdk_bytes;
+
+  if (outstanding_bytes > 0) {
+    // LOG(INFO) << dpdk_port_id_ << " overload detected";
+    overload_ = true;
+  }
+  // }
 
   return sent;
 }
@@ -722,6 +730,22 @@ void BKDRFTPMDPort::InitDCBPortConfig(dpdk_port_t port_id,
     eth_conf->dcb_capability_en = ETH_DCB_PG_SUPPORT;
 
   return;
+}
+
+BKDRFTPMDPort::FlowId BKDRFTPMDPort::GetFlowId(bess::Packet *pkt) {
+  using bess::utils::Ethernet;
+  using bess::utils::Ipv4;
+  using bess::utils::Udp;
+
+  Ethernet *eth = pkt->head_data<Ethernet *>();
+  Ipv4 *ip = reinterpret_cast<Ipv4 *>(eth + 1);
+  size_t ip_bytes = ip->header_length << 2;
+  Udp *udp = reinterpret_cast<Udp *>(reinterpret_cast<uint8_t *>(ip) +
+                                     ip_bytes);  // Assumes a l-4 header
+  // TODO(joshua): handle packet fragmentation
+  FlowId id = {ip->src.value(), ip->dst.value(), udp->src_port.value(),
+               udp->dst_port.value(), ip->protocol};
+  return id;
 }
 
 ADD_DRIVER(BKDRFTPMDPort, "bkdrft_pmd_port", "BackDraft DPDK poll mode driver")

@@ -190,6 +190,7 @@ struct BatchHistogram
 };
 
 struct QueueStats {
+  uint64_t dpdk_bytes;
   uint64_t packets;
   uint64_t dropped;  // Not all drivers support this for INC direction
   uint64_t bytes;    // It doesn't include Ethernet overhead
