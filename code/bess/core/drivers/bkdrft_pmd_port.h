@@ -39,6 +39,7 @@
 
 #include "../module.h"
 #include "../port.h"
+#include "../utils/dql.h"
 
 typedef uint16_t dpdk_port_t;
 
@@ -121,6 +122,8 @@ class BKDRFTPMDPort final : public Port {
    */
   int SendPackets(queue_t qid, bess::Packet **pkts, int cnt) override;
 
+  void PauseMessageHandle(bess::Packet **pkts, int cnt);
+
   struct FlowId {
     uint32_t src_ip;
     uint32_t dst_ip;
@@ -200,6 +203,34 @@ class BKDRFTPMDPort final : public Port {
    */
   bool hot_plugged_;
 
+  bool upstream_paused_;
+
+  bool downsteam_overloaded_;
+
+  /*
+   * number of active flows
+   */
+  int nactive_;
+
+  /*
+   * half rrt + effect time
+   */
+  int hrtt_;
+
+  /*
+   * effect time
+   */
+  int etime_;
+
+  uint64_t unpause_time;
+
+  /**
+   * This clasee would manage the queuing at the sender
+   * and here we would understand if we should send anything or
+   * we should pause. This is my understanding for now.
+   */
+  bess::utils::dql bql;
+
   /*!
    * The NUMA node to which device is attached
    */
@@ -207,24 +238,6 @@ class BKDRFTPMDPort final : public Port {
   placement_constraint node_placement_;
 
   std::string driver_;  // ixgbe, i40e, ...
-
-  bool upstream_paused_;
-
-  bool downsteam_overloaded_;
-  // /*
-  //  * number of active flows
-  //  */
-  // int nactive;
-
-  // /*
-  //  * half rrt + effect time
-  //  */
-  // int hrtt;
-
-  // /*
-  //  * effect time
-  //  */
-  // int etime;
 };
 
 #endif  // BESS_DRIVERS_PMD_H_
