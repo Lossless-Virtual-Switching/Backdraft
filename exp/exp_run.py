@@ -52,7 +52,7 @@ def sink_app(just_compile):
 def moongen_run(config):
     MOON_HOME = "/proj/uic-dcs-PG0/moongen/"
     cmd = 'sudo ./build/MoonGen examples/{script_to_load} --dpdk-config={dpdk_conf} {sender_dev} {receiver_dev} {client} {server} {tqueueClient} {rqueueClient} \
-        {rqueueServer} {rqueueServer} -s {sleepTime} -p {dumper} -c {dumperCount} --edrop {enable_drop} -r {main_workload_rate} -t {exp_duration}'.format(
+        {rqueueServer} {rqueueServer} -v {clientCount} -u {clientSleepTime} -s {sleepTime} -p {dumper} -c {dumperCount} --edrop {enable_drop} -r {main_workload_rate} -t {exp_duration}'.format(
         sender_dev=config['sender_dev'],
         receiver_dev=config['receiver_dev'],
         main_workload_rate=config['main_workload_rate'],
@@ -68,7 +68,9 @@ def moongen_run(config):
         rqueueServer=config['rqueueServer'],
         tqueueServer=config['tqueueServer'],
         dumperCount=config['dumperCount'],
-        sleepTime=config['sleepTime']
+        sleepTime=config['serverSleepTime'],
+        clientCount=config['clientCount'],
+        clientSleepTime=config['clientSleepTime']
     )
 
     # cmd = 'sudo ./build/MoonGen examples/{script_to_load} --dpdk-config={dpdk_conf} {sender_dev} {receiver_dev} --bpressure {backpressure} --edrop {enable_drop} -r {main_workload_rate} --brate {background_workload_rate} -t {exp_duration}'.format(
