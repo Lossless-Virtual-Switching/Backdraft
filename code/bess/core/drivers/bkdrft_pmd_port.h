@@ -222,7 +222,11 @@ class BKDRFTPMDPort final : public Port {
    */
   int etime_;
 
-  uint64_t unpause_time;
+  uint64_t unpause_time_;
+
+  int limit_;
+
+  uint64_t last_pause_time_;
 
   /**
    * This clasee would manage the queuing at the sender

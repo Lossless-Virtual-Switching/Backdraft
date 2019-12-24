@@ -263,6 +263,9 @@ CommandResponse BKDRFTPMDPort::Init(const bess::pb::BKDRFTPMDPortArg &arg) {
   etime_ = 5;
   hrtt_ = 10;
   nactive_ = 1;
+  last_pause_time_ = tsc_to_ns(rdtsc());
+
+  LOG(INFO) << "backdraft pmd port initialized";
 
   CommandResponse err;
   switch (arg.port_case()) {
@@ -414,6 +417,8 @@ CommandResponse BKDRFTPMDPort::Init(const bess::pb::BKDRFTPMDPortArg &arg) {
     rte_eth_dev_set_tx_queue_stats_mapping(dpdk_port_id_, queue, queue);
   }
 
+  limit_ = queue_size[0] * 1500 / 2;
+
   CollectStats(true);
 
   return CommandSuccess();
@@ -556,7 +561,7 @@ int BKDRFTPMDPort::RecvPackets(queue_t qid, bess::Packet **pkts, int cnt) {
     //           << queue_stats[PACKET_DIR_OUT][qid].bytes << " "
     //           << queue_stats[PACKET_DIR_OUT][qid].dpdk_bytes;
     cur = tsc_to_ns(rdtsc());
-    diff = unpause_time - cur;
+    diff = unpause_time_ - cur;
     // LOG(INFO) << unpause_time << " " << cur << " " << diff;
     if (diff <= 0) {
       queue_stats[PACKET_DIR_OUT][qid].bytes =
@@ -564,6 +569,10 @@ int BKDRFTPMDPort::RecvPackets(queue_t qid, bess::Packet **pkts, int cnt) {
       overload_ = false;
     }
   }
+
+  // LOG(INFO) << dpdk_port_id_ << " " << overload_ << " " <<
+  // downsteam_overloaded_
+  //           << " " << cur << " " << diff << " " << upstream_paused_;
 
   if (overload_ && !upstream_paused_) {
     pause_frame = pkts[0];
@@ -605,18 +614,32 @@ int BKDRFTPMDPort::RecvPackets(queue_t qid, bess::Packet **pkts, int cnt) {
 }
 
 int BKDRFTPMDPort::SendPackets(queue_t qid, bess::Packet **pkts, int cnt) {
-  uint64_t outstanding_bytes = 0;
+  // uint64_t bytes_to_drain = 0;
+  int allowed_to_sent = 0;
   uint64_t sent_bytes = 0;
-  int sent;
-  // int empty_slots;
-  // float pth;
+  uint64_t queue_size_bytes = queue_size[qid] * 1500;
+  uint64_t cur;
+  int sent = 0;
+
+  PauseMessageHandle(pkts, cnt);
+
+  cur = tsc_to_ns(rdtsc());
+  allowed_to_sent = queue_stats[PACKET_DIR_OUT][qid].dpdk_bytes + limit_ -
+                    queue_stats[PACKET_DIR_OUT][qid].bytes;
 
   for (int i = 0; i < cnt; i++) {
     sent_bytes += pkts[i]->total_len();
   }
 
-  PauseMessageHandle(pkts, cnt);
+  if (allowed_to_sent < 0) {
+    // LOG(INFO) << queue_stats[PACKET_DIR_OUT][qid].dpdk_bytes << " " << cur
+    //           << " " << last_pause_time_;
 
+    queue_stats[PACKET_DIR_OUT][qid].dpdk_bytes =
+        queue_stats[PACKET_DIR_OUT][qid].bytes;
+    overload_ = true;
+    unpause_time_ = queue_size_bytes * 0.8 + cur;
+  }
   sent = rte_eth_tx_burst(dpdk_port_id_, qid,
                           reinterpret_cast<struct rte_mbuf **>(pkts), cnt);
 
@@ -626,34 +649,15 @@ int BKDRFTPMDPort::SendPackets(queue_t qid, bess::Packet **pkts, int cnt) {
     queue_stats[PACKET_DIR_OUT][qid].dpdk_bytes += pkts[i]->total_len();
   }
 
-  // }
   int dropped = cnt - sent;
 
-  // queue_stats[PACKET_DIR_OUT][qid].dpdk_bytes += sent;
-  // Backdraft
-  queue_stats[PACKET_DIR_OUT][qid].bytes += sent_bytes;
-  // }
-
-  // I have one measure here!
-  outstanding_bytes = (queue_stats[PACKET_DIR_OUT][qid].bytes -
-                       queue_stats[PACKET_DIR_OUT][qid]
-                           .dpdk_bytes);  // It is our limit for now!
-
-  // LOG(INFO) << "outstanding " << outstanding_bytes << " sent " << sent
-  //           << " total bytes from bess "
-  //           << queue_stats[PACKET_DIR_OUT][qid].bytes << " total dpdk sent "
-  //           << queue_stats[PACKET_DIR_OUT][qid].dpdk_bytes << " queue size "
-  //           << queue_size[qid];
-
-  if (sent < cnt && outstanding_bytes > 0) {
-    // Overload
-    overload_ = true;
-    unpause_time = outstanding_bytes * 0.8 + tsc_to_ns(rdtsc());  // in ns
-    // LOG(INFO) << unpause_time;
-    // Because I can keep the information or I can just be more proactive here.
-    dropped = 0;
+  if (dropped) {
+    limit_ = limit_ * 2;
+  } else {
+    limit_ = limit_ * 0.95;
   }
 
+  queue_stats[PACKET_DIR_OUT][qid].bytes += sent_bytes;
   queue_stats[PACKET_DIR_OUT][qid].dropped += dropped;
   queue_stats[PACKET_DIR_OUT][qid].requested_hist[cnt]++;
   queue_stats[PACKET_DIR_OUT][qid].actual_hist[sent]++;
@@ -767,17 +771,15 @@ void BKDRFTPMDPort::PauseMessageHandle(bess::Packet **pkts, int cnt) {
     pause_frame = pkts[i];
     eth_type = pause_frame->head_data<Ethernet *>()->ether_type.value();
     if (eth_type == 12) {
-      // LOG(INFO) << dpdk_port_id_ << " SendPackets "
-      //           << " PAUSE FRAME DETECTED, Downsteam is overloaded ";
-      //           << pause_frame->head_data<Ethernet
-      //           *>()->ether_type.value();
+      LOG(INFO) << dpdk_port_id_ << " SendPackets "
+                << " PAUSE FRAME DETECTED, Downsteam is overloaded ";
+      // << pause_frame->head_data<Ethernet *>()->ether_type.value();
       downsteam_overloaded_ = true;
       break;
     } else if (eth_type == 13) {
-      // LOG(INFO) << dpdk_port_id_ << " SendPackets "
-      //           << " UNPAUSE FRAME DETECTED, Downsteam is underloaded ";
-      //           << pause_frame->head_data<Ethernet
-      //           *>()->ether_type.value();
+      LOG(INFO) << dpdk_port_id_ << " SendPackets "
+                << " UNPAUSE FRAME DETECTED, Downsteam is underloaded ";
+      // << pause_frame->head_data<Ethernet *>()->ether_type.value();
       downsteam_overloaded_ = false;
       break;
     }
