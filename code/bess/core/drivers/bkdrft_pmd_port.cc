@@ -262,7 +262,7 @@ CommandResponse BKDRFTPMDPort::Init(const bess::pb::BKDRFTPMDPortArg &arg) {
   overload_ = false;
   etime_ = 5;
   hrtt_ = 10;
-  nactive_ = 1;
+  nactive_ = 2;
   last_pause_time_ = tsc_to_ns(rdtsc());
 
   LOG(INFO) << "backdraft pmd port initialized";
@@ -543,10 +543,12 @@ int BKDRFTPMDPort::RecvPackets(queue_t qid, bess::Packet **pkts, int cnt) {
   int recv;
   uint64_t cur;
   int64_t diff;
+  bool skip_flow = true;
   // uint64_t outstanding_bytes = 0;
 
   bess::utils::be16_t my_type_p = (bess::utils::be16_t)12;
   bess::utils::be16_t my_type_u = (bess::utils::be16_t)13;
+
   // be32_t(0x1234)
 
   bess::Packet *pause_frame;
@@ -603,7 +605,9 @@ int BKDRFTPMDPort::RecvPackets(queue_t qid, bess::Packet **pkts, int cnt) {
     return recv;
   }
 
-  if (downsteam_overloaded_) {
+  skip_flow = PauseFlow(pkts, recv);
+
+  if (downsteam_overloaded_ && skip_flow) {
     // LOG(INFO) << dpdk_port_id_ << " RecvPackets Blocked " << upstream_paused_
     // << " " << overload_ << " " << recv;
     bess::Packet::Free(pkts, cnt);
@@ -638,7 +642,7 @@ int BKDRFTPMDPort::SendPackets(queue_t qid, bess::Packet **pkts, int cnt) {
     queue_stats[PACKET_DIR_OUT][qid].dpdk_bytes =
         queue_stats[PACKET_DIR_OUT][qid].bytes;
     overload_ = true;
-    unpause_time_ = queue_size_bytes * 0.8 + cur;
+    unpause_time_ = queue_size_bytes * 0.8 * nactive_ + cur;
   }
   sent = rte_eth_tx_burst(dpdk_port_id_, qid,
                           reinterpret_cast<struct rte_mbuf **>(pkts), cnt);
@@ -771,19 +775,37 @@ void BKDRFTPMDPort::PauseMessageHandle(bess::Packet **pkts, int cnt) {
     pause_frame = pkts[i];
     eth_type = pause_frame->head_data<Ethernet *>()->ether_type.value();
     if (eth_type == 12) {
-      LOG(INFO) << dpdk_port_id_ << " SendPackets "
-                << " PAUSE FRAME DETECTED, Downsteam is overloaded ";
+      // LOG(INFO) << dpdk_port_id_ << " SendPackets "
+      //           << " PAUSE FRAME DETECTED, Downsteam is overloaded ";
       // << pause_frame->head_data<Ethernet *>()->ether_type.value();
       downsteam_overloaded_ = true;
       break;
     } else if (eth_type == 13) {
-      LOG(INFO) << dpdk_port_id_ << " SendPackets "
-                << " UNPAUSE FRAME DETECTED, Downsteam is underloaded ";
+      // LOG(INFO) << dpdk_port_id_ << " SendPackets "
+      //           << " UNPAUSE FRAME DETECTED, Downsteam is underloaded ";
       // << pause_frame->head_data<Ethernet *>()->ether_type.value();
       downsteam_overloaded_ = false;
       break;
     }
   }
+}
+
+bool BKDRFTPMDPort::PauseFlow(bess::Packet **pkts, int cnt) {
+  using bess::utils::Ethernet;
+  bess::Packet *pause_frame;
+  bess::utils::be16_t eth_type;
+  bess::utils::be16_t my_type_p = (bess::utils::be16_t)102;
+
+  for (int i = 0; i < cnt; i++) {
+    pause_frame = pkts[i];
+    eth_type = pause_frame->head_data<Ethernet *>()->ether_type;
+    if (eth_type.value() == my_type_p.value()) {
+      // LOG(INFO) << dpdk_port_id_ << " PauseFlow "
+      //           << " Flow Detected, skipping ... ";
+      return true;
+    }
+  }
+  return false;
 }
 
 ADD_DRIVER(BKDRFTPMDPort, "bkdrft_pmd_port", "BackDraft DPDK poll mode driver")

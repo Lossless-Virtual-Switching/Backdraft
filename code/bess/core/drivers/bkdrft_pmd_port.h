@@ -156,6 +156,8 @@ class BKDRFTPMDPort final : public Port {
    */
   void InitDCBPortConfig(dpdk_port_t port_id, struct rte_eth_conf *eth_conf);
 
+  bool PauseFlow(bess::Packet **pkts, int cnt);
+
   /*
    * The name is pretty verbose.
    */
