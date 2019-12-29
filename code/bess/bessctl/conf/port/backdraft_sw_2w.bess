@@ -1,0 +1,93 @@
+# Copyright (c) 2014-2016, The Regents of the University of California.
+# Copyright (c) 2016-2017, Nefeli Networks, Inc.
+# All rights reserved.
+#
+# Redistribution and use in source and binary forms, with or without
+# modification, are permitted provided that the following conditions are met:
+#
+# * Redistributions of source code must retain the above copyright notice, this
+# list of conditions and the following disclaimer.
+#
+# * Redistributions in binary form must reproduce the above copyright notice,
+# this list of conditions and the following disclaimer in the documentation
+# and/or other materials provided with the distribution.
+#
+# * Neither the names of the copyright holders nor the names of their
+# contributors may be used to endorse or promote products derived from this
+# software without specific prior written permission.
+#
+# THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+# AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+# IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
+# ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE
+# LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
+# CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
+# SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
+# INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+# CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+# ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+# POSSIBILITY OF SUCH DAMAGE.
+
+import os
+import subprocess
+import scapy.all as scapy
+import time
+import json
+import sys
+
+pkt_size = int($SN_PKT_SIZE!'60')
+assert(60 <= pkt_size <= 1522)
+
+class VhostConf(object):
+    def __init__(self, *initial_data, **kwargs):
+        for dictionary in initial_data:
+            for key in dictionary:
+                setattr(self, key, dictionary[key])
+        for key in kwargs:
+            setattr(self, key, kwargs[key])
+
+def load_exp_conf(config_path):
+    with open(config_path) as config_file:
+        data = json.load(config_file)
+    return data
+
+
+#bess.reset_all()
+#bess.resume_all()
+#bess.pause_all()
+
+cmd = 'sudo rm /users/alireza/my_vhost*'
+subprocess.call(cmd, shell=True)
+
+config = load_exp_conf("/proj/uic-dcs-PG0/post-loom/exp/config/backdraft/one_slow_receiver_two_fast_slow_clients.json")
+config = VhostConf(config).bess
+config = VhostConf(config)
+
+print("sender rx ", config.send_dev['rx'])
+print("sender tx ", config.send_dev['tx'])
+print("receiver rx ", config.recv_dev['rx'])
+print("receiver tx ", config.recv_dev['tx'])
+
+#for i in range(2):
+#	bess.add_worker(wid=i, core=i*2)
+
+if config.backdraft:
+  my_vhost0 = BKDRFTPMDPort(name='my_vhost0', vdev='net_vhost0,iface=/users/alireza/my_vhost0.sock,queues=' + str(config.send_q), num_inc_q=config.send_dev['rx'], num_out_q=config.send_dev['tx'], size_inc_q=config.queue_size_inc, size_out_q=config.queue_size_out)
+  my_vhost1 = BKDRFTPMDPort(name='my_vhost1', vdev='net_vhost1,iface=/users/alireza/my_vhost1.sock,queues=' + str(config.recv_q), num_inc_q=config.recv_dev['rx'], num_out_q=config.recv_dev['tx'], size_inc_q=config.queue_size_inc, size_out_q=config.queue_size_out)
+else:
+  my_vhost0 = PMDPort(name='my_vhost0', vdev='net_vhost0,iface=/users/alireza/my_vhost0.sock,queues=' + str(config.send_q), num_inc_q=config.send_dev['rx'], num_out_q=config.send_dev['tx'], size_inc_q=config.queue_size_inc, size_out_q=config.queue_size_out)
+  my_vhost1 = PMDPort(name='my_vhost1', vdev='net_vhost1,iface=/users/alireza/my_vhost1.sock,queues=' + str(config.recv_q), num_inc_q=config.recv_dev['rx'], num_out_q=config.recv_dev['tx'], size_inc_q=config.queue_size_inc, size_out_q=config.queue_size_out)
+
+
+merger = Merge()
+for i in range(2):
+  input1 = QueueInc(port=my_vhost0.name, qid=i)
+  input1 -> i:merger 
+  
+output1 = QueueOut(port=my_vhost1.name, qid=0)
+merger -> output1
+
+for i in range(2):
+  input1 = QueueInc(port=my_vhost1.name, qid=i)
+  output1 = QueueOut(port=my_vhost0.name, qid=i)
+  input1 -> output1
