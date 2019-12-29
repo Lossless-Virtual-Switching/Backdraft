@@ -51,8 +51,8 @@ def sink_app(just_compile):
 
 def moongen_run(config):
     MOON_HOME = "/proj/uic-dcs-PG0/moongen/"
-    cmd = 'sudo ./build/MoonGen examples/{script_to_load} --dpdk-config={dpdk_conf} {sender_dev} {receiver_dev} {client} {server} {tqueueClient} {rqueueClient} \
-        {rqueueServer} {rqueueServer} -v {clientCount} -u {clientSleepTime} -s {sleepTime} -p {dumper} -c {dumperCount} --edrop {enable_drop} -r {main_workload_rate} -t {exp_duration}'.format(
+    cmd = 'sudo ./build/MoonGen examples/{script_to_load} --dpdk-config={dpdk_conf} {sender_dev} {receiver_dev} {client} {server} {rqueueClient} {tqueueClient} \
+        {rqueueServer} {tqueueServer} -v {clientCount} -u {clientSleepTime} -s {sleepTime} -p {dumper} -c {dumperCount} --edrop {enable_drop} -r {main_workload_rate} -t {exp_duration}'.format(
         sender_dev=config['sender_dev'],
         receiver_dev=config['receiver_dev'],
         main_workload_rate=config['main_workload_rate'],
@@ -213,7 +213,7 @@ def backdraft(config_path):
 #os.environ["RTE_TARGET"] = "x86_64-native-linuxapp-gcc"
 
 
-backdraft("config/slow.json")
+backdraft("config/backdraft/two_slow_receiver_two_fast_slow_client.json")
 # run_sysbench()
 # bess_config("config/motive_config.json")
 # moongen_run()
