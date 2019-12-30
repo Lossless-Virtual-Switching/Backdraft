@@ -59,7 +59,7 @@ def load_exp_conf(config_path):
 cmd = 'sudo rm /users/alireza/my_vhost*'
 subprocess.call(cmd, shell=True)
 
-config = load_exp_conf("/proj/uic-dcs-PG0/post-loom/exp/config/backdraft/one_slow_receiver_two_fast_slow_clients.json")
+config = load_exp_conf("/proj/uic-dcs-PG0/post-loom/exp/config/backdraft/one_slow_receiver_two_fast_slow_client.json")
 config = VhostConf(config).bess
 config = VhostConf(config)
 

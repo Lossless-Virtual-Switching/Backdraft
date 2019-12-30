@@ -13,28 +13,28 @@
         "drop": 1,
         "dumper": 1,
         "dumperCount": 2,
-        "serverSleepTime": 100,
-        "clientSleepTime": 0,
+        "serverSleepTime": 2000,
+        "clientSleepTime": 1000,
         "clientCount": 2,
         "server": 1,
         "client": 1,
-        "tqueueClient": 2,
+        "tqueueClient": 3,
         "rqueueClient": 1,
-        "rqueueServer": 2,
+        "rqueueServer": 3,
         "tqueueServer": 1,
         "dpdk_config": "dpdk_configs/dpdk-conf-backdraft.lua"
     },
     "bess": {
         "send_dev": {
-            "tx": 2,
-            "rx": 2
+            "tx": 3,
+            "rx": 3
         },
         "recv_dev": {
-            "tx": 2,
-            "rx": 2
+            "tx": 3,
+            "rx": 3
         },
-        "send_q": 2,
-        "recv_q": 2,
+        "send_q": 3,
+        "recv_q": 3,
         "queue_size_inc": 64,
         "queue_size_out": 64,
         "backdraft": true,
