@@ -122,7 +122,17 @@ class BKDRFTPMDPort final : public Port {
    */
   int SendPackets(queue_t qid, bess::Packet **pkts, int cnt) override;
 
-  void PauseMessageHandle(bess::Packet **pkts, int cnt);
+  int SendPauseMessage(queue_t qid, bess::Packet **pkts, int recv);
+
+  void PeriodicOverloadUpdate(queue_t qid);
+
+  int SendUnpauseMessage(queue_t qid, bess::Packet **pkts, int recv);
+
+  void BQLRequestToSend(queue_t qid);
+
+  void BQLUpdateLimit(queue_t qid, int dropped);
+
+  void PauseMessageHandle(bess::Packet **pkts, int cnt, queue_t qid);
 
   struct FlowId {
     uint32_t src_ip;
@@ -141,8 +151,8 @@ class BKDRFTPMDPort final : public Port {
   int UpdateConf(const Conf &conf) override;
 
   /*!
-   * Get any placement constraints that need to be met when receiving from this
-   * port.
+   * Get any placement constraints that need to be met when receiving from
+   * this port.
    */
   placement_constraint GetNodePlacementConstraint() const override {
     return node_placement_;
@@ -169,9 +179,9 @@ class BKDRFTPMDPort final : public Port {
    */
   CommandResponse pause_queue_setup();
 
-  void SignalOverload();
+  // void SignalOverload();
 
-  void SignalUnderload();
+  // void SignalUnderload();
 
   FlowId GetFlowId(bess::Packet *pkt);
 
@@ -198,16 +208,16 @@ class BKDRFTPMDPort final : public Port {
    * It needs some access functions.
    */
   // Whether the module itself is overloaded.
-  bool overload_;
+  bool overload_[MAX_QUEUES_PER_DIR];
 
   /*!
    * True if device did not exist when bessd started and was later patched in.
    */
   bool hot_plugged_;
 
-  bool upstream_paused_;
+  bool upstream_paused_[MAX_QUEUES_PER_DIR];
 
-  bool downsteam_overloaded_;
+  bool downsteam_overloaded_[MAX_QUEUES_PER_DIR];
 
   /*
    * number of active flows
@@ -224,11 +234,9 @@ class BKDRFTPMDPort final : public Port {
    */
   int etime_;
 
-  uint64_t unpause_time_;
+  uint64_t unpause_time_[MAX_QUEUES_PER_DIR];
 
-  int limit_;
-
-  uint64_t last_pause_time_;
+  int limit_[MAX_QUEUES_PER_DIR];
 
   /**
    * This clasee would manage the queuing at the sender
