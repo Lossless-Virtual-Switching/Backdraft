@@ -49,6 +49,17 @@
 // #define A_DEBUG 0
 #define DCB 0
 
+// // Template for generating Pause packets without data
+// struct [[gnu::packed]] PausePacketTemplate {
+//   Ethernet eth;
+
+//   PacketTemplate() {
+//     eth.dst_addr = Ethernet::Address();  // To fill in
+//     eth.src_addr = Ethernet::Address();  // To fill in
+//     eth.ether_type = be16_t(0);
+//   }
+// };
+
 static const struct rte_eth_conf default_eth_conf() {
   struct rte_eth_conf ret = rte_eth_conf();
   // struct rte_eth_dev_info dev_info;
@@ -408,9 +419,9 @@ CommandResponse BKDRFTPMDPort::Init(const bess::pb::BKDRFTPMDPortArg &arg) {
   for (int queue = 0; queue < num_rxq ? num_rxq > num_txq : num_txq; queue++) {
     limit_[queue] =
         queue_size[queue] * 1500 / 2;  // Initial limit for my bql like thing!
-    upstream_paused_[queue] = false;
-    downsteam_overloaded_[queue] = false;
     overload_[queue] = false;
+    pause_window_[queue] = 0;
+    pause_timestamp_[queue] = tsc_to_ns(rdtsc());
   }
 
   CollectStats(true);
@@ -534,30 +545,28 @@ void BKDRFTPMDPort::CollectStats(bool reset) {
 
 int BKDRFTPMDPort::RecvPackets(queue_t qid, bess::Packet **pkts, int cnt) {
   int recv = 0;
+  uint64_t cur;
+
   // bool skip_flow = true;
   // be32_t(0x1234)
   // recv = rte_eth_rx_burst(dpdk_port_id_, qid, (struct rte_mbuf **)pkts, cnt);
 
-  PeriodicOverloadUpdate(qid);
+  // PeriodicOverloadUpdate(qid);  // Not sure about this.
 
-  if (!overload_[qid])
-    recv = rte_eth_rx_burst(dpdk_port_id_, qid, (struct rte_mbuf **)pkts, cnt);
+  if (qid == 0) {
+    recv = SendPauseMessage(pkts, cnt);
+  } else {
+    cur = tsc_to_ns(rdtsc());
 
-  if (overload_[qid] && !upstream_paused_[qid]) {
-    return SendPauseMessage(qid, pkts, recv);
+    if (cur - pause_timestamp_[qid] >= pause_window_[qid]) {
+      recv =
+          rte_eth_rx_burst(dpdk_port_id_, qid, (struct rte_mbuf **)pkts, cnt);
+      overload_[qid] = false;
+    } else {
+      bess::Packet::Free(pkts, recv);
+      recv = 0;
+    }
   }
-
-  if (!overload_[qid] && upstream_paused_[qid]) {
-    return SendUnpauseMessage(qid, pkts, recv);
-  }
-
-  // skip_flow = PauseFlow(pkts, recv);
-  // if (downsteam_overloaded_[qid] && skip_flow) {
-  if (downsteam_overloaded_[qid]) {
-    bess::Packet::Free(pkts, recv);
-    recv = 0;
-  }
-
   return recv;
 }
 
@@ -565,13 +574,15 @@ int BKDRFTPMDPort::SendPackets(queue_t qid, bess::Packet **pkts, int cnt) {
   uint64_t sent_bytes = 0;
   int sent = 0;
 
-  PauseMessageHandle(pkts, cnt, qid);
+  if (qid == 0) {
+    PauseMessageHandle(pkts, cnt);
+  } else {
+    BQLRequestToSend(qid);
+  }
 
   for (int i = 0; i < cnt; i++) {
     sent_bytes += pkts[i]->total_len();
   }
-
-  BQLRequestToSend(qid);
 
   sent = rte_eth_tx_burst(dpdk_port_id_, qid,
                           reinterpret_cast<struct rte_mbuf **>(pkts), cnt);
@@ -595,53 +606,63 @@ int BKDRFTPMDPort::SendPackets(queue_t qid, bess::Packet **pkts, int cnt) {
   return sent;
 }
 
-int BKDRFTPMDPort::SendPauseMessage(queue_t qid, bess::Packet **pkts,
-                                    int recv) {
+int BKDRFTPMDPort::SendPauseMessage(bess::Packet **pkts, int cnt) {
   using bess::utils::Ethernet;
+  Ethernet *eth;
   bess::Packet *pause_frame;
-  bess::utils::be16_t my_type_p = (bess::utils::be16_t)12;
+  bess::utils::be16_t ether_type = (bess::utils::be16_t)0x8808;
+  int pause_message_count = 0;
 
-  pause_frame = pkts[0];
-  Ethernet *eth = pause_frame->head_data<Ethernet *>();
-  eth->ether_type = my_type_p;
-  if (recv == 0)
-    recv++;
-
-  upstream_paused_[qid] = true;
-  return recv;
-}
-
-void BKDRFTPMDPort::PeriodicOverloadUpdate(queue_t qid) {
-  uint64_t cur;
-  int64_t diff;
-
-  if (overload_[qid]) {
-    cur = tsc_to_ns(rdtsc());
-    diff = unpause_time_[qid] - cur;
-    if (diff <= 0) {
-      queue_stats[PACKET_DIR_OUT][qid].bytes =
-          queue_stats[PACKET_DIR_OUT][qid].dpdk_bytes;
-      overload_[qid] = false;
+  for (queue_t queue = 1; queue < num_queues[PACKET_DIR_OUT];
+       queue++) {  // We never send pause messages for qid = 0
+    if (overload_[queue] && cnt) {
+      pause_frame = pkts[pause_message_count];
+      if (pause_frame) {
+        eth = pause_frame->head_data<Ethernet *>();
+        if (eth) {
+          // LOG(INFO) << "test " << (int)num_queues[PACKET_DIR_OUT] << " "
+          //           << (int)num_queues[PACKET_DIR_INC] << " " << (int)queue
+          //           << " " << i;
+          eth->ether_type = ether_type;
+          pause_message_count++;
+        }
+      }
     }
   }
+
+  if (pause_message_count > num_queues[PACKET_DIR_OUT])
+    LOG(ERROR) << "something bullshit is happening";
+
+  return pause_message_count;
+
+  // if (eth->ether_type)
+  //   eth->ether_type = ether_type;  //.swap(eth_type);
+  // pause_frame->head_data<Ethernet *>(14) = 0x0001;  // pause_op_code
+  // pause_frame->head_data<Ethernet *>(16) = 0xFFFF;  // pause_time up to 2**16
+
+  // pause_frame->head_data<Ethernet *>(16) = pause_window_[p_message_index]; //
+  // pause_time up to 2**16 I I need to add the queue id as well to it. Also can
+  // leverage the batch index as well. here is the protocol extension.
+
+  // LOG(INFO) << "offset" << pause_frame->data_off();
+  // memset(pause_frame->data_off(), 0,
+  //        pause_frame->pkt_len_); /* fill padding with 00 */
 }
 
-int BKDRFTPMDPort::SendUnpauseMessage(queue_t qid, bess::Packet **pkts,
-                                      int recv) {
-  using bess::utils::Ethernet;
-  bess::Packet *pause_frame;
-  bess::utils::be16_t my_type_u = (bess::utils::be16_t)13;
+// void BKDRFTPMDPort::PeriodicOverloadUpdate(queue_t qid) {
+//   uint64_t cur;
+//   int64_t diff;
 
-  pause_frame = pkts[0];
-  Ethernet *eth = pause_frame->head_data<Ethernet *>();
-  eth->ether_type = my_type_u;
-
-  if (recv == 0)
-    recv++;
-
-  upstream_paused_[qid] = false;
-  return recv;
-}
+//   if (overload_[qid]) {
+//     cur = tsc_to_ns(rdtsc());
+//     diff = unpause_time_[qid] - cur;
+//     if (diff <= 0) {
+//       queue_stats[PACKET_DIR_OUT][qid].bytes =
+//           queue_stats[PACKET_DIR_OUT][qid].dpdk_bytes;
+//       overload_[qid] = false;
+//     }
+//   }
+// }
 
 void BKDRFTPMDPort::BQLUpdateLimit(queue_t qid, int dropped) {
   if (dropped) {
@@ -653,19 +674,19 @@ void BKDRFTPMDPort::BQLUpdateLimit(queue_t qid, int dropped) {
 
 void BKDRFTPMDPort::BQLRequestToSend(queue_t qid) {
   uint64_t queue_size_bytes = queue_size[qid] * 1500;
-  uint64_t cur;
+  // uint64_t cur;
   int allowed_to_sent = 0;
 
   allowed_to_sent = queue_stats[PACKET_DIR_OUT][qid].dpdk_bytes + limit_[qid] -
                     queue_stats[PACKET_DIR_OUT][qid].bytes;
 
-  cur = tsc_to_ns(rdtsc());
+  // cur = tsc_to_ns(rdtsc());
 
   if (allowed_to_sent < 0) {
     queue_stats[PACKET_DIR_OUT][qid].dpdk_bytes =
         queue_stats[PACKET_DIR_OUT][qid].bytes;
     overload_[qid] = true;
-    unpause_time_[qid] = queue_size_bytes * 0.8 * nactive_ + cur;
+    pause_window_[qid] = queue_size_bytes * 0.8 * nactive_;  // + cur;
   }
 }
 
@@ -765,28 +786,43 @@ BKDRFTPMDPort::FlowId BKDRFTPMDPort::GetFlowId(bess::Packet *pkt) {
   return id;
 }
 
-void BKDRFTPMDPort::PauseMessageHandle(bess::Packet **pkts, int cnt,
-                                       queue_t qid) {
+void BKDRFTPMDPort::PauseMessageHandle(bess::Packet **pkts, int cnt) {
   using bess::utils::Ethernet;
+  // bess::utils::be16_t eth_type = (bess::utils::be16_t)0x8808;
   bess::Packet *pause_frame;
-  int eth_type;
+  int eth_type;  // = 0x8808;
+  // char pause_op_code[4];
+  uint64_t cur;
 
   for (int i = 0; i < cnt; i++) {
     pause_frame = pkts[i];
-    eth_type = pause_frame->head_data<Ethernet *>()->ether_type.value();
-    if (eth_type == 12) {
-      // LOG(INFO) << dpdk_port_id_ << " SendPackets "
-      //           << " PAUSE FRAME DETECTED, Downsteam is overloaded ";
-      // << pause_frame->head_data<Ethernet *>()->ether_type.value();
-      downsteam_overloaded_[qid] = true;
-      break;
-    } else if (eth_type == 13) {
-      // LOG(INFO) << dpdk_port_id_ << " SendPackets "
-      //           << " UNPAUSE FRAME DETECTED, Downsteam is underloaded ";
-      // << pause_frame->head_data<Ethernet *>()->ether_type.value();
-      downsteam_overloaded_[qid] = false;
-      break;
+    if (pause_frame) {
+      eth_type = pause_frame->head_data<Ethernet *>()->ether_type.value();
+      if (eth_type == 0x8808) {
+        // For now I assume that I want to stop just queue 0
+
+        cur = tsc_to_ns(rdtsc());
+        pause_timestamp_[1] = cur;
+        pause_window_[1] = 1000;  // I also have to get the pause time from the
+                                  // payload in nanoseconds
+      }
     }
+
+    // bess::utils::Copy(pause_op_code, pause_frame->head_data<Ethernet *>(14),
+    // 2)
+    // if (pause message) {
+    // but for which qid? get the queue id from the payload.
+    // get the pause time from the payload = a
+    // set the unpause time
+    // is this pause message for me? from the mac address.
+
+    // pause_timestamp_[qid] = cur;
+    // pause_window_[qid] = a;
+
+    //   downsteam_overloaded_[qid] = true; ## EXTRA
+    // } ## EXTRA
+    // else { ## EXTRA
+    //   downsteam_overloaded_[qid] = false; ## EXTRA
   }
 }
 
@@ -794,7 +830,8 @@ bool BKDRFTPMDPort::PauseFlow(bess::Packet **pkts, int cnt) {
   using bess::utils::Ethernet;
   bess::Packet *pause_frame;
   bess::utils::be16_t eth_type;
-  bess::utils::be16_t my_type_p = (bess::utils::be16_t)102;
+  // bess::utils::be16_t my_type_p = (bess::utils::be16_t)102;
+  bess::utils::be16_t my_type_p = (bess::utils::be16_t)0x8808;
 
   for (int i = 0; i < cnt; i++) {
     pause_frame = pkts[i];

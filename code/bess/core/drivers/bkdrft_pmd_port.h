@@ -122,17 +122,15 @@ class BKDRFTPMDPort final : public Port {
    */
   int SendPackets(queue_t qid, bess::Packet **pkts, int cnt) override;
 
-  int SendPauseMessage(queue_t qid, bess::Packet **pkts, int recv);
+  int SendPauseMessage(bess::Packet **pkts, int cnt);
 
-  void PeriodicOverloadUpdate(queue_t qid);
-
-  int SendUnpauseMessage(queue_t qid, bess::Packet **pkts, int recv);
+  // void PeriodicOverloadUpdate(queue_t qid);
 
   void BQLRequestToSend(queue_t qid);
 
   void BQLUpdateLimit(queue_t qid, int dropped);
 
-  void PauseMessageHandle(bess::Packet **pkts, int cnt, queue_t qid);
+  void PauseMessageHandle(bess::Packet **pkts, int cnt);
 
   struct FlowId {
     uint32_t src_ip;
@@ -210,17 +208,15 @@ class BKDRFTPMDPort final : public Port {
   // Whether the module itself is overloaded.
   bool overload_[MAX_QUEUES_PER_DIR];
 
+  // bool overload_[PACKET_DIRS][MAX_QUEUES_PER_DIR];
+
   /*!
    * True if device did not exist when bessd started and was later patched in.
    */
   bool hot_plugged_;
 
-  bool upstream_paused_[MAX_QUEUES_PER_DIR];
-
-  bool downsteam_overloaded_[MAX_QUEUES_PER_DIR];
-
   /*
-   * number of active flows
+   * number of active flows, maybe it should be per queue
    */
   int nactive_;
 
@@ -234,7 +230,9 @@ class BKDRFTPMDPort final : public Port {
    */
   int etime_;
 
-  uint64_t unpause_time_[MAX_QUEUES_PER_DIR];
+  uint64_t pause_window_[MAX_QUEUES_PER_DIR];
+
+  uint64_t pause_timestamp_[MAX_QUEUES_PER_DIR];
 
   int limit_[MAX_QUEUES_PER_DIR];
 
