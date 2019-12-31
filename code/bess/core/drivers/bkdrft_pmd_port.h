@@ -122,15 +122,48 @@ class BKDRFTPMDPort final : public Port {
    */
   int SendPackets(queue_t qid, bess::Packet **pkts, int cnt) override;
 
+  /**
+   * @brief This function is being called in the recv path of a PMDport and it
+   * creates pause message in case it finds a PMDport overloaded queues. What if
+   * we have pause messages more than packet batch?
+   *
+   * @param pkts packet batch
+   * @param cnt burst size of length of the packet batch
+   * @return int number of pause messages in the packet batch ready to send.
+   */
   int SendPauseMessage(bess::Packet **pkts, int cnt);
 
   // void PeriodicOverloadUpdate(queue_t qid);
 
+  /**
+   * @brief This function manages the amount of the data should be send out of a
+   * PMDport there are so many things to be tuned here, but limit is the most
+   * important parameter for now. I'm also thinking of move entire BQL
+   * functionality to a seperated class.
+   *
+   * @param qid BQL is working on per queue(per flow basis)
+   */
   void BQLRequestToSend(queue_t qid);
 
   void BQLUpdateLimit(queue_t qid, int dropped);
 
+  /**
+   * @brief This funcation is only called or qid == 0, since only qid==0 is
+   * responsible for the pause messages. We are making sure that nobody would
+   * block the pause messages.
+   *
+   * @param pkts pointer to the batch of packets
+   * @param cnt length of the packet batch
+   */
   void PauseMessageHandle(bess::Packet **pkts, int cnt);
+
+  /**
+   * @brief This function create an ethernet pause message
+   *
+   * @param qid It supposes to pause an specific queue in a Backdraft PMDport
+   * @return bess::Packet* The pointer to the newly generated pause message.
+   */
+  bess::Packet *GeneratePauseMessage(queue_t qid);
 
   struct FlowId {
     uint32_t src_ip;

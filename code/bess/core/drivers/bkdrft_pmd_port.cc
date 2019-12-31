@@ -49,16 +49,18 @@
 // #define A_DEBUG 0
 #define DCB 0
 
-// // Template for generating Pause packets without data
-// struct [[gnu::packed]] PausePacketTemplate {
-//   Ethernet eth;
+// Template for generating Pause packets without data
+struct [[gnu::packed]] PausePacketTemplate {
+  bess::utils::Ethernet eth;
 
-//   PacketTemplate() {
-//     eth.dst_addr = Ethernet::Address();  // To fill in
-//     eth.src_addr = Ethernet::Address();  // To fill in
-//     eth.ether_type = be16_t(0);
-//   }
-// };
+  void PacketTemplate() {
+    eth.dst_addr = bess::utils::Ethernet::Address();  // To fill in
+    eth.src_addr = bess::utils::Ethernet::Address();  // To fill in
+    eth.ether_type = bess::utils::be16_t(0x8808);
+  }
+};
+
+static PausePacketTemplate pause_template;
 
 static const struct rte_eth_conf default_eth_conf() {
   struct rte_eth_conf ret = rte_eth_conf();
@@ -267,7 +269,10 @@ CommandResponse BKDRFTPMDPort::Init(const bess::pb::BKDRFTPMDPortArg &arg) {
 
   etime_ = 5;
   hrtt_ = 10;
-  nactive_ = 2;
+  nactive_ = 1;  // FIXME: Still there is no notion of flows here is I will
+                 // revise this once I have all flows available. I don't need it
+                 // right now because I have one flow per queue, and I can
+                 // adjust this number based on the number of the queues.
 
   LOG(INFO) << "backdraft pmd port initialized";
 
@@ -608,25 +613,27 @@ int BKDRFTPMDPort::SendPackets(queue_t qid, bess::Packet **pkts, int cnt) {
 
 int BKDRFTPMDPort::SendPauseMessage(bess::Packet **pkts, int cnt) {
   using bess::utils::Ethernet;
-  Ethernet *eth;
+  Ethernet *peth;
+  Ethernet *beth;
   bess::Packet *pause_frame;
-  bess::utils::be16_t ether_type = (bess::utils::be16_t)0x8808;
+  bess::Packet *batch_packet;
   int pause_message_count = 0;
 
   for (queue_t queue = 1; queue < num_queues[PACKET_DIR_OUT];
        queue++) {  // We never send pause messages for qid = 0
     if (overload_[queue] && cnt) {
-      pause_frame = pkts[pause_message_count];
-      if (pause_frame) {
-        eth = pause_frame->head_data<Ethernet *>();
-        if (eth) {
-          // LOG(INFO) << "test " << (int)num_queues[PACKET_DIR_OUT] << " "
-          //           << (int)num_queues[PACKET_DIR_INC] << " " << (int)queue
-          //           << " " << i;
-          eth->ether_type = ether_type;
-          pause_message_count++;
-        }
-      }
+      batch_packet = pkts[pause_message_count];
+      pause_frame = GeneratePauseMessage(queue);
+      beth = batch_packet->head_data<Ethernet *>();
+      peth = pause_frame->head_data<Ethernet *>();
+      peth->src_addr = beth->dst_addr;
+      peth->dst_addr = beth->src_addr;
+      peth->ether_type = bess::utils::be16_t(0x8808);
+      bess::Packet::Free(batch_packet);
+      pkts[pause_message_count] = pause_frame;
+      pause_message_count++;
+      // LOG(INFO) << "queue " << (int)queue << " is overloaded "
+      //           << pause_message_count;
     }
   }
 
@@ -664,6 +671,33 @@ int BKDRFTPMDPort::SendPauseMessage(bess::Packet **pkts, int cnt) {
 //   }
 // }
 
+bess::Packet *BKDRFTPMDPort::GeneratePauseMessage(queue_t qid) {
+  static const uint16_t pause_op_code = 0x0001;
+  static const uint16_t pause_time = pause_window_[qid];
+
+  bess::Packet *pkt = current_worker.packet_pool()->Alloc();
+
+  char *ptr = static_cast<char *>(pkt->buffer()) + SNBUF_HEADROOM;
+
+  pkt->set_data_off(SNBUF_HEADROOM);
+
+  constexpr size_t len =
+      sizeof(pause_op_code) + sizeof(pause_time) + sizeof(qid);
+  pkt->set_total_len(sizeof(pause_template) + len);
+  pkt->set_data_len(sizeof(pause_template) + len);
+
+  bess::utils::Copy(ptr, &pause_template, sizeof(pause_template));
+  bess::utils::Copy(ptr + sizeof(pause_template), &pause_op_code,
+                    sizeof(pause_op_code));
+  bess::utils::Copy(ptr + sizeof(pause_template) + sizeof(pause_op_code),
+                    &pause_time, sizeof(pause_time));
+  bess::utils::Copy(
+      ptr + sizeof(pause_template) + sizeof(pause_op_code) + sizeof(pause_time),
+      &qid, sizeof(qid));
+
+  return pkt;
+}
+
 void BKDRFTPMDPort::BQLUpdateLimit(queue_t qid, int dropped) {
   if (dropped) {
     limit_[qid] = limit_[qid] * 2;
@@ -674,19 +708,18 @@ void BKDRFTPMDPort::BQLUpdateLimit(queue_t qid, int dropped) {
 
 void BKDRFTPMDPort::BQLRequestToSend(queue_t qid) {
   uint64_t queue_size_bytes = queue_size[qid] * 1500;
-  // uint64_t cur;
   int allowed_to_sent = 0;
 
   allowed_to_sent = queue_stats[PACKET_DIR_OUT][qid].dpdk_bytes + limit_[qid] -
                     queue_stats[PACKET_DIR_OUT][qid].bytes;
 
-  // cur = tsc_to_ns(rdtsc());
-
   if (allowed_to_sent < 0) {
     queue_stats[PACKET_DIR_OUT][qid].dpdk_bytes =
         queue_stats[PACKET_DIR_OUT][qid].bytes;
     overload_[qid] = true;
-    pause_window_[qid] = queue_size_bytes * 0.8 * nactive_;  // + cur;
+    pause_window_[qid] = (queue_size_bytes - allowed_to_sent) * 0.8 *
+                         nactive_;  // Not sure about this, I still need to
+                                    // check BQL more precisely
   }
 }
 
@@ -788,23 +821,46 @@ BKDRFTPMDPort::FlowId BKDRFTPMDPort::GetFlowId(bess::Packet *pkt) {
 
 void BKDRFTPMDPort::PauseMessageHandle(bess::Packet **pkts, int cnt) {
   using bess::utils::Ethernet;
-  // bess::utils::be16_t eth_type = (bess::utils::be16_t)0x8808;
+  // static bess::utils::be16_t pause_eth_type = (bess::utils::be16_t)0x8808;
   bess::Packet *pause_frame;
-  int eth_type;  // = 0x8808;
-  // char pause_op_code[4];
+  char *ptr;
+
+  static const uint16_t pause_op_code = 0x0001;
+  static const uint16_t pause_eth_type = 0x8808;
+
+  uint16_t packet_op_code;
+  uint16_t packet_pause_time;
+  queue_t packet_qid;
+
+  static Ethernet *eth;
   uint64_t cur;
 
   for (int i = 0; i < cnt; i++) {
     pause_frame = pkts[i];
     if (pause_frame) {
-      eth_type = pause_frame->head_data<Ethernet *>()->ether_type.value();
-      if (eth_type == 0x8808) {
+      eth = pause_frame->head_data<Ethernet *>();
+      if (eth->ether_type.value() == pause_eth_type) {
         // For now I assume that I want to stop just queue 0
-
-        cur = tsc_to_ns(rdtsc());
-        pause_timestamp_[1] = cur;
-        pause_window_[1] = 1000;  // I also have to get the pause time from the
-                                  // payload in nanoseconds
+        ptr = static_cast<char *>(pause_frame->buffer()) + SNBUF_HEADROOM;
+        bess::utils::Copy(&packet_op_code, ptr + sizeof(pause_template),
+                          sizeof(packet_op_code));
+        bess::utils::Copy(&packet_pause_time,
+                          ptr + sizeof(pause_template) + sizeof(packet_op_code),
+                          sizeof(packet_pause_time));
+        bess::utils::Copy(&packet_qid,
+                          ptr + sizeof(pause_template) +
+                              sizeof(packet_op_code) +
+                              sizeof(packet_pause_time),
+                          sizeof(packet_qid));
+        if (packet_op_code == pause_op_code) {
+          assert(0 < packet_qid < num_queues[PACKET_DIR_OUT]);
+          // LOG(INFO) << (int)packet_qid << " " << (int)packet_pause_time << "
+          // "
+          //           << packet_op_code;
+          cur = tsc_to_ns(rdtsc());
+          pause_timestamp_[packet_qid] = cur;
+          pause_window_[packet_qid] = packet_pause_time;
+        }
       }
     }
 
