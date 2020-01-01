@@ -53,7 +53,7 @@
 struct [[gnu::packed]] PausePacketTemplate {
   bess::utils::Ethernet eth;
 
-  void PacketTemplate() {
+  void PausePacketTemplate() {
     eth.dst_addr = bess::utils::Ethernet::Address();  // To fill in
     eth.src_addr = bess::utils::Ethernet::Address();  // To fill in
     eth.ether_type = bess::utils::be16_t(0x8808);
@@ -556,13 +556,10 @@ int BKDRFTPMDPort::RecvPackets(queue_t qid, bess::Packet **pkts, int cnt) {
   // be32_t(0x1234)
   // recv = rte_eth_rx_burst(dpdk_port_id_, qid, (struct rte_mbuf **)pkts, cnt);
 
-  // PeriodicOverloadUpdate(qid);  // Not sure about this.
-
   if (qid == 0) {
     recv = SendPauseMessage(pkts, cnt);
   } else {
     cur = tsc_to_ns(rdtsc());
-
     if (cur - pause_timestamp_[qid] >= pause_window_[qid]) {
       recv =
           rte_eth_rx_burst(dpdk_port_id_, qid, (struct rte_mbuf **)pkts, cnt);
@@ -641,35 +638,7 @@ int BKDRFTPMDPort::SendPauseMessage(bess::Packet **pkts, int cnt) {
     LOG(ERROR) << "something bullshit is happening";
 
   return pause_message_count;
-
-  // if (eth->ether_type)
-  //   eth->ether_type = ether_type;  //.swap(eth_type);
-  // pause_frame->head_data<Ethernet *>(14) = 0x0001;  // pause_op_code
-  // pause_frame->head_data<Ethernet *>(16) = 0xFFFF;  // pause_time up to 2**16
-
-  // pause_frame->head_data<Ethernet *>(16) = pause_window_[p_message_index]; //
-  // pause_time up to 2**16 I I need to add the queue id as well to it. Also can
-  // leverage the batch index as well. here is the protocol extension.
-
-  // LOG(INFO) << "offset" << pause_frame->data_off();
-  // memset(pause_frame->data_off(), 0,
-  //        pause_frame->pkt_len_); /* fill padding with 00 */
 }
-
-// void BKDRFTPMDPort::PeriodicOverloadUpdate(queue_t qid) {
-//   uint64_t cur;
-//   int64_t diff;
-
-//   if (overload_[qid]) {
-//     cur = tsc_to_ns(rdtsc());
-//     diff = unpause_time_[qid] - cur;
-//     if (diff <= 0) {
-//       queue_stats[PACKET_DIR_OUT][qid].bytes =
-//           queue_stats[PACKET_DIR_OUT][qid].dpdk_bytes;
-//       overload_[qid] = false;
-//     }
-//   }
-// }
 
 bess::Packet *BKDRFTPMDPort::GeneratePauseMessage(queue_t qid) {
   static const uint16_t pause_op_code = 0x0001;
@@ -863,22 +832,6 @@ void BKDRFTPMDPort::PauseMessageHandle(bess::Packet **pkts, int cnt) {
         }
       }
     }
-
-    // bess::utils::Copy(pause_op_code, pause_frame->head_data<Ethernet *>(14),
-    // 2)
-    // if (pause message) {
-    // but for which qid? get the queue id from the payload.
-    // get the pause time from the payload = a
-    // set the unpause time
-    // is this pause message for me? from the mac address.
-
-    // pause_timestamp_[qid] = cur;
-    // pause_window_[qid] = a;
-
-    //   downsteam_overloaded_[qid] = true; ## EXTRA
-    // } ## EXTRA
-    // else { ## EXTRA
-    //   downsteam_overloaded_[qid] = false; ## EXTRA
   }
 }
 
