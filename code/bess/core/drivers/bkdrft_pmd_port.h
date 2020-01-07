@@ -204,7 +204,7 @@ class BKDRFTPMDPort final : public Port {
 
   void EnqueueOutstandingPackets(bess::Packet *newpkt, queue_t qid, int *err);
 
-  void GetOutstandingPacketBatch(queue_t qid, int *err);
+  void RetrieveOutstandingPacketBatch(queue_t qid, int *err);
 
   llring *InitllringQueue(uint32_t slots, int *err);
 
@@ -287,7 +287,14 @@ class BKDRFTPMDPort final : public Port {
   struct llring *bbql_queue_list_;
 
   bess::PacketBatch *outstanding_pkts_batch;
-  bess::Packet *mypackets[32];
+
+  uint64_t last_pause_message_timestamp_;
+
+  uint64_t last_pause_window_;
+
+  uint64_t tpmg;
+
+  uint64_t tpmr;
   /**
    * This clasee would manage the queuing at the sender
    * and here we would understand if we should send anything or
