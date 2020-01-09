@@ -267,7 +267,7 @@ CommandResponse BKDRFTPMDPort::Init(const bess::pb::BKDRFTPMDPortArg &arg) {
 
   int numa_node = -1;
   prev_overcap_ = 0;
-  etime_ = 0;
+  etime_ = 100000;
   hrtt_ = 10;
   nactive_ = 1;  // FIXME: Still there is no notion of flows here is I will
                  // revise this once I have all flows available. I don't need it
@@ -605,7 +605,7 @@ int BKDRFTPMDPort::RecvPackets(queue_t qid, bess::Packet **pkts, int cnt) {
   uint64_t cur;
 
   if (qid == 0) {
-    recv = SendPauseMessage(pkts, cnt);
+    recv = SendPeriodicPauseMessage(pkts, cnt);
   } else {
     cur = tsc_to_ns(rdtsc());
     // LOG(INFO) << cur - pause_timestamp_[PACKET_DIR_INC][qid] << " "
@@ -777,8 +777,9 @@ int BKDRFTPMDPort::SendPauseMessage(bess::Packet **pkts, int cnt) {
   for (queue_t queue = 1; queue < num_queues[PACKET_DIR_OUT];
        queue++) {  // We never send pause messages for qid = 0
 
-    if (overload_[PACKET_DIR_OUT][queue] &&
-        cnt) {  // Outgoing directions is getting overloaded because of the
+    // if (overload_[PACKET_DIR_OUT][queue] && // One of the main differences
+    // between our solution of BFC
+    if (cnt) {  // Outgoing directions is getting overloaded because of the
                 // slow receiver so outgoing drection
       batch_packet = pkts[pause_message_count];
       pause_frame = GeneratePauseMessage(queue);
@@ -790,9 +791,8 @@ int BKDRFTPMDPort::SendPauseMessage(bess::Packet **pkts, int cnt) {
       bess::Packet::Free(batch_packet);
       pkts[pause_message_count] = pause_frame;
       pause_message_count++;
-
-      // It needs more thinking here
-      overload_[PACKET_DIR_OUT][queue] = false;
+      overload_[PACKET_DIR_OUT][queue] =
+          false;  // Again I have reservation here
 
 #ifdef BACKDRAFT_DEBUG
       LOG(INFO) << "queue " << (int)queue << " is overloaded "
@@ -833,9 +833,18 @@ bess::Packet *BKDRFTPMDPort::GeneratePauseMessage(queue_t qid) {
 }
 
 void BKDRFTPMDPort::BQLUpdateLimit(queue_t qid) {
+  double rate;
+
+  rate = RateProber(PACKET_DIR_OUT, qid) / 1000000000;
+
+  // LOG(INFO) << rate;
+
+  if (rate == 0)
+    rate = 0.01;  // This is problematic!!! I have to build this bloomfilter.
+
   pause_window_[PACKET_DIR_OUT][qid] =
       (queue_size[qid] + llring_count(bbql_queue_list_[qid])) * 1500 * 8 /
-      0.01 * nactive_;  // Highly pessimistic random rate I put here!
+      rate * nactive_;  // Highly pessimistic random rate I put here!
   overload_[PACKET_DIR_OUT][qid] = true;
 }
 
@@ -1029,6 +1038,44 @@ bool BKDRFTPMDPort::PauseFlow(bess::Packet **pkts, int cnt) {
     }
   }
   return false;
+}
+
+int BKDRFTPMDPort::SendPeriodicPauseMessage(bess::Packet **pkts, int cnt) {
+  int pause_messages = 0;
+  uint64_t cur;
+  static uint64_t last_time = 0;
+
+  cur = tsc_to_ns(rdtsc());
+
+  if (cur - last_time > etime_) {
+    pause_messages = SendPauseMessage(pkts, cnt);
+    last_time = cur;
+  }
+
+  return pause_messages;
+}
+
+double BKDRFTPMDPort::RateProber(packet_dir_t dir, queue_t qid) {
+  uint64_t cur;
+  double rate;
+  static uint64_t last_dpdk_byte_sent = 0;
+  static uint64_t last_dpdk_packet_sent_timestamp = 0;
+
+  cur = tsc_to_ns(rdtsc());
+
+  rate = (queue_stats[dir][qid].dpdk_bytes - last_dpdk_byte_sent) * 1000000000 /
+         (tsc_to_ns(rdtsc()) - last_dpdk_packet_sent_timestamp);
+
+  // LOG(INFO) << cur - last_dpdk_packet_sent_timestamp << " "
+  //           << last_dpdk_packet_sent_timestamp << " " << last_dpdk_byte_sent
+  //           << " " << queue_stats[dir][qid].dpdk_bytes << " "
+  //           << queue_stats[dir][qid].dpdk_bytes - last_dpdk_byte_sent << " "
+  //           << rate;
+
+  last_dpdk_byte_sent = queue_stats[dir][qid].dpdk_bytes;
+  last_dpdk_packet_sent_timestamp = cur;
+
+  return rate;
 }
 
 ADD_DRIVER(BKDRFTPMDPort, "bkdrft_pmd_port", "BackDraft DPDK poll mode driver")

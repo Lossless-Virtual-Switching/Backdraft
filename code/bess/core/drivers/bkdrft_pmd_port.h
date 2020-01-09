@@ -208,6 +208,10 @@ class BKDRFTPMDPort final : public Port {
 
   int sensitiveSend(queue_t qid, bess::Packet **pkts, int cnt);
 
+  int SendPeriodicPauseMessage(bess::Packet **pkts, int cnt);
+
+  double RateProber(packet_dir_t dir, queue_t qid);
+
   /*
    * The name is pretty verbose.
    */
@@ -268,9 +272,9 @@ class BKDRFTPMDPort final : public Port {
   int hrtt_;
 
   /*
-   * effect time
+   * effect time or tau is BFC paper
    */
-  int etime_;
+  uint32_t etime_;
 
   uint32_t llring_slots;
 
