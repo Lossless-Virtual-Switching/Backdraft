@@ -15,7 +15,6 @@ import json
 
 from time import sleep
 
-BESS_CONFIG_PATH = '/proj/uic-dcs-PG0/post_loom/one_to_one_docker.bess'
 BESS_HOME = '/proj/uic-dcs-PG0/post-loom/code/bess'
 MOON_HOME = '/proj/uic-dsc-PG0/'
 
@@ -30,10 +29,10 @@ class VhostConf(object):
 
 
 def bess(config):
-    cmd = 'sudo bessctl/bessctl -- daemon start -- run file {config_file}'.format(config_file=os.path.join(
-        BESS_HOME,                                                                                                  "bessctl/conf/port", config['bess_config_path']))
+    config = VhostConf(config)
+    cmd = 'sudo bessctl/bessctl -- daemon start -- run file {config_file}'.format(config_file=os.path.join(config.bess_home, "bessctl/conf/port", config.bess_config), config_path="/home/alireza/Documents/post-loom/exp/config/backdraft/test_backpressure.json") # I don't know how to do this, but will do something about it.
     print(cmd)
-    subprocess.check_call(cmd, cwd=BESS_HOME, shell=True)
+    subprocess.check_call(cmd, cwd=config.bess_home, shell=True)
 
 
 def make_sink_app(dpdk_home):
@@ -50,10 +49,9 @@ def sink_app(just_compile):
 
 
 def moongen_run(config):
-    MOON_HOME = "/proj/uic-dcs-PG0/moongen/"
+    MOON_HOME = config['moongen_home']
     cmd = 'sudo ./build/MoonGen examples/{script_to_load} --dpdk-config={dpdk_conf} {sender_dev} {receiver_dev} {client} {server} {rqueueClient} {tqueueClient} \
-        {rqueueServer} {tqueueServer} -v {clientCount} -u {clientSleepTime} -s {sleepTime} -p {dumper} -c {dumperCount} --edrop {enable_drop} -r {main_workload_rate} -t {exp_duration}'.format(
-        sender_dev=config['sender_dev'],
+        {rqueueServer} {tqueueServer} -v {clientCount} -u {clientSleepTime} -s {sleepTime} -p {dumper} -c {dumperCount} --edrop {enable_drop} -r {main_workload_rate} -t {exp_duration}'.format(sender_dev=config['sender_dev'],
         receiver_dev=config['receiver_dev'],
         main_workload_rate=config['main_workload_rate'],
         exp_duration=config['exp_duration'],
@@ -72,18 +70,6 @@ def moongen_run(config):
         clientCount=config['clientCount'],
         clientSleepTime=config['clientSleepTime']
     )
-
-    # cmd = 'sudo ./build/MoonGen examples/{script_to_load} --dpdk-config={dpdk_conf} {sender_dev} {receiver_dev} --bpressure {backpressure} --edrop {enable_drop} -r {main_workload_rate} --brate {background_workload_rate} -t {exp_duration}'.format(
-    #        sender_dev = config['sender_dev'],
-    #        receiver_dev = config['receiver_dev'],
-    #        main_workload_rate = config['main_workload_rate'],
-    #        background_workload_rate = config['background_workload_rate'],
-    #        exp_duration = config['exp_duration'],
-    #        script_to_load = config['script'],
-    #        enable_drop = config['drop'],
-    #        backpressure = config['backpressure'],
-    #        dpdk_conf = config['dpdk_config']
-    #        )
 
     print(cmd)
     subprocess.check_call(cmd, cwd=MOON_HOME, shell=True)

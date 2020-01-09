@@ -56,11 +56,13 @@ def load_exp_conf(config_path):
 #bess.resume_all()
 #bess.pause_all()
 
-cmd = 'sudo rm /users/alireza/my_vhost*'
+cmd = 'sudo rm /home/alireza/my_vhost*'
 subprocess.call(cmd, shell=True)
 
-# config = load_exp_conf("/proj/uic-dcs-PG0/post-loom/exp/config/backdraft/two_slow_receiver_two_fast_slow_client.json")
-config = load_exp_conf("/proj/uic-dcs-PG0/post-loom/exp/config/backdraft/test_backpressure.json")
+#config_path = sys.argv[1]
+
+config = load_exp_conf("/home/alireza/Documents/post-loom/exp/config/backdraft/test_backpressure.json")
+#config = load_exp_conf(config_path)
 config = VhostConf(config).bess
 config = VhostConf(config)
 
@@ -73,11 +75,11 @@ print("receiver tx ", config.recv_dev['tx'])
 #	bess.add_worker(wid=i, core=i*2)
 
 if config.backdraft:
-  my_vhost0 = BKDRFTPMDPort(name='my_vhost0', vdev='net_vhost0,iface=/users/alireza/my_vhost0.sock,queues=' + str(config.send_q), num_inc_q=config.send_dev['rx'], num_out_q=config.send_dev['tx'], size_inc_q=config.queue_size_inc, size_out_q=config.queue_size_out)
-  my_vhost1 = BKDRFTPMDPort(name='my_vhost1', vdev='net_vhost1,iface=/users/alireza/my_vhost1.sock,queues=' + str(config.recv_q), num_inc_q=config.recv_dev['rx'], num_out_q=config.recv_dev['tx'], size_inc_q=config.queue_size_inc, size_out_q=config.queue_size_out)
+  my_vhost0 = BKDRFTPMDPort(name='my_vhost0', vdev='net_vhost0,iface=/home/alireza/my_vhost0.sock,queues=' + str(config.send_q), num_inc_q=config.send_dev['rx'], num_out_q=config.send_dev['tx'], size_inc_q=config.queue_size_inc, size_out_q=config.queue_size_out)
+  my_vhost1 = BKDRFTPMDPort(name='my_vhost1', vdev='net_vhost1,iface=/home/alireza/my_vhost1.sock,queues=' + str(config.recv_q), num_inc_q=config.recv_dev['rx'], num_out_q=config.recv_dev['tx'], size_inc_q=config.queue_size_inc, size_out_q=config.queue_size_out)
 else:
-  my_vhost0 = PMDPort(name='my_vhost0', vdev='net_vhost0,iface=/users/alireza/my_vhost0.sock,queues=' + str(config.send_q), num_inc_q=config.send_dev['rx'], num_out_q=config.send_dev['tx'], size_inc_q=config.queue_size_inc, size_out_q=config.queue_size_out)
-  my_vhost1 = PMDPort(name='my_vhost1', vdev='net_vhost1,iface=/users/alireza/my_vhost1.sock,queues=' + str(config.recv_q), num_inc_q=config.recv_dev['rx'], num_out_q=config.recv_dev['tx'], size_inc_q=config.queue_size_inc, size_out_q=config.queue_size_out)
+  my_vhost0 = PMDPort(name='my_vhost0', vdev='net_vhost0,iface=/home/alireza/my_vhost0.sock,queues=' + str(config.send_q), num_inc_q=config.send_dev['rx'], num_out_q=config.send_dev['tx'], size_inc_q=config.queue_size_inc, size_out_q=config.queue_size_out)
+  my_vhost1 = PMDPort(name='my_vhost1', vdev='net_vhost1,iface=/home/alireza/my_vhost1.sock,queues=' + str(config.recv_q), num_inc_q=config.recv_dev['rx'], num_out_q=config.recv_dev['tx'], size_inc_q=config.queue_size_inc, size_out_q=config.queue_size_out)
 
 #Some Plumbing
 

@@ -13,7 +13,7 @@
         "drop": 1,
         "dumper": 1,
         "dumperCount": 2,
-        "serverSleepTime": 50,
+        "serverSleepTime": 100,
         "clientSleepTime": 10,
         "clientCount": 1,
         "server": 1,
@@ -22,7 +22,8 @@
         "rqueueClient": 1,
         "rqueueServer": 2,
         "tqueueServer": 1,
-        "dpdk_config": "dpdk_configs/dpdk-conf-backdraft.lua"
+        "dpdk_config": "dpdk_configs/dpdk-conf-backdraft-local.lua",
+        "moongen_home": "/home/alireza/Documents/moongen"
     },
     "bess": {
         "send_dev": {
@@ -38,7 +39,8 @@
         "queue_size_inc": 64,
         "queue_size_out": 64,
         "backdraft": true,
-        "bess_config_path": "backdraft_sw_sep_q.bess"
+        "bess_config": "backdraft_sw_sep_q.bess",
+        "bess_home": "/home/alireza/Documents/post-loom/code/bess"
     },
     "sysbench": {
         "thread_number": 4
