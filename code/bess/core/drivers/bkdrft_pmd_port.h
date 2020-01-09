@@ -208,6 +208,10 @@ class BKDRFTPMDPort final : public Port {
 
   llring *InitllringQueue(uint32_t slots, int *err);
 
+  int aggressiveSend(queue_t qid, bess::Packet **pkts, int cnt);
+
+  int sensitiveSend(queue_t qid, bess::Packet **pkts, int cnt);
+
   /*
    * The name is pretty verbose.
    */
@@ -272,6 +276,8 @@ class BKDRFTPMDPort final : public Port {
    */
   int etime_;
 
+  uint32_t llring_slots;
+
   uint64_t last_bess_bytes_[PACKET_DIRS][MAX_QUEUES_PER_DIR];
 
   uint64_t overcap_;
@@ -284,7 +290,7 @@ class BKDRFTPMDPort final : public Port {
 
   uint64_t limit_[MAX_QUEUES_PER_DIR];
 
-  struct llring *bbql_queue_list_;
+  struct llring **bbql_queue_list_;
 
   bess::PacketBatch *outstanding_pkts_batch;
 
@@ -292,9 +298,6 @@ class BKDRFTPMDPort final : public Port {
 
   uint64_t last_pause_window_;
 
-  uint64_t tpmg;
-
-  uint64_t tpmr;
   /**
    * This clasee would manage the queuing at the sender
    * and here we would understand if we should send anything or

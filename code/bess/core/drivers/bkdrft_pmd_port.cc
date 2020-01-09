@@ -443,21 +443,19 @@ CommandResponse BKDRFTPMDPort::Init(const bess::pb::BKDRFTPMDPortArg &arg) {
 
   outstanding_pkts_batch = new bess::PacketBatch();
   outstanding_pkts_batch->clear();
-  LOG(INFO) << "This sounds important " << outstanding_pkts_batch->cnt();
 
+  llring_slots = 256;
   int err_ring = 0;
-  for (int i = 0; i < 1; i++) {
-    bbql_queue_list_ = InitllringQueue(256, &err_ring);
+  bbql_queue_list_ =
+      static_cast<struct llring **>(malloc(sizeof(struct llring *) * num_rxq));
+  for (int i = 0; i < num_rxq; i++) {
+    bbql_queue_list_[i] = InitllringQueue(llring_slots, &err_ring);
     if (err_ring != 0)
       return CommandFailure(-err_ring, "some error");
   }
 
   last_pause_message_timestamp_ = 0;
   last_pause_window_ = 0;
-
-  tpmg = 0;
-
-  tpmr = 0;
 
   CollectStats(true);
 
@@ -538,18 +536,17 @@ void BKDRFTPMDPort::DeInit() {
     }
   }
 
-  // if (bbql_queue_list_) {
-  //   bess::Packet *pkt;
-  //   struct llring queue;
-  //   for (queue_t qid = 0; qid < num_queues[PACKET_DIR_INC]; qid++) {
-  //     queue = bbql_queue_list_[qid];
-  //     while (llring_sc_dequeue(&queue, reinterpret_cast<void **>(&pkt)) == 0)
-  //     {
-  //       bess::Packet::Free(pkt);
-  //     }
-  //   }
-  //   std::free(bbql_queue_list_);
-  // }
+  if (bbql_queue_list_) {
+    bess::Packet *pkt;
+    struct llring *queue;
+    for (queue_t qid = 0; qid < num_queues[PACKET_DIR_INC]; qid++) {
+      queue = bbql_queue_list_[qid];
+      while (llring_sc_dequeue(queue, reinterpret_cast<void **>(&pkt)) == 0) {
+        bess::Packet::Free(pkt);
+      }
+    }
+    std::free(bbql_queue_list_);
+  }
 }
 
 void BKDRFTPMDPort::CollectStats(bool reset) {
@@ -675,12 +672,12 @@ int BKDRFTPMDPort::SendPackets(queue_t qid, bess::Packet **pkts, int cnt) {
     // LOG(INFO) << "not in queue zero";
     sent = rte_eth_tx_burst(dpdk_port_id_, qid,
                             reinterpret_cast<struct rte_mbuf **>(pkts), cnt);
-    for (int i = 0; i < cnt; i++) {
-      sent_bytes += pkts[i]->total_len();
+    for (int pkt = 0; pkt < cnt; pkt++) {
+      sent_bytes += pkts[pkt]->total_len();
     }
 
-    for (int i = 0; i < sent; i++) {
-      queue_stats[PACKET_DIR_OUT][qid].dpdk_bytes += pkts[i]->total_len();
+    for (int pkt = 0; pkt < sent; pkt++) {
+      queue_stats[PACKET_DIR_OUT][qid].dpdk_bytes += pkts[pkt]->total_len();
     }
 
     if (sent != cnt) {
@@ -688,65 +685,70 @@ int BKDRFTPMDPort::SendPackets(queue_t qid, bess::Packet **pkts, int cnt) {
       // LOG(INFO) << "Overloaded";
 
       BQLUpdateLimit(qid);
-      // LOG(INFO) << "packets to store!"
-      //           << " " << sent << " " << cnt;
 
       for (int pkt = sent; pkt < cnt; pkt++) {
         err = 0;
         EnqueueOutstandingPackets(pkts[pkt], qid, &err);
+        if (err == 0)
+          sent++;
       }
       // We have stored the packets so we should take care of the freeing
-      sent = cnt;
+      // sent = cnt;
+
       // LOG(INFO) << "Packets are stored in the llring";
     } else {
       // LOG(INFO) << "not overloaded, sending some outstanding packets";
 
       // We aren't overloaded so let's see if there is any outstanding packets
       // or not.
-      while (!llring_empty(bbql_queue_list_)) {
-        // LOG(INFO) << "second chance still not empty";
+      while (!llring_empty(bbql_queue_list_[qid])) {
+        // LOG(INFO) << "second chance still not empty "
+        //           << llring_count(bbql_queue_list_[qid]);
+        // I can try to make sure clear the ring!
         err = 0;
+        outstanding_batch_sent = 0;
+
         RetrieveOutstandingPacketBatch(qid, &err);
+        // outstanding_batch_sent =
+        //     rte_eth_tx_burst(dpdk_port_id_, qid,
+        //                      reinterpret_cast<struct rte_mbuf **>(
+        //                          outstanding_pkts_batch->pkts()),
+        //                      outstanding_pkts_batch->cnt());
 
-        outstanding_batch_sent =
-            rte_eth_tx_burst(dpdk_port_id_, qid,
-                             reinterpret_cast<struct rte_mbuf **>(
-                                 outstanding_pkts_batch->pkts()),
-                             outstanding_pkts_batch->cnt());
+        outstanding_batch_sent = sensitiveSend(
+            qid, outstanding_pkts_batch->pkts(), outstanding_pkts_batch->cnt());
 
-        for (int i = 0; i < outstanding_batch_sent; i++) {
+        for (int pkt = 0; pkt < outstanding_batch_sent; pkt++) {
           queue_stats[PACKET_DIR_OUT][qid].dpdk_bytes +=
-              outstanding_pkts_batch->pkts()[i]->total_len();
+              outstanding_pkts_batch->pkts()[pkt]->total_len();
         }
 
         // I shouldn't do this but I just want to test for now!
         if (outstanding_batch_sent < outstanding_pkts_batch->cnt()) {
           BQLUpdateLimit(qid);
-          // Put back to the ring soon
 
-          bess::Packet::Free(
-              outstanding_pkts_batch->pkts() + outstanding_batch_sent,
-              outstanding_pkts_batch->cnt() - outstanding_batch_sent);
-          outstanding_pkts_batch->clear();  // I have to clear the batch!
-          // it for now!
+          // LOG(INFO) << "FUCK";
 
+          // bess::Packet::Free(
+          //     outstanding_pkts_batch->pkts() + outstanding_batch_sent,
+          //     outstanding_pkts_batch->cnt() - outstanding_batch_sent);
+          // outstanding_pkts_batch->clear();  // I have to clear the batch!
+          //                                   // it for now!
+
+          for (int pkt = sent; pkt < cnt; pkt++) {
+            err = 0;
+            EnqueueOutstandingPackets(
+                outstanding_pkts_batch->pkts()[pkt], qid,
+                &err);  // It frees things for us so no need to
+                        // be worry about the memory.
+          }
           break;
         }
-
-        // if (sent < outstanding_pkts_batch->cnt()) {
-        //   for (int pkt = sent; pkt < outstanding_pkts_batch->cnt(); pkt++)
-        //   {
-        //     err = 0;
-        //     EnqueueOutstandingPackets(outstanding_pkts_batch->pkts()[pkt],
-        //     qid,
-        //                               &err);
-        //     if (err != 0) {
-        //       LOG(INFO) << "We have bad error here";
-        //     }
-        //   }
         outstanding_pkts_batch->clear();  // I have to clear the batch!
       }
     }
+    // LOG(INFO) << "EXIT EVERYTHING " << (int)qid;
+
     int dropped =
         cnt - sent;  // current_worker.packet_pool()->AllocBulk - temp_sent;
 
@@ -760,13 +762,29 @@ int BKDRFTPMDPort::SendPackets(queue_t qid, bess::Packet **pkts, int cnt) {
   }
 }
 
+int BKDRFTPMDPort::aggressiveSend(queue_t qid, bess::Packet **pkts, int cnt) {
+  int sent = 0;
+  while (sent != cnt) {
+    sent = sent + rte_eth_tx_burst(dpdk_port_id_, qid,
+                                   reinterpret_cast<struct rte_mbuf **>(pkts),
+                                   cnt);
+  }
+  return sent;
+}
+
+int BKDRFTPMDPort::sensitiveSend(queue_t qid, bess::Packet **pkts, int cnt) {
+  int sent = rte_eth_tx_burst(dpdk_port_id_, qid,
+                              reinterpret_cast<struct rte_mbuf **>(pkts), cnt);
+  return sent;
+}
+
 void BKDRFTPMDPort::RetrieveOutstandingPacketBatch(queue_t qid, int *err) {
   bess::Packet *pkt;
-  qid++;
   while (!outstanding_pkts_batch->full()) {
     // LOG(INFO) << "I guess this is here " << outstanding_pkts_batch->full()
     //           << " " << outstanding_pkts_batch->cnt();
-    *err = llring_dequeue(bbql_queue_list_, reinterpret_cast<void **>(&pkt));
+    *err =
+        llring_dequeue(bbql_queue_list_[qid], reinterpret_cast<void **>(&pkt));
     if (*err != 0)
       break;
 
@@ -842,7 +860,8 @@ bess::Packet *BKDRFTPMDPort::GeneratePauseMessage(queue_t qid) {
 
 void BKDRFTPMDPort::BQLUpdateLimit(queue_t qid) {
   pause_window_[PACKET_DIR_OUT][qid] =
-      (queue_size[qid] * 1500) * 0.8 * nactive_;
+      (queue_size[qid] + llring_count(bbql_queue_list_[qid])) * 1500 * 8 /
+      0.01 * nactive_;  // Highly pessimistic random rate I put here!
   overload_[PACKET_DIR_OUT][qid] = true;
 }
 
@@ -1037,20 +1056,29 @@ void BKDRFTPMDPort::PauseMessageHandle(bess::Packet **pkts, int cnt) {
 void BKDRFTPMDPort::EnqueueOutstandingPackets(bess::Packet *newpkt, queue_t qid,
                                               int *err) {
   // if the queue is full. drop the packet.
-  if (llring_count(bbql_queue_list_) >= 32) {
+  if (llring_count(bbql_queue_list_[qid]) == llring_slots - 1) {
     // if (llring_count(&(bbql_queue_list_[qid])) < 32) {
     bess::Packet::Free(newpkt);
-    // LOG(INFO) << "List is full? Kidding?";
-    qid++;
+    *err = -4;
     return;
   }
   // LOG(INFO) << "ARE YOU GOING HERER?";
-  *err = llring_enqueue(bbql_queue_list_, reinterpret_cast<void *>(newpkt));
-  // if (*err == 0) {
-  //   // bess::Packet::Free(newpkt);
-  //   LOG(INFO) << "Successfully added to the ring?";
-  // }
-  // LOG(INFO) << "ARE YOU GOING HERER toooooo?";
+  *err =
+      llring_enqueue(bbql_queue_list_[qid], reinterpret_cast<void *>(newpkt));
+
+  if (*err != 0) {
+    if (*err == -LLRING_ERR_NOBUF)
+      LOG(INFO) << "Warning " << *err << " High water mark exceeded "
+                << llring_count(bbql_queue_list_[qid]);
+    else if (*err == -LLRING_ERR_NOBUF)
+      LOG(INFO) << "Error " << *err << " We gonna have some dropps";
+    else
+      LOG(INFO) << "Error " << *err << " Unknown reason!";
+    bess::Packet::Free(newpkt);
+
+    *err = -5;
+  }
+  return;
 }
 
 bool BKDRFTPMDPort::PauseFlow(bess::Packet **pkts, int cnt) {
