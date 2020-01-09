@@ -136,8 +136,6 @@ class BKDRFTPMDPort final : public Port {
    */
   int SendPauseMessage(bess::Packet **pkts, int cnt);
 
-  // void PeriodicOverloadUpdate(queue_t qid);
-
   /**
    * @brief This function manages the amount of the data should be send out of a
    * PMDport there are so many things to be tuned here, but limit is the most
@@ -146,8 +144,6 @@ class BKDRFTPMDPort final : public Port {
    *
    * @param qid BQL is working on per queue(per flow basis)
    */
-  void BQLRequestToSend(queue_t qid, uint64_t requested_bytes);
-
   void BQLUpdateLimit(queue_t qid);
 
   /**
@@ -297,13 +293,6 @@ class BKDRFTPMDPort final : public Port {
   uint64_t last_pause_message_timestamp_;
 
   uint64_t last_pause_window_;
-
-  /**
-   * This clasee would manage the queuing at the sender
-   * and here we would understand if we should send anything or
-   * we should pause. This is my understanding for now.
-   */
-  // bess::utils::BackdraftBQL BBQL;
 
   /*!
    * The NUMA node to which device is attached
