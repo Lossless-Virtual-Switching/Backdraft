@@ -34,16 +34,14 @@
 #include "../module.h"
 #include "../pb/module_msg.pb.h"
 #include "../port.h"
-<<<<<<< HEAD
-<<<<<<< HEAD
 #include "../utils/cuckoo_map.h"
 #include "../utils/ip.h"
 #include <rte_hash_crc.h>
 
 #define FLOW_DEBUG 0;
 
-    using bess::utils::Ipv4Prefix;
 using bess::utils::CuckooMap;
+using bess::utils::Ipv4Prefix;
 
 class BKDRFTQueueInc final : public Module {
  public:

@@ -33,17 +33,20 @@
 
 #include <string>
 
+#include "../kmod/llring.h"
 #include <rte_config.h>
 #include <rte_errno.h>
 #include <rte_ethdev.h>
 
 #include "../module.h"
+#include "../pktbatch.h"
 #include "../port.h"
-#include "../utils/dql.h"
+// #include "../utils/dql.h"
 
 typedef uint16_t dpdk_port_t;
 
 #define DPDK_PORT_UNKNOWN RTE_MAX_ETHPORTS
+
 /*!
  * This driver binds a port to a device using DPDK.
  * This is the recommended driver for performance.
@@ -143,9 +146,9 @@ class BKDRFTPMDPort final : public Port {
    *
    * @param qid BQL is working on per queue(per flow basis)
    */
-  void BQLRequestToSend(queue_t qid);
+  void BQLRequestToSend(queue_t qid, uint64_t requested_bytes);
 
-  void BQLUpdateLimit(queue_t qid, int dropped);
+  void BQLUpdateLimit(queue_t qid);
 
   /**
    * @brief This funcation is only called or qid == 0, since only qid==0 is
@@ -199,6 +202,16 @@ class BKDRFTPMDPort final : public Port {
 
   bool PauseFlow(bess::Packet **pkts, int cnt);
 
+  void EnqueueOutstandingPackets(bess::Packet *newpkt, queue_t qid, int *err);
+
+  void RetrieveOutstandingPacketBatch(queue_t qid, int *err);
+
+  llring *InitllringQueue(uint32_t slots, int *err);
+
+  int aggressiveSend(queue_t qid, bess::Packet **pkts, int cnt);
+
+  int sensitiveSend(queue_t qid, bess::Packet **pkts, int cnt);
+
   /*
    * The name is pretty verbose.
    */
@@ -239,7 +252,7 @@ class BKDRFTPMDPort final : public Port {
    * It needs some access functions.
    */
   // Whether the module itself is overloaded.
-  bool overload_[MAX_QUEUES_PER_DIR];
+  bool overload_[PACKET_DIRS][MAX_QUEUES_PER_DIR];
 
   // bool overload_[PACKET_DIRS][MAX_QUEUES_PER_DIR];
 
@@ -263,18 +276,34 @@ class BKDRFTPMDPort final : public Port {
    */
   int etime_;
 
-  uint64_t pause_window_[MAX_QUEUES_PER_DIR];
+  uint32_t llring_slots;
 
-  uint64_t pause_timestamp_[MAX_QUEUES_PER_DIR];
+  uint64_t last_bess_bytes_[PACKET_DIRS][MAX_QUEUES_PER_DIR];
 
-  int limit_[MAX_QUEUES_PER_DIR];
+  uint64_t overcap_;
+
+  uint64_t prev_overcap_;
+
+  uint64_t pause_window_[PACKET_DIRS][MAX_QUEUES_PER_DIR];
+
+  uint64_t pause_timestamp_[PACKET_DIRS][MAX_QUEUES_PER_DIR];
+
+  uint64_t limit_[MAX_QUEUES_PER_DIR];
+
+  struct llring **bbql_queue_list_;
+
+  bess::PacketBatch *outstanding_pkts_batch;
+
+  uint64_t last_pause_message_timestamp_;
+
+  uint64_t last_pause_window_;
 
   /**
    * This clasee would manage the queuing at the sender
    * and here we would understand if we should send anything or
    * we should pause. This is my understanding for now.
    */
-  bess::utils::dql bql;
+  // bess::utils::BackdraftBQL BBQL;
 
   /*!
    * The NUMA node to which device is attached

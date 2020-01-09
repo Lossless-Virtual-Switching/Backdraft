@@ -1,48 +1,42 @@
 #ifndef BESS_UTILS_DQL_H_
 #define BESS_UTILS_DQL_H_
 
+#include "../kmod/llring.h"
+#include "../pktbatch.h"
+
 namespace bess {
 namespace utils {
 
-class dql {
- public:
-  int dql_avail() { return adj_limit - num_queued; };
+// class BackdraftBQL {
+//  public:
+//   BackdraftBQL() {
+//     max_queue_number = 10;
+//     queue_list =
+//         (struct llring **)malloc(sizeof(struct llring *) * max_queue_number);
+//   };
 
-  //   void dql_completed(unsigned int count);
+//   ~BackdraftBQL() {
+//     if (queue_list) {
+//       bess::Packet *pkt;
+//       struct llring *queue;
+//       for (queue_t qid = 0; qid < max_queue_number; qid++) {
+//         queue = queue_list[qid];
+//         if (queue) {
+//           while (llring_sc_dequeue(queue, reinterpret_cast<void **>(&pkt)) ==
+//                  0) {
+//             bess::Packet::Free(pkt);
+//           }
 
-  void dql_reset();
+//           std::free(queue);
+//         }
+//       }
+//     }
+//   }
 
-  void dql_init(unsigned int hold_time);
-
-  void dql_queued(unsigned int count);
-
-  void backdraft_dql_complete(unsigned int count);
-
-  dql();
-
- private:
-  /* Fields accessed in enqueue path (dql_queued) */
-  unsigned int num_queued;   /* Total ever queued */
-  unsigned int adj_limit;    /* limit + num_completed */
-  unsigned int last_obj_cnt; /* Count at last queuing */
-
-  /* Fields accessed only by completion path (dql_completed) */
-
-  unsigned int limit;         /* Current limit */
-  unsigned int num_completed; /* Total ever completed */
-
-  unsigned int prev_ovlimit;      /* Previous over limit */
-  unsigned int prev_num_queued;   /* Previous queue total */
-  unsigned int prev_last_obj_cnt; /* Previous queuing cnt */
-
-  unsigned int lowest_slack;      /* Lowest slack found */
-  unsigned long slack_start_time; /* Time slacks seen */
-
-  /* Configuration */
-  unsigned int max_limit;       /* Max limit */
-  unsigned int min_limit;       /* Minimum limit */
-  unsigned int slack_hold_time; /* Time to measure slack */
-};
+//  private:
+//   queue_t max_queue_number;
+//   struct llring **queue_list;
+// };
 }  // namespace utils
 }  // namespace bess
 
