@@ -31,14 +31,14 @@
 #include "bkdrft_queue_inc.h"
 
 #include "../port.h"
-#include "../utils/format.h"
 #include "../utils/ether.h"
+#include "../utils/format.h"
 #include "../utils/ip.h"
 #include "../utils/udp.h"
 
-const Commands BKDRFTQueueInc::cmds = {{"set_burst", "BKDRFTQueueIncCommandSetBurstArg",
-                                  MODULE_CMD_FUNC(&BKDRFTQueueInc::CommandSetBurst),
-                                  Command::THREAD_SAFE}};
+const Commands BKDRFTQueueInc::cmds = {
+    {"set_burst", "BKDRFTQueueIncCommandSetBurstArg",
+     MODULE_CMD_FUNC(&BKDRFTQueueInc::CommandSetBurst), Command::THREAD_SAFE}};
 
 CommandResponse BKDRFTQueueInc::Init(const bess::pb::BKDRFTQueueIncArg &arg) {
   const char *port_name;
@@ -87,11 +87,10 @@ std::string BKDRFTQueueInc::GetDesc() const {
                              port_->port_builder()->class_name().c_str());
 }
 
-struct task_result BKDRFTQueueInc::RunTask(Context *ctx, bess::PacketBatch *batch,
-                                     void *arg) {
+struct task_result BKDRFTQueueInc::RunTask(Context *ctx,
+                                           bess::PacketBatch *batch,
+                                           void *arg) {
   Port *p = port_;
-  int err = 0;
-
 
   if (!p->conf().admin_up) {
     return {.block = true, .packets = 0, .bits = 0};
@@ -143,7 +142,7 @@ struct task_result BKDRFTQueueInc::RunTask(Context *ctx, bess::PacketBatch *batc
 
   RunNextModule(ctx, batch);
 
-  if (cnt < (uint32_t)burst_/2) {
+  if (cnt < (uint32_t)burst_ / 2) {
     SignalUnderload();
     // Just send an unpause message!
     // I should create some pause message packets!
@@ -156,16 +155,7 @@ struct task_result BKDRFTQueueInc::RunTask(Context *ctx, bess::PacketBatch *batc
           .bits = (received_bytes + cnt * pkt_overhead) * 8};
 }
 
-<<<<<<< HEAD
-<<<<<<< HEAD
-
-BKDRFTQueueInc::FlowId BKDRFTQueueInc::GetId(bess::Packet *pkt) {
-=======
 BKDRFTQueueInc::FlowId BKDRFTQueueInc::GetFlowId(bess::Packet *pkt) {
->>>>>>> parent of 2a72ad7... bkdrft queue is now available, but just for random testing
-=======
-BKDRFTQueueInc::FlowId BKDRFTQueueInc::GetFlowId(bess::Packet *pkt) {
->>>>>>> parent of 2a72ad7... bkdrft queue is now available, but just for random testing
   using bess::utils::Ethernet;
   using bess::utils::Ipv4;
   using bess::utils::Udp;
@@ -177,7 +167,7 @@ BKDRFTQueueInc::FlowId BKDRFTQueueInc::GetFlowId(bess::Packet *pkt) {
                                      ip_bytes);  // Assumes a l-4 header
   // TODO(joshua): handle packet fragmentation
   FlowId id = {ip->src.value(), ip->dst.value(), udp->src_port.value(),
-              udp->dst_port.value(), ip->protocol};
+               udp->dst_port.value(), ip->protocol};
   return id;
 }
 
