@@ -162,7 +162,7 @@ class BKDRFTPMDPort final : public Port {
    * @param qid It supposes to pause an specific queue in a Backdraft PMDport
    * @return bess::Packet* The pointer to the newly generated pause message.
    */
-  bess::Packet *GeneratePauseMessage(queue_t qid);
+  bess::Packet *GeneratePauseMessage(packet_dir_t dir, queue_t qid);
 
   struct FlowId {
     uint32_t src_ip;
@@ -204,13 +204,19 @@ class BKDRFTPMDPort final : public Port {
 
   llring *InitllringQueue(uint32_t slots, int *err);
 
-  int aggressiveSend(queue_t qid, bess::Packet **pkts, int cnt);
+  int AggressiveSend(queue_t qid, bess::Packet **pkts, int cnt);
 
-  int sensitiveSend(queue_t qid, bess::Packet **pkts, int cnt);
+  int SensitiveSend(queue_t qid, bess::Packet **pkts, int cnt);
 
   int SendPeriodicPauseMessage(bess::Packet **pkts, int cnt);
 
-  double RateProber(packet_dir_t dir, queue_t qid);
+  // double RateProber(packet_dir_t dir, queue_t qid, struct rte_eth_stats
+  // stats);
+  double RateProber(queue_t qid, struct rte_eth_stats stats);
+
+  void PauseThresholdUpdate(packet_dir_t dir, queue_t qid);
+
+  void UpdateQueueOverloadStats(packet_dir_t dir, queue_t qid);
 
   /*
    * The name is pretty verbose.
@@ -228,8 +234,7 @@ class BKDRFTPMDPort final : public Port {
   // void SignalUnderload();
 
   FlowId GetFlowId(bess::Packet *pkt);
-
-  /*
+/*
    * TODO: Backdraft: It requires a lot of modification but just for the sake
    * of testing!
    * It should go to private side!
@@ -297,6 +302,9 @@ class BKDRFTPMDPort final : public Port {
   uint64_t last_pause_message_timestamp_;
 
   uint64_t last_pause_window_;
+
+  // In bytes
+  uint64_t pause_threshold_[PACKET_DIRS][MAX_QUEUES_PER_DIR];
 
   /*!
    * The NUMA node to which device is attached
