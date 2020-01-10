@@ -602,14 +602,12 @@ int BKDRFTPMDPort::RecvPackets(queue_t qid, bess::Packet **pkts, int cnt) {
   if (qid == 0) {
     recv = SendPeriodicPauseMessage(pkts, cnt);
   } else {
-    recv =
-        rte_eth_rx_burst(dpdk_port_id_, qid, (struct rte_mbuf **)pkts, cnt);
     UpdateQueueOverloadStats(PACKET_DIR_OUT, qid);
-    if (overload_[PACKET_DIR_INC][qid]) {
-      // LOG(INFO) << "I got in " << recv << " " << (int)qid;
-      bess::Packet::Free(pkts, recv);
-      recv = 0;
-    }
+    if (!overload_[PACKET_DIR_INC][qid])
+      recv =
+          rte_eth_rx_burst(dpdk_port_id_, qid, (struct rte_mbuf **)pkts, cnt);
+    else
+      bess::Packet::Free(pkts, cnt);
   }
   return recv;
 }
