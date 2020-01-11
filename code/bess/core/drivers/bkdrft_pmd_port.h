@@ -218,6 +218,7 @@ class BKDRFTPMDPort final : public Port {
 
   void UpdateQueueOverloadStats(packet_dir_t dir, queue_t qid);
 
+  void InitPauseThreshold();
   /*
    * The name is pretty verbose.
    */
@@ -234,7 +235,7 @@ class BKDRFTPMDPort final : public Port {
   // void SignalUnderload();
 
   FlowId GetFlowId(bess::Packet *pkt);
-/*
+  /*
    * TODO: Backdraft: It requires a lot of modification but just for the sake
    * of testing!
    * It should go to private side!
@@ -302,6 +303,10 @@ class BKDRFTPMDPort final : public Port {
   uint64_t last_pause_message_timestamp_;
 
   uint64_t last_pause_window_;
+
+  uint64_t test1;
+
+  uint64_t test2;
 
   // In bytes
   uint64_t pause_threshold_[PACKET_DIRS][MAX_QUEUES_PER_DIR];
