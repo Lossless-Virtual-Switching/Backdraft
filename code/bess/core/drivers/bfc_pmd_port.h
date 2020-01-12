@@ -41,6 +41,11 @@
 #include "../module.h"
 #include "../pktbatch.h"
 #include "../port.h"
+#include "../utils/cuckoo_map.h"
+#include "../utils/ip.h"
+
+using bess::utils::CuckooMap;
+using bess::utils::Ipv4Prefix;
 // #include "../utils/dql.h"
 
 typedef uint16_t dpdk_port_t;
@@ -169,12 +174,58 @@ class BFCPMDPort final : public Port {
     uint32_t dst_ip;
     uint32_t src_port;
     uint32_t dst_port;
+    // uint8_t src_maddr[6];
+    // uint8_t dst_maddr[6];
     uint8_t protocol;
   };
 
+  struct Flow {
+    uint64_t queue_number;      // physical queue it has been assigned to
+    bool pause_status;          // whether it is paused or not?
+    FlowId VFID;                // allows the flow to remove itself from the map
+    int queued_packets;         // How many packets are queued?
+    Flow() : queue_number(0), pause_status(false), VFID() {};
+    Flow(FlowId new_id, queue_t qid)
+        : queue_number(qid), pause_status(false), VFID(new_id){};
+    ~Flow(){};
+  };
+
+  // hashes a FlowId
+  struct Hash {
+    // a similar method to boost's hash_combine in order to combine hashes
+    inline void combine(std::size_t &hash, const unsigned int &val) const {
+      std::hash<unsigned int> hasher;
+      hash ^= hasher(val) + 0x9e3779b9 + (hash << 6) + (hash >> 2);
+    }
+    bess::utils::HashResult operator()(const FlowId &id) const {
+      std::size_t hash = 0;
+      combine(hash, id.src_ip);
+      combine(hash, id.dst_ip);
+      combine(hash, id.src_port);
+      combine(hash, id.dst_port);
+      combine(hash, (uint32_t)id.protocol);
+      return hash;
+    }
+  };
+
+  struct EqualTo {
+    bool operator()(const FlowId &id1, const FlowId &id2) const {
+      bool ips = (id1.src_ip == id2.src_ip) && (id1.dst_ip == id2.dst_ip);
+      bool ports =
+          (id1.src_port == id2.src_port) && (id1.dst_port == id2.dst_port);
+      return (ips && ports) && (id1.protocol == id2.protocol);
+    }
+  };
+
+  FlowId GetId(bess::Packet *pkt);
+
+  void BookingRecv(queue_t qid, bess::Packet **pkts, int cnt);
+
+  void BookingSend(queue_t qid, bess::Packet **pkts, int cnt);
+
   uint64_t GetFlags() const override {
     return DRIVER_FLAG_SELF_INC_STATS | DRIVER_FLAG_SELF_OUT_STATS;
-  }
+  };
 
   LinkStatus GetLinkStatus() override;
 
@@ -186,138 +237,140 @@ class BFCPMDPort final : public Port {
    */
   placement_constraint GetNodePlacementConstraint() const override {
     return node_placement_;
-  }
+    }
 
-  /*
-   * DCB confiuration, it is just have 4 Traffic classes at the moment,
-   * it is just for testing, however, TODO: I'll develop the interface in the
-   * BESS script so that different DCB configurations can be passed to the
-   * PMD driver without any hassle.
-   */
-  void InitDCBPortConfig(dpdk_port_t port_id, struct rte_eth_conf *eth_conf);
+    /*
+     * DCB confiuration, it is just have 4 Traffic classes at the moment,
+     * it is just for testing, however, TODO: I'll develop the interface in the
+     * BESS script so that different DCB configurations can be passed to the
+     * PMD driver without any hassle.
+     */
+    void InitDCBPortConfig(dpdk_port_t port_id, struct rte_eth_conf * eth_conf);
 
-  bool PauseFlow(bess::Packet **pkts, int cnt);
+    bool PauseFlow(bess::Packet * *pkts, int cnt);
 
-  void EnqueueOutstandingPackets(bess::Packet *newpkt, queue_t qid, int *err);
+    void EnqueueOutstandingPackets(bess::Packet * newpkt, queue_t qid,
+                                   int *err);
 
-  void RetrieveOutstandingPacketBatch(queue_t qid, int *err);
+    void RetrieveOutstandingPacketBatch(queue_t qid, int *err);
 
-  llring *InitllringQueue(uint32_t slots, int *err);
+    llring *InitllringQueue(uint32_t slots, int *err);
 
-  int AggressiveSend(queue_t qid, bess::Packet **pkts, int cnt);
+    int AggressiveSend(queue_t qid, bess::Packet * *pkts, int cnt);
 
-  int SensitiveSend(queue_t qid, bess::Packet **pkts, int cnt);
+    int SensitiveSend(queue_t qid, bess::Packet * *pkts, int cnt);
 
-  int SendPeriodicPauseMessage(bess::Packet **pkts, int cnt);
+    int SendPeriodicPauseMessage(bess::Packet * *pkts, int cnt);
 
-  // double RateProber(packet_dir_t dir, queue_t qid, struct rte_eth_stats
-  // stats);
-  double RateProber(queue_t qid, struct rte_eth_stats stats);
+    // double RateProber(packet_dir_t dir, queue_t qid, struct rte_eth_stats
+    // stats);
+    double RateProber(queue_t qid, struct rte_eth_stats stats);
 
-  void PauseThresholdUpdate(packet_dir_t dir, queue_t qid);
+    void PauseThresholdUpdate(packet_dir_t dir, queue_t qid);
 
-  void UpdateQueueOverloadStats(packet_dir_t dir, queue_t qid);
+    void UpdateQueueOverloadStats(packet_dir_t dir, queue_t qid);
 
-  void InitPauseThreshold();
-  /*
-   * The name is pretty verbose.
-   */
-  CommandResponse ReconfigureDCBQueueNumbers();
+    void InitPauseThreshold();
+    /*
+     * The name is pretty verbose.
+     */
+    CommandResponse ReconfigureDCBQueueNumbers();
 
-  /*
-   * It leaves a queue for the pause messages for now.
-   * TODO: I need to go back to this function soon.
-   */
-  CommandResponse pause_queue_setup();
+    /*
+     * It leaves a queue for the pause messages for now.
+     * TODO: I need to go back to this function soon.
+     */
+    CommandResponse pause_queue_setup();
 
-  // void SignalOverload();
+    // void SignalOverload();
 
-  // void SignalUnderload();
+    // void SignalUnderload();
 
-  FlowId GetFlowId(bess::Packet *pkt);
-  /*
-   * TODO: Backdraft: It requires a lot of modification but just for the sake
-   * of testing!
-   * It should go to private side!
-   * It requires some access functions.
-   */
-  // Parent tasks of this module in the current pipeline.
-  // std::vector<Module *> parent_tasks_;
-  // std::vector<Module *> bp_parent;
+    /*
+     * TODO: Backdraft: It requires a lot of modification but just for the sake
+     * of testing!
+     * It should go to private side!
+     * It requires some access functions.
+     */
+    // Parent tasks of this module in the current pipeline.
+    // std::vector<Module *> parent_tasks_;
+    // std::vector<Module *> bp_parent;
 
- private:
-  /*!
-   * The DPDK port ID number (set after binding).
-   */
-  dpdk_port_t dpdk_port_id_;
+   private:
+    /*!
+     * The DPDK port ID number (set after binding).
+     */
+    dpdk_port_t dpdk_port_id_;
 
-  /*
-   * TODO: Backdraft: It requires a lot of modification but just for the sake
-   * of testing!
-   * It should go to private side!
-   * It needs some access functions.
-   */
-  // Whether the module itself is overloaded.
-  bool overload_[PACKET_DIRS][MAX_QUEUES_PER_DIR];
+    /*
+     * TODO: Backdraft: It requires a lot of modification but just for the sake
+     * of testing!
+     * It should go to private side!
+     * It needs some access functions.
+     */
+    // Whether the module itself is overloaded.
+    bool overload_[PACKET_DIRS][MAX_QUEUES_PER_DIR];
 
-  // bool overload_[PACKET_DIRS][MAX_QUEUES_PER_DIR];
+    // bool overload_[PACKET_DIRS][MAX_QUEUES_PER_DIR];
 
-  /*!
-   * True if device did not exist when bessd started and was later patched in.
-   */
-  bool hot_plugged_;
+    /*!
+     * True if device did not exist when bessd started and was later patched in.
+     */
+    bool hot_plugged_;
 
-  /*
-   * number of active flows, maybe it should be per queue
-   */
-  int nactive_;
+    /*
+     * number of active flows, maybe it should be per queue
+     */
+    int nactive_;
 
-  /*
-   * half rrt + effect time
-   */
-  int hrtt_;
+    /*
+     * half rrt + effect time
+     */
+    int hrtt_;
 
-  /*
-   * effect time or tau is BFC paper
-   */
-  uint32_t etime_;
+    /*
+     * effect time or tau is BFC paper
+     */
+    uint32_t etime_;
 
-  uint32_t llring_slots;
+    uint32_t llring_slots;
 
-  uint64_t last_bess_bytes_[PACKET_DIRS][MAX_QUEUES_PER_DIR];
+    uint64_t last_bess_bytes_[PACKET_DIRS][MAX_QUEUES_PER_DIR];
 
-  uint64_t overcap_;
+    uint64_t overcap_;
 
-  uint64_t prev_overcap_;
+    uint64_t prev_overcap_;
 
-  uint64_t pause_window_[PACKET_DIRS][MAX_QUEUES_PER_DIR];
+    uint64_t pause_window_[PACKET_DIRS][MAX_QUEUES_PER_DIR];
 
-  uint64_t pause_timestamp_[PACKET_DIRS][MAX_QUEUES_PER_DIR];
+    uint64_t pause_timestamp_[PACKET_DIRS][MAX_QUEUES_PER_DIR];
 
-  uint64_t limit_[MAX_QUEUES_PER_DIR];
+    uint64_t limit_[MAX_QUEUES_PER_DIR];
 
-  struct llring **bbql_queue_list_;
+    struct llring **bbql_queue_list_;
 
-  bess::PacketBatch *outstanding_pkts_batch;
+    bess::PacketBatch *outstanding_pkts_batch;
 
-  uint64_t last_pause_message_timestamp_;
+    uint64_t last_pause_message_timestamp_;
 
-  uint64_t last_pause_window_;
+    uint64_t last_pause_window_;
 
-  uint64_t test1;
+    uint64_t test1;
 
-  uint64_t test2;
+    uint64_t test2;
 
-  // In bytes
-  uint64_t pause_threshold_[PACKET_DIRS][MAX_QUEUES_PER_DIR];
+    // In bytes
+    uint64_t pause_threshold_[PACKET_DIRS][MAX_QUEUES_PER_DIR];
 
-  /*!
-   * The NUMA node to which device is attached
-   */
+    CuckooMap<FlowId, Flow *, Hash, EqualTo> book_;
 
-  placement_constraint node_placement_;
+    /*!
+     * The NUMA node to which device is attached
+     */
 
-  std::string driver_;  // ixgbe, i40e, ...
+    placement_constraint node_placement_;
+
+    std::string driver_;  // ixgbe, i40e, ...
 };
 
 #endif  // BESS_DRIVERS_PMD_H_

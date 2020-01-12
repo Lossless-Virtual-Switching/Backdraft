@@ -542,6 +542,11 @@ void BFCPMDPort::DeInit() {
     }
     std::free(bbql_queue_list_);
   }
+
+  for (auto it = book_.begin(); it != book_.end();) {
+    book_.Remove(it->second->VFID);
+    it++;
+  }
 }
 
 void BFCPMDPort::CollectStats(bool reset) {
@@ -606,16 +611,13 @@ int BFCPMDPort::RecvPackets(queue_t qid, bess::Packet **pkts, int cnt) {
   int recv = 0;
 
   if (qid == 0) {
-    recv = SendPeriodicPauseMessage(pkts, cnt);
-    // LOG(INFO) << "periodic " << recv << " " << (int)dpdk_port_id_;
+    // recv = SendPeriodicPauseMessage(pkts, cnt);
   } else {
-    // LOG(INFO) << "out recv " << recv << " " << (int)dpdk_port_id_ << " " <<
-    // cnt;
     if (!overload_[PACKET_DIR_INC][qid]) {
       recv =
           rte_eth_rx_burst(dpdk_port_id_, qid, (struct rte_mbuf **)pkts, cnt);
-      // LOG(INFO) << "in recv " << recv << " " << (int)dpdk_port_id_ << " "
-      //           << cnt;
+
+      BookingRecv(qid, pkts, recv);
     }
   }
   return recv;
@@ -630,9 +632,11 @@ int BFCPMDPort::SendPackets(queue_t qid, bess::Packet **pkts, int cnt) {
     return 0;
   }
 
-  // LOG(INFO) << "just checking";
   sent = rte_eth_tx_burst(dpdk_port_id_, qid,
                           reinterpret_cast<struct rte_mbuf **>(pkts), cnt);
+
+  // Updating the flows' status!
+  BookingSend(qid, pkts, sent);
 
   for (int i = 0; i < cnt; i++) {
     sent_bytes += pkts[i]->total_len();
@@ -654,6 +658,35 @@ int BFCPMDPort::SendPackets(queue_t qid, bess::Packet **pkts, int cnt) {
 
   return sent;
 
+}
+
+void BFCPMDPort::BookingRecv(queue_t qid, bess::Packet **pkts, int cnt) {
+  for (int pkt = 0; pkt < cnt; pkt++) {
+    FlowId id = GetId(pkts[pkt]);
+    auto it = book_.Find(id);
+
+    if (it != nullptr) {
+      it->second->queued_packets++;
+    } else {
+      Flow *f = new Flow(id, qid);
+      book_.Insert(id, f);
+    }
+  }
+}
+
+void BFCPMDPort::BookingSend(queue_t qid, bess::Packet **pkts, int cnt) {
+  qid++;
+  for (int pkt = 0; pkt < cnt; pkt++) {
+    FlowId id = GetId(pkts[pkt]);
+    auto it = book_.Find(id);
+
+    if (it != nullptr) {
+      Flow *f = it->second;
+      f->queued_packets--;
+      if (f->queued_packets == 0)
+        book_.Remove(f->VFID);
+    }
+  }
 }
 
 int BFCPMDPort::AggressiveSend(queue_t qid, bess::Packet **pkts, int cnt) {
@@ -722,22 +755,16 @@ int BFCPMDPort::SendPauseMessage(bess::Packet **pkts, int cnt) {
 bess::Packet *BFCPMDPort::GeneratePauseMessage(packet_dir_t dir,
                                                   queue_t qid) {
   static const uint16_t pause_op_code = 0x0001;
-  // uint64_t cur;
   char *ptr;
   // I might be able to add hrtt_ or etime_ here to pause time.
-  // uint16_t pause_time;
   uint64_t pause_time;
 
   // cur = tsc_to_ns(rdtsc());
 
   if (overload_[dir][qid])
-    // pause_time = cur;
     pause_time = 1;
-  else {
-    // pause_time = cur;
+  else
     pause_time = 0;
-    // LOG(INFO) << "here as well generate";
-  }
 
   bess::Packet *pkt = current_worker.packet_pool()->Alloc();
   ptr = static_cast<char *>(pkt->buffer()) + SNBUF_HEADROOM;
@@ -765,7 +792,6 @@ void BFCPMDPort::BQLUpdateLimit(queue_t qid) {
   double rate = 10;
 
   // rate = RateProber(PACKET_DIR_OUT, qid) / 1000000000;
-
   // LOG(INFO) << rate;
 
   if (rate == 0)
@@ -830,25 +856,8 @@ void BFCPMDPort::InitDCBPortConfig(dpdk_port_t port_id,
   return;
 }
 
-BFCPMDPort::FlowId BFCPMDPort::GetFlowId(bess::Packet *pkt) {
-  using bess::utils::Ethernet;
-  using bess::utils::Ipv4;
-  using bess::utils::Udp;
-
-  Ethernet *eth = pkt->head_data<Ethernet *>();
-  Ipv4 *ip = reinterpret_cast<Ipv4 *>(eth + 1);
-  size_t ip_bytes = ip->header_length << 2;
-  Udp *udp = reinterpret_cast<Udp *>(reinterpret_cast<uint8_t *>(ip) +
-                                     ip_bytes);  // Assumes a l-4 header
-  // TODO(joshua): handle packet fragmentation
-  FlowId id = {ip->src.value(), ip->dst.value(), udp->src_port.value(),
-               udp->dst_port.value(), ip->protocol};
-  return id;
-}
-
 void BFCPMDPort::PauseMessageHandle(bess::Packet **pkts, int cnt) {
   using bess::utils::Ethernet;
-  // static bess::utils::be16_t pause_eth_type = (bess::utils::be16_t)0x8808;
   bess::Packet *pause_frame;
   char *ptr;
 
@@ -895,14 +904,6 @@ void BFCPMDPort::PauseMessageHandle(bess::Packet **pkts, int cnt) {
             overload_[PACKET_DIR_INC][packet_qid] = false;
           else
             overload_[PACKET_DIR_INC][packet_qid] = true;
-          // if ((int)dpdk_port_id_ == 0 &&
-          // !overload_[PACKET_DIR_INC][packet_qid])
-          //   LOG(INFO) << "Handle " << (int)dpdk_port_id_ << " "
-          //            << overload_[PACKET_DIR_INC][packet_qid];
-          //          << overload_[PACKET_DIR_INC][packet_qid];
-
-          // LOG(INFO) << "hrtt " << cur << " " << packet_pause_time << " "
-          //          << cur - packet_pause_time;
         }
       }
     }
@@ -1005,16 +1006,8 @@ double BFCPMDPort::RateProber(queue_t qid, struct rte_eth_stats stats) {
  */
 void BFCPMDPort::PauseThresholdUpdate(packet_dir_t dir, queue_t qid) {
   static const float link_capacity = 1.5;  // MBps
-  // static int counter = 0;
 
   // rate = RateProber(PACKET_DIR_OUT, qid, stats) / 1000000000;
-  // rate = RateProber(qid, stats);
-  // counter++;
-  // if (counter > 4) {
-  //   pause_threshold_[dir][qid] = 100000000000;
-  //  counter = 0;
-  // }
-  // else
   pause_threshold_[dir][qid] = (hrtt_ + etime_) * link_capacity / nactive_;
   // LOG(INFO) << pause_threshold_[dir][qid];
 }
@@ -1061,18 +1054,27 @@ void BFCPMDPort::UpdateQueueOverloadStats(packet_dir_t dir, queue_t qid) {
       last_pause = tsc_to_ns(rdtsc());
     }
   }
-  // LOG(INFO) << "HERE " << test1 << " " << test2 << " " << (temp < 0) << " "
-  //          << temp << " " << pause_threshold_[dir][qid];
-  //
-  // if (dpdk_port_id_ == 1)
-  //  LOG(INFO) << temp << " " << stats.q_obytes[qid] << " "
-  //            << stats.q_ibytes[qid] << " " << pause_threshold_[dir][qid];
+}
 
-  // LOG(INFO) << "Queue Occupancy " << queue_occupancy << " Pause Threshold "
-  // << pause_threshold_[dir][qid] << " " << overload_[dir][qid];
-  // if (dpdk_port_id_ == 1 && overload_[dir][qid] == false)
-  //  LOG(INFO) << "Queue Occupancy " << queue_occupancy << " Pause Threshold "
-  //            << pause_threshold_[dir][qid] << " " << overload_[dir][qid];
+BFCPMDPort::FlowId BFCPMDPort::GetId(bess::Packet *pkt) {
+  using bess::utils::Ethernet;
+  using bess::utils::Ipv4;
+  using bess::utils::Udp;
+
+  Ethernet *eth = pkt->head_data<Ethernet *>();
+  Ipv4 *ip = reinterpret_cast<Ipv4 *>(eth + 1);
+  size_t ip_bytes = ip->header_length << 2;
+  Udp *udp = reinterpret_cast<Udp *>(reinterpret_cast<uint8_t *>(ip) +
+                                     ip_bytes);  // Assumes a l-4 header
+  // TODO(joshua): handle packet fragmentation
+
+  FlowId id = {ip->src.value(),       ip->dst.value(), udp->src_port.value(),
+               udp->dst_port.value(), ip->protocol};
+  // eth->src_addr,         eth->ether_type};
+  // eth->src_addr};
+
+  // FlowId id = {eth->src_addr.bytes, eth->dst_addr.bytes};
+  return id;
 }
 
 ADD_DRIVER(BFCPMDPort, "bfc_pmd_port", "BFC DPDK poll mode driver")
