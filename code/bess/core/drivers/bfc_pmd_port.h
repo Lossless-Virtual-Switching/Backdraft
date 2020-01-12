@@ -362,7 +362,7 @@ class BFCPMDPort final : public Port {
     // In bytes
     uint64_t pause_threshold_[PACKET_DIRS][MAX_QUEUES_PER_DIR];
 
-    CuckooMap<FlowId, Flow *, Hash, EqualTo> book_;
+    static CuckooMap<FlowId, Flow *, Hash, EqualTo> book_;
 
     /*!
      * The NUMA node to which device is attached
