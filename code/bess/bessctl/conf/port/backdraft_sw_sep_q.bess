@@ -77,6 +77,9 @@ print("receiver tx ", config.recv_dev['tx'])
 if config.backdraft:
   my_vhost0 = BKDRFTPMDPort(name='my_vhost0', vdev='net_vhost0,iface=/home/alireza/my_vhost0.sock,queues=' + str(config.send_q), num_inc_q=config.send_dev['rx'], num_out_q=config.send_dev['tx'], size_inc_q=config.queue_size_inc, size_out_q=config.queue_size_out)
   my_vhost1 = BKDRFTPMDPort(name='my_vhost1', vdev='net_vhost1,iface=/home/alireza/my_vhost1.sock,queues=' + str(config.recv_q), num_inc_q=config.recv_dev['rx'], num_out_q=config.recv_dev['tx'], size_inc_q=config.queue_size_inc, size_out_q=config.queue_size_out)
+elif config.bfc:
+  my_vhost0 = BFCPMDPort(name='my_vhost0', vdev='net_vhost0,iface=/home/alireza/my_vhost0.sock,queues=' + str(config.send_q), num_inc_q=config.send_dev['rx'], num_out_q=config.send_dev['tx'], size_inc_q=config.queue_size_inc, size_out_q=config.queue_size_out)
+  my_vhost1 = BFCPMDPort(name='my_vhost1', vdev='net_vhost1,iface=/home/alireza/my_vhost1.sock,queues=' + str(config.recv_q), num_inc_q=config.recv_dev['rx'], num_out_q=config.recv_dev['tx'], size_inc_q=config.queue_size_inc, size_out_q=config.queue_size_out)
 else:
   my_vhost0 = PMDPort(name='my_vhost0', vdev='net_vhost0,iface=/home/alireza/my_vhost0.sock,queues=' + str(config.send_q), num_inc_q=config.send_dev['rx'], num_out_q=config.send_dev['tx'], size_inc_q=config.queue_size_inc, size_out_q=config.queue_size_out)
   my_vhost1 = PMDPort(name='my_vhost1', vdev='net_vhost1,iface=/home/alireza/my_vhost1.sock,queues=' + str(config.recv_q), num_inc_q=config.recv_dev['rx'], num_out_q=config.recv_dev['tx'], size_inc_q=config.queue_size_inc, size_out_q=config.queue_size_out)

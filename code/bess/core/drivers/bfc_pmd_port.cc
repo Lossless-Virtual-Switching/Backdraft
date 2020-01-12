@@ -28,11 +28,10 @@
 // ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
 // POSSIBILITY OF SUCH DAMAGE.
 
-#include "bkdrft_pmd_port.h"
+#include "bfc_pmd_port.h"
 
 #include <rte_cycles.h>
 #include <rte_ethdev_pci.h>
-// #include <rte_log.h>
 
 #include "../utils/ether.h"
 #include "../utils/format.h"
@@ -85,7 +84,7 @@ static const struct rte_eth_conf default_eth_conf() {
   return ret;
 }
 
-void BKDRFTPMDPort::InitDriver() {
+void BFCPMDPort::InitDriver() {
   dpdk_port_t num_dpdk_ports = rte_eth_dev_count();
 
   LOG(INFO) << static_cast<int>(num_dpdk_ports)
@@ -193,7 +192,7 @@ static CommandResponse find_dpdk_port_by_pci_addr(const std::string &pci,
  * Note: When configuring for DCB operation, at port initialization, both the
  number of transmit queues and the number of receive queues must be set to 128.
 */
-CommandResponse BKDRFTPMDPort::ReconfigureDCBQueueNumbers() {
+CommandResponse BFCPMDPort::ReconfigureDCBQueueNumbers() {
   // We set the queue numbers to 128 regardless of what user has
   // requested in the bess script.
 
@@ -232,7 +231,7 @@ static CommandResponse find_dpdk_vdev(const std::string &vdev,
   return CommandSuccess();
 }
 
-CommandResponse BKDRFTPMDPort::pause_queue_setup() {
+CommandResponse BFCPMDPort::pause_queue_setup() {
   num_queues[PACKET_DIR_INC]++;
   num_queues[PACKET_DIR_OUT]++;
 
@@ -242,7 +241,7 @@ CommandResponse BKDRFTPMDPort::pause_queue_setup() {
   return CommandSuccess();
 }
 
-CommandResponse BKDRFTPMDPort::Init(const bess::pb::BKDRFTPMDPortArg &arg) {
+CommandResponse BFCPMDPort::Init(const bess::pb::BFCPMDPortArg &arg) {
   dpdk_port_t ret_port_id = DPDK_PORT_UNKNOWN;
 
   struct rte_eth_dev_info dev_info;
@@ -255,10 +254,6 @@ CommandResponse BKDRFTPMDPort::Init(const bess::pb::BKDRFTPMDPortArg &arg) {
   int num_txq = num_queues[PACKET_DIR_OUT];
   int num_rxq = num_queues[PACKET_DIR_INC];
 
-  /*
-   * Aghax
-   * Now pause queues!
-   */
   // pause_queue_setup();
 
   int ret;
@@ -266,27 +261,27 @@ CommandResponse BKDRFTPMDPort::Init(const bess::pb::BKDRFTPMDPortArg &arg) {
   int i;
 
   int numa_node = -1;
-  prev_overcap_ = 0;
-  etime_ = 100000;
-  hrtt_ = 10;
+  etime_ = 1000;  // FIXME: etime_ and hrtt is dependent on each other on
+                        // even the scheduler! I think that's pretty important!
+  hrtt_ = 50;
   nactive_ = 1;  // FIXME: Still there is no notion of flows here is I will
                  // revise this once I have all flows available. I don't need it
                  // right now because I have one flow per queue, and I can
                  // adjust this number based on the number of the queues.
 
-  LOG(INFO) << "backdraft pmd port initialized";
+  LOG(INFO) << "bfc pmd port initialized";
 
   CommandResponse err;
   switch (arg.port_case()) {
-    case bess::pb::BKDRFTPMDPortArg::kPortId: {
+    case bess::pb::BFCPMDPortArg::kPortId: {
       err = find_dpdk_port_by_id(arg.port_id(), &ret_port_id);
       break;
     }
-    case bess::pb::BKDRFTPMDPortArg::kPci: {
+    case bess::pb::BFCPMDPortArg::kPci: {
       err = find_dpdk_port_by_pci_addr(arg.pci(), &ret_port_id, &hot_plugged_);
       break;
     }
-    case bess::pb::BKDRFTPMDPortArg::kVdev: {
+    case bess::pb::BFCPMDPortArg::kVdev: {
       err = find_dpdk_vdev(arg.vdev(), &ret_port_id, &hot_plugged_);
       break;
     }
@@ -432,12 +427,14 @@ CommandResponse BKDRFTPMDPort::Init(const bess::pb::BKDRFTPMDPortArg &arg) {
     pause_window_[PACKET_DIR_OUT][queue] = 0;
     pause_timestamp_[PACKET_DIR_INC][queue] = tsc_to_ns(rdtsc());
     pause_timestamp_[PACKET_DIR_OUT][queue] = tsc_to_ns(rdtsc());
+    pause_threshold_[PACKET_DIR_INC][queue] = 0;
+    pause_threshold_[PACKET_DIR_OUT][queue] = 0;
   }
 
   outstanding_pkts_batch = new bess::PacketBatch();
   outstanding_pkts_batch->clear();
 
-  llring_slots = 256;
+  llring_slots = 64;
   int err_ring = 0;
   bbql_queue_list_ =
       static_cast<struct llring **>(malloc(sizeof(struct llring *) * num_rxq));
@@ -450,12 +447,17 @@ CommandResponse BKDRFTPMDPort::Init(const bess::pb::BKDRFTPMDPortArg &arg) {
   last_pause_message_timestamp_ = 0;
   last_pause_window_ = 0;
 
+  test1 = 0;
+  test2 = 0;
+
+  InitPauseThreshold();
+
   CollectStats(true);
 
   return CommandSuccess();
 }
 
-llring *BKDRFTPMDPort::InitllringQueue(uint32_t slots, int *err) {
+llring *BFCPMDPort::InitllringQueue(uint32_t slots, int *err) {
   int bytes = llring_bytes_with_slots(slots);
   int ret;
 
@@ -474,7 +476,7 @@ llring *BKDRFTPMDPort::InitllringQueue(uint32_t slots, int *err) {
   return queue;
 }
 
-int BKDRFTPMDPort::UpdateConf(const Conf &conf) {
+int BFCPMDPort::UpdateConf(const Conf &conf) {
   rte_eth_dev_stop(dpdk_port_id_);
 
   if (conf_.mtu != conf.mtu && conf.mtu != 0) {
@@ -514,7 +516,7 @@ int BKDRFTPMDPort::UpdateConf(const Conf &conf) {
   return 0;
 }
 
-void BKDRFTPMDPort::DeInit() {
+void BFCPMDPort::DeInit() {
   rte_eth_dev_stop(dpdk_port_id_);
 
   if (hot_plugged_) {
@@ -542,7 +544,7 @@ void BKDRFTPMDPort::DeInit() {
   }
 }
 
-void BKDRFTPMDPort::CollectStats(bool reset) {
+void BFCPMDPort::CollectStats(bool reset) {
   struct rte_eth_stats stats;
   int ret;
 
@@ -600,145 +602,61 @@ void BKDRFTPMDPort::CollectStats(bool reset) {
   }
 }
 
-int BKDRFTPMDPort::RecvPackets(queue_t qid, bess::Packet **pkts, int cnt) {
+int BFCPMDPort::RecvPackets(queue_t qid, bess::Packet **pkts, int cnt) {
   int recv = 0;
-  uint64_t cur;
 
   if (qid == 0) {
     recv = SendPeriodicPauseMessage(pkts, cnt);
+    // LOG(INFO) << "periodic " << recv << " " << (int)dpdk_port_id_;
   } else {
-    cur = tsc_to_ns(rdtsc());
-    // LOG(INFO) << cur - pause_timestamp_[PACKET_DIR_INC][qid] << " "
-    //           << pause_window_[PACKET_DIR_INC][qid];
-    if (cur - pause_timestamp_[PACKET_DIR_INC][qid] >=
-        pause_window_[PACKET_DIR_INC][qid]) {
+    // LOG(INFO) << "out recv " << recv << " " << (int)dpdk_port_id_ << " " <<
+    // cnt;
+    if (!overload_[PACKET_DIR_INC][qid]) {
       recv =
           rte_eth_rx_burst(dpdk_port_id_, qid, (struct rte_mbuf **)pkts, cnt);
-      overload_[PACKET_DIR_INC][qid] = false;
-    } else {
-      // LOG(INFO) << "EVER HERE g r " << tpmg << " " << tpmr;
-      // bess::Packet::Free(pkts, cnt);
-      recv = 0;
+      // LOG(INFO) << "in recv " << recv << " " << (int)dpdk_port_id_ << " "
+      //           << cnt;
     }
   }
   return recv;
 }
 
-int BKDRFTPMDPort::SendPackets(queue_t qid, bess::Packet **pkts, int cnt) {
+int BFCPMDPort::SendPackets(queue_t qid, bess::Packet **pkts, int cnt) {
   uint64_t sent_bytes = 0;
   int sent = 0;
-  int err;
-  int outstanding_batch_sent = 0;
 
   if (qid == 0) {
-    // It is queue zero so  there is nothing that I can do!
     PauseMessageHandle(pkts, cnt);
-    sent = rte_eth_tx_burst(dpdk_port_id_, qid,
-                            reinterpret_cast<struct rte_mbuf **>(pkts), cnt);
-
-    for (int i = 0; i < cnt; i++) {
-      sent_bytes += pkts[i]->total_len();
-    }
-
-    for (int i = 0; i < sent; i++) {
-      queue_stats[PACKET_DIR_OUT][qid].dpdk_bytes += pkts[i]->total_len();
-    }
-
-    int dropped = cnt - sent;
-
-    queue_stats[PACKET_DIR_OUT][qid].bytes += sent_bytes;
-    queue_stats[PACKET_DIR_OUT][qid].dropped += dropped;
-    queue_stats[PACKET_DIR_OUT][qid].requested_hist[cnt]++;
-    queue_stats[PACKET_DIR_OUT][qid].actual_hist[sent]++;
-    queue_stats[PACKET_DIR_OUT][qid].diff_hist[dropped]++;
-
-    return sent;
-
-  } else {
-    // It is not the queue zero so I would like to send the packets without
-    // handling the pause messages.
-    sent = rte_eth_tx_burst(dpdk_port_id_, qid,
-                            reinterpret_cast<struct rte_mbuf **>(pkts), cnt);
-    for (int pkt = 0; pkt < cnt; pkt++) {
-      sent_bytes += pkts[pkt]->total_len();
-    }
-
-    for (int pkt = 0; pkt < sent; pkt++) {
-      queue_stats[PACKET_DIR_OUT][qid].dpdk_bytes += pkts[pkt]->total_len();
-    }
-
-    if (sent != cnt) {
-      // Overloaded so we need to enqueue some packets.
-
-      BQLUpdateLimit(qid);
-
-      for (int pkt = sent; pkt < cnt; pkt++) {
-        err = 0;
-        EnqueueOutstandingPackets(pkts[pkt], qid, &err);
-        if (err == 0)
-          sent++;
-      }
-
-    } else {
-      // LOG(INFO) << "not overloaded, sending some outstanding packets";
-
-      // We aren't overloaded so let's see if there is any outstanding packets
-      // or not.
-      while (!llring_empty(bbql_queue_list_[qid])) {
-        err = 0;
-        outstanding_batch_sent = 0;
-
-        RetrieveOutstandingPacketBatch(qid, &err);
-        // outstanding_batch_sent =
-        //     rte_eth_tx_burst(dpdk_port_id_, qid,
-        //                      reinterpret_cast<struct rte_mbuf **>(
-        //                          outstanding_pkts_batch->pkts()),
-        //                      outstanding_pkts_batch->cnt());
-
-        outstanding_batch_sent = sensitiveSend(
-            qid, outstanding_pkts_batch->pkts(), outstanding_pkts_batch->cnt());
-
-        for (int pkt = 0; pkt < outstanding_batch_sent; pkt++) {
-          queue_stats[PACKET_DIR_OUT][qid].dpdk_bytes +=
-              outstanding_pkts_batch->pkts()[pkt]->total_len();
-        }
-
-        // I shouldn't do this but I just want to test for now!
-        if (outstanding_batch_sent < outstanding_pkts_batch->cnt()) {
-          BQLUpdateLimit(qid);
-
-          // bess::Packet::Free(
-          //     outstanding_pkts_batch->pkts() + outstanding_batch_sent,
-          //     outstanding_pkts_batch->cnt() - outstanding_batch_sent);
-          // outstanding_pkts_batch->clear();  // I have to clear the batch!
-          //                                   // it for now!
-
-          for (int pkt = sent; pkt < cnt; pkt++) {
-            err = 0;
-            EnqueueOutstandingPackets(
-                outstanding_pkts_batch->pkts()[pkt], qid,
-                &err);  // It frees things for us so no need to
-                        // be worry about the memory.
-          }
-          break;
-        }
-        outstanding_pkts_batch->clear();  // I have to clear the batch!
-      }
-    }
-
-    int dropped = cnt - sent;
-
-    queue_stats[PACKET_DIR_OUT][qid].bytes += sent_bytes;
-    queue_stats[PACKET_DIR_OUT][qid].dropped += dropped;
-    queue_stats[PACKET_DIR_OUT][qid].requested_hist[cnt]++;
-    queue_stats[PACKET_DIR_OUT][qid].actual_hist[sent]++;
-    queue_stats[PACKET_DIR_OUT][qid].diff_hist[dropped]++;
-
-    return sent;
+    return 0;
   }
+
+  // LOG(INFO) << "just checking";
+  sent = rte_eth_tx_burst(dpdk_port_id_, qid,
+                          reinterpret_cast<struct rte_mbuf **>(pkts), cnt);
+
+  for (int i = 0; i < cnt; i++) {
+    sent_bytes += pkts[i]->total_len();
+    if (i < sent)
+      queue_stats[PACKET_DIR_OUT][qid].dpdk_bytes += pkts[i]->total_len();
+  }
+
+  // for (int i = 0; i < sent; i++) {
+  // queue_stats[PACKET_DIR_OUT][qid].dpdk_bytes += pkts[i]->total_len();
+  // }
+
+  int dropped = cnt - sent;
+
+  queue_stats[PACKET_DIR_OUT][qid].bytes += sent_bytes;
+  queue_stats[PACKET_DIR_OUT][qid].dropped += dropped;
+  queue_stats[PACKET_DIR_OUT][qid].requested_hist[cnt]++;
+  queue_stats[PACKET_DIR_OUT][qid].actual_hist[sent]++;
+  queue_stats[PACKET_DIR_OUT][qid].diff_hist[dropped]++;
+
+  return sent;
+
 }
 
-int BKDRFTPMDPort::aggressiveSend(queue_t qid, bess::Packet **pkts, int cnt) {
+int BFCPMDPort::AggressiveSend(queue_t qid, bess::Packet **pkts, int cnt) {
   int sent = 0;
   while (sent != cnt) {
     sent = sent + rte_eth_tx_burst(dpdk_port_id_, qid,
@@ -748,13 +666,13 @@ int BKDRFTPMDPort::aggressiveSend(queue_t qid, bess::Packet **pkts, int cnt) {
   return sent;
 }
 
-int BKDRFTPMDPort::sensitiveSend(queue_t qid, bess::Packet **pkts, int cnt) {
+int BFCPMDPort::SensitiveSend(queue_t qid, bess::Packet **pkts, int cnt) {
   int sent = rte_eth_tx_burst(dpdk_port_id_, qid,
                               reinterpret_cast<struct rte_mbuf **>(pkts), cnt);
   return sent;
 }
 
-void BKDRFTPMDPort::RetrieveOutstandingPacketBatch(queue_t qid, int *err) {
+void BFCPMDPort::RetrieveOutstandingPacketBatch(queue_t qid, int *err) {
   bess::Packet *pkt;
   while (!outstanding_pkts_batch->full()) {
     *err =
@@ -766,7 +684,7 @@ void BKDRFTPMDPort::RetrieveOutstandingPacketBatch(queue_t qid, int *err) {
   }
 }
 
-int BKDRFTPMDPort::SendPauseMessage(bess::Packet **pkts, int cnt) {
+int BFCPMDPort::SendPauseMessage(bess::Packet **pkts, int cnt) {
   using bess::utils::Ethernet;
   Ethernet *peth;
   Ethernet *beth;
@@ -782,17 +700,14 @@ int BKDRFTPMDPort::SendPauseMessage(bess::Packet **pkts, int cnt) {
     if (cnt) {  // Outgoing directions is getting overloaded because of the
                 // slow receiver so outgoing drection
       batch_packet = pkts[pause_message_count];
-      pause_frame = GeneratePauseMessage(queue);
+      pause_frame = GeneratePauseMessage(PACKET_DIR_OUT, queue);
       beth = batch_packet->head_data<Ethernet *>();
       peth = pause_frame->head_data<Ethernet *>();
       peth->src_addr = beth->dst_addr;
       peth->dst_addr = beth->src_addr;
-      // peth->ether_type = bess::utils::be16_t(0x8808);
       bess::Packet::Free(batch_packet);
       pkts[pause_message_count] = pause_frame;
       pause_message_count++;
-      overload_[PACKET_DIR_OUT][queue] =
-          false;  // Again I have reservation here
 
 #ifdef BACKDRAFT_DEBUG
       LOG(INFO) << "queue " << (int)queue << " is overloaded "
@@ -804,12 +719,26 @@ int BKDRFTPMDPort::SendPauseMessage(bess::Packet **pkts, int cnt) {
   return pause_message_count;
 }
 
-bess::Packet *BKDRFTPMDPort::GeneratePauseMessage(queue_t qid) {
+bess::Packet *BFCPMDPort::GeneratePauseMessage(packet_dir_t dir,
+                                                  queue_t qid) {
   static const uint16_t pause_op_code = 0x0001;
+  // uint64_t cur;
   char *ptr;
   // I might be able to add hrtt_ or etime_ here to pause time.
-  uint16_t pause_time =
-      pause_window_[PACKET_DIR_OUT][qid];  // We have calculated this in the BQL
+  // uint16_t pause_time;
+  uint64_t pause_time;
+
+  // cur = tsc_to_ns(rdtsc());
+
+  if (overload_[dir][qid])
+    // pause_time = cur;
+    pause_time = 1;
+  else {
+    // pause_time = cur;
+    pause_time = 0;
+    // LOG(INFO) << "here as well generate";
+  }
+
   bess::Packet *pkt = current_worker.packet_pool()->Alloc();
   ptr = static_cast<char *>(pkt->buffer()) + SNBUF_HEADROOM;
 
@@ -832,10 +761,10 @@ bess::Packet *BKDRFTPMDPort::GeneratePauseMessage(queue_t qid) {
   return pkt;
 }
 
-void BKDRFTPMDPort::BQLUpdateLimit(queue_t qid) {
-  double rate;
+void BFCPMDPort::BQLUpdateLimit(queue_t qid) {
+  double rate = 10;
 
-  rate = RateProber(PACKET_DIR_OUT, qid) / 1000000000;
+  // rate = RateProber(PACKET_DIR_OUT, qid) / 1000000000;
 
   // LOG(INFO) << rate;
 
@@ -848,34 +777,7 @@ void BKDRFTPMDPort::BQLUpdateLimit(queue_t qid) {
   overload_[PACKET_DIR_OUT][qid] = true;
 }
 
-// void BKDRFTPMDPort::SignalOverload() {
-//   LOG(INFO) << "PMD port: signal overload entered";
-
-//   if (overload_) {
-//     return;
-//   }
-//   for (auto const &module : bp_parent_tasks_) {
-//     LOG(INFO) << "PMD port: signal overload increament";
-//     module->IncreamentOverloadChildren();
-//   }
-
-//   overload_ = true;
-// }
-
-// void BKDRFTPMDPort::SignalUnderload() {
-//   if (!overload_) {
-//     return;
-//   }
-
-//   for (auto const &module : bp_parent_tasks_) {
-//     LOG(INFO) << "PMD port: signal underload";
-//     module->DecrementOverloadChildren();
-//   }
-
-//   overload_ = false;
-// }
-
-Port::LinkStatus BKDRFTPMDPort::GetLinkStatus() {
+Port::LinkStatus BFCPMDPort::GetLinkStatus() {
   struct rte_eth_link status;
   // rte_eth_link_get() may block up to 9 seconds, so use _nowait() variant.
   rte_eth_link_get_nowait(dpdk_port_id_, &status);
@@ -886,7 +788,7 @@ Port::LinkStatus BKDRFTPMDPort::GetLinkStatus() {
                     .link_up = static_cast<bool>(status.link_status)};
 }
 
-void BKDRFTPMDPort::InitDCBPortConfig(dpdk_port_t port_id,
+void BFCPMDPort::InitDCBPortConfig(dpdk_port_t port_id,
                                       struct rte_eth_conf *eth_conf) {
   uint8_t pfc_en = 0;
   struct rte_eth_dev_info dev_info;
@@ -897,7 +799,7 @@ void BKDRFTPMDPort::InitDCBPortConfig(dpdk_port_t port_id,
       .rss_key = NULL,
       .rss_key_len = 40,
       /* TODO: query rte_eth_dev_info_get() to set this*/
-      .rss_hf = ETH_RSS_IP | ETH_RSS_UDP | ETH_RSS_TCP | ETH_RSS_SCTP,
+    .rss_hf = ETH_RSS_IP | ETH_RSS_UDP | ETH_RSS_TCP | ETH_RSS_SCTP,
   };
 
   rte_eth_dev_info_get(port_id, &dev_info);
@@ -928,7 +830,7 @@ void BKDRFTPMDPort::InitDCBPortConfig(dpdk_port_t port_id,
   return;
 }
 
-BKDRFTPMDPort::FlowId BKDRFTPMDPort::GetFlowId(bess::Packet *pkt) {
+BFCPMDPort::FlowId BFCPMDPort::GetFlowId(bess::Packet *pkt) {
   using bess::utils::Ethernet;
   using bess::utils::Ipv4;
   using bess::utils::Udp;
@@ -944,7 +846,7 @@ BKDRFTPMDPort::FlowId BKDRFTPMDPort::GetFlowId(bess::Packet *pkt) {
   return id;
 }
 
-void BKDRFTPMDPort::PauseMessageHandle(bess::Packet **pkts, int cnt) {
+void BFCPMDPort::PauseMessageHandle(bess::Packet **pkts, int cnt) {
   using bess::utils::Ethernet;
   // static bess::utils::be16_t pause_eth_type = (bess::utils::be16_t)0x8808;
   bess::Packet *pause_frame;
@@ -954,7 +856,8 @@ void BKDRFTPMDPort::PauseMessageHandle(bess::Packet **pkts, int cnt) {
   static const uint16_t pause_eth_type = 0x8808;
 
   uint16_t packet_op_code;
-  uint16_t packet_pause_time;
+  // uint16_t packet_pause_time;
+  uint64_t packet_pause_time;
   queue_t packet_qid;
 
   static Ethernet *eth;
@@ -986,14 +889,27 @@ void BKDRFTPMDPort::PauseMessageHandle(bess::Packet **pkts, int cnt) {
           cur = tsc_to_ns(rdtsc());
           pause_timestamp_[PACKET_DIR_INC][packet_qid] = cur;
           pause_window_[PACKET_DIR_INC][packet_qid] = packet_pause_time;
-          overload_[PACKET_DIR_INC][packet_qid] = true;
+
+          // Here is the difference for BFC
+          if (packet_pause_time == 0)
+            overload_[PACKET_DIR_INC][packet_qid] = false;
+          else
+            overload_[PACKET_DIR_INC][packet_qid] = true;
+          // if ((int)dpdk_port_id_ == 0 &&
+          // !overload_[PACKET_DIR_INC][packet_qid])
+          //   LOG(INFO) << "Handle " << (int)dpdk_port_id_ << " "
+          //            << overload_[PACKET_DIR_INC][packet_qid];
+          //          << overload_[PACKET_DIR_INC][packet_qid];
+
+          // LOG(INFO) << "hrtt " << cur << " " << packet_pause_time << " "
+          //          << cur - packet_pause_time;
         }
       }
     }
   }
 }
 
-void BKDRFTPMDPort::EnqueueOutstandingPackets(bess::Packet *newpkt, queue_t qid,
+void BFCPMDPort::EnqueueOutstandingPackets(bess::Packet *newpkt, queue_t qid,
                                               int *err) {
   // if the queue is full. drop the packet.
   if (llring_count(bbql_queue_list_[qid]) == llring_slots - 1) {
@@ -1021,7 +937,7 @@ void BKDRFTPMDPort::EnqueueOutstandingPackets(bess::Packet *newpkt, queue_t qid,
   return;
 }
 
-bool BKDRFTPMDPort::PauseFlow(bess::Packet **pkts, int cnt) {
+bool BFCPMDPort::PauseFlow(bess::Packet **pkts, int cnt) {
   using bess::utils::Ethernet;
   bess::Packet *pause_frame;
   bess::utils::be16_t eth_type;
@@ -1040,42 +956,123 @@ bool BKDRFTPMDPort::PauseFlow(bess::Packet **pkts, int cnt) {
   return false;
 }
 
-int BKDRFTPMDPort::SendPeriodicPauseMessage(bess::Packet **pkts, int cnt) {
+int BFCPMDPort::SendPeriodicPauseMessage(bess::Packet **pkts, int cnt) {
   int pause_messages = 0;
   uint64_t cur;
   static uint64_t last_time = 0;
+  static const packet_dir_t dir = PACKET_DIR_OUT;
+
+  for (queue_t qid = 1; qid < num_queues[dir]; qid++)
+    UpdateQueueOverloadStats(dir, qid);
 
   cur = tsc_to_ns(rdtsc());
 
   if (cur - last_time > etime_) {
-    pause_messages = SendPauseMessage(pkts, cnt);
-    last_time = cur;
+      pause_messages = SendPauseMessage(pkts, cnt);
+      last_time = cur;
   }
 
   return pause_messages;
 }
 
-double BKDRFTPMDPort::RateProber(packet_dir_t dir, queue_t qid) {
+// double BFCPMDPort::RateProber(packet_dir_t dir, queue_t qid) {
+double BFCPMDPort::RateProber(queue_t qid, struct rte_eth_stats stats) {
   uint64_t cur;
-  double rate;
+  static double rate = 0;
   static uint64_t last_dpdk_byte_sent = 0;
   static uint64_t last_dpdk_packet_sent_timestamp = 0;
 
   cur = tsc_to_ns(rdtsc());
 
-  rate = (queue_stats[dir][qid].dpdk_bytes - last_dpdk_byte_sent) * 1000000000 /
-         (tsc_to_ns(rdtsc()) - last_dpdk_packet_sent_timestamp);
+  // rate = (queue_stats[dir][qid].dpdk_bytes - last_dpdk_byte_sent) *
+  // 1000000000 /
+  if (cur - last_dpdk_packet_sent_timestamp > 1000000000) {
+    rate = (stats.q_obytes[qid] - last_dpdk_byte_sent) * 1000000000 /
+           (tsc_to_ns(rdtsc()) - last_dpdk_packet_sent_timestamp);
 
-  // LOG(INFO) << cur - last_dpdk_packet_sent_timestamp << " "
-  //           << last_dpdk_packet_sent_timestamp << " " << last_dpdk_byte_sent
-  //           << " " << queue_stats[dir][qid].dpdk_bytes << " "
-  //           << queue_stats[dir][qid].dpdk_bytes - last_dpdk_byte_sent << " "
-  //           << rate;
+    // last_dpdk_byte_sent = queue_stats[dir][qid].dpdk_bytes;
+    last_dpdk_byte_sent = stats.q_obytes[qid];
+    last_dpdk_packet_sent_timestamp = cur;
+    LOG(INFO) << "test " << rate / 1000000000;
+  }
 
-  last_dpdk_byte_sent = queue_stats[dir][qid].dpdk_bytes;
-  last_dpdk_packet_sent_timestamp = cur;
 
-  return rate;
+  return rate / 1000000000;
 }
 
-ADD_DRIVER(BKDRFTPMDPort, "bkdrft_pmd_port", "BackDraft DPDK poll mode driver")
+/*
+ * Maybe I remove this function
+ */
+void BFCPMDPort::PauseThresholdUpdate(packet_dir_t dir, queue_t qid) {
+  static const float link_capacity = 1.5;  // MBps
+  // static int counter = 0;
+
+  // rate = RateProber(PACKET_DIR_OUT, qid, stats) / 1000000000;
+  // rate = RateProber(qid, stats);
+  // counter++;
+  // if (counter > 4) {
+  //   pause_threshold_[dir][qid] = 100000000000;
+  //  counter = 0;
+  // }
+  // else
+  pause_threshold_[dir][qid] = (hrtt_ + etime_) * link_capacity / nactive_;
+  // LOG(INFO) << pause_threshold_[dir][qid];
+}
+
+void BFCPMDPort::InitPauseThreshold() {
+  static const float link_capacity = 1.5;  // MBps
+
+  // For initialization I assume the active is 1.
+  for (queue_t qid = 0; qid < num_queues[PACKET_DIR_OUT]; qid++)
+    pause_threshold_[PACKET_DIR_OUT][qid] =
+        (hrtt_ + etime_) * link_capacity;
+}
+
+void BFCPMDPort::UpdateQueueOverloadStats(packet_dir_t dir, queue_t qid) {
+  struct rte_eth_stats stats;
+  int64_t temp;
+  uint64_t queue_occupancy;
+  int ret;
+  static uint64_t last_pause;
+  uint64_t cur;
+
+  // Calculate the queue occupancy
+  ret = rte_eth_stats_get(dpdk_port_id_, &stats);
+  if (ret != 0) {
+    overload_[dir][qid] = false;
+    LOG(INFO) << "SHIT";
+    return;
+  }
+
+  if(overload_[dir][qid] == true){
+    cur = tsc_to_ns(rdtsc());
+    if (cur - last_pause > etime_ + hrtt_)
+      overload_[dir][qid] = false;
+  } else {
+    temp = stats.q_obytes[qid] - stats.q_ibytes[qid];
+    if (temp < 0) {
+      queue_occupancy = 0;
+    } else {
+      queue_occupancy = temp;
+    }
+    // Update the status!
+    if (queue_occupancy > pause_threshold_[dir][qid]) {
+      overload_[dir][qid] = true;
+      last_pause = tsc_to_ns(rdtsc());
+    }
+  }
+  // LOG(INFO) << "HERE " << test1 << " " << test2 << " " << (temp < 0) << " "
+  //          << temp << " " << pause_threshold_[dir][qid];
+  //
+  // if (dpdk_port_id_ == 1)
+  //  LOG(INFO) << temp << " " << stats.q_obytes[qid] << " "
+  //            << stats.q_ibytes[qid] << " " << pause_threshold_[dir][qid];
+
+  // LOG(INFO) << "Queue Occupancy " << queue_occupancy << " Pause Threshold "
+  // << pause_threshold_[dir][qid] << " " << overload_[dir][qid];
+  // if (dpdk_port_id_ == 1 && overload_[dir][qid] == false)
+  //  LOG(INFO) << "Queue Occupancy " << queue_occupancy << " Pause Threshold "
+  //            << pause_threshold_[dir][qid] << " " << overload_[dir][qid];
+}
+
+ADD_DRIVER(BFCPMDPort, "bfc_pmd_port", "BFC DPDK poll mode driver")
