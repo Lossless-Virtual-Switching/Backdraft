@@ -619,8 +619,6 @@ int BFCPMDPort::RecvPackets(queue_t qid, bess::Packet **pkts, int cnt) {
     if (!overload_[PACKET_DIR_INC][qid]) {
       recv =
           rte_eth_rx_burst(dpdk_port_id_, qid, (struct rte_mbuf **)pkts, cnt);
-
-      // BookingRecv(qid, pkts, recv);
     }
   }
   return recv;
@@ -638,8 +636,10 @@ int BFCPMDPort::SendPackets(queue_t qid, bess::Packet **pkts, int cnt) {
   // BookingSend(qid, pkts, sent);
 
   // sent = SendPacketsDefault(qid, pkts, cnt);
+  //
+  // LOG(INFO) << "we should have something " << cnt;
   sent = SendPacketsllring(qid, pkts, cnt);
-
+  sent++;
   /*
   sent = rte_eth_tx_burst(dpdk_port_id_, qid,
                           reinterpret_cast<struct rte_mbuf **>(pkts), cnt);
@@ -666,35 +666,48 @@ int BFCPMDPort::SendPackets(queue_t qid, bess::Packet **pkts, int cnt) {
   queue_stats[PACKET_DIR_OUT][qid].diff_hist[dropped]++;
   */
 
-  return sent;
+  return 0;
 }
 
 void BFCPMDPort::BookingEnqueue(queue_t qid, bess::Packet *pkt) {
-  // for (int pkt = 0; pkt < cnt; pkt++) {
   FlowId id = GetId(pkt);
   auto it = book_.Find(id);
 
   if (it != nullptr) {
     it->second->queued_packets++;
+    it->second->queued_bytes += pkt->total_len();
   } else {
     Flow *f = new Flow(id, qid);
     book_.Insert(id, f);
   }
-  // }
 }
 
 void BFCPMDPort::BookingDequeue(bess::Packet *pkt) {
-  // for (int pkt = 0; pkt < cnt; pkt++) {
   FlowId id = GetId(pkt);
   auto it = book_.Find(id);
 
   if (it != nullptr) {
     Flow *f = it->second;
-    f->queued_packets--;
-    if (f->queued_packets == 0)
+
+    if (f->queued_packets - 1 < 0)
+      f->queued_packets = 0;
+    else
+      f->queued_packets--;
+
+    if (f->queued_bytes - pkt->total_len() < 0)
+      f->queued_bytes = 0;
+    else
+      f->queued_bytes -= pkt->total_len();
+
+    if (f->queued_packets == 0 || f->queued_bytes == 0)
       book_.Remove(f->VFID);
+
+    if (f->queued_packets == 0 && f->queued_bytes != 0)
+      LOG(INFO) << "something is wrong";
+
+    if (f->queued_packets != 0 && f->queued_bytes == 0)
+      LOG(INFO) << "something is wrong";
   }
-  // }
 }
 
 int BFCPMDPort::AggressiveSend(queue_t qid, bess::Packet **pkts, int cnt) {
@@ -715,6 +728,7 @@ int BFCPMDPort::SensitiveSend(queue_t qid, bess::Packet **pkts, int cnt) {
 
 void BFCPMDPort::RetrieveOutstandingPacketBatch(queue_t qid, int *err) {
   bess::Packet *pkt;
+  outstanding_pkts_batch->clear();
   while (!outstanding_pkts_batch->full()) {
     *err =
         llring_dequeue(bbql_queue_list_[qid], reinterpret_cast<void **>(&pkt));
@@ -722,7 +736,6 @@ void BFCPMDPort::RetrieveOutstandingPacketBatch(queue_t qid, int *err) {
       break;
 
     outstanding_pkts_batch->add(pkt);
-
     BookingDequeue(pkt);
   }
 }
@@ -1031,41 +1044,32 @@ void BFCPMDPort::InitPauseThreshold() {
 }
 
 void BFCPMDPort::UpdateQueueOverloadStats(packet_dir_t dir, queue_t qid) {
-  struct rte_eth_stats stats;
-  int64_t temp;
-  uint64_t queue_occupancy;
-  int ret;
-  static uint64_t last_pause;
-  uint64_t cur;
+  // struct rte_eth_stats stats;
+  // int64_t temp;
+  uint64_t queue_occupancy = 0;
+  // int ret;
+  // static uint64_t last_pause;
+  // uint64_t cur;
+  int queue_length;
+  // Flow *f;
 
   // Calculate the queue occupancy
-  ret = rte_eth_stats_get(dpdk_port_id_, &stats);
+  /*ret = rte_eth_stats_get(dpdk_port_id_, &stats);
   if (ret != 0) {
     overload_[dir][qid] = false;
     LOG(INFO) << "SHIT";
     return;
   }
+  */
 
-  if(overload_[dir][qid] == true){
-    cur = tsc_to_ns(rdtsc());
-    if (cur - last_pause > etime_ + hrtt_)
-      overload_[dir][qid] = false;
+  queue_length = llring_count(bbql_queue_list_[qid]);
+  queue_occupancy = queue_length * 120;
+  // LOG(INFO) << queue_occupancy << " " << pause_threshold_[dir][qid];
+
+  if (queue_occupancy > pause_threshold_[dir][qid]) {
+    overload_[dir][qid] = true;
   } else {
-    temp = stats.q_obytes[qid] - stats.q_ibytes[qid];
-
-    // if (dpdk_port_id_ == 0)
-    //   LOG(INFO) << stats.q_obytes[qid] << " " << stats.q_ibytes[qid] << " "
-    //             << dpdk_port_id_;
-    if (temp < 0) {
-      queue_occupancy = 0;
-    } else {
-      queue_occupancy = temp;
-    }
-    // Update the status!
-    if (queue_occupancy > pause_threshold_[dir][qid]) {
-      overload_[dir][qid] = true;
-      last_pause = tsc_to_ns(rdtsc());
-    }
+    overload_[dir][qid] = false;
   }
 }
 
@@ -1121,11 +1125,10 @@ int BFCPMDPort::SendPacketsDefault(queue_t qid, bess::Packet **pkts, int cnt) {
   return sent;
 }
 
-int BFCPMDPort::SendPacketsllring(queue_t qid, bess::Packet **pkts, int cnt) {
-  int err;
-  int outstanding_batch_sent = 0;
+int BFCPMDPort::llringEnqueuePackts(queue_t qid, bess::Packet **pkts, int cnt) {
   int dropped = 0;
-  // Enqueue the packets to the llring;
+  int err;
+
   for (int pkt = 0; pkt < cnt; pkt++) {
     err = 0;
 
@@ -1139,10 +1142,20 @@ int BFCPMDPort::SendPacketsllring(queue_t qid, bess::Packet **pkts, int cnt) {
     BookingEnqueue(qid, pkts[pkt]);
   }
 
+  return dropped;
+}
+
+int BFCPMDPort::SendPacketsllring(queue_t qid, bess::Packet **pkts, int cnt) {
+  int err;
+  int outstanding_batch_sent = 0;
+  int dropped = 0;
+
+  outstanding_pkts_batch->clear();
+
+  dropped = dropped + llringEnqueuePackts(qid, pkts, cnt);
+
   if (!llring_empty(bbql_queue_list_[qid])) {
     err = 0;
-    outstanding_batch_sent = 0;
-    outstanding_pkts_batch->clear();
 
     RetrieveOutstandingPacketBatch(qid, &err);
 
@@ -1153,9 +1166,14 @@ int BFCPMDPort::SendPacketsllring(queue_t qid, bess::Packet **pkts, int cnt) {
       queue_stats[PACKET_DIR_OUT][qid].dpdk_bytes +=
           outstanding_pkts_batch->pkts()[pkt]->total_len();
     }
-    dropped += outstanding_pkts_batch->cnt() - outstanding_batch_sent;
-  }
 
+    if (outstanding_batch_sent != outstanding_pkts_batch->cnt()) {
+      int temp_d = llringEnqueuePackts(
+          qid, outstanding_pkts_batch->pkts() + outstanding_batch_sent,
+          outstanding_pkts_batch->cnt() - outstanding_batch_sent);
+      dropped += dropped + temp_d;
+    }
+  }
   queue_stats[PACKET_DIR_OUT][qid].bytes += cnt;
   queue_stats[PACKET_DIR_OUT][qid].dropped += dropped;
   queue_stats[PACKET_DIR_OUT][qid]

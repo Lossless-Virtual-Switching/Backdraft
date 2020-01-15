@@ -180,13 +180,23 @@ class BFCPMDPort final : public Port {
   };
 
   struct Flow {
-    uint64_t queue_number;      // physical queue it has been assigned to
+    uint32_t queue_number;      // physical queue it has been assigned to
     bool pause_status;          // whether it is paused or not?
     FlowId VFID;                // allows the flow to remove itself from the map
     int queued_packets;         // How many packets are queued?
-    Flow() : queue_number(0), pause_status(false), VFID() {};
+    int64_t queued_bytes;      // How many bytes had been queued so far?
+    Flow()
+        : queue_number(0),
+          pause_status(false),
+          VFID(),
+          queued_packets(0),
+          queued_bytes(0){};
     Flow(FlowId new_id, queue_t qid)
-        : queue_number(qid), pause_status(false), VFID(new_id){};
+        : queue_number(qid),
+          pause_status(false),
+          VFID(new_id),
+          queued_packets(0),
+          queued_bytes(0){};
     ~Flow(){};
   };
 
@@ -276,6 +286,8 @@ class BFCPMDPort final : public Port {
     int SendPacketsllring(queue_t qid, bess::Packet **pkts, int cnt);
 
     int SendPacketsDefault(queue_t qid, bess::Packet **pkts, int cnt);
+
+    int llringEnqueuePackts(queue_t qid, bess::Packet **pkts, int cnt);
     /*
      * The name is pretty verbose.
      */
@@ -292,10 +304,9 @@ class BFCPMDPort final : public Port {
     // void SignalUnderload();
 
     /*
-     * TODO: Backdraft: It requires a lot of modification but just for the sake
-     * of testing!
-     * It should go to private side!
-     * It requires some access functions.
+     * TODO: Backdraft: It requires a lot of modification but just for the
+     * sake of testing! It should go to private side! It requires some access
+     * functions.
      */
     // Parent tasks of this module in the current pipeline.
     // std::vector<Module *> parent_tasks_;
@@ -309,10 +320,9 @@ class BFCPMDPort final : public Port {
     dpdk_port_t dpdk_port_id_;
 
     /*
-     * TODO: Backdraft: It requires a lot of modification but just for the sake
-     * of testing!
-     * It should go to private side!
-     * It needs some access functions.
+     * TODO: Backdraft: It requires a lot of modification but just for the
+     * sake of testing! It should go to private side! It needs some access
+     * functions.
      */
     // Whether the module itself is overloaded.
     bool overload_[PACKET_DIRS][MAX_QUEUES_PER_DIR];
@@ -320,7 +330,8 @@ class BFCPMDPort final : public Port {
     // bool overload_[PACKET_DIRS][MAX_QUEUES_PER_DIR];
 
     /*!
-     * True if device did not exist when bessd started and was later patched in.
+     * True if device did not exist when bessd started and was later patched
+     * in.
      */
     bool hot_plugged_;
 
@@ -367,7 +378,6 @@ class BFCPMDPort final : public Port {
 
     // In bytes
     uint64_t pause_threshold_[PACKET_DIRS][MAX_QUEUES_PER_DIR];
-
 
     /*!
      * The NUMA node to which device is attached

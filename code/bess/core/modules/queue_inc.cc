@@ -104,9 +104,9 @@ struct task_result QueueInc::RunTask(Context *ctx, bess::PacketBatch *batch,
   p->queue_stats[PACKET_DIR_INC][qid].requested_hist[burst]++;
   p->queue_stats[PACKET_DIR_INC][qid].actual_hist[cnt]++;
   p->queue_stats[PACKET_DIR_INC][qid].diff_hist[burst - cnt]++;
-  if (cnt == 0) {
+  /*if (cnt == 0) {
     return {.block = true, .packets = 0, .bits = 0};
-  }
+  }*/
 
   // NOTE: we cannot skip this step since it might be used by scheduler.
   if (prefetch_) {
@@ -125,6 +125,7 @@ struct task_result QueueInc::RunTask(Context *ctx, bess::PacketBatch *batch,
     p->queue_stats[PACKET_DIR_INC][qid].bytes += received_bytes;
   }
 
+  // LOG(INFO) << "here " << batch->cnt();
   RunNextModule(ctx, batch);
 
   return {.block = false,
