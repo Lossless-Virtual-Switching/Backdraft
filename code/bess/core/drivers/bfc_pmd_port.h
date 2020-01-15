@@ -219,9 +219,10 @@ class BFCPMDPort final : public Port {
 
   FlowId GetId(bess::Packet *pkt);
 
-  void BookingRecv(queue_t qid, bess::Packet **pkts, int cnt);
+  // void BookingRecv(queue_t qid, bess::Packet **pkts, int cnt);
+  void BookingEnqueue(queue_t qid, bess::Packet *pkt);
 
-  void BookingSend(queue_t qid, bess::Packet **pkts, int cnt);
+  void BookingDequeue(bess::Packet *pkt);
 
   uint64_t GetFlags() const override {
     return DRIVER_FLAG_SELF_INC_STATS | DRIVER_FLAG_SELF_OUT_STATS;
@@ -271,6 +272,10 @@ class BFCPMDPort final : public Port {
     void UpdateQueueOverloadStats(packet_dir_t dir, queue_t qid);
 
     void InitPauseThreshold();
+
+    int SendPacketsllring(queue_t qid, bess::Packet **pkts, int cnt);
+
+    int SendPacketsDefault(queue_t qid, bess::Packet **pkts, int cnt);
     /*
      * The name is pretty verbose.
      */
@@ -295,6 +300,7 @@ class BFCPMDPort final : public Port {
     // Parent tasks of this module in the current pipeline.
     // std::vector<Module *> parent_tasks_;
     // std::vector<Module *> bp_parent;
+    static CuckooMap<FlowId, Flow *, Hash, EqualTo> book_;
 
    private:
     /*!
@@ -362,7 +368,6 @@ class BFCPMDPort final : public Port {
     // In bytes
     uint64_t pause_threshold_[PACKET_DIRS][MAX_QUEUES_PER_DIR];
 
-    static CuckooMap<FlowId, Flow *, Hash, EqualTo> book_;
 
     /*!
      * The NUMA node to which device is attached

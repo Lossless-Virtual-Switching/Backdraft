@@ -61,6 +61,10 @@ struct [[gnu::packed]] PausePacketTemplate {
 
 static PausePacketTemplate pause_template;
 
+CuckooMap<BFCPMDPort::FlowId, BFCPMDPort::Flow *, BFCPMDPort::Hash,
+          BFCPMDPort::EqualTo>
+    BFCPMDPort::book_;
+
 static const struct rte_eth_conf default_eth_conf() {
   struct rte_eth_conf ret = rte_eth_conf();
   // struct rte_eth_dev_info dev_info;
@@ -102,8 +106,7 @@ void BFCPMDPort::InitDriver() {
       pci_info = bess::utils::Format(
           "%08x:%02hhx:%02hhx.%02hhx %04hx:%04hx  ",
           dev_info.pci_dev->addr.domain, dev_info.pci_dev->addr.bus,
-          dev_info.pci_dev->addr.devid, dev_info.pci_dev->addr.function,
-          dev_info.pci_dev->id.vendor_id, dev_info.pci_dev->id.device_id);
+          dev_info.pci_dev->addr.devid, dev_info.pci_dev->addr.function, dev_info.pci_dev->id.vendor_id, dev_info.pci_dev->id.device_id);
     }
 
     numa_node = rte_eth_dev_socket_id(static_cast<int>(i));
@@ -611,20 +614,20 @@ int BFCPMDPort::RecvPackets(queue_t qid, bess::Packet **pkts, int cnt) {
   int recv = 0;
 
   if (qid == 0) {
-    // recv = SendPeriodicPauseMessage(pkts, cnt);
+    recv = SendPeriodicPauseMessage(pkts, cnt);
   } else {
     if (!overload_[PACKET_DIR_INC][qid]) {
       recv =
           rte_eth_rx_burst(dpdk_port_id_, qid, (struct rte_mbuf **)pkts, cnt);
 
-      BookingRecv(qid, pkts, recv);
+      // BookingRecv(qid, pkts, recv);
     }
   }
   return recv;
 }
 
 int BFCPMDPort::SendPackets(queue_t qid, bess::Packet **pkts, int cnt) {
-  uint64_t sent_bytes = 0;
+  // uint64_t sent_bytes = 0;
   int sent = 0;
 
   if (qid == 0) {
@@ -632,6 +635,12 @@ int BFCPMDPort::SendPackets(queue_t qid, bess::Packet **pkts, int cnt) {
     return 0;
   }
 
+  // BookingSend(qid, pkts, sent);
+
+  // sent = SendPacketsDefault(qid, pkts, cnt);
+  sent = SendPacketsllring(qid, pkts, cnt);
+
+  /*
   sent = rte_eth_tx_burst(dpdk_port_id_, qid,
                           reinterpret_cast<struct rte_mbuf **>(pkts), cnt);
 
@@ -655,38 +664,37 @@ int BFCPMDPort::SendPackets(queue_t qid, bess::Packet **pkts, int cnt) {
   queue_stats[PACKET_DIR_OUT][qid].requested_hist[cnt]++;
   queue_stats[PACKET_DIR_OUT][qid].actual_hist[sent]++;
   queue_stats[PACKET_DIR_OUT][qid].diff_hist[dropped]++;
+  */
 
   return sent;
-
 }
 
-void BFCPMDPort::BookingRecv(queue_t qid, bess::Packet **pkts, int cnt) {
-  for (int pkt = 0; pkt < cnt; pkt++) {
-    FlowId id = GetId(pkts[pkt]);
-    auto it = book_.Find(id);
+void BFCPMDPort::BookingEnqueue(queue_t qid, bess::Packet *pkt) {
+  // for (int pkt = 0; pkt < cnt; pkt++) {
+  FlowId id = GetId(pkt);
+  auto it = book_.Find(id);
 
-    if (it != nullptr) {
-      it->second->queued_packets++;
-    } else {
-      Flow *f = new Flow(id, qid);
-      book_.Insert(id, f);
-    }
+  if (it != nullptr) {
+    it->second->queued_packets++;
+  } else {
+    Flow *f = new Flow(id, qid);
+    book_.Insert(id, f);
   }
+  // }
 }
 
-void BFCPMDPort::BookingSend(queue_t qid, bess::Packet **pkts, int cnt) {
-  qid++;
-  for (int pkt = 0; pkt < cnt; pkt++) {
-    FlowId id = GetId(pkts[pkt]);
-    auto it = book_.Find(id);
+void BFCPMDPort::BookingDequeue(bess::Packet *pkt) {
+  // for (int pkt = 0; pkt < cnt; pkt++) {
+  FlowId id = GetId(pkt);
+  auto it = book_.Find(id);
 
-    if (it != nullptr) {
-      Flow *f = it->second;
-      f->queued_packets--;
-      if (f->queued_packets == 0)
-        book_.Remove(f->VFID);
-    }
+  if (it != nullptr) {
+    Flow *f = it->second;
+    f->queued_packets--;
+    if (f->queued_packets == 0)
+      book_.Remove(f->VFID);
   }
+  // }
 }
 
 int BFCPMDPort::AggressiveSend(queue_t qid, bess::Packet **pkts, int cnt) {
@@ -714,6 +722,8 @@ void BFCPMDPort::RetrieveOutstandingPacketBatch(queue_t qid, int *err) {
       break;
 
     outstanding_pkts_batch->add(pkt);
+
+    BookingDequeue(pkt);
   }
 }
 
@@ -749,8 +759,7 @@ int BFCPMDPort::SendPauseMessage(bess::Packet **pkts, int cnt) {
     }
   }
   assert(pause_message_count < num_queues[PACKET_DIR_OUT]);
-  return pause_message_count;
-}
+  return pause_message_count; }
 
 bess::Packet *BFCPMDPort::GeneratePauseMessage(packet_dir_t dir,
                                                   queue_t qid) {
@@ -1043,6 +1052,10 @@ void BFCPMDPort::UpdateQueueOverloadStats(packet_dir_t dir, queue_t qid) {
       overload_[dir][qid] = false;
   } else {
     temp = stats.q_obytes[qid] - stats.q_ibytes[qid];
+
+    // if (dpdk_port_id_ == 0)
+    //   LOG(INFO) << stats.q_obytes[qid] << " " << stats.q_ibytes[qid] << " "
+    //             << dpdk_port_id_;
     if (temp < 0) {
       queue_occupancy = 0;
     } else {
@@ -1075,6 +1088,82 @@ BFCPMDPort::FlowId BFCPMDPort::GetId(bess::Packet *pkt) {
 
   // FlowId id = {eth->src_addr.bytes, eth->dst_addr.bytes};
   return id;
+}
+
+int BFCPMDPort::SendPacketsDefault(queue_t qid, bess::Packet **pkts, int cnt) {
+  uint64_t sent_bytes = 0;
+  int sent = 0;
+
+  sent = rte_eth_tx_burst(dpdk_port_id_, qid,
+                          reinterpret_cast<struct rte_mbuf **>(pkts), cnt);
+
+  // Updating the flows' status!
+  // BookingSend(qid, pkts, sent);
+
+  for (int i = 0; i < cnt; i++) {
+    sent_bytes += pkts[i]->total_len();
+    if (i < sent)
+      queue_stats[PACKET_DIR_OUT][qid].dpdk_bytes += pkts[i]->total_len();
+  }
+
+  // for (int i = 0; i < sent; i++) {
+  // queue_stats[PACKET_DIR_OUT][qid].dpdk_bytes += pkts[i]->total_len();
+  // }
+
+  int dropped = cnt - sent;
+
+  queue_stats[PACKET_DIR_OUT][qid].bytes += sent_bytes;
+  queue_stats[PACKET_DIR_OUT][qid].dropped += dropped;
+  queue_stats[PACKET_DIR_OUT][qid].requested_hist[cnt]++;
+  queue_stats[PACKET_DIR_OUT][qid].actual_hist[sent]++;
+  queue_stats[PACKET_DIR_OUT][qid].diff_hist[dropped]++;
+
+  return sent;
+}
+
+int BFCPMDPort::SendPacketsllring(queue_t qid, bess::Packet **pkts, int cnt) {
+  int err;
+  int outstanding_batch_sent = 0;
+  int dropped = 0;
+  // Enqueue the packets to the llring;
+  for (int pkt = 0; pkt < cnt; pkt++) {
+    err = 0;
+
+    EnqueueOutstandingPackets(pkts[pkt], qid,
+                              &err);
+    if (err != 0){
+      dropped++;
+      continue;
+    }
+
+    BookingEnqueue(qid, pkts[pkt]);
+  }
+
+  if (!llring_empty(bbql_queue_list_[qid])) {
+    err = 0;
+    outstanding_batch_sent = 0;
+    outstanding_pkts_batch->clear();
+
+    RetrieveOutstandingPacketBatch(qid, &err);
+
+    outstanding_batch_sent = SensitiveSend(qid, outstanding_pkts_batch->pkts(),
+                                           outstanding_pkts_batch->cnt());
+
+    for (int pkt = 0; pkt < outstanding_batch_sent; pkt++) {
+      queue_stats[PACKET_DIR_OUT][qid].dpdk_bytes +=
+          outstanding_pkts_batch->pkts()[pkt]->total_len();
+    }
+    dropped += outstanding_pkts_batch->cnt() - outstanding_batch_sent;
+  }
+
+  queue_stats[PACKET_DIR_OUT][qid].bytes += cnt;
+  queue_stats[PACKET_DIR_OUT][qid].dropped += dropped;
+  queue_stats[PACKET_DIR_OUT][qid]
+      .requested_hist[outstanding_pkts_batch->cnt()]++;
+  queue_stats[PACKET_DIR_OUT][qid].actual_hist[outstanding_batch_sent]++;
+  queue_stats[PACKET_DIR_OUT][qid].diff_hist[dropped]++;
+
+  return outstanding_batch_sent;
 }
 
 ADD_DRIVER(BFCPMDPort, "bfc_pmd_port", "BFC DPDK poll mode driver")
