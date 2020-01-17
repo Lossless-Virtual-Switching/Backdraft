@@ -635,9 +635,6 @@ int BFCPMDPort::SendPackets(queue_t qid, bess::Packet **pkts, int cnt) {
 
   // BookingSend(qid, pkts, sent);
 
-  // sent = SendPacketsDefault(qid, pkts, cnt);
-  //
-  // LOG(INFO) << "we should have something " << cnt;
   sent = SendPacketsllring(qid, pkts, cnt);
   sent++;
   /*
@@ -675,11 +672,12 @@ void BFCPMDPort::BookingEnqueue(queue_t qid, bess::Packet *pkt) {
 
   if (it != nullptr) {
     it->second->queued_packets++;
-    it->second->queued_bytes += pkt->total_len();
+    it->second->queued_bytes = it->second->queued_packets + pkt->total_len();
   } else {
     Flow *f = new Flow(id, qid);
     book_.Insert(id, f);
   }
+
 }
 
 void BFCPMDPort::BookingDequeue(bess::Packet *pkt) {
@@ -1101,9 +1099,6 @@ int BFCPMDPort::SendPacketsDefault(queue_t qid, bess::Packet **pkts, int cnt) {
   sent = rte_eth_tx_burst(dpdk_port_id_, qid,
                           reinterpret_cast<struct rte_mbuf **>(pkts), cnt);
 
-  // Updating the flows' status!
-  // BookingSend(qid, pkts, sent);
-
   for (int i = 0; i < cnt; i++) {
     sent_bytes += pkts[i]->total_len();
     if (i < sent)
@@ -1174,6 +1169,7 @@ int BFCPMDPort::SendPacketsllring(queue_t qid, bess::Packet **pkts, int cnt) {
       dropped += dropped + temp_d;
     }
   }
+
   queue_stats[PACKET_DIR_OUT][qid].bytes += cnt;
   queue_stats[PACKET_DIR_OUT][qid].dropped += dropped;
   queue_stats[PACKET_DIR_OUT][qid]

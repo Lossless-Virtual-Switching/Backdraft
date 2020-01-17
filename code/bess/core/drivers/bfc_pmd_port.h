@@ -180,7 +180,7 @@ class BFCPMDPort final : public Port {
   };
 
   struct Flow {
-    uint32_t queue_number;      // physical queue it has been assigned to
+    int32_t queue_number;      // physical queue it has been assigned to
     bool pause_status;          // whether it is paused or not?
     FlowId VFID;                // allows the flow to remove itself from the map
     int queued_packets;         // How many packets are queued?
