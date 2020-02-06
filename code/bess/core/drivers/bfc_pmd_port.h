@@ -139,7 +139,7 @@ class BFCPMDPort final : public Port {
    * @param cnt burst size of length of the packet batch
    * @return int number of pause messages in the packet batch ready to send.
    */
-  int SendPauseMessage(bess::Packet **pkts, int cnt);
+  int SendPauseMessage(queue_t qid, bess::Packet **pkts, int cnt);
 
   /**
    * @brief This function manages the amount of the data should be send out of a
@@ -159,7 +159,7 @@ class BFCPMDPort final : public Port {
    * @param pkts pointer to the batch of packets
    * @param cnt length of the packet batch
    */
-  void PauseMessageHandle(bess::Packet **pkts, int cnt);
+  bool PauseMessageHandle(bess::Packet **pkts, int cnt);
 
   /**
    * @brief This function create an ethernet pause message
@@ -271,7 +271,7 @@ class BFCPMDPort final : public Port {
 
     int SensitiveSend(queue_t qid, bess::Packet * *pkts, int cnt);
 
-    int SendPeriodicPauseMessage(bess::Packet * *pkts, int cnt);
+    int SendPeriodicPauseMessage(queue_t qid, bess::Packet **pkts, int cnt);
 
     // double RateProber(packet_dir_t dir, queue_t qid, struct rte_eth_stats
     // stats);

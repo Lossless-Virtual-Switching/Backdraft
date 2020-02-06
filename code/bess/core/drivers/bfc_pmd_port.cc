@@ -264,8 +264,8 @@ CommandResponse BFCPMDPort::Init(const bess::pb::BFCPMDPortArg &arg) {
   int i;
 
   int numa_node = -1;
-  etime_ = 1000;  // FIXME: etime_ and hrtt is dependent on each other on
-                        // even the scheduler! I think that's pretty important!
+  etime_ = 10000000;  // FIXME: etime_ and hrtt is dependent on each other on
+                      // even the scheduler! I think that's pretty important!
   hrtt_ = 50;
   nactive_ = 1;  // FIXME: Still there is no notion of flows here is I will
                  // revise this once I have all flows available. I don't need it
@@ -613,55 +613,41 @@ void BFCPMDPort::CollectStats(bool reset) {
 int BFCPMDPort::RecvPackets(queue_t qid, bess::Packet **pkts, int cnt) {
   int recv = 0;
 
-  if (qid == 0) {
+  /*if (qid == 0) {
     recv = SendPeriodicPauseMessage(pkts, cnt);
   } else {
     if (!overload_[PACKET_DIR_INC][qid]) {
       recv =
           rte_eth_rx_burst(dpdk_port_id_, qid, (struct rte_mbuf **)pkts, cnt);
     }
-  }
+  }*/
+
+  recv = SendPeriodicPauseMessage(qid, pkts, cnt);
+  if (!recv)
+    if (!overload_[PACKET_DIR_INC][qid])
+      recv =
+          rte_eth_rx_burst(dpdk_port_id_, qid, (struct rte_mbuf **)pkts, cnt);
+
   return recv;
 }
 
 int BFCPMDPort::SendPackets(queue_t qid, bess::Packet **pkts, int cnt) {
+  bool in_flight_pause_message = false;
   // uint64_t sent_bytes = 0;
-  int sent = 0;
+  // int sent = 0;
 
-  if (qid == 0) {
+  /*if (qid == 0) {
     PauseMessageHandle(pkts, cnt);
     return 0;
-  }
+  }*/
+
+  in_flight_pause_message = PauseMessageHandle(pkts, cnt);
+
+  if (in_flight_pause_message)
+    return 0;
 
   // BookingSend(qid, pkts, sent);
-
-  sent = SendPacketsllring(qid, pkts, cnt);
-  sent++;
-  /*
-  sent = rte_eth_tx_burst(dpdk_port_id_, qid,
-                          reinterpret_cast<struct rte_mbuf **>(pkts), cnt);
-
-  // Updating the flows' status!
-  BookingSend(qid, pkts, sent);
-
-  for (int i = 0; i < cnt; i++) {
-    sent_bytes += pkts[i]->total_len();
-    if (i < sent)
-      queue_stats[PACKET_DIR_OUT][qid].dpdk_bytes += pkts[i]->total_len();
-  }
-
-  // for (int i = 0; i < sent; i++) {
-  // queue_stats[PACKET_DIR_OUT][qid].dpdk_bytes += pkts[i]->total_len();
-  // }
-
-  int dropped = cnt - sent;
-
-  queue_stats[PACKET_DIR_OUT][qid].bytes += sent_bytes;
-  queue_stats[PACKET_DIR_OUT][qid].dropped += dropped;
-  queue_stats[PACKET_DIR_OUT][qid].requested_hist[cnt]++;
-  queue_stats[PACKET_DIR_OUT][qid].actual_hist[sent]++;
-  queue_stats[PACKET_DIR_OUT][qid].diff_hist[dropped]++;
-  */
+  SendPacketsllring(qid, pkts, cnt);
 
   return 0;
 }
@@ -738,7 +724,7 @@ void BFCPMDPort::RetrieveOutstandingPacketBatch(queue_t qid, int *err) {
   }
 }
 
-int BFCPMDPort::SendPauseMessage(bess::Packet **pkts, int cnt) {
+int BFCPMDPort::SendPauseMessage(queue_t qid, bess::Packet **pkts, int cnt) {
   using bess::utils::Ethernet;
   Ethernet *peth;
   Ethernet *beth;
@@ -746,31 +732,31 @@ int BFCPMDPort::SendPauseMessage(bess::Packet **pkts, int cnt) {
   bess::Packet *batch_packet;
   int pause_message_count = 0;
 
-  for (queue_t queue = 1; queue < num_queues[PACKET_DIR_OUT];
-       queue++) {  // We never send pause messages for qid = 0
+  //   for (queue_t queue = 1; queue < num_queues[PACKET_DIR_OUT];
+  //     queue++) {  // We never send pause messages for qid = 0
 
-    // if (overload_[PACKET_DIR_OUT][queue] && // One of the main differences
-    // between our solution of BFC
-    if (cnt) {  // Outgoing directions is getting overloaded because of the
-                // slow receiver so outgoing drection
-      batch_packet = pkts[pause_message_count];
-      pause_frame = GeneratePauseMessage(PACKET_DIR_OUT, queue);
-      beth = batch_packet->head_data<Ethernet *>();
-      peth = pause_frame->head_data<Ethernet *>();
-      peth->src_addr = beth->dst_addr;
-      peth->dst_addr = beth->src_addr;
-      bess::Packet::Free(batch_packet);
-      pkts[pause_message_count] = pause_frame;
-      pause_message_count++;
+  // if (overload_[PACKET_DIR_OUT][queue] && // One of the main differences
+  // between our solution of BFC
+  if (cnt) {  // Outgoing directions is getting overloaded because of the
+              // slow receiver so outgoing drection
+    batch_packet = pkts[pause_message_count];
+    pause_frame = GeneratePauseMessage(PACKET_DIR_OUT, qid);
+    beth = batch_packet->head_data<Ethernet *>();
+    peth = pause_frame->head_data<Ethernet *>();
+    peth->src_addr = beth->dst_addr;
+    peth->dst_addr = beth->src_addr;
+    bess::Packet::Free(batch_packet);
+    pkts[pause_message_count] = pause_frame;
+    pause_message_count++;
 
 #ifdef BACKDRAFT_DEBUG
-      LOG(INFO) << "queue " << (int)queue << " is overloaded "
-                << pause_message_count;
+    LOG(INFO) << "queue " << (int)qid << " is overloaded "
+              << pause_message_count;
 #endif
     }
-  }
   assert(pause_message_count < num_queues[PACKET_DIR_OUT]);
-  return pause_message_count; }
+  return pause_message_count;
+}
 
 bess::Packet *BFCPMDPort::GeneratePauseMessage(packet_dir_t dir,
                                                   queue_t qid) {
@@ -876,10 +862,11 @@ void BFCPMDPort::InitDCBPortConfig(dpdk_port_t port_id,
   return;
 }
 
-void BFCPMDPort::PauseMessageHandle(bess::Packet **pkts, int cnt) {
+bool BFCPMDPort::PauseMessageHandle(bess::Packet **pkts, int cnt) {
   using bess::utils::Ethernet;
   bess::Packet *pause_frame;
   char *ptr;
+  bool ret = false;
 
   static const uint16_t pause_op_code = 0x0001;
   static const uint16_t pause_eth_type = 0x8808;
@@ -924,10 +911,15 @@ void BFCPMDPort::PauseMessageHandle(bess::Packet **pkts, int cnt) {
             overload_[PACKET_DIR_INC][packet_qid] = false;
           else
             overload_[PACKET_DIR_INC][packet_qid] = true;
+
+          ret = true;  // It can be better than this! For now I just assume if I
+                       // have any pause message in the packet batch then I'm
+                       // not gonna handle the rest of the batch anymore.
         }
       }
     }
   }
+  return ret;
 }
 
 void BFCPMDPort::EnqueueOutstandingPackets(bess::Packet *newpkt, queue_t qid,
@@ -977,20 +969,21 @@ bool BFCPMDPort::PauseFlow(bess::Packet **pkts, int cnt) {
   return false;
 }
 
-int BFCPMDPort::SendPeriodicPauseMessage(bess::Packet **pkts, int cnt) {
+int BFCPMDPort::SendPeriodicPauseMessage(queue_t qid, bess::Packet **pkts,
+                                         int cnt) {
   int pause_messages = 0;
   uint64_t cur;
-  static uint64_t last_time = 0;
   static const packet_dir_t dir = PACKET_DIR_OUT;
+  static uint64_t last_time[MAX_QUEUES_PER_DIR] = {0};
 
-  for (queue_t qid = 1; qid < num_queues[dir]; qid++)
-    UpdateQueueOverloadStats(dir, qid);
+  // for (queue_t qid = 1; qid < num_queues[dir]; qid++)
+  UpdateQueueOverloadStats(dir, qid);
 
   cur = tsc_to_ns(rdtsc());
 
-  if (cur - last_time > etime_) {
-      pause_messages = SendPauseMessage(pkts, cnt);
-      last_time = cur;
+  if (cur - last_time[qid] > etime_) {
+    pause_messages = SendPauseMessage(qid, pkts, cnt);
+    last_time[qid] = cur;
   }
 
   return pause_messages;
