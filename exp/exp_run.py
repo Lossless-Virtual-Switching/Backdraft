@@ -167,6 +167,10 @@ def redraw_latency_drop_plot():
     config = VhostConf(load_exp_conf("config/exp_config.json"))
     draw_latency_drop_plots(config.plot)
 
+def mtcp_run(config):
+    cmd = "taskset --cpu-list 16 sysbench --test=cpu --cpu-max-prime=200000000 --num-threads=%s run &" % config[
+        "thread_number"]
+    subprocess.call(cmd, shell=True)
 
 def sysbench(config):
     cmd = "taskset --cpu-list 16 sysbench --test=cpu --cpu-max-prime=200000000 --num-threads=%s run &" % config[
@@ -179,7 +183,7 @@ def kill_sysbench():
     subprocess.check_call(cmd, shell=True)
 
 
-def backdraft(config_path):
+def run(config_path):
     config = VhostConf(load_exp_conf(config_path))
     general_config = VhostConf(config.general)
 
@@ -192,18 +196,18 @@ def backdraft(config_path):
     if(general_config.moongen):
         moongen_run(config.moongen)
 
+    if(general_config.mtcp):
+        mtcp_run(config.mtcp)
+
     if(general_config.sysbench):
         kill_sysbench()
 
 #os.environ["RTE_SDK"] = "/proj/uic-dcs-PG0/post-loom/code/dpdk/"
 #os.environ["RTE_TARGET"] = "x86_64-native-linuxapp-gcc"
 
+parser = argparse.ArgumentParser(description='Software Switch Experiments')
+parser.add_argument('--path', type=str, default='config/mtcp/test_backpressure.json', help='Absolute/relative path to the config file')
+args = parser.parse_args()
 
-# backdraft("config/backdraft/two_slow_receiver_two_fast_slow_client.json")
-backdraft("config/backdraft/test_backpressure.json")
-# run_sysbench()
-# bess_config("config/motive_config.json")
-# moongen_run()
-# analysis_manual("/proj/uic-dcs-PG0/post-loom/exp/results/")
-# drop_latency_experiment()
-# redraw_latency_drop_plot()
+#run("config/mtcp/test_backpressure.json")
+run(args.path)
