@@ -12,6 +12,7 @@ import shlex
 import subprocess
 import sys
 import json
+import signal
 
 from time import sleep
 
@@ -49,30 +50,92 @@ def sink_app(just_compile):
 
 
 def moongen_run(config):
-    MOON_HOME = config['moongen_home']
-    cmd = 'sudo ./build/MoonGen examples/{script_to_load} --dpdk-config={dpdk_conf} {sender_dev} {receiver_dev} {client} {server} {rqueueClient} {tqueueClient} \
-        {rqueueServer} {tqueueServer} -v {clientCount} -u {clientSleepTime} -s {sleepTime} -p {dumper} -c {dumperCount} --edrop {enable_drop} -r {main_workload_rate} -t {exp_duration}'.format(sender_dev=config['sender_dev'],
-        receiver_dev=config['receiver_dev'],
-        main_workload_rate=config['main_workload_rate'],
-        exp_duration=config['exp_duration'],
-        script_to_load=config['script'],
-        enable_drop=config['drop'],
-        dpdk_conf=config['dpdk_config'],
-        dumper=config['dumper'],
-        client=config['client'],
-        server=config['server'],
-        tqueueClient=config['tqueueClient'],
-        rqueueClient=config['rqueueClient'],
-        rqueueServer=config['rqueueServer'],
-        tqueueServer=config['tqueueServer'],
-        dumperCount=config['dumperCount'],
-        sleepTime=config['serverSleepTime'],
-        clientCount=config['clientCount'],
-        clientSleepTime=config['clientSleepTime']
+    config = VhostConf(config)
+    MOON_HOME = config.moongen_home
+
+    server_cmd = 'sudo ./build/MoonGen examples/{script_to_load} --dpdk-config={dpdk_conf} {sender_dev} {receiver_dev} {client} {server} {rqueueClient} {tqueueClient} \
+        {rqueueServer} {tqueueServer} -v {clientCount} -u {clientSleepTime} -s {sleepTime} -c {serverCount} -k {dumper} --edrop {enable_drop} -r {main_workload_rate} -t {exp_duration} -b {conn} -l {requests}'.format(sender_dev=config.server['dev'],
+        receiver_dev=config.client['dev'],
+        main_workload_rate=config.client['rate'],
+        exp_duration=config.exp_duration,
+        script_to_load=config.script,
+        enable_drop=config.client['drop'],
+        dpdk_conf=config.server["dpdk_config"],
+        client=0,
+        server=1,
+        tqueueClient=config.client['tqueue'],
+        rqueueClient=config.client['rqueue'],
+        rqueueServer=config.server['rqueue'],
+        tqueueServer=config.server['tqueue'],
+        serverCount=config.server['count'],
+        dumper=config.server['dumper'],
+        sleepTime=config.server['SleepTime'],
+        clientCount=config.client['count'],
+        clientSleepTime=config.client['SleepTime'],
+        conn=config.client['concurrency'],
+        requests=config.client['requests']
     )
 
-    print(cmd)
-    subprocess.check_call(cmd, cwd=MOON_HOME, shell=True)
+    popen_server_cmd = './build/MoonGen examples/{script_to_load} --dpdk-config={dpdk_conf} {sender_dev} {receiver_dev} {client} {server} {rqueueClient} {tqueueClient} \
+        {rqueueServer} {tqueueServer} -v {clientCount} -u {clientSleepTime} -s {sleepTime} -c {serverCount} -k {dumper} --edrop {enable_drop} -r {main_workload_rate} -t {exp_duration} -b {conn} -l {requests}'.format(sender_dev=config.server['dev'],
+        receiver_dev=config.client['dev'],
+        main_workload_rate=config.client['rate'],
+        exp_duration=config.exp_duration,
+        script_to_load=config.script,
+        enable_drop=config.client['drop'],
+        dpdk_conf=config.server["dpdk_config"],
+        client=0,
+        server=1,
+        tqueueClient=config.client['tqueue'],
+        rqueueClient=config.client['rqueue'],
+        rqueueServer=config.server['rqueue'],
+        tqueueServer=config.server['tqueue'],
+        serverCount=config.server['count'],
+        dumper=config.server['dumper'],
+        sleepTime=config.server['SleepTime'],
+        clientCount=config.client['count'],
+        clientSleepTime=config.client['SleepTime'],
+        conn=config.client['concurrency'],
+        requests=config.server['requests']
+    )
+
+    client_cmd = 'sudo ./build/MoonGen examples/{script_to_load} --dpdk-config={dpdk_conf} {sender_dev} {receiver_dev} {client} {server} {rqueueClient} {tqueueClient} \
+        {rqueueServer} {tqueueServer} -v {clientCount} -u {clientSleepTime} -s {sleepTime} -c {serverCount} -k {dumper} --edrop {enable_drop} -r {main_workload_rate} -t {exp_duration} -b {conn} -l {requests}'.format(sender_dev=config.client['dev'],
+        receiver_dev=config.server['dev'],
+        main_workload_rate=config.client['rate'],
+        exp_duration=config.exp_duration,
+        script_to_load=config.script,
+        enable_drop=config.client['drop'],
+        dpdk_conf=config.client["dpdk_config"],
+        client=1,
+        server=0,
+        tqueueClient=config.client['tqueue'],
+        rqueueClient=config.client['rqueue'],
+        rqueueServer=config.server['rqueue'],
+        tqueueServer=config.server['tqueue'],
+        serverCount=config.server['count'],
+        dumper=config.server['dumper'],
+        sleepTime=config.server['SleepTime'],
+        clientCount=config.client['count'],
+        clientSleepTime=config.client['SleepTime'],
+        conn=config.client['concurrency'],
+        requests=config.client['requests']
+    )
+
+    print("server command", server_cmd)
+    print("client command", client_cmd)
+    print(MOON_HOME + popen_server_cmd)
+    subprocess.call("sudo pkill Moon", cwd=MOON_HOME, shell=True)
+    process1 = subprocess.Popen(['MOON_HOME=' + MOON_HOME + ';cd $MOON_HOME; sudo  ' + popen_server_cmd], shell=True)
+    sleep(5)
+    subprocess.check_call(client_cmd, cwd=MOON_HOME, shell=True)
+    #subprocess.check_call("tail --pid=" + str(process1.pid) + " -f /dev/null", shell=True)
+    # subprocess.call("sudo kill -2" + str(process1.pid), cwd=MOON_HOME, shell=True)
+    subprocess.call('for i in `pidof MoonGen`; do sudo kill -15 $i ; done', shell=True)
+    # subprocess.call("sudo pkill Moon", shell=True)
+    # print("here is the pid of the program to be killed!", process1.pid)
+    # os.kill(process1.pid, signal.SIGUSR1)
+
     print("Moongen exits")
     # moongen_post_exp()
 
@@ -206,7 +269,7 @@ def run(config_path):
 #os.environ["RTE_TARGET"] = "x86_64-native-linuxapp-gcc"
 
 parser = argparse.ArgumentParser(description='Software Switch Experiments')
-parser.add_argument('--path', type=str, default='config/mtcp/test_backpressure.json', help='Absolute/relative path to the config file')
+parser.add_argument('--path', type=str, default='config/backdraft/test_backpressure.json', help='Absolute/relative path to the config file')
 args = parser.parse_args()
 
 #run("config/mtcp/test_backpressure.json")

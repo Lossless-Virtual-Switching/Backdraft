@@ -2,50 +2,64 @@
     "general": {
         "sysbench": 0,
         "moongen": 1,
-        "bess": 1
+        "bess": 1,
+	"mtcp": 0
     },
     "moongen": {
         "exp_duration": 60,
-        "sender_dev": 0,
-        "receiver_dev": 1,
-        "main_workload_rate": 4,
         "script": "backdraft_workload_generator.lua",
-        "drop": 1,
-        "dumper": 1,
-        "dumperCount": 2,
-        "serverSleepTime": 0,
-        "clientSleepTime": 0.1,
-        "clientCount": 1,
-        "server": 1,
-        "client": 1,
-        "tqueueClient": 2,
-        "rqueueClient": 1,
-        "rqueueServer": 2,
-        "tqueueServer": 1,
-        "dpdk_config": "dpdk_configs/dpdk-conf-backdraft-local.lua",
-        "moongen_home": "/home/alireza/Documents/moongen"
+        "moongen_home": "/home/alireza/Documents/moongen",
+	"server": {
+		"dev": 0,
+		"count": 1,
+        	"tqueue": 1,
+        	"rqueue": 1,
+        	"SleepTime": 0,
+		"dumper": 0,
+		"requests": 500000000,
+        	"dpdk_config": "dpdk_configs/dpdk-conf-backdraft-local-server.lua"
+	},
+	"client": {
+		"dev": 0,
+		"count": 1,
+        	"rqueue": 1,
+        	"tqueue": 1,
+        	"dpdk_config": "dpdk_configs/dpdk-conf-backdraft-local-client.lua",
+        	"concurrency": 256,
+        	"SleepTime": 1,
+        	"rate": 4,
+        	"drop": 1,
+		"requests": 500000000
+    	}
     },
+
+    "mtcp": {
+        "mtcp_home": "/home/alireza/Documents/mtcp"
+    },
+
     "bess": {
         "send_dev": {
-            "tx": 2,
-            "rx": 2
+            "tx": 1,
+            "rx": 1
         },
         "recv_dev": {
-            "tx": 2,
-            "rx": 2
+            "tx": 1,
+            "rx": 1
         },
-        "send_q": 2,
-        "recv_q": 2,
+        "send_q": 1,
+        "recv_q": 1,
         "queue_size_inc": 64,
         "queue_size_out": 64,
         "backdraft": false,
 	"bfc": false,
-        "bess_config": "backdraft_sw_sep_q.bess",
+        "bess_config": "mtcp_sw.bess",
         "bess_home": "/home/alireza/Documents/post-loom/code/bess"
     },
+
     "sysbench": {
         "thread_number": 4
     },
+
     "plot": {
         "plot_dir": "/proj/uic-dcs-PG0/post-loom/exp/analysis/plot",
         "drawer": "draw.py",
