@@ -221,7 +221,7 @@ def run(config_path, cpu_limit):
 
 def start_experiment(path):
     # for i in [10, 60, 100, 120]:
-    for i in [120, 140]:
+    for i in range(0, 101, 2):
         run(path, i)
 #os.environ["RTE_SDK"] = "/proj/uic-dcs-PG0/post-loom/code/dpdk/"
 #os.environ["RTE_TARGET"] = "x86_64-native-linuxapp-gcc"
