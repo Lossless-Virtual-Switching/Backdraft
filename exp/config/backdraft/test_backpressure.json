@@ -16,7 +16,7 @@
         	"rqueue": 1,
         	"SleepTime": 0,
 		"dumper": 0,
-		"requests": 50000000,
+		"requests": 1000000000,
         	"dpdk_config": "dpdk_configs/dpdk-conf-backdraft-local-server.lua"
 	},
 	"client": {
@@ -26,10 +26,10 @@
         	"tqueue": 1,
         	"dpdk_config": "dpdk_configs/dpdk-conf-backdraft-local-client.lua",
         	"concurrency": 256,
-        	"SleepTime": 1,
+        	"SleepTime": 0,
         	"rate": 4,
         	"drop": 1,
-		"requests": 50000000
+		"requests": 1000000000
     	}
     },
 

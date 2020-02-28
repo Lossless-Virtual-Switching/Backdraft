@@ -131,7 +131,7 @@ def moongen_run(config, cpu_limit=0):
     server_process = subprocess.Popen(['MOON_HOME=' + MOON_HOME + ';cd $MOON_HOME; sudo  ' + popen_server_cmd], shell=True)
     if(cpu_limit):
         sleep(5)
-        subprocess.Popen(["a=`pidof MoonGen`; sudo cpulimit -p $a -l " + str(cpu_limit)+ ";"], shell=True)
+        subprocess.Popen(["a=`pidof MoonGen`; sudo cpulimit -p $a -l " + str(cpu_limit) + " --lazy "+ ";"], shell=True)
     sleep(5)
     subprocess.check_call(client_cmd, cwd=MOON_HOME, shell=True)
     subprocess.call('for i in `pidof MoonGen`; do sudo kill -15 $i ; done', shell=True)
