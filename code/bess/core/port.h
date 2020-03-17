@@ -50,7 +50,11 @@
 
 typedef uint8_t queue_t;
 
-#define MAX_QUEUES_PER_DIR 32 /* [0, 31] (for each RX/TX) */
+// I have updated this number from 32 to 200. DCB wants 128, so I just
+// put 200. Also for per flow queuing we need more than that probably.
+// If I put 256 or something then I have to change the type of queue_t to
+// something like uint16_t(look at the line 51 in this file).
+#define MAX_QUEUES_PER_DIR 200 /* [0, 31] (for each RX/TX) */
 
 #define DRIVER_FLAG_SELF_INC_STATS 0x0001
 #define DRIVER_FLAG_SELF_OUT_STATS 0x0002
@@ -186,6 +190,7 @@ struct BatchHistogram
 };
 
 struct QueueStats {
+  uint64_t dpdk_bytes;
   uint64_t packets;
   uint64_t dropped;  // Not all drivers support this for INC direction
   uint64_t bytes;    // It doesn't include Ethernet overhead
@@ -318,6 +323,12 @@ class Port {
   /* which modules are using this port?
    * TODO: more robust gate keeping */
   const struct module *users[PACKET_DIRS][MAX_QUEUES_PER_DIR];
+
+  /*
+   * I need the exact pointer to the modules as well!
+   * For now it is just public maybe make in private later
+   */
+  std::vector<Module *> bp_parent_tasks_;
 
   struct QueueStats queue_stats[PACKET_DIRS][MAX_QUEUES_PER_DIR];
 };

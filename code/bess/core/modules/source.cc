@@ -82,7 +82,13 @@ CommandResponse Source::CommandSetPktSize(
 
 struct task_result Source::RunTask(Context *ctx, bess::PacketBatch *batch,
                                    void *) {
+  // bool flag = false;
   if (children_overload_ > 0) {
+    // LOG(INFO) << "Source: stopped!!!!";
+    // flag = true;
+    // uint64_t now = tsc_to_ns(rdtsc());
+    // while (tsc_to_ns(rdtsc()) - now < 20)
+    //   ;
     return {.block = true, .packets = 0, .bits = 0};
   }
 
@@ -90,6 +96,8 @@ struct task_result Source::RunTask(Context *ctx, bess::PacketBatch *batch,
   const int pkt_size = ACCESS_ONCE(pkt_size_);
   const uint32_t burst = ACCESS_ONCE(burst_);
 
+  // if (flag)
+  //   burst = burst - 1;
   if (current_worker.packet_pool()->AllocBulk(batch->pkts(), burst, pkt_size)) {
     batch->set_cnt(burst);
     RunNextModule(ctx, batch);  // it's fine to call this function with cnt==0

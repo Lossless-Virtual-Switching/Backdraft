@@ -28,16 +28,19 @@
 // ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
 // POSSIBILITY OF SUCH DAMAGE.
 
-#include "queue_inc.h"
+#include "bkdrft_queue_inc.h"
 
 #include "../port.h"
+#include "../utils/ether.h"
 #include "../utils/format.h"
+#include "../utils/ip.h"
+#include "../utils/udp.h"
 
-const Commands QueueInc::cmds = {{"set_burst", "QueueIncCommandSetBurstArg",
-                                  MODULE_CMD_FUNC(&QueueInc::CommandSetBurst),
-                                  Command::THREAD_SAFE}};
+const Commands BKDRFTQueueInc::cmds = {
+    {"set_burst", "BKDRFTQueueIncCommandSetBurstArg",
+     MODULE_CMD_FUNC(&BKDRFTQueueInc::CommandSetBurst), Command::THREAD_SAFE}};
 
-CommandResponse QueueInc::Init(const bess::pb::QueueIncArg &arg) {
+CommandResponse BKDRFTQueueInc::Init(const bess::pb::BKDRFTQueueIncArg &arg) {
   const char *port_name;
   task_id_t tid;
   CommandResponse err;
@@ -72,24 +75,36 @@ CommandResponse QueueInc::Init(const bess::pb::QueueIncArg &arg) {
   return CommandSuccess();
 }
 
-void QueueInc::DeInit() {
+void BKDRFTQueueInc::DeInit() {
   if (port_) {
     port_->ReleaseQueues(reinterpret_cast<const module *>(this), PACKET_DIR_INC,
                          &qid_, 1);
   }
 }
 
-std::string QueueInc::GetDesc() const {
+std::string BKDRFTQueueInc::GetDesc() const {
   return bess::utils::Format("%s:%hhu/%s", port_->name().c_str(), qid_,
                              port_->port_builder()->class_name().c_str());
 }
 
-struct task_result QueueInc::RunTask(Context *ctx, bess::PacketBatch *batch,
-                                     void *arg) {
+struct task_result BKDRFTQueueInc::RunTask(Context *ctx,
+                                           bess::PacketBatch *batch,
+                                           void *arg) {
   Port *p = port_;
 
   if (!p->conf().admin_up) {
     return {.block = true, .packets = 0, .bits = 0};
+  }
+
+  if (children_overload_ > 0) {
+    // Alireza
+    // Not sure if I should send a pause message now!
+    // p->OverloadSignal();
+    return {
+        .block = true,
+        .packets = 0,
+        .bits = 0,
+    };
   }
 
   const queue_t qid = (queue_t)(uintptr_t)arg;
@@ -104,9 +119,9 @@ struct task_result QueueInc::RunTask(Context *ctx, bess::PacketBatch *batch,
   p->queue_stats[PACKET_DIR_INC][qid].requested_hist[burst]++;
   p->queue_stats[PACKET_DIR_INC][qid].actual_hist[cnt]++;
   p->queue_stats[PACKET_DIR_INC][qid].diff_hist[burst - cnt]++;
-  /*if (cnt == 0) {
+  if (cnt == 0) {
     return {.block = true, .packets = 0, .bits = 0};
-  }*/
+  }
 
   // NOTE: we cannot skip this step since it might be used by scheduler.
   if (prefetch_) {
@@ -125,16 +140,39 @@ struct task_result QueueInc::RunTask(Context *ctx, bess::PacketBatch *batch,
     p->queue_stats[PACKET_DIR_INC][qid].bytes += received_bytes;
   }
 
-  // LOG(INFO) << "here " << batch->cnt();
   RunNextModule(ctx, batch);
+
+  if (cnt < (uint32_t)burst_ / 2) {
+    SignalUnderload();
+    // Just send an unpause message!
+    // I should create some pause message packets!
+    // And I don't still know how!!
+    // p->RecvPackets(0, batch->pkts(), 1)
+  }
 
   return {.block = false,
           .packets = cnt,
           .bits = (received_bytes + cnt * pkt_overhead) * 8};
 }
 
-CommandResponse QueueInc::CommandSetBurst(
-    const bess::pb::QueueIncCommandSetBurstArg &arg) {
+BKDRFTQueueInc::FlowId BKDRFTQueueInc::GetFlowId(bess::Packet *pkt) {
+  using bess::utils::Ethernet;
+  using bess::utils::Ipv4;
+  using bess::utils::Udp;
+
+  Ethernet *eth = pkt->head_data<Ethernet *>();
+  Ipv4 *ip = reinterpret_cast<Ipv4 *>(eth + 1);
+  size_t ip_bytes = ip->header_length << 2;
+  Udp *udp = reinterpret_cast<Udp *>(reinterpret_cast<uint8_t *>(ip) +
+                                     ip_bytes);  // Assumes a l-4 header
+  // TODO(joshua): handle packet fragmentation
+  FlowId id = {ip->src.value(), ip->dst.value(), udp->src_port.value(),
+               udp->dst_port.value(), ip->protocol};
+  return id;
+}
+
+CommandResponse BKDRFTQueueInc::CommandSetBurst(
+    const bess::pb::BKDRFTQueueIncCommandSetBurstArg &arg) {
   if (arg.burst() > bess::PacketBatch::kMaxBurst) {
     return CommandFailure(EINVAL, "burst size must be [0,%zu]",
                           bess::PacketBatch::kMaxBurst);
@@ -144,5 +182,5 @@ CommandResponse QueueInc::CommandSetBurst(
   }
 }
 
-ADD_MODULE(QueueInc, "queue_inc",
+ADD_MODULE(BKDRFTQueueInc, "bkdrft_queue_inc",
            "receives packets from a port via a specific queue")

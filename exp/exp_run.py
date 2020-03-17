@@ -1,4 +1,4 @@
-#!/usr/bin/python
+#!/usr/bin/python3
 
 import argparse
 import csv
@@ -12,88 +12,131 @@ import shlex
 import subprocess
 import sys
 import json
-
+import signal 
 from time import sleep
-
-BESS_CONFIG_PATH = '/proj/uic-dcs-PG0/post_loom/one_to_one_docker.bess'
+from subprocess import PIPE
 
 BESS_HOME = '/proj/uic-dcs-PG0/post-loom/code/bess'
-
 MOON_HOME = '/proj/uic-dsc-PG0/'
+
 
 class VhostConf(object):
     def __init__(self, *initial_data, **kwargs):
         for dictionary in initial_data:
-            for key in dictionary: 
-                setattr(self, key, dictionary[key]) 
+            for key in dictionary:
+                setattr(self, key, dictionary[key])
         for key in kwargs:
             setattr(self, key, kwargs[key])
 
+
 def bess(config):
-    param_path = "config/exp_config.json"
-    config_path = "/proj/uic-dcs-PG0/post-loom/code/bess/bessctl/conf/port/dcfc_sw.bess"
-    cmd = 'sudo bessctl/bessctl -- daemon start -- run file {config_file}'.format(config_file=os.path.join(BESS_HOME, 
-        "bessctl/conf/port", config['bess_config_path']))
-    print cmd
-    bessctl_proc = subprocess.check_call(cmd, cwd=BESS_HOME, shell=True)
+    config = VhostConf(config)
+    cmd = 'sudo bessctl/bessctl -- daemon start -- run file {config_file}'.format(config_file=os.path.join(config.bess_home, "bessctl/conf/port", config.bess_config), config_path="/home/alireza/Documents/post-loom/exp/config/backdraft/test_backpressure.json") # I don't know how to do this, but will do something about it.
+    print(cmd)
+    subprocess.check_call(cmd, cwd=config.bess_home, shell=True)
+
 
 def make_sink_app(dpdk_home):
     cmd = 'make -C examples/skeleton RTE_SDK=$(pwd) RTE_TARGET=build O=$(pwd)/build/examples/skeleton'
-    make_proc = subprocess.check_call(cmd, cwd=dpdk_home, shell=True)
+    subprocess.check_call(cmd, cwd=dpdk_home, shell=True)
+
 
 def sink_app(just_compile):
-    DPDK_HOME='/proj/uic-dcs-PG0/dpdk-stable-17.11.6/'
+    DPDK_HOME = '/proj/uic-dcs-PG0/dpdk-stable-17.11.6/'
     make_sink_app(DPDK_HOME)
     cmd_fw_sink = 'sudo ./build/examples/skeleton/basicfwd -l 0-1 -n 4 --vdev="virtio_user0,path=/users/alireza/my_vhost0.sock,queues=1" --log-level=8 --socket-mem 1024,1024 --proc-type auto'
     if(not just_compile):
         subprocess.check_call(cmd_fw_sink, cwd=DPDK_HOME, shell=True)
 
-def moongen_run(config):
-    MOON_HOME="/proj/uic-dcs-PG0/moongen/"
-    cmd = 'sudo ./build/MoonGen examples/{script_to_load} --dpdk-config={dpdk_conf} {sender_dev} {receiver_dev} --edrop {enable_drop} -r {main_workload_rate} -t {exp_duration}'.format(
-            sender_dev = config['sender_dev'],
-            receiver_dev = config['receiver_dev'],
-            main_workload_rate = config['main_workload_rate'],
-            exp_duration = config['exp_duration'],
-            script_to_load = config['script'],
-            enable_drop = config['drop'],
-            dpdk_conf = config['dpdk_config']
-            )
+def moongen_server_command_maker(config, cpu_limit):
+    popen_server_cmd = './build/MoonGen examples/{script_to_load} --dpdk-config={dpdk_conf} {sender_dev} {receiver_dev} {client} {server} {rqueueClient} {tqueueClient} {rqueueServer} {tqueueServer} {result_path} -v {clientCount} -u {clientSleepTime} -s {sleepTime} -c {serverCount} -k {dumper} --edrop {enable_drop} -r {main_workload_rate} -t {exp_duration} -b {conn} -l {requests} -a {cpu}' \
+    .format(sender_dev=config.server['dev'],
+            receiver_dev=config.client['dev'],
+            main_workload_rate=config.client['rate'],
+            exp_duration=config.exp_duration,
+            script_to_load=config.script,
+            enable_drop=config.client['drop'],
+            dpdk_conf=config.server["dpdk_config"],
+            client=0,
+            server=1,
+            tqueueClient=config.client['tqueue'],
+            rqueueClient=config.client['rqueue'],
+            rqueueServer=config.server['rqueue'],
+            tqueueServer=config.server['tqueue'],
+            serverCount=config.server['count'],
+            dumper=config.server['dumper'],
+            sleepTime=config.server['SleepTime'],
+            clientCount=config.client['count'],
+            clientSleepTime=config.client['SleepTime'],            
+            conn=config.client['concurrency'],
+            requests=config.server['requests'],
+            cpu=cpu_limit,
+            result_path=config.results_dir)
+    print("server cmd", popen_server_cmd)
+    return popen_server_cmd
 
-    #cmd = 'sudo ./build/MoonGen examples/{script_to_load} --dpdk-config={dpdk_conf} {sender_dev} {receiver_dev} --bpressure {backpressure} --edrop {enable_drop} -r {main_workload_rate} --brate {background_workload_rate} -t {exp_duration}'.format(
-    #        sender_dev = config['sender_dev'],
-    #        receiver_dev = config['receiver_dev'],
-    #        main_workload_rate = config['main_workload_rate'],
-    #        background_workload_rate = config['background_workload_rate'],
-    #        exp_duration = config['exp_duration'],
-    #        script_to_load = config['script'],
-    #        enable_drop = config['drop'],
-    #        backpressure = config['backpressure'],
-    #        dpdk_conf = config['dpdk_config']
-    #        )
-    print(cmd)
-    moon_gen_proc = subprocess.check_call(cmd, cwd=MOON_HOME, shell=True)
+def moongen_client_command_maker(config, cpu_limit):
+    client_cmd = 'sudo ./build/MoonGen examples/{script_to_load} --dpdk-config={dpdk_conf} {sender_dev} {receiver_dev} {client} {server} {rqueueClient} {tqueueClient} {rqueueServer} {tqueueServer} {result_path} -v {clientCount} -u {clientSleepTime} -s {sleepTime} -c {serverCount} -k {dumper} --edrop {enable_drop} -r {main_workload_rate} -t {exp_duration} -b {conn} -l {requests} -a {cpu}' \
+    .format(sender_dev=config.client['dev'],
+            receiver_dev=config.server['dev'],
+            main_workload_rate=config.client['rate'],
+            exp_duration=config.exp_duration,
+            script_to_load=config.script,
+            enable_drop=config.client['drop'],
+            dpdk_conf=config.client["dpdk_config"],
+            client=1,
+            server=0,
+            tqueueClient=config.client['tqueue'],
+            rqueueClient=config.client['rqueue'],
+            rqueueServer=config.server['rqueue'],
+            tqueueServer=config.server['tqueue'],
+            serverCount=config.server['count'],
+            dumper=config.server['dumper'],
+            sleepTime=config.server['SleepTime'],
+            clientCount=config.client['count'],
+            clientSleepTime=config.client['SleepTime'],
+            conn=config.client['concurrency'],
+            requests=config.client['requests'],
+            cpu=cpu_limit,
+            result_path=config.results_dir)
+    print("client cmd", client_cmd)
+    return client_cmd
+
+
+def moongen_run(config, cpu_limit=0):
+    config = VhostConf(config)
+    MOON_HOME = config.moongen_home
+    
+    server_cmd = moongen_server_command_maker(config, cpu_limit)
+    client_cmd = moongen_client_command_maker(config, cpu_limit)
+
+    subprocess.call("sudo pkill MoonGen", cwd=MOON_HOME, shell=True)
+    sleep(5)
+    server_process = subprocess.Popen(['MOON_HOME=' + MOON_HOME + ';cd $MOON_HOME; sudo  ' + server_cmd], shell=True)
+    if(cpu_limit):
+        print("CPU_LIM")
+        sleep(5)
+<<<<<<< HEAD
+        subprocess.Popen(["a=`pidof MoonGen`; sudo cpulimit -p $a -l " + str(cpu_limit)+ ";"], shell=True)
+=======
+        subprocess.Popen(["a=`pidof MoonGen`; sudo cpulimit -p $a -l " + str(cpu_limit) + ";"], shell=True)
+>>>>>>> d37eb2c8cfa423704fc44c4812cf04a5ef126691
+    sleep(5)
+    subprocess.check_call(client_cmd, cwd=MOON_HOME, shell=True)
+    subprocess.check_call('for i in `pidof MoonGen`; do sudo kill -15 $i ; break; done', shell=True)
+    subprocess.call("sudo pkill cpulimit", shell=True)
+    sleep(10)
     print("Moongen exits")
-    #moongen_post_exp()
 
-def moongen_run_exp(config):
-    MOON_HOME="/proj/uic-dcs-PG0/moongen/"
-    cmd = 'sudo ./build/MoonGen examples/{script_to_load} --dpdk-config={dpdk_conf} {sender_dev} {receiver_dev} --bpressure {backpressure} --edrop {enable_drop} -r {main_workload_rate} --brate {background_workload_rate} -t {exp_duration}'.format(
-            sender_dev = config['sender_dev'],
-            receiver_dev = config['receiver_dev'],
-            main_workload_rate = config['main_workload_rate'],
-            background_workload_rate = config['background_workload_rate'],
-            exp_duration = config['exp_duration'],
-            script_to_load = config['script'],
-            enable_drop = config['drop'],
-            backpressure = config['backpressure'],
-            dpdk_conf = config['dpdk_config']
-            )
-
-    print(cmd)
-    moon_gen_proc = subprocess.check_call(cmd, cwd=MOON_HOME, shell=True)
-    print("Moongen exits")
-    moongen_post_exp(config)
+def make_up_the_results_dir(iconfig):
+    from datetime import datetime
+    config = VhostConf(iconfig)
+    now = datetime.now()
+    dt_string = now.strftime("%d-%m-%Y-%H-%M-%S")
+    new_path = os.path.join(config.results_dir, dt_string)
+    subprocess.run(['mkdir', '-p', new_path])
+    return new_path
+    
 
 def moongen_post_exp(config):
     results_dir = "/proj/uic-dcs-PG0/post-loom/exp/results"
@@ -101,10 +144,13 @@ def moongen_post_exp(config):
     subprocess.check_call(cmd, cwd=results_dir, shell=True)
     analysis(results_dir, config)
 
+
 def analysis(results_dir, config):
     analysis_dir = "/proj/uic-dcs-PG0/post-loom/exp/analysis"
-    cmd = "count=`ls -1  {0}/pings* | wc -l` && python3 analysis.py {0} {0}/pings_$count.txt {1} {2}".format(results_dir, config['background_workload_rate'], config['drop'])
+    cmd = "count=`ls -1  {0}/pings* | wc -l` && python3 analysis.py {0} {0}/pings_$count.txt {1} {2}".format(
+        results_dir, config['background_workload_rate'], config['drop'])
     subprocess.check_call(cmd, cwd=analysis_dir, shell=True)
+
 
 def analysis_manual(results_dir):
     analysis_dir = "/proj/uic-dcs-PG0/post-loom/exp/analysis"
@@ -112,57 +158,29 @@ def analysis_manual(results_dir):
     cmd = "python3 analysis.py {0} {1}".format(results_dir, pings)
     subprocess.check_call(cmd, cwd=analysis_dir, shell=True)
 
+
 def load_exp_conf(config_path):
     with open(config_path) as config_file:
         data = json.load(config_file)
     return data
 
 
-def drop_latency_experiment():
-    #bess_config(BESS_CONFIG_PATH) #TODO: I need to involve the config from here
- 
-    config = VhostConf(load_exp_conf("config/exp_config.json"))
-    plot_data_cleanup(config.plot)
-    
-    for j in range(2):
-        config.moongen['drop'] = j
-        i = 0.5 
-        while(i < 7):
-            config.moongen['background_workload_rate'] = i
-            moongen_run_exp(config.moongen)
-            i = i + 0.5
-    
-    draw_latency_drop_plots(config.plot)
-
-def plot_data_cleanup(config):
-    PLOT_HOME = config['plot_dir']
-    drawer = config['drawer']
-    cmd = "rm {0} {1} {2} {3} {4}".format(config['latency_0'],
-            config['drop_0'], config['latency_1'],
-            config['drop_1'], config['background_rate'])
-    subprocess.call(cmd, cwd=PLOT_HOME, shell=True)
-
-def draw_latency_drop_plots(config):
-    PLOT_HOME = config['plot_dir']
-    drawer = config['drawer']
-    cmd = 'python3 {0} {1} {2} {3} {4} {5}'.format(config['drawer'], config['latency_0'],
-            config['drop_0'], config['latency_1'],
-            config['drop_1'], config['background_rate'])
-    subprocess.check_call(cmd, cwd=PLOT_HOME, shell=True)
-
 def redraw_latency_drop_plot():
     config = VhostConf(load_exp_conf("config/exp_config.json"))
     draw_latency_drop_plots(config.plot)
 
 def sysbench(config):
-    cmd = "taskset --cpu-list 16 sysbench --test=cpu --cpu-max-prime=200000000 --num-threads=%s run &" %config["thread_number"]
+    cmd = "taskset --cpu-list 16 sysbench --test=cpu --cpu-max-prime=200000000 --num-threads=%s run &" % config[
+        "thread_number"]
     subprocess.call(cmd, shell=True)
+
 
 def kill_sysbench():
     cmd = "pkill sysbench"
     subprocess.check_call(cmd, shell=True)
 
-def motive1(config_path):
+
+def run_beta(config_path):
     config = VhostConf(load_exp_conf(config_path))
     general_config = VhostConf(config.general)
 
@@ -173,19 +191,67 @@ def motive1(config_path):
         bess(config.bess)
 
     if(general_config.moongen):
-        moongen_run(config.moongen)
+        moongen_run(config.moongen, 0)
+
+    if(general_config.mtcp):
+        mtcp_run(config.mtcp)
 
     if(general_config.sysbench):
         kill_sysbench()
 
-#os.environ["RTE_SDK"] = "/proj/uic-dcs-PG0/post-loom/code/dpdk/"
-#os.environ["RTE_TARGET"] = "x86_64-native-linuxapp-gcc"
+def run(config_path, cpu_limit):
+    config = VhostConf(load_exp_conf(config_path))
+    general_config = VhostConf(config.general)
+
+    if(general_config.sysbench):
+        sysbench(config.sysbench)
+
+    if(general_config.bess):
+        bess(config.bess)
+
+    if(general_config.moongen):
+        make_up_the_results_dir(config.moongen)
+        moongen_run(config.moongen, cpu_limit)
+
+    if(general_config.mtcp):
+        mtcp_run(config.mtcp)
+
+    if(general_config.sysbench):
+        kill_sysbench()
+
+def run_alpha(config, cpu_limit):
+    general_config = VhostConf(config.general)
+
+    if(general_config.sysbench):
+        sysbench(config.sysbench)
+
+    if(general_config.bess):
+        bess(config.bess)
+
+    if(general_config.moongen):
+        moongen_run(config.moongen, cpu_limit)
+
+    if(general_config.mtcp):
+        mtcp_run(config.mtcp)
+
+    if(general_config.sysbench):
+        kill_sysbench()
 
 
-motive1("config/motive_config.json")
-#run_sysbench()
-#bess_config("config/motive_config.json")
-#moongen_run()
-#analysis_manual("/proj/uic-dcs-PG0/post-loom/exp/results/")
-#drop_latency_experiment()
-#redraw_latency_drop_plot()
+def start_experiment(path):
+    config = VhostConf(load_exp_conf(path))
+    default_path = config.moongen["results_dir"]
+    for i in range(10):
+        config.moongen["results_dir"] = default_path
+        new_path = make_up_the_results_dir(config.moongen)
+        config.moongen["results_dir"] = new_path
+        for i in range(5, 101, 5):
+            run_alpha(config, i)
+
+parser = argparse.ArgumentParser(description='Software Switch Experiments')
+parser.add_argument('--path', type=str, default='config/backdraft/test_backpressure.json', help='Absolute/relative path to the config file')
+args = parser.parse_args()
+
+#run("config/mtcp/test_backpressure.json")
+run_beta(args.path)
+#start_experiment(args.path)

@@ -379,10 +379,14 @@ class alignas(64) Module {
   // thread safe (e.g. multiple workers should not be able to simultaneously
   // call these methods)
   void SignalOverload() {
+    // LOG(INFO) << "Module: overload signal! " << overload_ << " "
+    //           << parent_tasks_.size();
+
     if (overload_) {
       return;
     }
     for (auto const &p : parent_tasks_) {
+      // LOG(INFO) << "Module: overload signal! increment ";
       ++(p->children_overload_);
     }
 
@@ -391,16 +395,23 @@ class alignas(64) Module {
 
   // Signals to parent task(s) that module is underloaded.
   void SignalUnderload() {
+    // LOG(INFO) << "Module: underload signal! " << overload_ << " "
+    //           << parent_tasks_.size();
+
     if (!overload_) {
       return;
     }
 
     for (auto const &p : parent_tasks_) {
+      // LOG(INFO) << "Module: underload signal! decrement";
       --(p->children_overload_);
     }
 
     overload_ = false;
   }
+  // Backdraft
+  void IncreamentOverloadChildren() { children_overload_++; }
+  void DecrementOverloadChildren() { children_overload_--; }
 
  private:
   // Module Destory, connect, task managements are only available with
@@ -453,12 +464,12 @@ class alignas(64) Module {
 
   // Parent tasks of this module in the current pipeline.
   std::vector<Module *> parent_tasks_;
-
   // # of child tasks of this module that are overloaded.
   std::atomic<int> children_overload_;
 
   // Whether the module itself is overloaded.
   bool overload_;
+  // They were here
 
   // TODO[apanda]: Move to some constraint structure?
   // Placement constraints for this module. We use this to update the task based
@@ -490,9 +501,9 @@ inline void Module::RunChooseModule(Context *ctx, gate_idx_t ogate_idx,
                                     bess::PacketBatch *batch) {
   bess::OGate *ogate;
 
-  if (unlikely(batch->cnt() <= 0)) {
+  /*if (unlikely(batch->cnt() <= 0)) {
     return;
-  }
+  }*/
 
   if (unlikely(ogate_idx >= ogates_.size())) {
     deadend(ctx, batch);

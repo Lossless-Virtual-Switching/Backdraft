@@ -124,6 +124,16 @@ inline void Rewrite::DoRewrite(bess::PacketBatch *batch) {
 }
 
 void Rewrite::ProcessBatch(Context *ctx, bess::PacketBatch *batch) {
+  // LOG(INFO) << "Rewrite: children! " << children_overload_;
+
+  if (children_overload_ > 0) {
+    // LOG(INFO) << "Rewrite: overload signal";
+    SignalOverload();
+  } else {
+    // LOG(INFO) << "Rewrite: underload signal";
+    SignalUnderload();
+  }
+
   if (num_templates_ == 1) {
     DoRewriteSingle(batch);
   } else if (num_templates_ > 1) {
