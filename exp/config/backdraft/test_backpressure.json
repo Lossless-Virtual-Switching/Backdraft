@@ -5,10 +5,12 @@
         "bess": 1,
 	"mtcp": 0
     },
+
     "moongen": {
         "exp_duration": 60,
         "script": "backdraft_workload_generator.lua",
-        "moongen_home": "/proj/uic-dcs-PG0/moongen",
+        "moongen_home": "/home/alireza/Documents/moongen",
+	"results_dir": "/home/alireza/Documents/post-loom/exp/results",
 	"server": {
 		"dev": 0,
 		"count": 1,
@@ -19,6 +21,7 @@
 		"requests": 1000000000,
         	"dpdk_config": "dpdk_configs/dpdk-conf-backdraft-local-server.lua"
 	},
+
 	"client": {
 		"dev": 0,
 		"count": 1,
