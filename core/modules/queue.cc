@@ -42,7 +42,13 @@ const Commands Queue::cmds = {
     {"set_size", "QueueCommandSetSizeArg",
      MODULE_CMD_FUNC(&Queue::CommandSetSize), Command::THREAD_UNSAFE},
     {"get_status", "QueueCommandGetStatusArg",
-     MODULE_CMD_FUNC(&Queue::CommandGetStatus), Command::THREAD_SAFE}};
+     MODULE_CMD_FUNC(&Queue::CommandGetStatus), Command::THREAD_SAFE},
+    {"get_initial_arg", "EmptyArg", MODULE_CMD_FUNC(&Queue::GetInitialArg),
+     Command::THREAD_SAFE},
+    {"get_runtime_config", "EmptyArg",
+     MODULE_CMD_FUNC(&Queue::GetRuntimeConfig), Command::THREAD_SAFE},
+    {"set_runtime_config", "QueueArg",
+     MODULE_CMD_FUNC(&Queue::SetRuntimeConfig), Command::THREAD_UNSAFE}};
 
 int Queue::Resize(int slots) {
   struct llring *old_queue = queue_;
@@ -118,6 +124,31 @@ CommandResponse Queue::Init(const bess::pb::QueueArg &arg) {
     prefetch_ = true;
   }
 
+  init_arg_ = arg;
+  return CommandSuccess();
+}
+
+CommandResponse Queue::GetInitialArg(const bess::pb::EmptyArg &) {
+  return CommandSuccess(init_arg_);
+}
+
+CommandResponse Queue::GetRuntimeConfig(const bess::pb::EmptyArg &) {
+  bess::pb::QueueArg ret;
+  ret.set_size(size_);
+  ret.set_prefetch(prefetch_);
+  ret.set_backpressure(backpressure_);
+  return CommandSuccess(ret);
+}
+
+CommandResponse Queue::SetRuntimeConfig(const bess::pb::QueueArg &arg) {
+  if (size_ != arg.size() && arg.size() != 0) {
+    CommandResponse err = SetSize(arg.size());
+    if (err.error().code() != 0) {
+      return err;
+    }
+  }
+  prefetch_ = arg.prefetch();
+  backpressure_ = arg.backpressure();
   return CommandSuccess();
 }
 
@@ -160,7 +191,9 @@ struct task_result Queue::RunTask(Context *ctx, bess::PacketBatch *batch,
                                   void *) {
   if (children_overload_ > 0) {
     return {
-        .block = true, .packets = 0, .bits = 0,
+        .block = true,
+        .packets = 0,
+        .bits = 0,
     };
   }
 

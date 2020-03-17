@@ -32,6 +32,7 @@
 #define BESS_PORT_H_
 
 #include <glog/logging.h>
+#include <google/protobuf/any.pb.h>
 #include <gtest/gtest_prod.h>
 
 #include <cstdint>
@@ -50,7 +51,7 @@
 
 typedef uint8_t queue_t;
 
-#define MAX_QUEUES_PER_DIR 32 /* [0, 31] (for each RX/TX) */
+#define MAX_QUEUES_PER_DIR 128 /* [0, 31] (for each RX/TX) */
 
 #define DRIVER_FLAG_SELF_INC_STATS 0x0001
 #define DRIVER_FLAG_SELF_OUT_STATS 0x0002
@@ -219,6 +220,7 @@ class Port {
       : port_stats_(),
         conf_(),
         name_(),
+        driver_arg_(),
         port_builder_(),
         num_queues(),
         queue_size(),
@@ -264,7 +266,9 @@ class Port {
     };
   }
 
-  virtual int UpdateConf(const Conf &) { return -ENOTSUP; }
+  virtual CommandResponse UpdateConf(const Conf &) {
+    return CommandFailure(ENOTSUP);
+  }
 
   CommandResponse InitWithGenericArg(const google::protobuf::Any &arg);
 
@@ -279,6 +283,13 @@ class Port {
 
   const std::string &name() const { return name_; }
   const Conf &conf() const { return conf_; }
+  const google::protobuf::Any &driver_arg() const { return driver_arg_; }
+
+  uint64_t num_rx_queues() const { return num_queues[PACKET_DIR_INC]; }
+  uint64_t num_tx_queues() const { return num_queues[PACKET_DIR_OUT]; }
+
+  uint64_t rx_queue_size() const { return queue_size[PACKET_DIR_INC]; }
+  uint64_t tx_queue_size() const { return queue_size[PACKET_DIR_OUT]; }
 
   const PortBuilder *port_builder() const { return port_builder_; }
 
@@ -303,7 +314,8 @@ class Port {
     port_builder_ = port_builder;
   }
 
-  std::string name_;  // The name of this port instance.
+  std::string name_;                  // The name of this port instance.
+  google::protobuf::Any driver_arg_;  // Driver specific configuration.
 
   // Class-wide spec of this type of port.  Non-owning.
   const PortBuilder *port_builder_;
