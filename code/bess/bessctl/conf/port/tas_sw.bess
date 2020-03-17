@@ -66,7 +66,7 @@ sock_p2 = 'net_vhost1,iface=/users/alireza/my_vhost1.sock,queues='
 #sock_p2 = 'net_vhost1,iface=/home/alireza/my_vhost1.sock,queues='
 
 #config_path = sys.argv[1]
-config = load_exp_conf("/proj/uic-dcs-PG0/post-loom/exp/config/mtcp/test_backpressure.json")
+config = load_exp_conf("/proj/uic-dcs-PG0/post-loom/exp/config/tas/config.json")
 #config = load_exp_conf("/home/alireza/Documents/post-loom/exp/config/mtcp/test_backpressure.json")
 #config = load_exp_conf(config_path)
 config = VhostConf(config).bess
@@ -79,7 +79,7 @@ print("receiver tx ", config.recv_dev['tx'])
 
 #for i in range(2):
 #	bess.add_worker(wid=i, core=i*2)
-bess.add_worker(wid=0, core=0)
+bess.add_worker(wid=0, core=1)
 
 if config.backdraft:
   my_vhost0 = BKDRFTPMDPort(name='my_vhost0', vdev=sock_p1 + str(config.send_q), num_inc_q=config.send_dev['rx'], num_out_q=config.send_dev['tx'], size_inc_q=config.queue_size_inc, size_out_q=config.queue_size_out)
@@ -93,7 +93,7 @@ else:
 
 
 #print("This file involves the NIC")
-#NICport::PMDPort(port_id=0, num_inc_q=config.send_dev['rx'], num_out_q=config.send_dev['tx'])
+nic_port = PMDPort(port_id=0, num_inc_q=config.send_dev['rx'], num_out_q=config.send_dev['tx'])
 
 
 #Some Plumbing
@@ -101,12 +101,12 @@ else:
 #forward
 for i in range(config.send_dev['rx']):
   input1 = QueueInc(port=my_vhost0.name, qid=i)
-  output1 = QueueOut(port=my_vhost1.name, qid=i)
+  output1 = QueueOut(port=nic_port.name, qid=i)
   input1 -> output1
 
 #backward
 for i in range(config.send_dev['rx']):
-  input1 = QueueInc(port=my_vhost1.name, qid=i)
+  input1 = QueueInc(port=nic_port.name, qid=i)
   output1 = QueueOut(port=my_vhost0.name, qid=i)
   input1 -> output1
 

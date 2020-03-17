@@ -28,7 +28,7 @@
     },
 
     "mtcp": {
-        "mtcp_home": "/home/alireza/Documents/mtcp"
+        "mtcp_home": "/proj/uic-dcs-PG0/mtcp"
     },
 
     "bess": {
@@ -47,7 +47,7 @@
         "backdraft": false,
 	"bfc": false,
         "bess_config": "mtcp_sw.bess",
-        "bess_home": "/home/alireza/Documents/post-loom/code/bess"
+        "bess_home": "/proj/uic-dcs-PG0/post-loom/code/bess"
     },
 
     "sysbench": {

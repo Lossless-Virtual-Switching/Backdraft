@@ -52,7 +52,7 @@
         "queue_size_out": 64,
         "backdraft": false,
 	"bfc": false,
-        "bess_config": "mtcp_sw.bess",
+        "bess_config": "tas_sw.bess",
         "bess_home": "/proj/uic-dcs-PG0/post-loom/code/bess"
     },
 

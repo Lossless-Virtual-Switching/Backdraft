@@ -130,8 +130,9 @@ def moongen_run(config, cpu_limit=0):
     subprocess.call("sudo pkill Moon", cwd=MOON_HOME, shell=True)
     server_process = subprocess.Popen(['MOON_HOME=' + MOON_HOME + ';cd $MOON_HOME; sudo  ' + popen_server_cmd], shell=True)
     if(cpu_limit):
+        print("CPU_LIM")
         sleep(5)
-        subprocess.Popen(["a=`pidof MoonGen`; sudo cpulimit -p $a -l " + str(cpu_limit) + " --lazy "+ ";"], shell=True)
+        subprocess.Popen(["a=`pidof MoonGen`; sudo cpulimit -p $a -l " + str(cpu_limit)+ ";"], shell=True)
     sleep(5)
     subprocess.check_call(client_cmd, cwd=MOON_HOME, shell=True)
     subprocess.call('for i in `pidof MoonGen`; do sudo kill -15 $i ; done', shell=True)
@@ -221,7 +222,7 @@ def run(config_path, cpu_limit):
 
 def start_experiment(path):
     # for i in [10, 60, 100, 120]:
-    for i in range(0, 101, 2):
+    for i in range(2, 101, 2):
         run(path, i)
 #os.environ["RTE_SDK"] = "/proj/uic-dcs-PG0/post-loom/code/dpdk/"
 #os.environ["RTE_TARGET"] = "x86_64-native-linuxapp-gcc"
@@ -231,5 +232,5 @@ parser.add_argument('--path', type=str, default='config/backdraft/test_backpress
 args = parser.parse_args()
 
 #run("config/mtcp/test_backpressure.json")
-#run_beta(args.path)
-start_experiment(args.path)
+run_beta(args.path)
+#start_experiment(args.path)
