@@ -989,6 +989,11 @@ class BESSControlImpl final : public BESSControl::Service {
       port->set_name(p->name());
       port->set_driver(p->port_builder()->class_name());
       port->set_mac_addr(p->conf().mac_addr.ToString());
+      port->set_num_inc_q(p->num_rx_queues());
+      port->set_num_out_q(p->num_tx_queues());
+      port->set_size_inc_q(p->rx_queue_size());
+      port->set_size_out_q(p->tx_queue_size());
+      *port->mutable_driver_arg() = p->driver_arg();
     }
 
     return Status::OK;
@@ -1032,7 +1037,7 @@ class BESSControlImpl final : public BESSControl::Service {
   }
 
   Status SetPortConf(ServerContext*, const SetPortConfRequest* request,
-                     EmptyResponse* response) override {
+                     CommandResponse* response) override {
     std::lock_guard<std::recursive_mutex> lock(mutex_);
 
     if (!request->name().length()) {
@@ -1059,7 +1064,7 @@ class BESSControlImpl final : public BESSControl::Service {
     }
 
     WorkerPauser wp;
-    it->second->UpdateConf(conf);
+    *response = it->second->UpdateConf(conf);
     return Status::OK;
   }
 
@@ -1299,6 +1304,7 @@ class BESSControlImpl final : public BESSControl::Service {
     collect_igates(m, response);
     collect_ogates(m, response);
     collect_metadata(m, response);
+    response->set_deadends(m->deadends());
 
     return Status::OK;
   }
