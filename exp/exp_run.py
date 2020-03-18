@@ -116,11 +116,7 @@ def moongen_run(config, cpu_limit=0):
     if(cpu_limit):
         print("CPU_LIM")
         sleep(5)
-<<<<<<< HEAD
-        subprocess.Popen(["a=`pidof MoonGen`; sudo cpulimit -p $a -l " + str(cpu_limit)+ ";"], shell=True)
-=======
         subprocess.Popen(["a=`pidof MoonGen`; sudo cpulimit -p $a -l " + str(cpu_limit) + ";"], shell=True)
->>>>>>> d37eb2c8cfa423704fc44c4812cf04a5ef126691
     sleep(5)
     subprocess.check_call(client_cmd, cwd=MOON_HOME, shell=True)
     subprocess.check_call('for i in `pidof MoonGen`; do sudo kill -15 $i ; break; done', shell=True)

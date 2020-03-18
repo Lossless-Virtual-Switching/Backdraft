@@ -1,6 +1,0 @@
-Todos:
-
-1) Cleaning up the scripts and create classes.
-2) Write the configs in a config file and read them in the script.
-3) Configuring the DPDK as the application.
-4) Check with the Moongen.

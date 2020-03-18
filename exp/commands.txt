@@ -1,0 +1,4 @@
+sudo LD_PRELOAD=/proj/uic-dcs-PG0/tas/lib/libtas_interpose.so ./echoserver_linux 1234 1 foo 8 1000
+
+sudo LD_PRELOAD=/proj/uic-dcs-PG0/default_tas/tas/lib/libtas_interpose.so ./testclient_linux 10.0.0.1 2345 1 foo 200 64 16
+
