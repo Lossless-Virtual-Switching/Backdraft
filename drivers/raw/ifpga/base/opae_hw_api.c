@@ -575,3 +575,140 @@ int opae_manager_get_retimer_status(struct opae_manager *mgr,
 
 	return -ENOENT;
 }
+
+/**
+ * opae_manager_get_sensor_by_id - get sensor device
+ * @id: the id of the sensor
+ *
+ * Return: the pointer of the opae_sensor_info
+ */
+struct opae_sensor_info *
+opae_mgr_get_sensor_by_id(struct opae_manager *mgr,
+		unsigned int id)
+{
+	struct opae_sensor_info *sensor;
+
+	opae_mgr_for_each_sensor(mgr, sensor)
+		if (sensor->id == id)
+			return sensor;
+
+	return NULL;
+}
+
+/**
+ * opae_manager_get_sensor_by_name - get sensor device
+ * @name: the name of the sensor
+ *
+ * Return: the pointer of the opae_sensor_info
+ */
+struct opae_sensor_info *
+opae_mgr_get_sensor_by_name(struct opae_manager *mgr,
+		const char *name)
+{
+	struct opae_sensor_info *sensor;
+
+	opae_mgr_for_each_sensor(mgr, sensor)
+		if (!strcmp(sensor->name, name))
+			return sensor;
+
+	return NULL;
+}
+
+/**
+ * opae_manager_get_sensor_value_by_name - find the sensor by name and read out
+ * the value
+ * @mgr: opae_manager for sensor.
+ * @name: the name of the sensor
+ * @value: the readout sensor value
+ *
+ * Return: 0 on success, otherwise error code
+ */
+int
+opae_mgr_get_sensor_value_by_name(struct opae_manager *mgr,
+		const char *name, unsigned int *value)
+{
+	struct opae_sensor_info *sensor;
+
+	if (!mgr)
+		return -EINVAL;
+
+	sensor = opae_mgr_get_sensor_by_name(mgr, name);
+	if (!sensor)
+		return -ENODEV;
+
+	if (mgr->ops && mgr->ops->get_sensor_value)
+		return mgr->ops->get_sensor_value(mgr, sensor, value);
+
+	return -ENOENT;
+}
+
+/**
+ * opae_manager_get_sensor_value_by_id - find the sensor by id and readout the
+ * value
+ * @mgr: opae_manager for sensor
+ * @id: the id of the sensor
+ * @value: the readout sensor value
+ *
+ * Return: 0 on success, otherwise error code
+ */
+int
+opae_mgr_get_sensor_value_by_id(struct opae_manager *mgr,
+		unsigned int id, unsigned int *value)
+{
+	struct opae_sensor_info *sensor;
+
+	if (!mgr)
+		return -EINVAL;
+
+	sensor = opae_mgr_get_sensor_by_id(mgr, id);
+	if (!sensor)
+		return -ENODEV;
+
+	if (mgr->ops && mgr->ops->get_sensor_value)
+		return mgr->ops->get_sensor_value(mgr, sensor, value);
+
+	return -ENOENT;
+}
+
+/**
+ * opae_manager_get_sensor_value - get the current
+ * sensor value
+ * @mgr: opae_manager for sensor
+ * @sensor: opae_sensor_info for sensor
+ * @value: the readout sensor value
+ *
+ * Return: 0 on success, otherwise error code
+ */
+int
+opae_mgr_get_sensor_value(struct opae_manager *mgr,
+		struct opae_sensor_info *sensor,
+		unsigned int *value)
+{
+	if (!mgr || !sensor)
+		return -EINVAL;
+
+	if (mgr->ops && mgr->ops->get_sensor_value)
+		return mgr->ops->get_sensor_value(mgr, sensor, value);
+
+	return -ENOENT;
+}
+
+/**
+ * opae_manager_get_board_info - get board info
+ * sensor value
+ * @info: opae_board_info for the card
+ *
+ * Return: 0 on success, otherwise error code
+ */
+int
+opae_mgr_get_board_info(struct opae_manager *mgr,
+		struct opae_board_info **info)
+{
+	if (!mgr || !info)
+		return -EINVAL;
+
+	if (mgr->ops && mgr->ops->get_board_info)
+		return mgr->ops->get_board_info(mgr, info);
+
+	return -ENOENT;
+}

@@ -28,10 +28,7 @@
 #define UDP_HEADER_LEN  8
 #define VXLAN_HEADER_LEN 8
 
-#define IP_VERSION 0x40
-#define IP_HDRLEN  0x05 /* default IP header length == five 32-bits words. */
 #define IP_DEFTTL  64   /* from RFC 1340. */
-#define IP_VHL_DEF (IP_VERSION | IP_HDRLEN)
 
 #define IP_DN_FRAGMENT_FLAG 0x0040
 
@@ -119,7 +116,11 @@ vxlan_port_init(uint16_t port, struct rte_mempool *mbuf_pool)
 
 	pconf->dst_port = udp_port;
 
-	rte_eth_dev_info_get(port, &dev_info);
+	retval = rte_eth_dev_info_get(port, &dev_info);
+	if (retval != 0)
+		rte_exit(EXIT_FAILURE,
+			"Error during getting device (port %u) info: %s\n",
+			port, strerror(-retval));
 
 	if (dev_info.max_rx_queues > MAX_QUEUES) {
 		rte_exit(EXIT_FAILURE,
@@ -178,7 +179,10 @@ vxlan_port_init(uint16_t port, struct rte_mempool *mbuf_pool)
 	retval = rte_eth_dev_udp_tunnel_port_add(port, &tunnel_udp);
 	if (retval < 0)
 		return retval;
-	rte_eth_macaddr_get(port, &ports_eth_addr[port]);
+	retval = rte_eth_macaddr_get(port, &ports_eth_addr[port]);
+	if (retval < 0)
+		return retval;
+
 	RTE_LOG(INFO, PORT, "Port %u MAC: %02"PRIx8" %02"PRIx8" %02"PRIx8
 			" %02"PRIx8" %02"PRIx8" %02"PRIx8"\n",
 			port,
@@ -190,8 +194,6 @@ vxlan_port_init(uint16_t port, struct rte_mempool *mbuf_pool)
 			ports_eth_addr[port].addr_bytes[5]);
 
 	if (tso_segsz != 0) {
-		struct rte_eth_dev_info dev_info;
-		rte_eth_dev_info_get(port, &dev_info);
 		if ((dev_info.tx_offload_capa & DEV_TX_OFFLOAD_TCP_TSO) == 0)
 			RTE_LOG(WARNING, PORT,
 				"hardware TSO offload is not supported\n");
@@ -316,7 +318,7 @@ vxlan_link(struct vhost_dev *vdev, struct rte_mbuf *m)
 	app_l2_hdr[portid].ether_type = rte_cpu_to_be_16(RTE_ETHER_TYPE_IPV4);
 
 	ip = &app_ip_hdr[portid];
-	ip->version_ihl = IP_VHL_DEF;
+	ip->version_ihl = RTE_IPV4_VHL_DEF;
 	ip->type_of_service = 0;
 	ip->total_length = 0;
 	ip->packet_id = 0;

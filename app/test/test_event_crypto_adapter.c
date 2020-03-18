@@ -171,6 +171,7 @@ test_op_forward_mode(uint8_t session_less)
 	struct rte_event ev;
 	uint32_t cap;
 	int ret;
+	uint8_t cipher_key[17];
 
 	memset(&m_data, 0, sizeof(m_data));
 
@@ -183,8 +184,13 @@ test_op_forward_mode(uint8_t session_less)
 	cipher_xform.type = RTE_CRYPTO_SYM_XFORM_CIPHER;
 	cipher_xform.next = NULL;
 
-	cipher_xform.cipher.algo = RTE_CRYPTO_CIPHER_NULL;
+	cipher_xform.cipher.algo = RTE_CRYPTO_CIPHER_AES_CBC;
 	cipher_xform.cipher.op = RTE_CRYPTO_CIPHER_OP_ENCRYPT;
+
+	cipher_xform.cipher.key.data = cipher_key;
+	cipher_xform.cipher.key.length = 16;
+	cipher_xform.cipher.iv.offset = IV_OFFSET;
+	cipher_xform.cipher.iv.length = 16;
 
 	op = rte_crypto_op_alloc(params.op_mpool,
 			RTE_CRYPTO_OP_TYPE_SYMMETRIC);
@@ -199,8 +205,9 @@ test_op_forward_mode(uint8_t session_less)
 		TEST_ASSERT_NOT_NULL(sess, "Session creation failed\n");
 
 		/* Create Crypto session*/
-		rte_cryptodev_sym_session_init(TEST_CDEV_ID, sess,
+		ret = rte_cryptodev_sym_session_init(TEST_CDEV_ID, sess,
 				&cipher_xform, params.session_priv_mpool);
+		TEST_ASSERT_SUCCESS(ret, "Failed to init session\n");
 
 		ret = rte_event_crypto_adapter_caps_get(TEST_ADAPTER_ID,
 							evdev, &cap);
@@ -292,8 +299,13 @@ test_sessionless_with_op_forward_mode(void)
 	ret = rte_event_crypto_adapter_caps_get(TEST_ADAPTER_ID, evdev, &cap);
 	TEST_ASSERT_SUCCESS(ret, "Failed to get adapter capabilities\n");
 
-	if (!(cap & RTE_EVENT_CRYPTO_ADAPTER_CAP_INTERNAL_PORT_OP_FWD))
+	if (!(cap & RTE_EVENT_CRYPTO_ADAPTER_CAP_INTERNAL_PORT_OP_FWD) &&
+	    !(cap & RTE_EVENT_CRYPTO_ADAPTER_CAP_INTERNAL_PORT_OP_NEW))
 		map_adapter_service_core();
+	else {
+		if (!(cap & RTE_EVENT_CRYPTO_ADAPTER_CAP_INTERNAL_PORT_OP_FWD))
+			return TEST_SKIPPED;
+	}
 
 	TEST_ASSERT_SUCCESS(rte_event_crypto_adapter_start(TEST_ADAPTER_ID),
 				"Failed to start event crypto adapter");
@@ -312,8 +324,13 @@ test_session_with_op_forward_mode(void)
 	ret = rte_event_crypto_adapter_caps_get(TEST_ADAPTER_ID, evdev, &cap);
 	TEST_ASSERT_SUCCESS(ret, "Failed to get adapter capabilities\n");
 
-	if (!(cap & RTE_EVENT_CRYPTO_ADAPTER_CAP_INTERNAL_PORT_OP_FWD))
+	if (!(cap & RTE_EVENT_CRYPTO_ADAPTER_CAP_INTERNAL_PORT_OP_FWD) &&
+	    !(cap & RTE_EVENT_CRYPTO_ADAPTER_CAP_INTERNAL_PORT_OP_NEW))
 		map_adapter_service_core();
+	else {
+		if (!(cap & RTE_EVENT_CRYPTO_ADAPTER_CAP_INTERNAL_PORT_OP_FWD))
+			return TEST_SKIPPED;
+	}
 
 	TEST_ASSERT_SUCCESS(rte_event_crypto_adapter_start(TEST_ADAPTER_ID
 				), "Failed to start event crypto adapter");
@@ -361,6 +378,7 @@ test_op_new_mode(uint8_t session_less)
 	struct rte_mbuf *m;
 	uint32_t cap;
 	int ret;
+	uint8_t cipher_key[17];
 
 	memset(&m_data, 0, sizeof(m_data));
 
@@ -373,8 +391,13 @@ test_op_new_mode(uint8_t session_less)
 	cipher_xform.type = RTE_CRYPTO_SYM_XFORM_CIPHER;
 	cipher_xform.next = NULL;
 
-	cipher_xform.cipher.algo = RTE_CRYPTO_CIPHER_NULL;
+	cipher_xform.cipher.algo = RTE_CRYPTO_CIPHER_AES_CBC;
 	cipher_xform.cipher.op = RTE_CRYPTO_CIPHER_OP_ENCRYPT;
+
+	cipher_xform.cipher.key.data = cipher_key;
+	cipher_xform.cipher.key.length = 16;
+	cipher_xform.cipher.iv.offset = IV_OFFSET;
+	cipher_xform.cipher.iv.length = 16;
 
 	op = rte_crypto_op_alloc(params.op_mpool,
 			RTE_CRYPTO_OP_TYPE_SYMMETRIC);
@@ -398,8 +421,10 @@ test_op_new_mode(uint8_t session_less)
 			rte_cryptodev_sym_session_set_user_data(sess,
 						&m_data, sizeof(m_data));
 		}
-		rte_cryptodev_sym_session_init(TEST_CDEV_ID, sess,
+		ret = rte_cryptodev_sym_session_init(TEST_CDEV_ID, sess,
 				&cipher_xform, params.session_priv_mpool);
+		TEST_ASSERT_SUCCESS(ret, "Failed to init session\n");
+
 		rte_crypto_op_attach_sym_session(op, sess);
 	} else {
 		struct rte_crypto_sym_xform *first_xform;
@@ -438,9 +463,13 @@ test_sessionless_with_op_new_mode(void)
 	ret = rte_event_crypto_adapter_caps_get(TEST_ADAPTER_ID, evdev, &cap);
 	TEST_ASSERT_SUCCESS(ret, "Failed to get adapter capabilities\n");
 
-	if (!(cap & RTE_EVENT_CRYPTO_ADAPTER_CAP_INTERNAL_PORT_OP_FWD) ||
+	if (!(cap & RTE_EVENT_CRYPTO_ADAPTER_CAP_INTERNAL_PORT_OP_FWD) &&
 	    !(cap & RTE_EVENT_CRYPTO_ADAPTER_CAP_INTERNAL_PORT_OP_NEW))
 		map_adapter_service_core();
+	else {
+		if (!(cap & RTE_EVENT_CRYPTO_ADAPTER_CAP_INTERNAL_PORT_OP_NEW))
+			return TEST_SKIPPED;
+	}
 
 	/* start the event crypto adapter */
 	TEST_ASSERT_SUCCESS(rte_event_crypto_adapter_start(TEST_ADAPTER_ID),
@@ -460,9 +489,13 @@ test_session_with_op_new_mode(void)
 	ret = rte_event_crypto_adapter_caps_get(TEST_ADAPTER_ID, evdev, &cap);
 	TEST_ASSERT_SUCCESS(ret, "Failed to get adapter capabilities\n");
 
-	if (!(cap & RTE_EVENT_CRYPTO_ADAPTER_CAP_INTERNAL_PORT_OP_FWD) ||
+	if (!(cap & RTE_EVENT_CRYPTO_ADAPTER_CAP_INTERNAL_PORT_OP_FWD) &&
 	    !(cap & RTE_EVENT_CRYPTO_ADAPTER_CAP_INTERNAL_PORT_OP_NEW))
 		map_adapter_service_core();
+	else {
+		if (!(cap & RTE_EVENT_CRYPTO_ADAPTER_CAP_INTERNAL_PORT_OP_NEW))
+			return TEST_SKIPPED;
+	}
 
 	TEST_ASSERT_SUCCESS(rte_event_crypto_adapter_start(TEST_ADAPTER_ID),
 				"Failed to start event crypto adapter");
@@ -536,7 +569,7 @@ configure_cryptodev(void)
 			"session mempool allocation failed\n");
 
 	params.session_priv_mpool = rte_mempool_create(
-				"CRYPTO_ADAPTER_SESSION_MP_PRIV",
+				"CRYPTO_AD_SESS_MP_PRIV",
 				MAX_NB_SESSIONS,
 				session_size,
 				0, 0, NULL, NULL, NULL,
@@ -814,7 +847,8 @@ test_crypto_adapter_conf_op_forward_mode(void)
 	enum rte_event_crypto_adapter_mode mode;
 
 	mode = RTE_EVENT_CRYPTO_ADAPTER_OP_FORWARD;
-	test_crypto_adapter_conf(mode);
+	TEST_ASSERT_SUCCESS(test_crypto_adapter_conf(mode),
+				"Failed to config crypto adapter");
 
 	return TEST_SUCCESS;
 }
@@ -825,7 +859,9 @@ test_crypto_adapter_conf_op_new_mode(void)
 	enum rte_event_crypto_adapter_mode mode;
 
 	mode = RTE_EVENT_CRYPTO_ADAPTER_OP_NEW;
-	test_crypto_adapter_conf(mode);
+	TEST_ASSERT_SUCCESS(test_crypto_adapter_conf(mode),
+				"Failed to config crypto adapter");
+
 	return TEST_SUCCESS;
 }
 
@@ -869,6 +905,7 @@ crypto_teardown(void)
 		params.session_mpool = NULL;
 	}
 	if (params.session_priv_mpool != NULL) {
+		rte_mempool_avail_count(params.session_priv_mpool);
 		rte_mempool_free(params.session_priv_mpool);
 		params.session_priv_mpool = NULL;
 	}

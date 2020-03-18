@@ -362,7 +362,7 @@ nicvf_dev_supported_ptypes_get(struct rte_eth_dev *dev)
 	return ptypes;
 }
 
-static void
+static int
 nicvf_dev_stats_reset(struct rte_eth_dev *dev)
 {
 	int i;
@@ -370,6 +370,7 @@ nicvf_dev_stats_reset(struct rte_eth_dev *dev)
 	struct nicvf *nic = nicvf_pmd_priv(dev);
 	uint16_t rx_start, rx_end;
 	uint16_t tx_start, tx_end;
+	int ret;
 
 	/* Reset all primary nic counters */
 	nicvf_rx_range(dev, nic, &rx_start, &rx_end);
@@ -380,7 +381,9 @@ nicvf_dev_stats_reset(struct rte_eth_dev *dev)
 	for (i = tx_start; i <= tx_end; i++)
 		txqs |= (0x3 << (i * 2));
 
-	nicvf_mbox_reset_stat_counters(nic, 0x3FFF, 0x1F, rxqs, txqs);
+	ret = nicvf_mbox_reset_stat_counters(nic, 0x3FFF, 0x1F, rxqs, txqs);
+	if (ret != 0)
+		return ret;
 
 	/* Reset secondary nic queue counters */
 	for (i = 0; i < nic->sqs_count; i++) {
@@ -396,14 +399,19 @@ nicvf_dev_stats_reset(struct rte_eth_dev *dev)
 		for (i = tx_start; i <= tx_end; i++)
 			txqs |= (0x3 << ((i % MAX_SND_QUEUES_PER_QS) * 2));
 
-		nicvf_mbox_reset_stat_counters(snic, 0, 0, rxqs, txqs);
+		ret = nicvf_mbox_reset_stat_counters(snic, 0, 0, rxqs, txqs);
+		if (ret != 0)
+			return ret;
 	}
+
+	return 0;
 }
 
 /* Promiscuous mode enabled by default in LMAC to VF 1:1 map configuration */
-static void
+static int
 nicvf_dev_promisc_enable(struct rte_eth_dev *dev __rte_unused)
 {
+	return 0;
 }
 
 static inline uint64_t
@@ -1393,7 +1401,7 @@ nicvf_dev_rx_queue_setup(struct rte_eth_dev *dev, uint16_t qidx,
 	return 0;
 }
 
-static void
+static int
 nicvf_dev_info_get(struct rte_eth_dev *dev, struct rte_eth_dev_info *dev_info)
 {
 	struct nicvf *nic = nicvf_pmd_priv(dev);
@@ -1440,6 +1448,8 @@ nicvf_dev_info_get(struct rte_eth_dev *dev, struct rte_eth_dev_info *dev_info)
 			DEV_TX_OFFLOAD_UDP_CKSUM          |
 			DEV_TX_OFFLOAD_TCP_CKSUM,
 	};
+
+	return 0;
 }
 
 static nicvf_iova_addr_t
@@ -1909,6 +1919,9 @@ nicvf_dev_configure(struct rte_eth_dev *dev)
 	uint8_t cqcount;
 
 	PMD_INIT_FUNC_TRACE();
+
+	if (rxmode->mq_mode & ETH_MQ_RX_RSS_FLAG)
+		rxmode->offloads |= DEV_RX_OFFLOAD_RSS_HASH;
 
 	if (!rte_eal_has_hugepages()) {
 		PMD_INIT_LOG(INFO, "Huge page is not configured");

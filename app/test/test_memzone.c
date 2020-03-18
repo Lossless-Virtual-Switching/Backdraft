@@ -13,13 +13,12 @@
 #include <rte_memory.h>
 #include <rte_memzone.h>
 #include <rte_eal.h>
-#include <rte_eal_memconfig.h>
+#include <rte_lcore.h>
 #include <rte_common.h>
 #include <rte_string_fns.h>
 #include <rte_errno.h>
 #include <rte_malloc.h>
 #include "../../lib/librte_eal/common/malloc_elem.h"
-#include "../../lib/librte_eal/common/eal_memcfg.h"
 
 #include "test.h"
 
@@ -476,7 +475,8 @@ find_max_block_free_size(unsigned int align, unsigned int socket_id)
 	struct rte_malloc_socket_stats stats;
 	size_t len, overhead;
 
-	rte_malloc_get_socket_stats(socket_id, &stats);
+	if (rte_malloc_get_socket_stats(socket_id, &stats) < 0)
+		return 0;
 
 	len = stats.greatest_free_size;
 	overhead = MALLOC_ELEM_OVERHEAD;
@@ -928,6 +928,16 @@ test_memzone_free(void)
 	return 0;
 }
 
+static int test_memzones_left;
+static int memzone_walk_cnt;
+static void memzone_walk_clb(const struct rte_memzone *mz,
+			     void *arg __rte_unused)
+{
+	memzone_walk_cnt++;
+	if (!strncmp(TEST_MEMZONE_NAME(""), mz->name, RTE_MEMZONE_NAMESIZE))
+		test_memzones_left++;
+}
+
 static int
 test_memzone_basic(void)
 {
@@ -937,8 +947,12 @@ test_memzone_basic(void)
 	const struct rte_memzone *memzone4;
 	const struct rte_memzone *mz;
 	int memzone_cnt_after, memzone_cnt_expected;
-	int memzone_cnt_before =
-			rte_eal_get_configuration()->mem_config->memzones.count;
+	int memzone_cnt_before;
+
+	memzone_walk_cnt = 0;
+	test_memzones_left = 0;
+	rte_memzone_walk(memzone_walk_clb, NULL);
+	memzone_cnt_before = memzone_walk_cnt;
 
 	memzone1 = rte_memzone_reserve(TEST_MEMZONE_NAME("testzone1"), 100,
 				SOCKET_ID_ANY, 0);
@@ -961,8 +975,10 @@ test_memzone_basic(void)
 			(memzone1 != NULL) + (memzone2 != NULL) +
 			(memzone3 != NULL) + (memzone4 != NULL);
 
-	memzone_cnt_after =
-			rte_eal_get_configuration()->mem_config->memzones.count;
+	memzone_walk_cnt = 0;
+	test_memzones_left = 0;
+	rte_memzone_walk(memzone_walk_clb, NULL);
+	memzone_cnt_after = memzone_walk_cnt;
 
 	if (memzone_cnt_after != memzone_cnt_expected)
 		return -1;
@@ -1040,30 +1056,26 @@ test_memzone_basic(void)
 		return -1;
 	}
 
-	memzone_cnt_after =
-			rte_eal_get_configuration()->mem_config->memzones.count;
+	memzone_walk_cnt = 0;
+	test_memzones_left = 0;
+	rte_memzone_walk(memzone_walk_clb, NULL);
+	memzone_cnt_after = memzone_walk_cnt;
 	if (memzone_cnt_after != memzone_cnt_before)
 		return -1;
 
 	return 0;
 }
 
-static int test_memzones_left;
-static int memzone_walk_cnt;
-static void memzone_walk_clb(const struct rte_memzone *mz,
-			     void *arg __rte_unused)
-{
-	memzone_walk_cnt++;
-	if (!strncmp(TEST_MEMZONE_NAME(""), mz->name, RTE_MEMZONE_NAMESIZE))
-		test_memzones_left++;
-}
-
 static int
 test_memzone(void)
 {
 	/* take note of how many memzones were allocated before running */
-	int memzone_cnt =
-			rte_eal_get_configuration()->mem_config->memzones.count;
+	int memzone_cnt;
+
+	memzone_walk_cnt = 0;
+	test_memzones_left = 0;
+	rte_memzone_walk(memzone_walk_clb, NULL);
+	memzone_cnt = memzone_walk_cnt;
 
 	printf("test basic memzone API\n");
 	if (test_memzone_basic() < 0)

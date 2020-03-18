@@ -8,10 +8,28 @@
 
 #include <rte_ether.h>
 
+#define bnxt_vlan_filter_exists(bp, filter, chk, vlan_id)	\
+		(((filter)->enables & (chk)) &&			\
+		 ((filter)->l2_ivlan == (vlan_id) &&		\
+		  (filter)->l2_ivlan_mask == 0x0FFF) &&		\
+		 !memcmp((filter)->l2_addr, (bp)->mac_addr,	\
+			 RTE_ETHER_ADDR_LEN))
 struct bnxt;
+
+#define BNXT_FLOW_L2_VALID_FLAG			BIT(0)
+#define BNXT_FLOW_L2_SRC_VALID_FLAG		BIT(1)
+#define BNXT_FLOW_L2_INNER_SRC_VALID_FLAG	BIT(2)
+#define BNXT_FLOW_L2_DST_VALID_FLAG		BIT(3)
+#define BNXT_FLOW_L2_INNER_DST_VALID_FLAG	BIT(4)
+#define BNXT_FLOW_L2_DROP_FLAG			BIT(5)
+#define BNXT_FLOW_PARSE_INNER_FLAG		BIT(6)
+#define BNXT_FLOW_MARK_FLAG			BIT(7)
+
 struct bnxt_filter_info {
 	STAILQ_ENTRY(bnxt_filter_info)	next;
+	uint32_t		flow_id;
 	uint64_t		fw_l2_filter_id;
+	struct bnxt_filter_info *matching_l2_fltr_ptr;
 	uint64_t		fw_em_filter_id;
 	uint64_t		fw_ntuple_filter_id;
 #define INVALID_MAC_INDEX	((uint16_t)-1)
@@ -26,8 +44,10 @@ struct bnxt_filter_info {
 	/* Filter Characteristics */
 	uint32_t		flags;
 	uint32_t		enables;
+	uint32_t		l2_ref_cnt;
 	uint8_t			l2_addr[RTE_ETHER_ADDR_LEN];
 	uint8_t			l2_addr_mask[RTE_ETHER_ADDR_LEN];
+	uint32_t		valid_flags;
 	uint16_t		l2_ovlan;
 	uint16_t		l2_ovlan_mask;
 	uint16_t		l2_ivlan;
@@ -58,11 +78,16 @@ struct bnxt_filter_info {
 	uint16_t                ip_protocol;
 	uint16_t                ip_addr_type;
 	uint16_t                ethertype;
+	uint32_t		priority;
+	/* Backptr to vnic. As of now, used only by an L2 filter
+	 * to remember which vnic it was created on
+	 */
+	struct			bnxt_vnic_info *vnic;
+	uint32_t		mark;
 };
 
 struct bnxt_filter_info *bnxt_alloc_filter(struct bnxt *bp);
 struct bnxt_filter_info *bnxt_alloc_vf_filter(struct bnxt *bp, uint16_t vf);
-void bnxt_init_filters(struct bnxt *bp);
 void bnxt_free_all_filters(struct bnxt *bp);
 void bnxt_free_filter_mem(struct bnxt *bp);
 int bnxt_alloc_filter_mem(struct bnxt *bp);
@@ -137,4 +162,8 @@ struct bnxt_filter_info *bnxt_get_l2_filter(struct bnxt *bp,
 	HWRM_CFA_NTUPLE_FILTER_ALLOC_INPUT_ENABLES_MIRROR_VNIC_ID
 #define NTUPLE_FLTR_ALLOC_INPUT_EN_MIRROR_VNIC_ID	\
 	HWRM_CFA_NTUPLE_FILTER_ALLOC_INPUT_ENABLES_MIRROR_VNIC_ID
+#define L2_FILTER_ALLOC_INPUT_EN_T_NUM_VLANS \
+	HWRM_CFA_L2_FILTER_ALLOC_INPUT_ENABLES_T_NUM_VLANS
+#define L2_FILTER_ALLOC_INPUT_EN_NUM_VLANS \
+	HWRM_CFA_L2_FILTER_ALLOC_INPUT_ENABLES_NUM_VLANS
 #endif

@@ -7,7 +7,7 @@ Intel(R) QuickAssist (QAT) Crypto Poll Mode Driver
 QAT documentation consists of three parts:
 
 * Details of the symmetric and asymmetric crypto services below.
-* Details of the `compression service <http://doc.dpdk.org/guides/compressdevs/qat_comp.html>`_
+* Details of the :doc:`compression service <../compressdevs/qat_comp>`
   in the compressdev drivers section.
 * Details of building the common QAT infrastructure and the PMDs to support the
   above services. See :ref:`building_qat` below.
@@ -72,6 +72,30 @@ Supported AEAD algorithms:
 * ``RTE_CRYPTO_AEAD_AES_CCM``
 
 
+Supported Chains
+~~~~~~~~~~~~~~~~
+
+All the usual chains are supported and also some mixed chains:
+
+.. table:: Supported hash-cipher chains for wireless digest-encrypted cases
+
+   +------------------+-----------+-------------+----------+----------+
+   | Cipher algorithm | NULL AUTH | SNOW3G UIA2 | ZUC EIA3 | AES CMAC |
+   +==================+===========+=============+==========+==========+
+   | NULL CIPHER      | Y         | 3           | 3        | Y        |
+   +------------------+-----------+-------------+----------+----------+
+   | SNOW3G UEA2      | 3         | Y           | 3        | 3        |
+   +------------------+-----------+-------------+----------+----------+
+   | ZUC EEA3         | 3         | 3           | 2&3      | 3        |
+   +------------------+-----------+-------------+----------+----------+
+   | AES CTR          | Y         | 3           | 3        | Y        |
+   +------------------+-----------+-------------+----------+----------+
+
+* The combinations marked as "Y" are supported on all QAT hardware versions.
+* The combinations marked as "2&3" are supported on GEN2/GEN3 QAT hardware only.
+* The combinations marked as "3" are supported on GEN3 QAT hardware only.
+
+
 Limitations
 ~~~~~~~~~~~
 
@@ -81,7 +105,21 @@ Limitations
 * No BSD support as BSD QAT kernel driver not available.
 * ZUC EEA3/EIA3 is not supported by dh895xcc devices
 * Maximum additional authenticated data (AAD) for GCM is 240 bytes long and must be passed to the device in a buffer rounded up to the nearest block-size multiple (x16) and padded with zeros.
-* Queue pairs are not thread-safe (that is, within a single queue pair, RX and TX from different lcores is not supported).
+* Queue-pairs are thread-safe on Intel CPUs but Queues are not (that is, within a single
+  queue-pair all enqueues to the TX queue must be done from one thread and all dequeues
+  from the RX queue must be done from one thread, but enqueues and dequeues may be done
+  in different threads.)
+* A GCM limitation exists, but only in the case where there are multiple
+  generations of QAT devices on a single platform.
+  To optimise performance, the GCM crypto session should be initialised for the
+  device generation to which the ops will be enqueued. Specifically if a GCM
+  session is initialised on a GEN2 device, but then attached to an op enqueued
+  to a GEN3 device, it will work but cannot take advantage of hardware
+  optimisations in the GEN3 device. And if a GCM session is initialised on a
+  GEN3 device, then attached to an op sent to a GEN1/GEN2 device, it will not be
+  enqueued to the device and will be marked as failed. The simplest way to
+  mitigate this is to use the bdf whitelist to avoid mixing devices of different
+  generations in the same process if planning to use for GCM.
 
 Extra notes on KASUMI F9
 ~~~~~~~~~~~~~~~~~~~~~~~~
@@ -122,7 +160,11 @@ Limitations
 ~~~~~~~~~~~
 
 * Big integers longer than 4096 bits are not supported.
-* Queue pairs are not thread-safe (that is, within a single queue pair, RX and TX from different lcores is not supported).
+* Queue-pairs are thread-safe on Intel CPUs but Queues are not (that is, within a single
+  queue-pair all enqueues to the TX queue must be done from one thread and all dequeues
+  from the RX queue must be done from one thread, but enqueues and dequeues may be done
+  in different threads.)
+* RSA-2560, RSA-3584 are not supported
 
 .. _building_qat:
 
@@ -146,7 +188,7 @@ Configuring and Building the DPDK QAT PMDs
 
 
 Further information on configuring, building and installing DPDK is described
-`here <http://doc.dpdk.org/guides/linux_gsg/build_dpdk.html>`_.
+:doc:`here <../linux_gsg/build_dpdk>`.
 
 
 Quick instructions for QAT cryptodev PMD are as follows:
@@ -223,6 +265,29 @@ allocated while for GEN1 devices, 12 buffers are allocated, plus 1472 bytes over
 	the intermediate buffer size to be larger than the expected input data size
 	(compressed output size is usually unknown, so the only option is to make
 	larger than the input size).
+
+
+Running QAT PMD with minimum threshold for burst size
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+If only a small number or packets can be enqueued. Each enqueue causes an expensive MMIO write.
+These MMIO write occurrences can be optimised by setting any of the following parameters:
+
+- qat_sym_enq_threshold
+- qat_asym_enq_threshold
+- qat_comp_enq_threshold
+
+When any of these parameters is set rte_cryptodev_enqueue_burst function will
+return 0 (thereby avoiding an MMIO) if the device is congested and number of packets
+possible to enqueue is smaller.
+To use this feature the user must set the parameter on process start as a device additional parameter::
+
+  -w 03:01.1,qat_sym_enq_threshold=32,qat_comp_enq_threshold=16
+
+All parameters can be used with the same device regardless of order. Parameters are separated
+by comma. When the same parameter is used more than once first occurrence of the parameter
+is used.
+Maximum threshold that can be set is 32.
 
 
 Device and driver naming

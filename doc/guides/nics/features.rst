@@ -193,10 +193,12 @@ LRO
 Supports Large Receive Offload.
 
 * **[uses]       rte_eth_rxconf,rte_eth_rxmode**: ``offloads:DEV_RX_OFFLOAD_TCP_LRO``.
+  ``dev_conf.rxmode.max_lro_pkt_size``.
 * **[implements] datapath**: ``LRO functionality``.
 * **[implements] rte_eth_dev_data**: ``lro``.
 * **[provides]   mbuf**: ``mbuf.ol_flags:PKT_RX_LRO``, ``mbuf.tso_segsz``.
 * **[provides]   rte_eth_dev_info**: ``rx_offload_capa,rx_queue_offload_capa:DEV_RX_OFFLOAD_TCP_LRO``.
+* **[provides]   rte_eth_dev_info**: ``max_lro_pkt_size``.
 
 
 .. _nic_features_tso:
@@ -274,6 +276,7 @@ Supports RSS hashing on RX.
 
 * **[uses]     user config**: ``dev_conf.rxmode.mq_mode`` = ``ETH_MQ_RX_RSS_FLAG``.
 * **[uses]     user config**: ``dev_conf.rx_adv_conf.rss_conf``.
+* **[uses]     rte_eth_rxconf,rte_eth_rxmode**: ``offloads:DEV_RX_OFFLOAD_RSS_HASH``.
 * **[provides] rte_eth_dev_info**: ``flow_type_rss_offloads``.
 * **[provides] mbuf**: ``mbuf.ol_flags:PKT_RX_RSS_HASH``, ``mbuf.rss``.
 
@@ -286,6 +289,7 @@ Inner RSS
 Supports RX RSS hashing on Inner headers.
 
 * **[uses]    rte_flow_action_rss**: ``level``.
+* **[uses]    rte_eth_rxconf,rte_eth_rxmode**: ``offloads:DEV_RX_OFFLOAD_RSS_HASH``.
 * **[provides] mbuf**: ``mbuf.ol_flags:PKT_RX_RSS_HASH``, ``mbuf.rss``.
 
 
@@ -417,7 +421,9 @@ Supports adding traffic mirroring rules.
 Inline crypto
 -------------
 
-Supports inline crypto processing (e.g. inline IPsec). See Security library and PMD documentation for more details.
+Supports inline crypto processing defined by rte_security library to perform crypto
+operations of security protocol while packet is received in NIC. NIC is not aware
+of protocol operations. See Security library and PMD documentation for more details.
 
 * **[uses]       rte_eth_rxconf,rte_eth_rxmode**: ``offloads:DEV_RX_OFFLOAD_SECURITY``,
 * **[uses]       rte_eth_txconf,rte_eth_txmode**: ``offloads:DEV_TX_OFFLOAD_SECURITY``.
@@ -427,6 +433,29 @@ Supports inline crypto processing (e.g. inline IPsec). See Security library and 
   ``tx_offload_capa,tx_queue_offload_capa:DEV_TX_OFFLOAD_SECURITY``.
 * **[provides]   mbuf**: ``mbuf.ol_flags:PKT_RX_SEC_OFFLOAD``,
   ``mbuf.ol_flags:PKT_TX_SEC_OFFLOAD``, ``mbuf.ol_flags:PKT_RX_SEC_OFFLOAD_FAILED``.
+* **[provides]   rte_security_ops, capabilities_get**:  ``action: RTE_SECURITY_ACTION_TYPE_INLINE_CRYPTO``
+
+
+.. _nic_features_inline_protocol_doc:
+
+Inline protocol
+---------------
+
+Supports inline protocol processing defined by rte_security library to perform
+protocol processing for the security protocol (e.g. IPsec, MACSEC) while the
+packet is received at NIC. The NIC is capable of understanding the security
+protocol operations. See security library and PMD documentation for more details.
+
+* **[uses]       rte_eth_rxconf,rte_eth_rxmode**: ``offloads:DEV_RX_OFFLOAD_SECURITY``,
+* **[uses]       rte_eth_txconf,rte_eth_txmode**: ``offloads:DEV_TX_OFFLOAD_SECURITY``.
+* **[implements] rte_security_ops**: ``session_create``, ``session_update``,
+  ``session_stats_get``, ``session_destroy``, ``set_pkt_metadata``, ``get_userdata``,
+  ``capabilities_get``.
+* **[provides] rte_eth_dev_info**: ``rx_offload_capa,rx_queue_offload_capa:DEV_RX_OFFLOAD_SECURITY``,
+  ``tx_offload_capa,tx_queue_offload_capa:DEV_TX_OFFLOAD_SECURITY``.
+* **[provides]   mbuf**: ``mbuf.ol_flags:PKT_RX_SEC_OFFLOAD``,
+  ``mbuf.ol_flags:PKT_TX_SEC_OFFLOAD``, ``mbuf.ol_flags:PKT_RX_SEC_OFFLOAD_FAILED``.
+* **[provides]   rte_security_ops, capabilities_get**:  ``action: RTE_SECURITY_ACTION_TYPE_INLINE_PROTOCOL``
 
 
 .. _nic_features_crc_offload:
@@ -583,9 +612,12 @@ Packet type parsing
 -------------------
 
 Supports packet type parsing and returns a list of supported types.
+Allows application to set ptypes it is interested in.
 
-* **[implements] eth_dev_ops**: ``dev_supported_ptypes_get``.
-* **[related]    API**: ``rte_eth_dev_get_supported_ptypes()``.
+* **[implements] eth_dev_ops**: ``dev_supported_ptypes_get``,
+* **[related]    API**: ``rte_eth_dev_get_supported_ptypes()``,
+  ``rte_eth_dev_set_ptypes()``, ``dev_ptypes_set``.
+* **[provides]   mbuf**: ``mbuf.packet_type``.
 
 
 .. _nic_features_timesync:
@@ -870,6 +902,16 @@ Supports Tx queue setup after device started.
 
 * **[provides] rte_eth_dev_info**: ``dev_capa:RTE_ETH_DEV_CAPA_RUNTIME_TX_QUEUE_SETUP``.
 * **[related]  API**: ``rte_eth_dev_info_get()``.
+
+.. _nic_features_burst_mode_info:
+
+Burst mode info
+---------------
+
+Supports to get Rx/Tx packet burst mode information.
+
+* **[implements] eth_dev_ops**: ``rx_burst_mode_get``, ``tx_burst_mode_get``.
+* **[related] API**: ``rte_eth_rx_burst_mode_get()``, ``rte_eth_tx_burst_mode_get()``.
 
 .. _nic_features_other:
 

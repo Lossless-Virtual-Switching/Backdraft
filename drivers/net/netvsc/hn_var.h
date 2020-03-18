@@ -201,7 +201,7 @@ hn_get_vf_dev(const struct hn_data *hv)
 		return &rte_eth_devices[vf_port];
 }
 
-void	hn_vf_info_get(struct hn_data *hv,
+int	hn_vf_info_get(struct hn_data *hv,
 		       struct rte_eth_dev_info *info);
 int	hn_vf_add(struct rte_eth_dev *dev, struct hn_data *hv);
 int	hn_vf_configure(struct rte_eth_dev *dev,
@@ -212,10 +212,10 @@ void	hn_vf_reset(struct rte_eth_dev *dev);
 void	hn_vf_stop(struct rte_eth_dev *dev);
 void	hn_vf_close(struct rte_eth_dev *dev);
 
-void	hn_vf_allmulticast_enable(struct rte_eth_dev *dev);
-void	hn_vf_allmulticast_disable(struct rte_eth_dev *dev);
-void	hn_vf_promiscuous_enable(struct rte_eth_dev *dev);
-void	hn_vf_promiscuous_disable(struct rte_eth_dev *dev);
+int	hn_vf_allmulticast_enable(struct rte_eth_dev *dev);
+int	hn_vf_allmulticast_disable(struct rte_eth_dev *dev);
+int	hn_vf_promiscuous_enable(struct rte_eth_dev *dev);
+int	hn_vf_promiscuous_disable(struct rte_eth_dev *dev);
 int	hn_vf_mc_addr_list(struct rte_eth_dev *dev,
 			   struct rte_ether_addr *mc_addr_set,
 			   uint32_t nb_mc_addr);
@@ -235,14 +235,14 @@ int	hn_vf_rx_queue_setup(struct rte_eth_dev *dev,
 void	hn_vf_rx_queue_release(struct hn_data *hv, uint16_t queue_id);
 
 int	hn_vf_stats_get(struct rte_eth_dev *dev, struct rte_eth_stats *stats);
-void	hn_vf_stats_reset(struct rte_eth_dev *dev);
+int	hn_vf_stats_reset(struct rte_eth_dev *dev);
 int	hn_vf_xstats_get_names(struct rte_eth_dev *dev,
 			       struct rte_eth_xstat_name *xstats_names,
 			       unsigned int size);
 int	hn_vf_xstats_get(struct rte_eth_dev *dev,
 			 struct rte_eth_xstat *xstats,
 			 unsigned int offset, unsigned int n);
-void	hn_vf_xstats_reset(struct rte_eth_dev *dev);
+int	hn_vf_xstats_reset(struct rte_eth_dev *dev);
 int	hn_vf_rss_hash_update(struct rte_eth_dev *dev,
 			      struct rte_eth_rss_conf *rss_conf);
 int	hn_vf_reta_hash_update(struct rte_eth_dev *dev,

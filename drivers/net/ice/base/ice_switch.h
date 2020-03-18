@@ -15,7 +15,6 @@
 #define ICE_FLTR_TX BIT(1)
 #define ICE_FLTR_TX_RX (ICE_FLTR_RX | ICE_FLTR_TX)
 
-
 /* Worst case buffer length for ice_aqc_opc_get_res_alloc */
 #define ICE_MAX_RES_TYPES 0x80
 #define ICE_AQ_GET_RES_ALLOC_BUF_LEN \
@@ -183,6 +182,7 @@ struct ice_sw_recipe {
 	/* For a chained recipe the root recipe is what should be used for
 	 * programming rules
 	 */
+	u8 is_root;
 	u8 root_rid;
 	u8 recp_created;
 
@@ -222,9 +222,12 @@ struct ice_sw_recipe {
 	/* Profiles this recipe should be associated with */
 	struct LIST_HEAD_TYPE fv_list;
 
-#define ICE_MAX_NUM_PROFILES 256
 	/* Profiles this recipe is associated with */
 	u8 num_profs, *prof_ids;
+
+	/* Possible result indexes are 44, 45, 46 and 47 */
+#define ICE_POSSIBLE_RES_IDX 0x0000F00000000000ULL
+	ice_declare_bitmap(res_idxs, ICE_MAX_FV_WORDS);
 
 	/* This allows user to specify the recipe priority.
 	 * For now, this becomes 'fwd_priority' when recipe
@@ -386,7 +389,6 @@ enum ice_status
 ice_add_mac_with_counter(struct ice_hw *hw, struct ice_fltr_info *f_info);
 void ice_remove_vsi_fltr(struct ice_hw *hw, u16 vsi_handle);
 
-
 /* Promisc/defport setup for VSIs */
 enum ice_status
 ice_cfg_dflt_vsi(struct ice_port_info *pi, u16 vsi_handle, bool set,
@@ -442,7 +444,8 @@ ice_rem_adv_rule(struct ice_hw *hw, struct ice_adv_lkup_elem *lkups,
 
 enum ice_status ice_replay_all_fltr(struct ice_hw *hw);
 
-enum ice_status ice_init_def_sw_recp(struct ice_hw *hw);
+enum ice_status
+ice_init_def_sw_recp(struct ice_hw *hw, struct ice_sw_recipe **recp_list);
 u16 ice_get_hw_vsi_num(struct ice_hw *hw, u16 vsi_handle);
 bool ice_is_vsi_valid(struct ice_hw *hw, u16 vsi_handle);
 

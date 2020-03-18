@@ -109,6 +109,34 @@ done:
 	return ret;
 }
 
+static void phy_tx_pad(unsigned char *phy_buf, unsigned int phy_buf_len,
+		unsigned int *aligned_len)
+{
+	unsigned char *p = &phy_buf[phy_buf_len - 1], *dst_p;
+
+	*aligned_len = IFPGA_ALIGN(phy_buf_len, 4);
+
+	if (*aligned_len == phy_buf_len)
+		return;
+
+	dst_p = &phy_buf[*aligned_len - 1];
+
+	/* move EOP and bytes after EOP to the end of aligned size */
+	while (p > phy_buf) {
+		*dst_p = *p;
+
+		if (*p == SPI_PACKET_EOP)
+			break;
+
+		p--;
+		dst_p--;
+	}
+
+	/* fill the hole with PHY_IDLE */
+	while (p < dst_p)
+		*p++ = SPI_BYTE_IDLE;
+}
+
 static int byte_to_core_convert(struct spi_transaction_dev *dev,
 		unsigned int send_len, unsigned char *send_data,
 		unsigned int resp_len, unsigned char *resp_data,
@@ -126,6 +154,8 @@ static int byte_to_core_convert(struct spi_transaction_dev *dev,
 	unsigned int rx_len = 0;
 	int retry = 0;
 	int spi_flags;
+	unsigned long timeout = msecs_to_timer_cycles(1000);
+	unsigned long ticks;
 	unsigned int resp_max_len = 2 * resp_len;
 
 	print_buffer("before bytes:", send_data, send_len);
@@ -149,15 +179,19 @@ static int byte_to_core_convert(struct spi_transaction_dev *dev,
 		}
 	}
 
-	print_buffer("before spi:", send_packet, p-send_packet);
+	tx_len = p - send_packet;
 
-	reorder_phy_data(32, send_packet, p - send_packet);
+	print_buffer("before spi:", send_packet, tx_len);
 
-	print_buffer("after order to spi:", send_packet, p-send_packet);
+	phy_tx_pad(send_packet, tx_len, &tx_len);
+	print_buffer("after pad:", send_packet, tx_len);
+
+	reorder_phy_data(32, send_packet, tx_len);
+
+	print_buffer("after order to spi:", send_packet, tx_len);
 
 	/* call spi */
 	tx_buffer = send_packet;
-	tx_len = p - send_packet;
 	rx_buffer = resp_packet;
 	rx_len = resp_max_len;
 	spi_flags = SPI_NOT_FOUND;
@@ -175,8 +209,11 @@ read_again:
 	if (ret != SPI_FOUND_EOP) {
 		tx_buffer = NULL;
 		tx_len = 0;
-		if (retry++ > 10) {
-			dev_err(NULL, "cannot found valid data from SPI\n");
+		ticks = rte_get_timer_cycles();
+		if (time_after(ticks, timeout) &&
+				retry++ > SPI_MAX_RETRY) {
+			dev_err(NULL, "Have retry %d, found invalid packet data\n",
+				retry);
 			return -EBUSY;
 		}
 
@@ -395,23 +432,36 @@ static int do_transaction(struct spi_transaction_dev *dev, unsigned int addr,
 int spi_transaction_read(struct spi_transaction_dev *dev, unsigned int addr,
 		unsigned int size, unsigned char *data)
 {
-	return do_transaction(dev, addr, size, data,
+	int ret;
+
+	pthread_mutex_lock(&dev->lock);
+	ret = do_transaction(dev, addr, size, data,
 			(size > SPI_REG_BYTES) ?
 			SPI_TRAN_SEQ_READ : SPI_TRAN_NON_SEQ_READ);
+	pthread_mutex_unlock(&dev->lock);
+
+	return ret;
 }
 
 int spi_transaction_write(struct spi_transaction_dev *dev, unsigned int addr,
 		unsigned int size, unsigned char *data)
 {
-	return do_transaction(dev, addr, size, data,
+	int ret;
+
+	pthread_mutex_lock(&dev->lock);
+	ret = do_transaction(dev, addr, size, data,
 			(size > SPI_REG_BYTES) ?
 			SPI_TRAN_SEQ_WRITE : SPI_TRAN_NON_SEQ_WRITE);
+	pthread_mutex_unlock(&dev->lock);
+
+	return ret;
 }
 
 struct spi_transaction_dev *spi_transaction_init(struct altera_spi_device *dev,
 		int chipselect)
 {
 	struct spi_transaction_dev *spi_tran_dev;
+	int ret;
 
 	spi_tran_dev = opae_malloc(sizeof(struct spi_transaction_dev));
 	if (!spi_tran_dev)
@@ -421,18 +471,28 @@ struct spi_transaction_dev *spi_transaction_init(struct altera_spi_device *dev,
 	spi_tran_dev->chipselect = chipselect;
 
 	spi_tran_dev->buffer = opae_malloc(sizeof(struct spi_tran_buffer));
-	if (!spi_tran_dev->buffer) {
-		opae_free(spi_tran_dev);
-		return NULL;
+	if (!spi_tran_dev->buffer)
+		goto err;
+
+	ret = pthread_mutex_init(&spi_tran_dev->lock, NULL);
+	if (ret) {
+		dev_err(spi_tran_dev, "fail to init mutex lock\n");
+		goto err;
 	}
 
 	return spi_tran_dev;
+
+err:
+	opae_free(spi_tran_dev);
+	return NULL;
 }
 
 void spi_transaction_remove(struct spi_transaction_dev *dev)
 {
 	if (dev && dev->buffer)
 		opae_free(dev->buffer);
-	if (dev)
+	if (dev) {
+		pthread_mutex_destroy(&dev->lock);
 		opae_free(dev);
+	}
 }

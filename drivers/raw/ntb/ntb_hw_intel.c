@@ -26,7 +26,7 @@ static enum xeon_ntb_bar intel_ntb_bar[] = {
 };
 
 static int
-intel_ntb_dev_init(struct rte_rawdev *dev)
+intel_ntb_dev_init(const struct rte_rawdev *dev)
 {
 	struct ntb_hw *hw = dev->dev_private;
 	uint8_t reg_val, bar;
@@ -77,7 +77,7 @@ intel_ntb_dev_init(struct rte_rawdev *dev)
 	hw->db_cnt = XEON_DB_COUNT;
 	hw->spad_cnt = XEON_SPAD_COUNT;
 
-	hw->mw_size = rte_zmalloc("uint64_t",
+	hw->mw_size = rte_zmalloc("ntb_mw_size",
 				  hw->mw_cnt * sizeof(uint64_t), 0);
 	for (i = 0; i < hw->mw_cnt; i++) {
 		bar = intel_ntb_bar[i];
@@ -94,7 +94,7 @@ intel_ntb_dev_init(struct rte_rawdev *dev)
 }
 
 static void *
-intel_ntb_get_peer_mw_addr(struct rte_rawdev *dev, int mw_idx)
+intel_ntb_get_peer_mw_addr(const struct rte_rawdev *dev, int mw_idx)
 {
 	struct ntb_hw *hw = dev->dev_private;
 	uint8_t bar;
@@ -116,7 +116,7 @@ intel_ntb_get_peer_mw_addr(struct rte_rawdev *dev, int mw_idx)
 }
 
 static int
-intel_ntb_mw_set_trans(struct rte_rawdev *dev, int mw_idx,
+intel_ntb_mw_set_trans(const struct rte_rawdev *dev, int mw_idx,
 		       uint64_t addr, uint64_t size)
 {
 	struct ntb_hw *hw = dev->dev_private;
@@ -162,8 +162,29 @@ intel_ntb_mw_set_trans(struct rte_rawdev *dev, int mw_idx,
 	return 0;
 }
 
+static void *
+intel_ntb_ioremap(const struct rte_rawdev *dev, uint64_t addr)
+{
+	struct ntb_hw *hw = dev->dev_private;
+	void *mapped = NULL;
+	void *base;
+	int i;
+
+	for (i = 0; i < hw->peer_used_mws; i++) {
+		if (addr >= hw->peer_mw_base[i] &&
+		    addr <= hw->peer_mw_base[i] + hw->mw_size[i]) {
+			base = intel_ntb_get_peer_mw_addr(dev, i);
+			mapped = (void *)(size_t)(addr - hw->peer_mw_base[i] +
+				 (size_t)base);
+			break;
+		}
+	}
+
+	return mapped;
+}
+
 static int
-intel_ntb_get_link_status(struct rte_rawdev *dev)
+intel_ntb_get_link_status(const struct rte_rawdev *dev)
 {
 	struct ntb_hw *hw = dev->dev_private;
 	uint16_t reg_val;
@@ -195,7 +216,7 @@ intel_ntb_get_link_status(struct rte_rawdev *dev)
 }
 
 static int
-intel_ntb_set_link(struct rte_rawdev *dev, bool up)
+intel_ntb_set_link(const struct rte_rawdev *dev, bool up)
 {
 	struct ntb_hw *hw = dev->dev_private;
 	uint32_t ntb_ctrl, reg_off;
@@ -221,7 +242,7 @@ intel_ntb_set_link(struct rte_rawdev *dev, bool up)
 }
 
 static uint32_t
-intel_ntb_spad_read(struct rte_rawdev *dev, int spad, bool peer)
+intel_ntb_spad_read(const struct rte_rawdev *dev, int spad, bool peer)
 {
 	struct ntb_hw *hw = dev->dev_private;
 	uint32_t spad_v, reg_off;
@@ -241,7 +262,7 @@ intel_ntb_spad_read(struct rte_rawdev *dev, int spad, bool peer)
 }
 
 static int
-intel_ntb_spad_write(struct rte_rawdev *dev, int spad,
+intel_ntb_spad_write(const struct rte_rawdev *dev, int spad,
 		     bool peer, uint32_t spad_v)
 {
 	struct ntb_hw *hw = dev->dev_private;
@@ -263,7 +284,7 @@ intel_ntb_spad_write(struct rte_rawdev *dev, int spad,
 }
 
 static uint64_t
-intel_ntb_db_read(struct rte_rawdev *dev)
+intel_ntb_db_read(const struct rte_rawdev *dev)
 {
 	struct ntb_hw *hw = dev->dev_private;
 	uint64_t db_off, db_bits;
@@ -278,7 +299,7 @@ intel_ntb_db_read(struct rte_rawdev *dev)
 }
 
 static int
-intel_ntb_db_clear(struct rte_rawdev *dev, uint64_t db_bits)
+intel_ntb_db_clear(const struct rte_rawdev *dev, uint64_t db_bits)
 {
 	struct ntb_hw *hw = dev->dev_private;
 	uint64_t db_off;
@@ -293,7 +314,7 @@ intel_ntb_db_clear(struct rte_rawdev *dev, uint64_t db_bits)
 }
 
 static int
-intel_ntb_db_set_mask(struct rte_rawdev *dev, uint64_t db_mask)
+intel_ntb_db_set_mask(const struct rte_rawdev *dev, uint64_t db_mask)
 {
 	struct ntb_hw *hw = dev->dev_private;
 	uint64_t db_m_off;
@@ -312,7 +333,7 @@ intel_ntb_db_set_mask(struct rte_rawdev *dev, uint64_t db_mask)
 }
 
 static int
-intel_ntb_peer_db_set(struct rte_rawdev *dev, uint8_t db_idx)
+intel_ntb_peer_db_set(const struct rte_rawdev *dev, uint8_t db_idx)
 {
 	struct ntb_hw *hw = dev->dev_private;
 	uint32_t db_off;
@@ -332,7 +353,7 @@ intel_ntb_peer_db_set(struct rte_rawdev *dev, uint8_t db_idx)
 }
 
 static int
-intel_ntb_vector_bind(struct rte_rawdev *dev, uint8_t intr, uint8_t msix)
+intel_ntb_vector_bind(const struct rte_rawdev *dev, uint8_t intr, uint8_t msix)
 {
 	struct ntb_hw *hw = dev->dev_private;
 	uint8_t reg_off;
@@ -357,6 +378,7 @@ const struct ntb_dev_ops intel_ntb_ops = {
 	.ntb_dev_init       = intel_ntb_dev_init,
 	.get_peer_mw_addr   = intel_ntb_get_peer_mw_addr,
 	.mw_set_trans       = intel_ntb_mw_set_trans,
+	.ioremap            = intel_ntb_ioremap,
 	.get_link_status    = intel_ntb_get_link_status,
 	.set_link           = intel_ntb_set_link,
 	.spad_read          = intel_ntb_spad_read,

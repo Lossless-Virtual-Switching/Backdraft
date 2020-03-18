@@ -51,7 +51,7 @@ however all security protocol related headers are still attached to the
 packet. e.g. In case of IPsec, the IPsec tunnel headers (if any),
 ESP/AH headers will remain in the packet but the received packet
 contains the decrypted data where the encrypted data was when the packet
-arrived. The driver Rx path check the descriptors and and based on the
+arrived. The driver Rx path check the descriptors and based on the
 crypto status sets additional flags in the rte_mbuf.ol_flags field.
 
 .. note::
@@ -65,7 +65,7 @@ Egress Data path - The software prepares the egress packet by adding
 relevant security protocol headers. Only the data will not be
 encrypted by the software. The driver will accordingly configure the
 tx descriptors. The hardware device will encrypt the data before sending the
-the packet out.
+packet out.
 
 .. note::
 
@@ -511,13 +511,20 @@ Offload.
         /**< No security actions */
         RTE_SECURITY_ACTION_TYPE_INLINE_CRYPTO,
         /**< Crypto processing for security protocol is processed inline
-         * during transmission */
+         * during transmission
+         */
         RTE_SECURITY_ACTION_TYPE_INLINE_PROTOCOL,
         /**< All security protocol processing is performed inline during
-         * transmission */
-        RTE_SECURITY_ACTION_TYPE_LOOKASIDE_PROTOCOL
+         * transmission
+         */
+        RTE_SECURITY_ACTION_TYPE_LOOKASIDE_PROTOCOL,
         /**< All security protocol processing including crypto is performed
-         * on a lookaside accelerator */
+         * on a lookaside accelerator
+         */
+        RTE_SECURITY_ACTION_TYPE_CPU_CRYPTO
+        /**< Similar to ACTION_TYPE_NONE but crypto processing for security
+         * protocol is processed synchronously by a CPU.
+         */
     };
 
 The ``rte_security_session_protocol`` is defined as

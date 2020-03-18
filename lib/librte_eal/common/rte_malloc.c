@@ -26,6 +26,7 @@
 #include "malloc_heap.h"
 #include "eal_memalloc.h"
 #include "eal_memcfg.h"
+#include "eal_private.h"
 
 
 /* Free the memory space back to heap */
@@ -149,7 +150,8 @@ rte_realloc_socket(void *ptr, size_t size, unsigned int align, int socket)
 	void *new_ptr = rte_malloc_socket(NULL, size, align, socket);
 	if (new_ptr == NULL)
 		return NULL;
-	const unsigned old_size = elem->size - MALLOC_ELEM_OVERHEAD;
+	/* elem: |pad|data_elem|data|trailer| */
+	const size_t old_size = elem->size - elem->pad - MALLOC_ELEM_OVERHEAD;
 	rte_memcpy(new_ptr, ptr, old_size < size ? old_size : size);
 	rte_free(ptr);
 
@@ -395,6 +397,7 @@ rte_malloc_heap_memory_add(const char *heap_name, void *va_addr, size_t len,
 
 	rte_spinlock_lock(&heap->lock);
 	ret = malloc_heap_add_external_memory(heap, msl);
+	msl->heap = 1; /* mark it as heap segment */
 	rte_spinlock_unlock(&heap->lock);
 
 unlock:

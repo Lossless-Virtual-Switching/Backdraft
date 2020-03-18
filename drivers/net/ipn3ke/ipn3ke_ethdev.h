@@ -96,20 +96,13 @@ struct ipn3ke_tm_node {
 /* IPN3KE TM Hierarchy Specification */
 struct ipn3ke_tm_hierarchy {
 	struct ipn3ke_tm_node *port_node;
-	/*struct ipn3ke_tm_node_list vt_node_list;*/
-	/*struct ipn3ke_tm_node_list cos_node_list;*/
-
 	uint32_t n_shaper_profiles;
-	/*uint32_t n_shared_shapers;*/
 	uint32_t n_tdrop_profiles;
 	uint32_t n_vt_nodes;
 	uint32_t n_cos_nodes;
-
 	struct ipn3ke_tm_node *port_commit_node;
 	struct ipn3ke_tm_node_list vt_commit_node_list;
 	struct ipn3ke_tm_node_list cos_commit_node_list;
-
-	/*uint32_t n_tm_nodes[IPN3KE_TM_NODE_LEVEL_MAX];*/
 };
 
 struct ipn3ke_tm_internals {
@@ -539,13 +532,13 @@ ipn3ke_rpst_dev_set_link_down(struct rte_eth_dev *dev);
 int
 ipn3ke_rpst_link_update(struct rte_eth_dev *ethdev,
 	__rte_unused int wait_to_complete);
-void
+int
 ipn3ke_rpst_promiscuous_enable(struct rte_eth_dev *ethdev);
-void
+int
 ipn3ke_rpst_promiscuous_disable(struct rte_eth_dev *ethdev);
-void
+int
 ipn3ke_rpst_allmulticast_enable(struct rte_eth_dev *ethdev);
-void
+int
 ipn3ke_rpst_allmulticast_disable(struct rte_eth_dev *ethdev);
 int
 ipn3ke_rpst_mac_addr_set(struct rte_eth_dev *ethdev,
@@ -653,6 +646,12 @@ ipn3ke_tm_ops_get(struct rte_eth_dev *ethdev,
 #define IPN3KE_MAC_RX_FRAME_MAXLENGTH_SHIFT    0
 #define IPN3KE_MAC_RX_FRAME_MAXLENGTH_MASK \
 	IPN3KE_MASK(0xFFFF, IPN3KE_MAC_RX_FRAME_MAXLENGTH_SHIFT)
+
+#define IPN3KE_25G_MAX_TX_SIZE_CONFIG                                0x407
+#define IPN3KE_25G_MAX_RX_SIZE_CONFIG                                0x506
+
+#define IPN3KE_10G_TX_FRAME_MAXLENGTH                                0x002C
+#define IPN3KE_10G_RX_FRAME_MAXLENGTH                                0x00AE
 
 #define IPN3KE_REGISTER_WIDTH                                        32
 

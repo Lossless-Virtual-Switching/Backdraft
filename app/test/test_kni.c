@@ -436,7 +436,13 @@ test_kni_processing(uint16_t port_id, struct rte_mempool *mp)
 	memset(&info, 0, sizeof(info));
 	memset(&ops, 0, sizeof(ops));
 
-	rte_eth_dev_info_get(port_id, &info);
+	ret = rte_eth_dev_info_get(port_id, &info);
+	if (ret != 0) {
+		printf("Error during getting device (port %u) info: %s\n",
+				port_id, strerror(-ret));
+		return -1;
+	}
+
 	if (info.device)
 		bus = rte_bus_find_by_device(info.device);
 	if (bus && !strcmp(bus->name, "pci")) {
@@ -595,7 +601,12 @@ test_kni(void)
 		printf("fail to start port %d\n", port_id);
 		return -1;
 	}
-	rte_eth_promiscuous_enable(port_id);
+	ret = rte_eth_promiscuous_enable(port_id);
+	if (ret != 0) {
+		printf("fail to enable promiscuous mode for port %d: %s\n",
+			port_id, rte_strerror(-ret));
+		return -1;
+	}
 
 	/* basic test of kni processing */
 	fd = fopen(KNI_MODULE_PARAM_LO, "r");
@@ -622,7 +633,14 @@ test_kni(void)
 	memset(&info, 0, sizeof(info));
 	memset(&conf, 0, sizeof(conf));
 	memset(&ops, 0, sizeof(ops));
-	rte_eth_dev_info_get(port_id, &info);
+
+	ret = rte_eth_dev_info_get(port_id, &info);
+	if (ret != 0) {
+		printf("Error during getting device (port %u) info: %s\n",
+				port_id, strerror(-ret));
+		return -1;
+	}
+
 	if (info.device)
 		bus = rte_bus_find_by_device(info.device);
 	else
@@ -658,7 +676,15 @@ test_kni(void)
 	memset(&conf, 0, sizeof(conf));
 	memset(&info, 0, sizeof(info));
 	memset(&ops, 0, sizeof(ops));
-	rte_eth_dev_info_get(port_id, &info);
+
+	ret = rte_eth_dev_info_get(port_id, &info);
+	if (ret != 0) {
+		printf("Error during getting device (port %u) info: %s\n",
+				port_id, strerror(-ret));
+		ret = -1;
+		goto fail;
+	}
+
 	if (info.device)
 		bus = rte_bus_find_by_device(info.device);
 	else

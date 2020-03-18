@@ -292,7 +292,7 @@ bnx2x_dev_close(struct rte_eth_dev *dev)
 	bnx2x_free_ilt_mem(sc);
 }
 
-static void
+static int
 bnx2x_promisc_enable(struct rte_eth_dev *dev)
 {
 	struct bnx2x_softc *sc = dev->data->dev_private;
@@ -302,9 +302,11 @@ bnx2x_promisc_enable(struct rte_eth_dev *dev)
 	if (rte_eth_allmulticast_get(dev->data->port_id) == 1)
 		sc->rx_mode = BNX2X_RX_MODE_ALLMULTI_PROMISC;
 	bnx2x_set_rx_mode(sc);
+
+	return 0;
 }
 
-static void
+static int
 bnx2x_promisc_disable(struct rte_eth_dev *dev)
 {
 	struct bnx2x_softc *sc = dev->data->dev_private;
@@ -314,9 +316,11 @@ bnx2x_promisc_disable(struct rte_eth_dev *dev)
 	if (rte_eth_allmulticast_get(dev->data->port_id) == 1)
 		sc->rx_mode = BNX2X_RX_MODE_ALLMULTI;
 	bnx2x_set_rx_mode(sc);
+
+	return 0;
 }
 
-static void
+static int
 bnx2x_dev_allmulticast_enable(struct rte_eth_dev *dev)
 {
 	struct bnx2x_softc *sc = dev->data->dev_private;
@@ -326,9 +330,11 @@ bnx2x_dev_allmulticast_enable(struct rte_eth_dev *dev)
 	if (rte_eth_promiscuous_get(dev->data->port_id) == 1)
 		sc->rx_mode = BNX2X_RX_MODE_ALLMULTI_PROMISC;
 	bnx2x_set_rx_mode(sc);
+
+	return 0;
 }
 
-static void
+static int
 bnx2x_dev_allmulticast_disable(struct rte_eth_dev *dev)
 {
 	struct bnx2x_softc *sc = dev->data->dev_private;
@@ -338,6 +344,8 @@ bnx2x_dev_allmulticast_disable(struct rte_eth_dev *dev)
 	if (rte_eth_promiscuous_get(dev->data->port_id) == 1)
 		sc->rx_mode = BNX2X_RX_MODE_PROMISC;
 	bnx2x_set_rx_mode(sc);
+
+	return 0;
 }
 
 static int
@@ -478,7 +486,7 @@ bnx2x_dev_xstats_get(struct rte_eth_dev *dev, struct rte_eth_xstat *xstats,
 	return num;
 }
 
-static void
+static int
 bnx2x_dev_infos_get(struct rte_eth_dev *dev, struct rte_eth_dev_info *dev_info)
 {
 	struct bnx2x_softc *sc = dev->data->dev_private;
@@ -494,6 +502,8 @@ bnx2x_dev_infos_get(struct rte_eth_dev *dev, struct rte_eth_dev_info *dev_info)
 	dev_info->rx_desc_lim.nb_max = MAX_RX_AVAIL;
 	dev_info->rx_desc_lim.nb_min = MIN_RX_SIZE_NONTPA;
 	dev_info->tx_desc_lim.nb_max = MAX_TX_AVAIL;
+
+	return 0;
 }
 
 static int
@@ -587,6 +597,11 @@ bnx2x_common_dev_init(struct rte_eth_dev *eth_dev, int is_vf)
 	PMD_INIT_FUNC_TRACE(sc);
 
 	eth_dev->dev_ops = is_vf ? &bnx2xvf_eth_dev_ops : &bnx2x_eth_dev_ops;
+
+	if (rte_eal_process_type() != RTE_PROC_PRIMARY) {
+		PMD_DRV_LOG(ERR, sc, "Skipping device init from secondary process");
+		return 0;
+	}
 
 	rte_eth_copy_pci_info(eth_dev, pci_dev);
 

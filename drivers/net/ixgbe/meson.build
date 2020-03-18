@@ -1,8 +1,6 @@
 # SPDX-License-Identifier: BSD-3-Clause
 # Copyright(c) 2017 Intel Corporation
 
-version = 2
-
 cflags += ['-DRTE_LIBRTE_IXGBE_BYPASS']
 
 allow_experimental_apis = true
@@ -27,8 +25,9 @@ sources = files(
 deps += ['hash', 'security']
 
 if arch_subdir == 'x86'
-	dpdk_conf.set('RTE_IXGBE_INC_VECTOR', 1)
 	sources += files('ixgbe_rxtx_vec_sse.c')
+elif arch_subdir == 'arm'
+	sources += files('ixgbe_rxtx_vec_neon.c')
 endif
 
 includes += include_directories('base')

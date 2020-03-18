@@ -641,6 +641,7 @@ otx2_npa_alloc(struct rte_mempool *mp)
 	struct npa_aura_s aura;
 	struct npa_pool_s pool;
 	uint64_t aura_handle;
+	size_t padding;
 	int rc;
 
 	lf = otx2_npa_lf_obj_get();
@@ -650,6 +651,18 @@ otx2_npa_alloc(struct rte_mempool *mp)
 	}
 
 	block_size = mp->elt_size + mp->header_size + mp->trailer_size;
+	/*
+	 * OCTEON TX2 has 8 sets, 41 ways L1D cache, VA<9:7> bits dictate
+	 * the set selection.
+	 * Add additional padding to ensure that the element size always
+	 * occupies odd number of cachelines to ensure even distribution
+	 * of elements among L1D cache sets.
+	 */
+	padding = ((block_size / RTE_CACHE_LINE_SIZE) % 2) ? 0 :
+				RTE_CACHE_LINE_SIZE;
+	mp->trailer_size += padding;
+	block_size += padding;
+
 	block_count = mp->size;
 
 	if (block_size % OTX2_ALIGN != 0) {
@@ -713,24 +726,21 @@ static ssize_t
 otx2_npa_calc_mem_size(const struct rte_mempool *mp, uint32_t obj_num,
 		       uint32_t pg_shift, size_t *min_chunk_size, size_t *align)
 {
-	ssize_t mem_size;
+	size_t total_elt_sz;
 
-	/*
-	 * Simply need space for one more object to be able to
-	 * fulfill alignment requirements.
+	/* Need space for one more obj on each chunk to fulfill
+	 * alignment requirements.
 	 */
-	mem_size = rte_mempool_op_calc_mem_size_default(mp, obj_num + 1,
-							pg_shift,
-							min_chunk_size, align);
-	if (mem_size >= 0) {
-		/*
-		 * Memory area which contains objects must be physically
-		 * contiguous.
-		 */
-		*min_chunk_size = mem_size;
-	}
+	total_elt_sz = mp->header_size + mp->elt_size + mp->trailer_size;
+	return rte_mempool_op_calc_mem_size_helper(mp, obj_num, pg_shift,
+						total_elt_sz, min_chunk_size,
+						align);
+}
 
-	return mem_size;
+static uint8_t
+otx2_npa_l1d_way_set_get(uint64_t iova)
+{
+	return (iova >> rte_log2_u32(RTE_CACHE_LINE_SIZE)) & 0x7;
 }
 
 static int
@@ -738,8 +748,13 @@ otx2_npa_populate(struct rte_mempool *mp, unsigned int max_objs, void *vaddr,
 		  rte_iova_t iova, size_t len,
 		  rte_mempool_populate_obj_cb_t *obj_cb, void *obj_cb_arg)
 {
+#define OTX2_L1D_NB_SETS	8
+	uint64_t distribution[OTX2_L1D_NB_SETS];
+	rte_iova_t start_iova;
 	size_t total_elt_sz;
+	uint8_t set;
 	size_t off;
+	int i;
 
 	if (iova == RTE_BAD_IOVA)
 		return -EINVAL;
@@ -747,22 +762,45 @@ otx2_npa_populate(struct rte_mempool *mp, unsigned int max_objs, void *vaddr,
 	total_elt_sz = mp->header_size + mp->elt_size + mp->trailer_size;
 
 	/* Align object start address to a multiple of total_elt_sz */
-	off = total_elt_sz - ((uintptr_t)vaddr % total_elt_sz);
+	off = total_elt_sz - ((((uintptr_t)vaddr - 1) % total_elt_sz) + 1);
 
 	if (len < off)
 		return -EINVAL;
 
+
 	vaddr = (char *)vaddr + off;
 	iova += off;
 	len -= off;
+
+	memset(distribution, 0, sizeof(uint64_t) * OTX2_L1D_NB_SETS);
+	start_iova = iova;
+	while (start_iova < iova + len) {
+		set = otx2_npa_l1d_way_set_get(start_iova + mp->header_size);
+		distribution[set]++;
+		start_iova += total_elt_sz;
+	}
+
+	otx2_npa_dbg("iova %"PRIx64", aligned iova %"PRIx64"", iova - off,
+		     iova);
+	otx2_npa_dbg("length %"PRIu64", aligned length %"PRIu64"",
+		     (uint64_t)(len + off), (uint64_t)len);
+	otx2_npa_dbg("element size %"PRIu64"", (uint64_t)total_elt_sz);
+	otx2_npa_dbg("requested objects %"PRIu64", possible objects %"PRIu64"",
+		     (uint64_t)max_objs, (uint64_t)(len / total_elt_sz));
+	otx2_npa_dbg("L1D set distribution :");
+	for (i = 0; i < OTX2_L1D_NB_SETS; i++)
+		otx2_npa_dbg("set[%d] : objects : %"PRIu64"", i,
+			     distribution[i]);
 
 	npa_lf_aura_op_range_set(mp->pool_id, iova, iova + len);
 
 	if (npa_lf_aura_range_update_check(mp->pool_id) < 0)
 		return -EBUSY;
 
-	return rte_mempool_op_populate_default(mp, max_objs, vaddr, iova, len,
-					       obj_cb, obj_cb_arg);
+	return rte_mempool_op_populate_helper(mp,
+					RTE_MEMPOOL_POPULATE_F_ALIGN_OBJ,
+					max_objs, vaddr, iova, len,
+					obj_cb, obj_cb_arg);
 }
 
 static struct rte_mempool_ops otx2_npa_ops = {

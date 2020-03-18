@@ -54,12 +54,15 @@ typedef enum VhostUserRequest {
 	VHOST_USER_POSTCOPY_ADVISE = 28,
 	VHOST_USER_POSTCOPY_LISTEN = 29,
 	VHOST_USER_POSTCOPY_END = 30,
-	VHOST_USER_MAX = 31
+	VHOST_USER_GET_INFLIGHT_FD = 31,
+	VHOST_USER_SET_INFLIGHT_FD = 32,
+	VHOST_USER_MAX = 33
 } VhostUserRequest;
 
 typedef enum VhostUserSlaveRequest {
 	VHOST_USER_SLAVE_NONE = 0,
 	VHOST_USER_SLAVE_IOTLB_MSG = 1,
+	VHOST_USER_SLAVE_CONFIG_CHANGE_MSG = 2,
 	VHOST_USER_SLAVE_VRING_HOST_NOTIFIER_MSG = 3,
 	VHOST_USER_SLAVE_MAX
 } VhostUserSlaveRequest;
@@ -112,6 +115,13 @@ typedef struct VhostUserVringArea {
 	uint64_t offset;
 } VhostUserVringArea;
 
+typedef struct VhostUserInflight {
+	uint64_t mmap_size;
+	uint64_t mmap_offset;
+	uint16_t num_queues;
+	uint16_t queue_size;
+} VhostUserInflight;
+
 typedef struct VhostUserMsg {
 	union {
 		uint32_t master; /* a VhostUserRequest value */
@@ -134,6 +144,7 @@ typedef struct VhostUserMsg {
 		struct vhost_iotlb_msg iotlb;
 		VhostUserCryptoSessionParam crypto_session;
 		VhostUserVringArea area;
+		VhostUserInflight inflight;
 	} payload;
 	int fds[VHOST_MEMORY_MAX_NREGIONS];
 	int fd_num;

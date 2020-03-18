@@ -283,7 +283,13 @@ configure_eth_port(uint16_t port_id)
 	if (!rte_eth_dev_is_valid_port(port_id))
 		return -1;
 
-	rte_eth_dev_info_get(port_id, &dev_info);
+	ret = rte_eth_dev_info_get(port_id, &dev_info);
+	if (ret != 0) {
+		printf("Error during getting device (port %u) info: %s\n",
+				port_id, strerror(-ret));
+		return ret;
+	}
+
 	if (dev_info.tx_offload_capa & DEV_TX_OFFLOAD_MBUF_FAST_FREE)
 		port_conf.txmode.offloads |=
 			DEV_TX_OFFLOAD_MBUF_FAST_FREE;
@@ -316,7 +322,13 @@ configure_eth_port(uint16_t port_id)
 	if (ret < 0)
 		return ret;
 
-	rte_eth_macaddr_get(port_id, &addr);
+	ret = rte_eth_macaddr_get(port_id, &addr);
+	if (ret != 0) {
+		printf("Failed to get MAC address (port %u): %s\n",
+				port_id, rte_strerror(-ret));
+		return ret;
+	}
+
 	printf("Port %u MAC: %02"PRIx8" %02"PRIx8" %02"PRIx8
 			" %02"PRIx8" %02"PRIx8" %02"PRIx8"\n",
 			port_id,
@@ -324,7 +336,9 @@ configure_eth_port(uint16_t port_id)
 			addr.addr_bytes[2], addr.addr_bytes[3],
 			addr.addr_bytes[4], addr.addr_bytes[5]);
 
-	rte_eth_promiscuous_enable(port_id);
+	ret = rte_eth_promiscuous_enable(port_id);
+	if (ret != 0)
+		return ret;
 
 	return 0;
 }

@@ -48,7 +48,7 @@ struct mvneta_ifnames {
 
 static int mvneta_dev_num;
 
-static void mvneta_stats_reset(struct rte_eth_dev *dev);
+static int mvneta_stats_reset(struct rte_eth_dev *dev);
 static int rte_pmd_mvneta_remove(struct rte_vdev_device *vdev);
 
 
@@ -153,7 +153,7 @@ mvneta_dev_configure(struct rte_eth_dev *dev)
  * @param info
  *   Info structure output buffer.
  */
-static void
+static int
 mvneta_dev_infos_get(struct rte_eth_dev *dev __rte_unused,
 		   struct rte_eth_dev_info *info)
 {
@@ -187,6 +187,8 @@ mvneta_dev_infos_get(struct rte_eth_dev *dev __rte_unused,
 	info->default_txconf.offloads = 0;
 
 	info->max_rx_pktlen = MVNETA_PKT_SIZE_MAX;
+
+	return 0;
 }
 
 /**
@@ -532,25 +534,30 @@ mvneta_link_update(struct rte_eth_dev *dev, int wait_to_complete __rte_unused)
  *
  * @param dev
  *   Pointer to Ethernet device structure.
+ *
+ * @return
+ *   always 0
  */
-static void
+static int
 mvneta_promiscuous_enable(struct rte_eth_dev *dev)
 {
 	struct mvneta_priv *priv = dev->data->dev_private;
 	int ret, en;
 
 	if (!priv->ppio)
-		return;
+		return 0;
 
 	neta_ppio_get_promisc(priv->ppio, &en);
 	if (en) {
 		MVNETA_LOG(INFO, "Promiscuous already enabled");
-		return;
+		return 0;
 	}
 
 	ret = neta_ppio_set_promisc(priv->ppio, 1);
 	if (ret)
 		MVNETA_LOG(ERR, "Failed to enable promiscuous mode");
+
+	return 0;
 }
 
 /**
@@ -558,25 +565,30 @@ mvneta_promiscuous_enable(struct rte_eth_dev *dev)
  *
  * @param dev
  *   Pointer to Ethernet device structure.
+ *
+ * @return
+ *   always 0
  */
-static void
+static int
 mvneta_promiscuous_disable(struct rte_eth_dev *dev)
 {
 	struct mvneta_priv *priv = dev->data->dev_private;
 	int ret, en;
 
 	if (!priv->ppio)
-		return;
+		return 0;
 
 	neta_ppio_get_promisc(priv->ppio, &en);
 	if (!en) {
 		MVNETA_LOG(INFO, "Promiscuous already disabled");
-		return;
+		return 0;
 	}
 
 	ret = neta_ppio_set_promisc(priv->ppio, 0);
 	if (ret)
 		MVNETA_LOG(ERR, "Failed to disable promiscuous mode");
+
+	return 0;
 }
 
 /**
@@ -724,19 +736,24 @@ mvneta_stats_get(struct rte_eth_dev *dev, struct rte_eth_stats *stats)
  *
  * @param dev
  *   Pointer to Ethernet device structure.
+ *
+ * @return
+ *   0 on success, negative error value otherwise.
  */
-static void
+static int
 mvneta_stats_reset(struct rte_eth_dev *dev)
 {
 	struct mvneta_priv *priv = dev->data->dev_private;
 	unsigned int ret;
 
 	if (!priv->ppio)
-		return;
+		return 0;
 
 	ret = mvneta_stats_get(dev, &priv->prev_stats);
 	if (unlikely(ret))
 		RTE_LOG(ERR, PMD, "Failed to reset port statistics");
+
+	return ret;
 }
 
 

@@ -12,7 +12,7 @@
 #include <rte_malloc.h>
 #include <rte_cpuflags.h>
 
-#include "rte_aesni_mb_pmd_private.h"
+#include "aesni_mb_pmd_private.h"
 
 #define AES_CCM_DIGEST_MIN_LEN 4
 #define AES_CCM_DIGEST_MAX_LEN 16
@@ -84,7 +84,25 @@ aesni_mb_get_chain_order(const struct rte_crypto_sym_xform *xform)
 		if (xform->next->type == RTE_CRYPTO_SYM_XFORM_CIPHER)
 			return AESNI_MB_OP_HASH_CIPHER;
 	}
-
+#if IMB_VERSION_NUM > IMB_VERSION(0, 52, 0)
+	if (xform->type == RTE_CRYPTO_SYM_XFORM_AEAD) {
+		if (xform->aead.op == RTE_CRYPTO_AEAD_OP_ENCRYPT) {
+			/*
+			 * CCM requires to hash first and cipher later
+			 * when encrypting
+			 */
+			if (xform->aead.algo == RTE_CRYPTO_AEAD_AES_CCM)
+				return AESNI_MB_OP_AEAD_HASH_CIPHER;
+			else
+				return AESNI_MB_OP_AEAD_CIPHER_HASH;
+		} else {
+			if (xform->aead.algo == RTE_CRYPTO_AEAD_AES_CCM)
+				return AESNI_MB_OP_AEAD_CIPHER_HASH;
+			else
+				return AESNI_MB_OP_AEAD_HASH_CIPHER;
+		}
+	}
+#else
 	if (xform->type == RTE_CRYPTO_SYM_XFORM_AEAD) {
 		if (xform->aead.algo == RTE_CRYPTO_AEAD_AES_CCM ||
 				xform->aead.algo == RTE_CRYPTO_AEAD_AES_GCM) {
@@ -94,6 +112,7 @@ aesni_mb_get_chain_order(const struct rte_crypto_sym_xform *xform)
 				return AESNI_MB_OP_AEAD_HASH_CIPHER;
 		}
 	}
+#endif
 
 	return AESNI_MB_OP_NOT_SUPPORTED;
 }
@@ -710,10 +729,10 @@ get_session(struct aesni_mb_qp *qp, struct rte_crypto_op *op)
 					op->sym->session,
 					cryptodev_driver_id);
 	} else {
-		void *_sess = NULL;
+		void *_sess = rte_cryptodev_sym_session_create(qp->sess_mp);
 		void *_sess_private_data = NULL;
 
-		if (rte_mempool_get(qp->sess_mp, (void **)&_sess))
+		if (_sess == NULL)
 			return NULL;
 
 		if (rte_mempool_get(qp->sess_mp_priv,
@@ -1232,12 +1251,6 @@ cryptodev_aesni_mb_create(const char *name,
 	enum aesni_mb_vector_mode vector_mode;
 	MB_MGR *mb_mgr;
 
-	/* Check CPU for support for AES instruction set */
-	if (!rte_cpu_get_flag_enabled(RTE_CPUFLAG_AES)) {
-		AESNI_MB_LOG(ERR, "AES instructions not supported by CPU");
-		return -EFAULT;
-	}
-
 	dev = rte_cryptodev_pmd_create(name, &vdev->device, init_params);
 	if (dev == NULL) {
 		AESNI_MB_LOG(ERR, "failed to create cryptodev vdev");
@@ -1263,9 +1276,13 @@ cryptodev_aesni_mb_create(const char *name,
 
 	dev->feature_flags = RTE_CRYPTODEV_FF_SYMMETRIC_CRYPTO |
 			RTE_CRYPTODEV_FF_SYM_OPERATION_CHAINING |
-			RTE_CRYPTODEV_FF_CPU_AESNI |
 			RTE_CRYPTODEV_FF_OOP_LB_IN_LB_OUT;
 
+	/* Check CPU for support for AES instruction set */
+	if (rte_cpu_get_flag_enabled(RTE_CPUFLAG_AES))
+		dev->feature_flags |= RTE_CRYPTODEV_FF_CPU_AESNI;
+	else
+		AESNI_MB_LOG(WARNING, "AES instructions not supported by CPU");
 
 	mb_mgr = alloc_mb_mgr(0);
 	if (mb_mgr == NULL)

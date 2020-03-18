@@ -458,7 +458,7 @@ otx2_flow_parse_ld(struct otx2_parse_state *pst)
 		info.hw_hdr_len = 4;
 		break;
 	case RTE_FLOW_ITEM_TYPE_NVGRE:
-		lt = NPC_LT_LD_GRE;
+		lt = NPC_LT_LD_NVGRE;
 		lflags = NPC_F_GRE_NVGRE;
 		info.def_mask = &rte_flow_item_nvgre_mask;
 		info.len = sizeof(struct rte_flow_item_nvgre);
@@ -599,11 +599,11 @@ otx2_flow_parse_lb(struct otx2_parse_state *pst)
 			lt = NPC_LT_LB_CTAG;
 			break;
 		case 2:
-			lt = NPC_LT_LB_STAG;
+			lt = NPC_LT_LB_STAG_QINQ;
 			lflags = NPC_F_STAG_CTAG;
 			break;
 		case 3:
-			lt = NPC_LT_LB_STAG;
+			lt = NPC_LT_LB_STAG_QINQ;
 			lflags = NPC_F_STAG_STAG_CTAG;
 			break;
 		default:
@@ -675,12 +675,59 @@ otx2_flow_parse_la(struct otx2_parse_state *pst)
 	if (pst->flow->nix_intf == NIX_INTF_TX) {
 		lt = NPC_LT_LA_IH_NIX_ETHER;
 		info.hw_hdr_len = NPC_IH_LENGTH;
+		if (pst->npc->switch_header_type == OTX2_PRIV_FLAGS_HIGIG) {
+			lt = NPC_LT_LA_IH_NIX_HIGIG2_ETHER;
+			info.hw_hdr_len += NPC_HIGIG2_LENGTH;
+		}
+	} else {
+		if (pst->npc->switch_header_type == OTX2_PRIV_FLAGS_HIGIG) {
+			lt = NPC_LT_LA_HIGIG2_ETHER;
+			info.hw_hdr_len = NPC_HIGIG2_LENGTH;
+		}
 	}
 
 	/* Prepare for parsing the item */
 	info.def_mask = &rte_flow_item_eth_mask;
 	info.hw_mask = &hw_mask;
 	info.len = sizeof(struct rte_flow_item_eth);
+	otx2_flow_get_hw_supp_mask(pst, &info, lid, lt);
+	info.spec = NULL;
+	info.mask = NULL;
+
+	/* Basic validation of item parameters */
+	rc = otx2_flow_parse_item_basic(pst->pattern, &info, pst->error);
+	if (rc)
+		return rc;
+
+	/* Update pst if not validate only? clash check? */
+	return otx2_flow_update_parse_state(pst, &info, lid, lt, 0);
+}
+
+int
+otx2_flow_parse_higig2_hdr(struct otx2_parse_state *pst)
+{
+	struct rte_flow_item_higig2_hdr hw_mask;
+	struct otx2_flow_item_info info;
+	int lid, lt;
+	int rc;
+
+	/* Identify the pattern type into lid, lt */
+	if (pst->pattern->type != RTE_FLOW_ITEM_TYPE_HIGIG2)
+		return 0;
+
+	lid = NPC_LID_LA;
+	lt = NPC_LT_LA_HIGIG2_ETHER;
+	info.hw_hdr_len = 0;
+
+	if (pst->flow->nix_intf == NIX_INTF_TX) {
+		lt = NPC_LT_LA_IH_NIX_HIGIG2_ETHER;
+		info.hw_hdr_len = NPC_IH_LENGTH;
+	}
+
+	/* Prepare for parsing the item */
+	info.def_mask = &rte_flow_item_higig2_hdr_mask;
+	info.hw_mask = &hw_mask;
+	info.len = sizeof(struct rte_flow_item_higig2_hdr);
 	otx2_flow_get_hw_supp_mask(pst, &info, lid, lt);
 	info.spec = NULL;
 	info.mask = NULL;
@@ -833,14 +880,14 @@ otx2_flow_parse_actions(struct rte_eth_dev *dev,
 				actions->conf;
 			req_act |= OTX2_FLOW_ACT_VF;
 			if (vf_act->original == 0) {
-				vf_id = (vf_act->id & RVU_PFVF_FUNC_MASK) + 1;
+				vf_id = vf_act->id & RVU_PFVF_FUNC_MASK;
 				if (vf_id  >= hw->maxvf) {
 					errmsg = "invalid vf specified";
 					errcode = EINVAL;
 					goto err_exit;
 				}
 				pf_func &= (0xfc00);
-				pf_func = (pf_func | vf_id);
+				pf_func = (pf_func | (vf_id + 1));
 			}
 			break;
 

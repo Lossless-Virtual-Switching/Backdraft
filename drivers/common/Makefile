@@ -4,7 +4,9 @@
 
 include $(RTE_SDK)/mk/rte.vars.mk
 
-ifeq ($(CONFIG_RTE_LIBRTE_PMD_OCTEONTX_CRYPTO),y)
+CPT-y := $(CONFIG_RTE_LIBRTE_PMD_OCTEONTX_CRYPTO)
+CPT-y += $(CONFIG_RTE_LIBRTE_PMD_OCTEONTX2_CRYPTO)
+ifneq (,$(findstring y,$(CPT-y)))
 DIRS-y += cpt
 endif
 
@@ -12,6 +14,7 @@ ifeq ($(CONFIG_RTE_LIBRTE_PMD_OCTEONTX_SSOVF)$(CONFIG_RTE_LIBRTE_OCTEONTX_MEMPOO
 DIRS-y += octeontx
 endif
 OCTEONTX2-y := $(CONFIG_RTE_LIBRTE_OCTEONTX2_MEMPOOL)
+OCTEONTX2-y += $(CONFIG_RTE_LIBRTE_PMD_OCTEONTX2_CRYPTO)
 ifeq ($(findstring y,$(OCTEONTX2-y)),y)
 DIRS-y += octeontx2
 endif
@@ -25,6 +28,15 @@ endif
 
 ifeq ($(CONFIG_RTE_LIBRTE_COMMON_DPAAX),y)
 DIRS-y += dpaax
+endif
+
+IAVF-y := $(CONFIG_RTE_LIBRTE_IAVF_PMD)
+ifneq (,$(findstring y,$(IAVF-y)))
+DIRS-y += iavf
+endif
+
+ifeq ($(findstring y,$(CONFIG_RTE_LIBRTE_MLX5_PMD)$(CONFIG_RTE_LIBRTE_MLX5_VDPA_PMD)),y)
+DIRS-y += mlx5
 endif
 
 include $(RTE_SDK)/mk/rte.subdir.mk

@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: BSD-3-Clause
- * Copyright 2017 NXP.
- * Copyright(c) 2017 Intel Corporation.
+ * Copyright 2017,2019 NXP
+ * Copyright(c) 2017-2020 Intel Corporation.
  */
 
 #ifndef _RTE_SECURITY_H_
@@ -115,14 +115,14 @@ struct rte_security_ipsec_tunnel_param {
  * IPsec Security Association option flags
  */
 struct rte_security_ipsec_sa_options {
-	/**< Extended Sequence Numbers (ESN)
+	/** Extended Sequence Numbers (ESN)
 	 *
 	 * * 1: Use extended (64 bit) sequence numbers
 	 * * 0: Use normal sequence numbers
 	 */
 	uint32_t esn : 1;
 
-	/**< UDP encapsulation
+	/** UDP encapsulation
 	 *
 	 * * 1: Do UDP encapsulation/decapsulation so that IPSEC packets can
 	 *      traverse through NAT boxes.
@@ -130,7 +130,7 @@ struct rte_security_ipsec_sa_options {
 	 */
 	uint32_t udp_encap : 1;
 
-	/**< Copy DSCP bits
+	/** Copy DSCP bits
 	 *
 	 * * 1: Copy IPv4 or IPv6 DSCP bits from inner IP header to
 	 *      the outer IP header in encapsulation, and vice versa in
@@ -139,7 +139,7 @@ struct rte_security_ipsec_sa_options {
 	 */
 	uint32_t copy_dscp : 1;
 
-	/**< Copy IPv6 Flow Label
+	/** Copy IPv6 Flow Label
 	 *
 	 * * 1: Copy IPv6 flow label from inner IPv6 header to the
 	 *      outer IPv6 header.
@@ -147,7 +147,7 @@ struct rte_security_ipsec_sa_options {
 	 */
 	uint32_t copy_flabel : 1;
 
-	/**< Copy IPv4 Don't Fragment bit
+	/** Copy IPv4 Don't Fragment bit
 	 *
 	 * * 1: Copy the DF bit from the inner IPv4 header to the outer
 	 *      IPv4 header.
@@ -155,7 +155,7 @@ struct rte_security_ipsec_sa_options {
 	 */
 	uint32_t copy_df : 1;
 
-	/**< Decrement inner packet Time To Live (TTL) field
+	/** Decrement inner packet Time To Live (TTL) field
 	 *
 	 * * 1: In tunnel mode, decrement inner packet IPv4 TTL or
 	 *      IPv6 Hop Limit after tunnel decapsulation, or before tunnel
@@ -164,7 +164,7 @@ struct rte_security_ipsec_sa_options {
 	 */
 	uint32_t dec_ttl : 1;
 
-	/**< Explicit Congestion Notification (ECN)
+	/** Explicit Congestion Notification (ECN)
 	 *
 	 * * 1: In tunnel mode, enable outer header ECN Field copied from
 	 *      inner header in tunnel encapsulation, or inner header ECN
@@ -172,6 +172,14 @@ struct rte_security_ipsec_sa_options {
 	 * * 0: Inner/outer header are not modified.
 	 */
 	uint32_t ecn : 1;
+
+	/** Security statistics
+	 *
+	 * * 1: Enable per session security statistics collection for
+	 *      this SA, if supported by the driver.
+	 * * 0: Disable per session security statistics collection for this SA.
+	 */
+	uint32_t stats : 1;
 };
 
 /** IPSec security association direction */
@@ -204,6 +212,10 @@ struct rte_security_ipsec_xform {
 	/**< Tunnel parameters, NULL for transport mode */
 	uint64_t esn_soft_limit;
 	/**< ESN for which the overflow event need to be raised */
+	uint32_t replay_win_sz;
+	/**< Anti replay window size to enable sequence replay attack handling.
+	 * replay checking is disabled if the window size is 0.
+	 */
 };
 
 /**
@@ -270,6 +282,15 @@ struct rte_security_pdcp_xform {
 	uint32_t hfn;
 	/** HFN Threshold for key renegotiation */
 	uint32_t hfn_threshold;
+	/** HFN can be given as a per packet value also.
+	 * As we do not have IV in case of PDCP, and HFN is
+	 * used to generate IV. IV field can be used to get the
+	 * per packet HFN while enq/deq.
+	 * If hfn_ovrd field is set, user is expected to set the
+	 * per packet HFN in place of IV. PMDs will extract the HFN
+	 * and perform operations accordingly.
+	 */
+	uint32_t hfn_ovrd;
 };
 
 /**
@@ -286,9 +307,13 @@ enum rte_security_session_action_type {
 	/**< All security protocol processing is performed inline during
 	 * transmission
 	 */
-	RTE_SECURITY_ACTION_TYPE_LOOKASIDE_PROTOCOL
+	RTE_SECURITY_ACTION_TYPE_LOOKASIDE_PROTOCOL,
 	/**< All security protocol processing including crypto is performed
 	 * on a lookaside accelerator
+	 */
+	RTE_SECURITY_ACTION_TYPE_CPU_CRYPTO
+	/**< Similar to ACTION_TYPE_NONE but crypto processing for security
+	 * protocol is processed synchronously by a CPU.
 	 */
 };
 
@@ -482,8 +507,14 @@ struct rte_security_macsec_stats {
 };
 
 struct rte_security_ipsec_stats {
-	uint64_t reserved;
-
+	uint64_t ipackets;  /**< Successfully received IPsec packets. */
+	uint64_t opackets;  /**< Successfully transmitted IPsec packets.*/
+	uint64_t ibytes;    /**< Successfully received IPsec bytes. */
+	uint64_t obytes;    /**< Successfully transmitted IPsec bytes. */
+	uint64_t ierrors;   /**< IPsec packets receive/decrypt errors. */
+	uint64_t oerrors;   /**< IPsec packets transmit/encrypt errors. */
+	uint64_t reserved1; /**< Reserved for future use. */
+	uint64_t reserved2; /**< Reserved for future use. */
 };
 
 struct rte_security_pdcp_stats {
@@ -507,10 +538,13 @@ struct rte_security_stats {
  *
  * @param	instance	security instance
  * @param	sess		security session
+ * If security session is NULL then global (per security instance) statistics
+ * will be retrieved, if supported. Global statistics collection is not
+ * dependent on the per session statistics configuration.
  * @param	stats		statistics
  * @return
- *  - On success return 0
- *  - On failure errno
+ *  - On success, return 0
+ *  - On failure, a negative value
  */
 __rte_experimental
 int
@@ -537,6 +571,10 @@ struct rte_security_capability {
 			/**< IPsec SA direction */
 			struct rte_security_ipsec_sa_options options;
 			/**< IPsec SA supported options */
+			uint32_t replay_win_sz_max;
+			/**< IPsec Anti Replay Window Size. A '0' value
+			 * indicates that Anti Replay is not supported.
+			 */
 		} ipsec;
 		/**< IPsec capability */
 		struct {

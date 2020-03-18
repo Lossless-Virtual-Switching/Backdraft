@@ -46,6 +46,7 @@
 
 #include "ipsec.h"
 #include "parser.h"
+#include "sad.h"
 
 #define RTE_LOGTYPE_IPSEC RTE_LOGTYPE_USER1
 
@@ -112,7 +113,7 @@ static uint16_t nb_txd = IPSEC_SECGW_TX_DESC_DEFAULT;
 		0, 0)
 
 #define	FRAG_TBL_BUCKET_ENTRIES	4
-#define	FRAG_TTL_MS		(10 * MS_PER_S)
+#define	MAX_FRAG_TTL_NS		(10LL * NS_PER_S)
 
 #define MTU_TO_FRAMELEN(x)	((x) + RTE_ETHER_HDR_LEN + RTE_ETHER_CRC_LEN)
 
@@ -135,6 +136,7 @@ struct ethaddr_info ethaddr_tbl[RTE_MAX_ETHPORTS] = {
 #define CMD_LINE_OPT_TX_OFFLOAD		"txoffload"
 #define CMD_LINE_OPT_REASSEMBLE		"reassemble"
 #define CMD_LINE_OPT_MTU		"mtu"
+#define CMD_LINE_OPT_FRAG_TTL		"frag-ttl"
 
 enum {
 	/* long options mapped to a short option */
@@ -150,6 +152,7 @@ enum {
 	CMD_LINE_OPT_TX_OFFLOAD_NUM,
 	CMD_LINE_OPT_REASSEMBLE_NUM,
 	CMD_LINE_OPT_MTU_NUM,
+	CMD_LINE_OPT_FRAG_TTL_NUM,
 };
 
 static const struct option lgopts[] = {
@@ -160,6 +163,7 @@ static const struct option lgopts[] = {
 	{CMD_LINE_OPT_TX_OFFLOAD, 1, 0, CMD_LINE_OPT_TX_OFFLOAD_NUM},
 	{CMD_LINE_OPT_REASSEMBLE, 1, 0, CMD_LINE_OPT_REASSEMBLE_NUM},
 	{CMD_LINE_OPT_MTU, 1, 0, CMD_LINE_OPT_MTU_NUM},
+	{CMD_LINE_OPT_FRAG_TTL, 1, 0, CMD_LINE_OPT_FRAG_TTL_NUM},
 	{NULL, 0, 0, 0}
 };
 
@@ -186,9 +190,14 @@ static uint64_t dev_tx_offload = UINT64_MAX;
 static uint32_t frag_tbl_sz;
 static uint32_t frame_buf_size = RTE_MBUF_DEFAULT_BUF_SIZE;
 static uint32_t mtu_size = RTE_ETHER_MTU;
+static uint64_t frag_ttl_ns = MAX_FRAG_TTL_NS;
 
 /* application wide librte_ipsec/SA parameters */
-struct app_sa_prm app_sa_prm = {.enable = 0};
+struct app_sa_prm app_sa_prm = {
+			.enable = 0,
+			.cache_sz = SA_CACHE_SZ
+		};
+static const char *cfgfile;
 
 struct lcore_rx_queue {
 	uint16_t port_id;
@@ -314,6 +323,7 @@ prepare_one_packet(struct rte_mbuf *pkt, struct ipsec_traffic *t)
 		}
 		pkt->l2_len = 0;
 		pkt->l3_len = sizeof(*iph4);
+		pkt->packet_type |= RTE_PTYPE_L3_IPV4;
 	} else if (eth->ether_type == rte_cpu_to_be_16(RTE_ETHER_TYPE_IPV6)) {
 		int next_proto;
 		size_t l3len, ext_len;
@@ -348,11 +358,13 @@ prepare_one_packet(struct rte_mbuf *pkt, struct ipsec_traffic *t)
 		}
 		pkt->l2_len = 0;
 		pkt->l3_len = l3len;
+		pkt->packet_type |= RTE_PTYPE_L3_IPV6;
 	} else {
 		/* Unknown/Unsupported type, drop the packet */
 		RTE_LOG(ERR, IPSEC, "Unsupported packet type 0x%x\n",
 			rte_be_to_cpu_16(eth->ether_type));
 		rte_pktmbuf_free(pkt);
+		return;
 	}
 
 	/* Check if the packet has been processed inline. For inline protocol
@@ -548,8 +560,10 @@ send_single_packet(struct rte_mbuf *m, uint16_t port, uint8_t proto)
 		len++;
 
 	/* need to fragment the packet */
-	} else
+	} else if (frag_tbl_sz > 0)
 		len = send_fragment_packet(qconf, m, port, proto);
+	else
+		rte_pktmbuf_free(m);
 
 	/* enough pkts to be sent */
 	if (unlikely(len == MAX_PKT_BURST)) {
@@ -593,7 +607,7 @@ inbound_sp_sa(struct sp_ctx *sp, struct sa_ctx *sa, struct traffic_type *ip,
 			continue;
 		}
 
-		sa_idx = SPI2IDX(res);
+		sa_idx = res - 1;
 		if (!inbound_sa_check(sa, m, sa_idx)) {
 			rte_pktmbuf_free(m);
 			continue;
@@ -680,7 +694,7 @@ outbound_sp(struct sp_ctx *sp, struct traffic_type *ip,
 	j = 0;
 	for (i = 0; i < ip->num; i++) {
 		m = ip->pkts[i];
-		sa_idx = SPI2IDX(ip->res[i]);
+		sa_idx = ip->res[i] - 1;
 		if (ip->res[i] == DISCARD)
 			rte_pktmbuf_free(m);
 		else if (ip->res[i] == BYPASS)
@@ -1094,7 +1108,7 @@ main_loop(__attribute__((unused)) void *dummy)
 	uint16_t portid;
 	uint8_t queueid;
 	struct lcore_conf *qconf;
-	int32_t socket_id;
+	int32_t rc, socket_id;
 	const uint64_t drain_tsc = (rte_get_tsc_hz() + US_PER_S - 1)
 			/ US_PER_S * BURST_TX_DRAIN_US;
 	struct lcore_rx_queue *rxql;
@@ -1123,6 +1137,14 @@ main_loop(__attribute__((unused)) void *dummy)
 			socket_ctx[socket_id].session_priv_pool;
 	qconf->frag.pool_dir = socket_ctx[socket_id].mbuf_pool;
 	qconf->frag.pool_indir = socket_ctx[socket_id].mbuf_pool_indir;
+
+	rc = ipsec_sad_lcore_cache_init(app_sa_prm.cache_sz);
+	if (rc != 0) {
+		RTE_LOG(ERR, IPSEC,
+			"SAD cache init on lcore %u, failed with code: %d\n",
+			lcore_id, rc);
+		return rc;
+	}
 
 	if (qconf->nb_rx_queue == 0) {
 		RTE_LOG(DEBUG, IPSEC, "lcore %u has nothing to do\n",
@@ -1263,6 +1285,7 @@ print_usage(const char *prgname)
 		" [-w REPLAY_WINDOW_SIZE]"
 		" [-e]"
 		" [-a]"
+		" [-c]"
 		" -f CONFIG_FILE"
 		" --config (port,queue,lcore)[,(port,queue,lcore)]"
 		" [--single-sa SAIDX]"
@@ -1282,6 +1305,8 @@ print_usage(const char *prgname)
 		"     size for each SA\n"
 		"  -e enables ESN\n"
 		"  -a enables SA SQN atomic behaviour\n"
+		"  -c specifies inbound SAD cache size,\n"
+		"     zero value disables the cache (default value: 128)\n"
 		"  -f CONFIG_FILE: Configuration file\n"
 		"  --config (port,queue,lcore): Rx queue configuration\n"
 		"  --single-sa SAIDX: Use single SA index for outbound traffic,\n"
@@ -1301,6 +1326,9 @@ print_usage(const char *prgname)
 		": MTU value on all ports (default value: 1500)\n"
 		"    outgoing packets with bigger size will be fragmented\n"
 		"    incoming packets with bigger size will be discarded\n"
+		"  --" CMD_LINE_OPT_FRAG_TTL " FRAG_TTL_NS"
+		": fragments lifetime in nanoseconds, default\n"
+		"    and maximum value is 10.000.000.000 ns (10 s)\n"
 		"\n",
 		prgname);
 }
@@ -1337,14 +1365,15 @@ parse_portmask(const char *portmask)
 	return pm;
 }
 
-static int32_t
+static int64_t
 parse_decimal(const char *str)
 {
 	char *end = NULL;
-	unsigned long num;
+	uint64_t num;
 
-	num = strtoul(str, &end, 10);
-	if ((str[0] == '\0') || (end == NULL) || (*end != '\0'))
+	num = strtoull(str, &end, 10);
+	if ((str[0] == '\0') || (end == NULL) || (*end != '\0')
+		|| num > INT64_MAX)
 		return -1;
 
 	return num;
@@ -1412,18 +1441,17 @@ print_app_sa_prm(const struct app_sa_prm *prm)
 	printf("librte_ipsec usage: %s\n",
 		(prm->enable == 0) ? "disabled" : "enabled");
 
-	if (prm->enable == 0)
-		return;
-
 	printf("replay window size: %u\n", prm->window_size);
 	printf("ESN: %s\n", (prm->enable_esn == 0) ? "disabled" : "enabled");
 	printf("SA flags: %#" PRIx64 "\n", prm->flags);
+	printf("Frag TTL: %" PRIu64 " ns\n", frag_ttl_ns);
 }
 
 static int32_t
 parse_args(int32_t argc, char **argv)
 {
-	int32_t opt, ret;
+	int opt;
+	int64_t ret;
 	char **argvopt;
 	int32_t option_index;
 	char *prgname = argv[0];
@@ -1431,7 +1459,7 @@ parse_args(int32_t argc, char **argv)
 
 	argvopt = argv;
 
-	while ((opt = getopt_long(argc, argvopt, "aelp:Pu:f:j:w:",
+	while ((opt = getopt_long(argc, argvopt, "aelp:Pu:f:j:w:c:",
 				lgopts, &option_index)) != EOF) {
 
 		switch (opt) {
@@ -1462,12 +1490,7 @@ parse_args(int32_t argc, char **argv)
 				print_usage(prgname);
 				return -1;
 			}
-			if (parse_cfg_file(optarg) < 0) {
-				printf("parsing file \"%s\" failed\n",
-					optarg);
-				print_usage(prgname);
-				return -1;
-			}
+			cfgfile = optarg;
 			f_present = 1;
 			break;
 		case 'j':
@@ -1486,16 +1509,23 @@ parse_args(int32_t argc, char **argv)
 			app_sa_prm.enable = 1;
 			break;
 		case 'w':
-			app_sa_prm.enable = 1;
 			app_sa_prm.window_size = parse_decimal(optarg);
 			break;
 		case 'e':
-			app_sa_prm.enable = 1;
 			app_sa_prm.enable_esn = 1;
 			break;
 		case 'a':
 			app_sa_prm.enable = 1;
 			app_sa_prm.flags |= RTE_IPSEC_SAFLAG_SQN_ATOM;
+			break;
+		case 'c':
+			ret = parse_decimal(optarg);
+			if (ret < 0) {
+				printf("Invalid SA cache size: %s\n", optarg);
+				print_usage(prgname);
+				return -1;
+			}
+			app_sa_prm.cache_sz = ret;
 			break;
 		case CMD_LINE_OPT_CONFIG_NUM:
 			ret = parse_config(optarg);
@@ -1507,7 +1537,7 @@ parse_args(int32_t argc, char **argv)
 			break;
 		case CMD_LINE_OPT_SINGLE_SA_NUM:
 			ret = parse_decimal(optarg);
-			if (ret == -1) {
+			if (ret == -1 || ret > UINT32_MAX) {
 				printf("Invalid argument[sa_idx]\n");
 				print_usage(prgname);
 				return -1;
@@ -1550,7 +1580,7 @@ parse_args(int32_t argc, char **argv)
 			break;
 		case CMD_LINE_OPT_REASSEMBLE_NUM:
 			ret = parse_decimal(optarg);
-			if (ret < 0) {
+			if (ret < 0 || ret > UINT32_MAX) {
 				printf("Invalid argument for \'%s\': %s\n",
 					CMD_LINE_OPT_REASSEMBLE, optarg);
 				print_usage(prgname);
@@ -1567,6 +1597,16 @@ parse_args(int32_t argc, char **argv)
 				return -1;
 			}
 			mtu_size = ret;
+			break;
+		case CMD_LINE_OPT_FRAG_TTL_NUM:
+			ret = parse_decimal(optarg);
+			if (ret < 0 || ret > MAX_FRAG_TTL_NS) {
+				printf("Invalid argument for \'%s\': %s\n",
+					CMD_LINE_OPT_MTU, optarg);
+				print_usage(prgname);
+				return -1;
+			}
+			frag_ttl_ns = ret;
 			break;
 		default:
 			print_usage(prgname);
@@ -1629,6 +1669,7 @@ check_all_ports_link_status(uint32_t port_mask)
 	uint16_t portid;
 	uint8_t count, all_ports_up, print_flag = 0;
 	struct rte_eth_link link;
+	int ret;
 
 	printf("\nChecking link status");
 	fflush(stdout);
@@ -1638,7 +1679,14 @@ check_all_ports_link_status(uint32_t port_mask)
 			if ((port_mask & (1 << portid)) == 0)
 				continue;
 			memset(&link, 0, sizeof(link));
-			rte_eth_link_get_nowait(portid, &link);
+			ret = rte_eth_link_get_nowait(portid, &link);
+			if (ret < 0) {
+				all_ports_up = 0;
+				if (print_flag == 1)
+					printf("Port %u link get failed: %s\n",
+						portid, rte_strerror(-ret));
+				continue;
+			}
 			/* print link status if flag set */
 			if (print_flag == 1) {
 				if (link.link_status)
@@ -1911,7 +1959,11 @@ port_init(uint16_t portid, uint64_t req_rx_offloads, uint64_t req_tx_offloads)
 	struct rte_ether_addr ethaddr;
 	struct rte_eth_conf local_port_conf = port_conf;
 
-	rte_eth_dev_info_get(portid, &dev_info);
+	ret = rte_eth_dev_info_get(portid, &dev_info);
+	if (ret != 0)
+		rte_exit(EXIT_FAILURE,
+			"Error during getting device (port %u) info: %s\n",
+			portid, strerror(-ret));
 
 	/* limit allowed HW offloafs, as user requested */
 	dev_info.rx_offload_capa &= dev_rx_offload;
@@ -1919,7 +1971,12 @@ port_init(uint16_t portid, uint64_t req_rx_offloads, uint64_t req_tx_offloads)
 
 	printf("Configuring device port %u:\n", portid);
 
-	rte_eth_macaddr_get(portid, &ethaddr);
+	ret = rte_eth_macaddr_get(portid, &ethaddr);
+	if (ret != 0)
+		rte_exit(EXIT_FAILURE,
+			"Error getting MAC address (port %u): %s\n",
+			portid, rte_strerror(-ret));
+
 	ethaddr_tbl[portid].src = ETHADDR_TO_UINT64(&ethaddr);
 	print_ethaddr("Address: ", &ethaddr);
 	printf("\n");
@@ -2328,8 +2385,8 @@ reassemble_lcore_init(struct lcore_conf *lc, uint32_t cid)
 
 	/* create fragment table */
 	sid = rte_lcore_to_socket_id(cid);
-	frag_cycles = (rte_get_tsc_hz() + MS_PER_S - 1) /
-		MS_PER_S * FRAG_TTL_MS;
+	frag_cycles = (rte_get_tsc_hz() + NS_PER_S - 1) /
+		NS_PER_S * frag_ttl_ns;
 
 	lc->frag.tbl = rte_ip_frag_table_create(frag_tbl_sz,
 		FRAG_TBL_BUCKET_ENTRIES, frag_tbl_sz, frag_cycles, sid);
@@ -2398,6 +2455,14 @@ main(int32_t argc, char **argv)
 	if (ret < 0)
 		rte_exit(EXIT_FAILURE, "Invalid parameters\n");
 
+	/* parse configuration file */
+	if (parse_cfg_file(cfgfile) < 0) {
+		printf("parsing file \"%s\" failed\n",
+			optarg);
+		print_usage(argv[0]);
+		return -1;
+	}
+
 	if ((unprotected_port_mask & enabled_port_mask) !=
 			unprotected_port_mask)
 		rte_exit(EXIT_FAILURE, "Invalid unprotected portmask 0x%x\n",
@@ -2463,8 +2528,13 @@ main(int32_t argc, char **argv)
 		 * to itself through 2 cross-connected  ports of the
 		 * target machine.
 		 */
-		if (promiscuous_on)
-			rte_eth_promiscuous_enable(portid);
+		if (promiscuous_on) {
+			ret = rte_eth_promiscuous_enable(portid);
+			if (ret != 0)
+				rte_exit(EXIT_FAILURE,
+					"rte_eth_promiscuous_enable: err=%s, port=%d\n",
+					rte_strerror(-ret), portid);
+		}
 
 		rte_eth_dev_callback_register(portid,
 			RTE_ETH_EVENT_IPSEC, inline_ipsec_event_callback, NULL);

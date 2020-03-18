@@ -31,18 +31,10 @@ options="$options --ignore=LINUX_VERSION_CODE,\
 FILE_PATH_CHANGES,MAINTAINERS_STYLE,SPDX_LICENSE_TAG,\
 VOLATILE,PREFER_PACKED,PREFER_ALIGNED,PREFER_PRINTF,\
 PREFER_KERNEL_TYPES,BIT_MACRO,CONST_STRUCT,\
-SPLIT_STRING,LONG_LINE_STRING,\
+SPLIT_STRING,LONG_LINE_STRING,C99_COMMENT_TOLERANCE,\
 LINE_SPACING,PARENTHESIS_ALIGNMENT,NETWORKING_BLOCK_COMMENT_STYLE,\
 NEW_TYPEDEFS,COMPARISON_TO_NULL"
 options="$options $DPDK_CHECKPATCH_OPTIONS"
-
-clean_tmp_files() {
-	if echo $tmpinput | grep -q '^checkpatches\.' ; then
-		rm -f "$tmpinput"
-	fi
-}
-
-trap "clean_tmp_files" INT
 
 print_usage () {
 	cat <<- END_OF_HELP
@@ -150,13 +142,16 @@ check () { # <patch> <commit> <title>
 	! $verbose || print_headline "$3"
 	if [ -n "$1" ] ; then
 		tmpinput=$1
-	elif [ -n "$2" ] ; then
-		tmpinput=$(mktemp -t dpdk.checkpatches.XXXXXX)
-		git format-patch --find-renames \
-		--no-stat --stdout -1 $commit > "$tmpinput"
 	else
 		tmpinput=$(mktemp -t dpdk.checkpatches.XXXXXX)
-		cat > "$tmpinput"
+		trap "rm -f '$tmpinput'" INT
+
+		if [ -n "$2" ] ; then
+			git format-patch --find-renames \
+			--no-stat --stdout -1 $commit > "$tmpinput"
+		else
+			cat > "$tmpinput"
+		fi
 	fi
 
 	! $verbose || printf 'Running checkpatch.pl:\n'
@@ -191,7 +186,10 @@ check () { # <patch> <commit> <title>
 		ret=1
 	fi
 
-	clean_tmp_files
+	if [ "$tmpinput" != "$1" ]; then
+		rm -f "$tmpinput"
+		trap - INT
+	fi
 	[ $ret -eq 0 ] && return 0
 
 	status=$(($status + 1))

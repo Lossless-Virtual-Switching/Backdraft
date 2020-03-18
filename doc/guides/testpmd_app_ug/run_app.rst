@@ -7,9 +7,9 @@ Running the Application
 EAL Command-line Options
 ------------------------
 
-Please refer to  :doc:`../linux_gsg/linux_eal_parameters` or
-:doc:`../freebsd_gsg/freebsd_eal_parameters` for a list of available EAL
-command-line options.
+Please refer to :doc:`EAL parameters (Linux) <../linux_gsg/linux_eal_parameters>`
+or :doc:`EAL parameters (FreeBSD) <../freebsd_gsg/freebsd_eal_parameters>` for
+a list of available EAL command-line options.
 
 
 Testpmd Command-line Options
@@ -77,6 +77,13 @@ The command line options are:
 
     Set the hexadecimal bitmask of the ports used by the packet forwarding test.
 
+*   ``--portlist=X``
+
+      Set the forwarding ports based on the user input used by the packet forwarding test.
+      '-' denotes a range of ports to set including the two specified port IDs
+      ',' separates multiple port values.
+      Possible examples like --portlist=0,1 or --portlist=0-2 or --portlist=0,1-2 etc
+
 *   ``--numa``
 
     Enable NUMA-aware allocation of RX/TX rings and of RX memory buffers
@@ -112,6 +119,10 @@ The command line options are:
 
     Set the maximum packet size to N bytes, where N >= 64. The default value is 1518.
 
+*   ``--max-lro-pkt-size=N``
+
+    Set the maximum LRO aggregated packet size to N bytes, where N >= 64.
+
 *   ``--eth-peers-configfile=name``
 
     Use a configuration file containing the Ethernet addresses of the peer ports.
@@ -129,9 +140,9 @@ The command line options are:
 *   ``--tx-ip=SRC,DST``
 
     Set the source and destination IP address used when doing transmit only test.
-    The defaults address values are source 192.18.0.1 and
-    destination 192.18.0.2. These are special purpose addresses
-    reserved for benchmarking (RFC 2544).
+    The defaults address values are source 198.18.0.1 and
+    destination 198.18.0.2. These are special purpose addresses
+    reserved for benchmarking (RFC 5735).
 
 *   ``--tx-udp=SRC[,DST]``
 
@@ -198,6 +209,10 @@ The command line options are:
 
     Enable hardware VLAN extend.
 
+*   ``--enable-hw-qinq-strip``
+
+    Enable hardware QINQ strip.
+
 *   ``--enable-drop-en``
 
     Enable per-queue packet drop for packets with no descriptors.
@@ -261,6 +276,17 @@ The command line options are:
 
     Set the number of descriptors in the TX rings to N, where N > 0.
     The default value is 512.
+
+*   ``--hairpinq=N``
+
+    Set the number of hairpin queues per port to N, where 1 <= N <= 65535.
+    The default value is 0. The number of hairpin queues are added to the
+    number of TX queues and to the number of RX queues. then the first
+    RX hairpin is binded to the first TX hairpin, the second RX hairpin is
+    binded to the second TX hairpin and so on. The index of the first
+    RX hairpin queue is the number of RX queues as configured using --rxq.
+    The index of the first TX hairpin queue is the number of TX queues
+    as configured using --txq.
 
 *   ``--burst=N``
 
@@ -383,6 +409,11 @@ The command line options are:
 *   ``--tx-offloads=0xXXXXXXXX``
 
     Set the hexadecimal bitmask of TX queue offloads.
+    The default value is 0.
+
+*   ``--rx-offloads=0xXXXXXXXX``
+
+    Set the hexadecimal bitmask of RX queue offloads.
     The default value is 0.
 
 *   ``--hot-plug``

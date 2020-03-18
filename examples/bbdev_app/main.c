@@ -312,6 +312,7 @@ check_port_link_status(uint16_t port_id)
 #define MAX_CHECK_TIME 90 /* 9s (90 * 100ms) in total */
 	uint8_t count;
 	struct rte_eth_link link;
+	int link_get_err = -EINVAL;
 
 	printf("\nChecking link status.");
 	fflush(stdout);
@@ -319,9 +320,9 @@ check_port_link_status(uint16_t port_id)
 	for (count = 0; count <= MAX_CHECK_TIME &&
 			!rte_atomic16_read(&global_exit_flag); count++) {
 		memset(&link, 0, sizeof(link));
-		rte_eth_link_get_nowait(port_id, &link);
+		link_get_err = rte_eth_link_get_nowait(port_id, &link);
 
-		if (link.link_status) {
+		if (link_get_err >= 0 && link.link_status) {
 			const char *dp = (link.link_duplex ==
 				ETH_LINK_FULL_DUPLEX) ?
 				"full-duplex" : "half-duplex";
@@ -334,7 +335,12 @@ check_port_link_status(uint16_t port_id)
 		rte_delay_ms(CHECK_INTERVAL);
 	}
 
-	printf("\nPort %d Link Down\n", port_id);
+	if (link_get_err >= 0)
+		printf("\nPort %d Link Down\n", port_id);
+	else
+		printf("\nGet link failed (port %d): %s\n", port_id,
+		       rte_strerror(-link_get_err));
+
 	return 0;
 }
 
@@ -477,9 +483,20 @@ initialize_ports(struct app_config_params *app_params,
 		}
 	}
 
-	rte_eth_promiscuous_enable(port_id);
+	ret = rte_eth_promiscuous_enable(port_id);
+	if (ret != 0) {
+		printf("Cannot enable promiscuous mode: err=%s, port=%u\n",
+			rte_strerror(-ret), port_id);
+		return ret;
+	}
 
-	rte_eth_macaddr_get(port_id, &bbdev_port_eth_addr);
+	ret = rte_eth_macaddr_get(port_id, &bbdev_port_eth_addr);
+	if (ret < 0) {
+		printf("rte_eth_macaddr_get: err=%d, queue=%u\n",
+			ret, q);
+		return -1;
+	}
+
 	print_mac(port_id, &bbdev_port_eth_addr);
 
 	return 0;

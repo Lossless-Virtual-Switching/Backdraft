@@ -172,12 +172,15 @@ hn_nvs_handle_vfassoc(struct rte_eth_dev *dev,
  * use the default config of the VF
  * and the minimum number of queues and buffer sizes.
  */
-static void hn_vf_info_merge(struct rte_eth_dev *vf_dev,
+static int hn_vf_info_merge(struct rte_eth_dev *vf_dev,
 			     struct rte_eth_dev_info *info)
 {
 	struct rte_eth_dev_info vf_info;
+	int ret;
 
-	rte_eth_dev_info_get(vf_dev->data->port_id, &vf_info);
+	ret = rte_eth_dev_info_get(vf_dev->data->port_id, &vf_info);
+	if (ret != 0)
+		return ret;
 
 	info->speed_capa = vf_info.speed_capa;
 	info->default_rxportconf = vf_info.default_rxportconf;
@@ -198,17 +201,21 @@ static void hn_vf_info_merge(struct rte_eth_dev *vf_dev,
 				       info->min_rx_bufsize);
 	info->max_rx_pktlen  = RTE_MAX(vf_info.max_rx_pktlen,
 				       info->max_rx_pktlen);
+
+	return 0;
 }
 
-void hn_vf_info_get(struct hn_data *hv, struct rte_eth_dev_info *info)
+int hn_vf_info_get(struct hn_data *hv, struct rte_eth_dev_info *info)
 {
 	struct rte_eth_dev *vf_dev;
+	int ret = 0;
 
 	rte_spinlock_lock(&hv->vf_lock);
 	vf_dev = hn_get_vf_dev(hv);
 	if (vf_dev)
-		hn_vf_info_merge(vf_dev, info);
+		ret = hn_vf_info_merge(vf_dev, info);
 	rte_spinlock_unlock(&hv->vf_lock);
+	return ret;
 }
 
 int hn_vf_link_update(struct rte_eth_dev *dev,
@@ -355,6 +362,20 @@ void hn_vf_stop(struct rte_eth_dev *dev)
 		rte_spinlock_unlock(&hv->vf_lock);		\
 	}
 
+/* If VF is present, then cascade configuration down */
+#define VF_ETHDEV_FUNC_RET_STATUS(dev, func)			\
+	{							\
+		struct hn_data *hv = (dev)->data->dev_private;	\
+		struct rte_eth_dev *vf_dev;			\
+		int ret = 0;					\
+		rte_spinlock_lock(&hv->vf_lock);		\
+		vf_dev = hn_get_vf_dev(hv);			\
+		if (vf_dev)					\
+			ret = func(vf_dev->data->port_id);	\
+		rte_spinlock_unlock(&hv->vf_lock);		\
+		return ret;					\
+	}
+
 void hn_vf_reset(struct rte_eth_dev *dev)
 {
 	VF_ETHDEV_FUNC(dev, rte_eth_dev_reset);
@@ -374,29 +395,29 @@ void hn_vf_close(struct rte_eth_dev *dev)
 	rte_spinlock_unlock(&hv->vf_lock);
 }
 
-void hn_vf_stats_reset(struct rte_eth_dev *dev)
+int hn_vf_stats_reset(struct rte_eth_dev *dev)
 {
-	VF_ETHDEV_FUNC(dev, rte_eth_stats_reset);
+	VF_ETHDEV_FUNC_RET_STATUS(dev, rte_eth_stats_reset);
 }
 
-void hn_vf_allmulticast_enable(struct rte_eth_dev *dev)
+int hn_vf_allmulticast_enable(struct rte_eth_dev *dev)
 {
-	VF_ETHDEV_FUNC(dev, rte_eth_allmulticast_enable);
+	VF_ETHDEV_FUNC_RET_STATUS(dev, rte_eth_allmulticast_enable);
 }
 
-void hn_vf_allmulticast_disable(struct rte_eth_dev *dev)
+int hn_vf_allmulticast_disable(struct rte_eth_dev *dev)
 {
-	VF_ETHDEV_FUNC(dev, rte_eth_allmulticast_disable);
+	VF_ETHDEV_FUNC_RET_STATUS(dev, rte_eth_allmulticast_disable);
 }
 
-void hn_vf_promiscuous_enable(struct rte_eth_dev *dev)
+int hn_vf_promiscuous_enable(struct rte_eth_dev *dev)
 {
-	VF_ETHDEV_FUNC(dev, rte_eth_promiscuous_enable);
+	VF_ETHDEV_FUNC_RET_STATUS(dev, rte_eth_promiscuous_enable);
 }
 
-void hn_vf_promiscuous_disable(struct rte_eth_dev *dev)
+int hn_vf_promiscuous_disable(struct rte_eth_dev *dev)
 {
-	VF_ETHDEV_FUNC(dev, rte_eth_promiscuous_disable);
+	VF_ETHDEV_FUNC_RET_STATUS(dev, rte_eth_promiscuous_disable);
 }
 
 int hn_vf_mc_addr_list(struct rte_eth_dev *dev,
@@ -552,16 +573,21 @@ int hn_vf_xstats_get(struct rte_eth_dev *dev,
 	return count;
 }
 
-void hn_vf_xstats_reset(struct rte_eth_dev *dev)
+int hn_vf_xstats_reset(struct rte_eth_dev *dev)
 {
 	struct hn_data *hv = dev->data->dev_private;
 	struct rte_eth_dev *vf_dev;
+	int ret;
 
 	rte_spinlock_lock(&hv->vf_lock);
 	vf_dev = hn_get_vf_dev(hv);
 	if (vf_dev)
-		rte_eth_xstats_reset(vf_dev->data->port_id);
+		ret = rte_eth_xstats_reset(vf_dev->data->port_id);
+	else
+		ret = -EINVAL;
 	rte_spinlock_unlock(&hv->vf_lock);
+
+	return ret;
 }
 
 int hn_vf_rss_hash_update(struct rte_eth_dev *dev,

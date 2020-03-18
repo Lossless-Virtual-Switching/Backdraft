@@ -156,7 +156,7 @@ app_pkt_handle(struct rte_mbuf *pkt, uint64_t time)
 		&PROFILE,
 		time,
 		pkt_len,
-		(enum rte_meter_color) input_color);
+		(enum rte_color) input_color);
 
 	/* Apply policing and set the output color */
 	action = policer_table[input_color][output_color];
@@ -329,7 +329,13 @@ main(int argc, char **argv)
 
 	/* NIC init */
 	conf = port_conf;
-	rte_eth_dev_info_get(port_rx, &dev_info);
+
+	ret = rte_eth_dev_info_get(port_rx, &dev_info);
+	if (ret != 0)
+		rte_exit(EXIT_FAILURE,
+			"Error during getting device (port %u) info: %s\n",
+			port_rx, strerror(-ret));
+
 	if (dev_info.tx_offload_capa & DEV_TX_OFFLOAD_MBUF_FAST_FREE)
 		conf.txmode.offloads |= DEV_TX_OFFLOAD_MBUF_FAST_FREE;
 
@@ -369,7 +375,13 @@ main(int argc, char **argv)
 	rte_exit(EXIT_FAILURE, "Port %d TX queue setup error (%d)\n", port_rx, ret);
 
 	conf = port_conf;
-	rte_eth_dev_info_get(port_tx, &dev_info);
+
+	ret = rte_eth_dev_info_get(port_tx, &dev_info);
+	if (ret != 0)
+		rte_exit(EXIT_FAILURE,
+			"Error during getting device (port %u) info: %s\n",
+			port_tx, strerror(-ret));
+
 	if (dev_info.tx_offload_capa & DEV_TX_OFFLOAD_MBUF_FAST_FREE)
 		conf.txmode.offloads |= DEV_TX_OFFLOAD_MBUF_FAST_FREE;
 
@@ -427,9 +439,17 @@ main(int argc, char **argv)
 	if (ret < 0)
 		rte_exit(EXIT_FAILURE, "Port %d start error (%d)\n", port_tx, ret);
 
-	rte_eth_promiscuous_enable(port_rx);
+	ret = rte_eth_promiscuous_enable(port_rx);
+	if (ret != 0)
+		rte_exit(EXIT_FAILURE,
+			"Port %d promiscuous mode enable error (%s)\n",
+			port_rx, rte_strerror(-ret));
 
-	rte_eth_promiscuous_enable(port_tx);
+	ret = rte_eth_promiscuous_enable(port_tx);
+	if (ret != 0)
+		rte_exit(EXIT_FAILURE,
+			"Port %d promiscuous mode enable error (%s)\n",
+			port_rx, rte_strerror(-ret));
 
 	/* App configuration */
 	ret = app_configure_flow_table();

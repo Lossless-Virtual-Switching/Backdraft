@@ -224,7 +224,7 @@ bnxt_recv_pkts_vec(void *rx_queue, struct rte_mbuf **rx_pkts,
 			     0xFF, 0xFF, 0xFF, 0xFF); /* pkt_type (zeroes) */
 
 	/* If Rx Q was stopped return */
-	if (rxq->rx_deferred_start)
+	if (unlikely(!rxq->rx_started))
 		return 0;
 
 	if (rxq->rxrearm_nb >= RTE_BNXT_RXQ_REARM_THRESH)
@@ -244,10 +244,6 @@ bnxt_recv_pkts_vec(void *rx_queue, struct rte_mbuf **rx_pkts,
 
 		if (!CMP_VALID(rxcmp, raw_cons, cpr->cp_ring_struct))
 			break;
-
-		cpr->valid = FLIP_VALID(cons,
-					cpr->cp_ring_struct->ring_mask,
-					cpr->valid);
 
 		if (likely(CMP_TYPE(rxcmp) == RX_PKT_CMPL_TYPE_RX_L2)) {
 			struct rx_pkt_cmpl_hi *rxcmp1;
@@ -272,10 +268,6 @@ bnxt_recv_pkts_vec(void *rx_queue, struct rte_mbuf **rx_pkts,
 			rte_prefetch0(mbuf);
 			rxr->rx_buf_ring[cons].mbuf = NULL;
 
-			cpr->valid = FLIP_VALID(cp_cons,
-						cpr->cp_ring_struct->ring_mask,
-						cpr->valid);
-
 			/* Set constant fields from mbuf initializer. */
 			_mm_store_si128((__m128i *)&mbuf->rearm_data,
 					mbuf_init);
@@ -297,7 +289,8 @@ bnxt_recv_pkts_vec(void *rx_queue, struct rte_mbuf **rx_pkts,
 					(RX_PKT_CMPL_METADATA_VID_MASK |
 					RX_PKT_CMPL_METADATA_DE |
 					RX_PKT_CMPL_METADATA_PRI_MASK);
-				mbuf->ol_flags |= PKT_RX_VLAN;
+				mbuf->ol_flags |=
+					PKT_RX_VLAN | PKT_RX_VLAN_STRIPPED;
 			}
 
 			bnxt_parse_csum(mbuf, rxcmp1);
@@ -318,20 +311,11 @@ bnxt_recv_pkts_vec(void *rx_queue, struct rte_mbuf **rx_pkts,
 
 	rxq->rxrearm_nb += nb_rx_pkts;
 	cpr->cp_raw_cons = raw_cons;
+	cpr->valid = !!(cpr->cp_raw_cons & cpr->cp_ring_struct->ring_size);
 	if (nb_rx_pkts || evt)
 		bnxt_db_cq(cpr);
 
 	return nb_rx_pkts;
-}
-
-static inline void bnxt_next_cmpl(struct bnxt_cp_ring_info *cpr, uint32_t *idx,
-				  bool *v, uint32_t inc)
-{
-	*idx += inc;
-	if (unlikely(*idx == cpr->cp_ring_struct->ring_size)) {
-		*v = !*v;
-		*idx = 0;
-	}
 }
 
 static void
@@ -379,10 +363,8 @@ bnxt_handle_tx_cp_vec(struct bnxt_tx_queue *txq)
 		cons = RING_CMPL(ring_mask, raw_cons);
 		txcmp = (struct tx_cmpl *)&cp_desc_ring[cons];
 
-		if (!CMPL_VALID(txcmp, cpr->valid))
+		if (!CMP_VALID(txcmp, raw_cons, cp_ring_struct))
 			break;
-		bnxt_next_cmpl(cpr, &cons, &cpr->valid, 1);
-		rte_prefetch0(&cp_desc_ring[cons]);
 
 		if (likely(CMP_TYPE(txcmp) == TX_CMPL_TYPE_TX_L2))
 			nb_tx_pkts += txcmp->opaque;
@@ -390,9 +372,10 @@ bnxt_handle_tx_cp_vec(struct bnxt_tx_queue *txq)
 			RTE_LOG_DP(ERR, PMD,
 				   "Unhandled CMP type %02x\n",
 				   CMP_TYPE(txcmp));
-		raw_cons = cons;
+		raw_cons = NEXT_RAW_CMP(raw_cons);
 	} while (nb_tx_pkts < ring_mask);
 
+	cpr->valid = !!(raw_cons & cp_ring_struct->ring_size);
 	if (nb_tx_pkts) {
 		bnxt_tx_cmp_vec(txq, nb_tx_pkts);
 		cpr->cp_raw_cons = raw_cons;
@@ -482,7 +465,7 @@ bnxt_xmit_pkts_vec(void *tx_queue, struct rte_mbuf **tx_pkts,
 	struct bnxt_tx_queue *txq = tx_queue;
 
 	/* Tx queue was stopped; wait for it to be restarted */
-	if (unlikely(txq->tx_deferred_start)) {
+	if (unlikely(!txq->tx_started)) {
 		PMD_DRV_LOG(DEBUG, "Tx q stopped;return\n");
 		return 0;
 	}

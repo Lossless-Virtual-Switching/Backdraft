@@ -42,6 +42,7 @@ The public API headers are grouped by topics:
   [KNI]                (@ref rte_kni.h),
   [ixgbe]              (@ref rte_pmd_ixgbe.h),
   [i40e]               (@ref rte_pmd_i40e.h),
+  [ice]                (@ref rte_pmd_ice.h),
   [bnxt]               (@ref rte_pmd_bnxt.h),
   [dpaa]               (@ref rte_pmd_dpaa.h),
   [dpaa2]              (@ref rte_pmd_dpaa2.h),
@@ -91,17 +92,24 @@ The public API headers are grouped by topics:
 - **layers**:
   [ethernet]           (@ref rte_ether.h),
   [ARP]                (@ref rte_arp.h),
+  [HIGIG]              (@ref rte_higig.h),
   [ICMP]               (@ref rte_icmp.h),
   [ESP]                (@ref rte_esp.h),
+  [IPsec]              (@ref rte_ipsec.h),
+  [IPsec group]        (@ref rte_ipsec_group.h),
+  [IPsec SA]           (@ref rte_ipsec_sa.h),
+  [IPsec SAD]          (@ref rte_ipsec_sad.h),
   [IP]                 (@ref rte_ip.h),
   [SCTP]               (@ref rte_sctp.h),
   [TCP]                (@ref rte_tcp.h),
   [UDP]                (@ref rte_udp.h),
+  [GTP]                (@ref rte_gtp.h),
   [GRO]                (@ref rte_gro.h),
   [GSO]                (@ref rte_gso.h),
   [frag/reass]         (@ref rte_ip_frag.h),
   [LPM IPv4 route]     (@ref rte_lpm.h),
-  [LPM IPv6 route]     (@ref rte_lpm6.h)
+  [LPM IPv6 route]     (@ref rte_lpm6.h),
+  [VXLAN]              (@ref rte_vxlan.h)
 
 - **QoS**:
   [metering]           (@ref rte_meter.h),
@@ -171,5 +179,6 @@ The public API headers are grouped by topics:
 - **misc**:
   [EAL config]         (@ref rte_eal.h),
   [common]             (@ref rte_common.h),
-  [ABI compat]         (@ref rte_compat.h),
+  [experimental APIs]  (@ref rte_compat.h),
+  [ABI versioning]     (@ref rte_function_versioning.h),
   [version]            (@ref rte_version.h)

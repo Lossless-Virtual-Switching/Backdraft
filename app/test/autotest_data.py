@@ -111,6 +111,54 @@ parallel_test_list = [
         "Report":  None,
     },
     {
+        "Name":    "RIB autotest",
+        "Command": "rib_autotest",
+        "Func":    default_autotest,
+        "Report":  None,
+    },
+    {
+        "Name":    "RIB slow autotest",
+        "Command": "rib_slow_autotest",
+        "Func":    default_autotest,
+        "Report":  None,
+    },
+    {
+        "Name":    "RIB6 autotest",
+        "Command": "rib6_autotest",
+        "Func":    default_autotest,
+        "Report":  None,
+    },
+    {
+        "Name":    "RIB6 slow autotest",
+        "Command": "rib6_slow_autotest",
+        "Func":    default_autotest,
+        "Report":  None,
+    },
+    {
+        "Name":    "FIB autotest",
+        "Command": "fib_autotest",
+        "Func":    default_autotest,
+        "Report":  None,
+    },
+    {
+        "Name":    "FIB slow autotest",
+        "Command": "fib_slow_autotest",
+        "Func":    default_autotest,
+        "Report":  None,
+    },
+    {
+        "Name":    "FIB6 autotest",
+        "Command": "fib6_autotest",
+        "Func":    default_autotest,
+        "Report":  None,
+    },
+    {
+        "Name":    "FIB6 slow autotest",
+        "Command": "fib6_slow_autotest",
+        "Func":    default_autotest,
+        "Report":  None,
+    },
+    {
         "Name":    "Memcpy autotest",
         "Command": "memcpy_autotest",
         "Func":    default_autotest,
@@ -518,6 +566,12 @@ parallel_test_list = [
         "Func":    default_autotest,
         "Report":  None,
     },
+    {
+        "Name":    "IPsec_SAD",
+        "Command": "ipsec_sad_autotest",
+        "Func":    default_autotest,
+        "Report":  None,
+    },
     #
     #Please always keep all dump tests at the end and together!
     #
@@ -610,14 +664,20 @@ non_parallel_test_list = [
         "Report":  None,
     },
     {
-        "Name":    "Hash read-write concurrency autotest",
-        "Command": "hash_readwrite_autotest",
+        "Name":    "Hash read-write concurrency functional autotest",
+        "Command": "hash_readwrite_func_autotest",
         "Func":    default_autotest,
         "Report":  None,
     },
     {
-        "Name":    "Hash read-write lock-free concurrency autotest",
-        "Command": "hash_readwrite_lf_autotest",
+        "Name":    "Hash read-write concurrency perf autotest",
+        "Command": "hash_readwrite_perf_autotest",
+        "Func":    default_autotest,
+        "Report":  None,
+    },
+    {
+        "Name":    "Hash read-write lock-free concurrency perf autotest",
+        "Command": "hash_readwrite_lf_perf_autotest",
         "Func":    default_autotest,
         "Report":  None,
     },
@@ -679,6 +739,18 @@ non_parallel_test_list = [
     {
         "Name":    "Lpm perf autotest",
         "Command": "lpm_perf_autotest",
+        "Func":    default_autotest,
+        "Report":  None,
+    },
+    {
+        "Name":    "FIB perf autotest",
+        "Command": "fib_perf_autotest",
+        "Func":    default_autotest,
+        "Report":  None,
+    },
+    {
+        "Name":    "FIB6 perf autotest",
+        "Command": "fib6_perf_autotest",
         "Func":    default_autotest,
         "Report":  None,
     },

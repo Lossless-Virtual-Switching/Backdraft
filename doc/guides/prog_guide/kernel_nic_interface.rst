@@ -235,6 +235,15 @@ application functions:
     will be called which calls ``rte_eth_promiscuous_<enable|disable>()``
     on the specified ``port_id``.
 
+``config_allmulticast``:
+
+    Called when the user changes the allmulticast state of the KNI interface.
+    For example, when the user runs ``ifconfig <ifaceX> [-]allmulti``. If the
+    user sets this callback function to NULL, but sets the ``port_id`` field to
+    a value other than -1, a default callback handler in the rte_kni library
+    ``kni_config_allmulticast()`` will be called which calls
+    ``rte_eth_allmulticast_<enable|disable>()`` on the specified ``port_id``.
+
 In order to run these callbacks, the application must periodically call
 the ``rte_kni_handle_request()`` function.  Any user callback function
 registered will be called directly from ``rte_kni_handle_request()`` so
@@ -245,7 +254,7 @@ to create a separate thread or secondary process to periodically call
 
 The KNI interfaces can be deleted by a DPDK application with
 ``rte_kni_release()``.  All KNI interfaces not explicitly deleted will be
-deleted when the the ``/dev/kni`` device is closed, either explicitly with
+deleted when the ``/dev/kni`` device is closed, either explicitly with
 ``rte_kni_close()`` or when the DPDK application is closed.
 
 DPDK mbuf Flow
@@ -291,6 +300,20 @@ The sk_buff is then freed and the mbuf sent in the tx_q FIFO.
 The DPDK TX thread dequeues the mbuf and sends it to the PMD via ``rte_eth_tx_burst()``.
 It then puts the mbuf back in the cache.
 
+IOVA = VA: Support
+------------------
+
+KNI operates in IOVA_VA scheme when
+
+- LINUX_VERSION_CODE >= KERNEL_VERSION(4, 10, 0) and
+- EAL option `iova-mode=va` is passed or bus IOVA scheme in the DPDK is selected
+  as RTE_IOVA_VA.
+
+Due to IOVA to KVA address translations, based on the KNI use case there
+can be a performance impact. For mitigation, forcing IOVA to PA via EAL
+"--iova-mode=pa" option can be used, IOVA_DC bus iommu scheme can also
+result in IOVA as PA.
+
 Ethtool
 -------
 
@@ -298,4 +321,3 @@ Ethtool is a Linux-specific tool with corresponding support in the kernel.
 The current version of kni provides minimal ethtool functionality
 including querying version and link state. It does not support link
 control, statistics, or dumping device registers.
-

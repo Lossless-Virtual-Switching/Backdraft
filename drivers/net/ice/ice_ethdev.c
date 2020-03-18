@@ -13,31 +13,90 @@
 #include "base/ice_sched.h"
 #include "base/ice_flow.h"
 #include "base/ice_dcb.h"
+#include "base/ice_common.h"
+
+#include "rte_pmd_ice.h"
 #include "ice_ethdev.h"
 #include "ice_rxtx.h"
-#include "ice_switch_filter.h"
+#include "ice_generic_flow.h"
 
 /* devargs */
 #define ICE_SAFE_MODE_SUPPORT_ARG "safe-mode-support"
+#define ICE_PIPELINE_MODE_SUPPORT_ARG  "pipeline-mode-support"
+#define ICE_FLOW_MARK_SUPPORT_ARG	"flow-mark-support"
+#define ICE_PROTO_XTR_ARG         "proto_xtr"
 
 static const char * const ice_valid_args[] = {
 	ICE_SAFE_MODE_SUPPORT_ARG,
+	ICE_PIPELINE_MODE_SUPPORT_ARG,
+	ICE_FLOW_MARK_SUPPORT_ARG,
+	ICE_PROTO_XTR_ARG,
 	NULL
 };
 
+static const struct rte_mbuf_dynfield ice_proto_xtr_metadata_param = {
+	.name = "ice_dynfield_proto_xtr_metadata",
+	.size = sizeof(uint32_t),
+	.align = __alignof__(uint32_t),
+	.flags = 0,
+};
+
+struct proto_xtr_ol_flag {
+	const struct rte_mbuf_dynflag param;
+	uint64_t *ol_flag;
+	bool required;
+};
+
+static struct proto_xtr_ol_flag ice_proto_xtr_ol_flag_params[] = {
+	[PROTO_XTR_VLAN] = {
+		.param = { .name = "ice_dynflag_proto_xtr_vlan" },
+		.ol_flag = &rte_net_ice_dynflag_proto_xtr_vlan_mask },
+	[PROTO_XTR_IPV4] = {
+		.param = { .name = "ice_dynflag_proto_xtr_ipv4" },
+		.ol_flag = &rte_net_ice_dynflag_proto_xtr_ipv4_mask },
+	[PROTO_XTR_IPV6] = {
+		.param = { .name = "ice_dynflag_proto_xtr_ipv6" },
+		.ol_flag = &rte_net_ice_dynflag_proto_xtr_ipv6_mask },
+	[PROTO_XTR_IPV6_FLOW] = {
+		.param = { .name = "ice_dynflag_proto_xtr_ipv6_flow" },
+		.ol_flag = &rte_net_ice_dynflag_proto_xtr_ipv6_flow_mask },
+	[PROTO_XTR_TCP] = {
+		.param = { .name = "ice_dynflag_proto_xtr_tcp" },
+		.ol_flag = &rte_net_ice_dynflag_proto_xtr_tcp_mask },
+};
+
 #define ICE_DFLT_OUTER_TAG_TYPE ICE_AQ_VSI_OUTER_TAG_VLAN_9100
-#define ICE_DFLT_PKG_FILE "/lib/firmware/intel/ice/ddp/ice.pkg"
+
+/* DDP package search path */
+#define ICE_PKG_FILE_DEFAULT "/lib/firmware/intel/ice/ddp/ice.pkg"
+#define ICE_PKG_FILE_UPDATES "/lib/firmware/updates/intel/ice/ddp/ice.pkg"
+#define ICE_PKG_FILE_SEARCH_PATH_DEFAULT "/lib/firmware/intel/ice/ddp/"
+#define ICE_PKG_FILE_SEARCH_PATH_UPDATES "/lib/firmware/updates/intel/ice/ddp/"
+
+#define ICE_OS_DEFAULT_PKG_NAME		"ICE OS Default Package"
+#define ICE_COMMS_PKG_NAME			"ICE COMMS Package"
+#define ICE_MAX_PKG_FILENAME_SIZE   256
+#define ICE_MAX_RES_DESC_NUM        1024
 
 int ice_logtype_init;
 int ice_logtype_driver;
+#ifdef RTE_LIBRTE_ICE_DEBUG_RX
+int ice_logtype_rx;
+#endif
+#ifdef RTE_LIBRTE_ICE_DEBUG_TX
+int ice_logtype_tx;
+#endif
+#ifdef RTE_LIBRTE_ICE_DEBUG_TX_FREE
+int ice_logtype_tx_free;
+#endif
 
 static int ice_dev_configure(struct rte_eth_dev *dev);
 static int ice_dev_start(struct rte_eth_dev *dev);
 static void ice_dev_stop(struct rte_eth_dev *dev);
 static void ice_dev_close(struct rte_eth_dev *dev);
 static int ice_dev_reset(struct rte_eth_dev *dev);
-static void ice_dev_info_get(struct rte_eth_dev *dev,
-			     struct rte_eth_dev_info *dev_info);
+static int ice_dev_info_get(struct rte_eth_dev *dev,
+			    struct rte_eth_dev_info *dev_info);
 static int ice_link_update(struct rte_eth_dev *dev,
 			   int wait_to_complete);
 static int ice_dev_set_link_up(struct rte_eth_dev *dev);
@@ -45,9 +104,6 @@ static int ice_dev_set_link_down(struct rte_eth_dev *dev);
 
 static int ice_mtu_set(struct rte_eth_dev *dev, uint16_t mtu);
 static int ice_vlan_offload_set(struct rte_eth_dev *dev, int mask);
-static int ice_vlan_tpid_set(struct rte_eth_dev *dev,
-			     enum rte_vlan_type vlan_type,
-			     uint16_t tpid);
 static int ice_rss_reta_update(struct rte_eth_dev *dev,
 			       struct rte_eth_rss_reta_entry64 *reta_conf,
 			       uint16_t reta_size);
@@ -58,10 +114,10 @@ static int ice_rss_hash_update(struct rte_eth_dev *dev,
 			       struct rte_eth_rss_conf *rss_conf);
 static int ice_rss_hash_conf_get(struct rte_eth_dev *dev,
 				 struct rte_eth_rss_conf *rss_conf);
-static void ice_promisc_enable(struct rte_eth_dev *dev);
-static void ice_promisc_disable(struct rte_eth_dev *dev);
-static void ice_allmulti_enable(struct rte_eth_dev *dev);
-static void ice_allmulti_disable(struct rte_eth_dev *dev);
+static int ice_promisc_enable(struct rte_eth_dev *dev);
+static int ice_promisc_disable(struct rte_eth_dev *dev);
+static int ice_allmulti_enable(struct rte_eth_dev *dev);
+static int ice_allmulti_disable(struct rte_eth_dev *dev);
 static int ice_vlan_filter_set(struct rte_eth_dev *dev,
 			       uint16_t vlan_id,
 			       int on);
@@ -85,7 +141,7 @@ static int ice_get_eeprom(struct rte_eth_dev *dev,
 			  struct rte_dev_eeprom_info *eeprom);
 static int ice_stats_get(struct rte_eth_dev *dev,
 			 struct rte_eth_stats *stats);
-static void ice_stats_reset(struct rte_eth_dev *dev);
+static int ice_stats_reset(struct rte_eth_dev *dev);
 static int ice_xstats_get(struct rte_eth_dev *dev,
 			  struct rte_eth_xstat *xstats, unsigned int n);
 static int ice_xstats_get_names(struct rte_eth_dev *dev,
@@ -104,6 +160,14 @@ static const struct rte_pci_id pci_id_ice_map[] = {
 	{ RTE_PCI_DEVICE(ICE_INTEL_VENDOR_ID, ICE_DEV_ID_E810C_BACKPLANE) },
 	{ RTE_PCI_DEVICE(ICE_INTEL_VENDOR_ID, ICE_DEV_ID_E810C_QSFP) },
 	{ RTE_PCI_DEVICE(ICE_INTEL_VENDOR_ID, ICE_DEV_ID_E810C_SFP) },
+	{ RTE_PCI_DEVICE(ICE_INTEL_VENDOR_ID, ICE_DEV_ID_E810_XXV_BACKPLANE) },
+	{ RTE_PCI_DEVICE(ICE_INTEL_VENDOR_ID, ICE_DEV_ID_E810_XXV_QSFP) },
+	{ RTE_PCI_DEVICE(ICE_INTEL_VENDOR_ID, ICE_DEV_ID_E810_XXV_SFP) },
+	{ RTE_PCI_DEVICE(ICE_INTEL_VENDOR_ID, ICE_DEV_ID_C822N_BACKPLANE) },
+	{ RTE_PCI_DEVICE(ICE_INTEL_VENDOR_ID, ICE_DEV_ID_C822N_QSFP) },
+	{ RTE_PCI_DEVICE(ICE_INTEL_VENDOR_ID, ICE_DEV_ID_C822N_SFP) },
+	{ RTE_PCI_DEVICE(ICE_INTEL_VENDOR_ID, ICE_DEV_ID_C822N_10G_BASE_T) },
+	{ RTE_PCI_DEVICE(ICE_INTEL_VENDOR_ID, ICE_DEV_ID_C822N_SGMII) },
 	{ .vendor_id = 0, /* sentinel */ },
 };
 
@@ -132,7 +196,6 @@ static const struct eth_dev_ops ice_eth_dev_ops = {
 	.mac_addr_remove              = ice_macaddr_remove,
 	.vlan_filter_set              = ice_vlan_filter_set,
 	.vlan_offload_set             = ice_vlan_offload_set,
-	.vlan_tpid_set                = ice_vlan_tpid_set,
 	.reta_update                  = ice_rss_reta_update,
 	.reta_query                   = ice_rss_reta_query,
 	.rss_hash_update              = ice_rss_hash_update,
@@ -147,6 +210,8 @@ static const struct eth_dev_ops ice_eth_dev_ops = {
 	.vlan_pvid_set                = ice_vlan_pvid_set,
 	.rxq_info_get                 = ice_rxq_info_get,
 	.txq_info_get                 = ice_txq_info_get,
+	.rx_burst_mode_get            = ice_rx_burst_mode_get,
+	.tx_burst_mode_get            = ice_tx_burst_mode_get,
 	.get_eeprom_length            = ice_get_eeprom_length,
 	.get_eeprom                   = ice_get_eeprom,
 	.rx_queue_count               = ice_rx_queue_count,
@@ -160,6 +225,7 @@ static const struct eth_dev_ops ice_eth_dev_ops = {
 	.filter_ctrl                  = ice_dev_filter_ctrl,
 	.udp_tunnel_port_add          = ice_dev_udp_tunnel_port_add,
 	.udp_tunnel_port_del          = ice_dev_udp_tunnel_port_del,
+	.tx_done_cleanup              = ice_tx_done_cleanup,
 };
 
 /* store statistics names and its offset in stats structure */
@@ -255,6 +321,279 @@ ice_init_controlq_parameter(struct ice_hw *hw)
 	hw->mailboxq.num_sq_entries = ICE_MAILBOXQ_LEN;
 	hw->mailboxq.rq_buf_size = ICE_MAILBOXQ_BUF_SZ;
 	hw->mailboxq.sq_buf_size = ICE_MAILBOXQ_BUF_SZ;
+}
+
+static int
+lookup_proto_xtr_type(const char *xtr_name)
+{
+	static struct {
+		const char *name;
+		enum proto_xtr_type type;
+	} xtr_type_map[] = {
+		{ "vlan",      PROTO_XTR_VLAN      },
+		{ "ipv4",      PROTO_XTR_IPV4      },
+		{ "ipv6",      PROTO_XTR_IPV6      },
+		{ "ipv6_flow", PROTO_XTR_IPV6_FLOW },
+		{ "tcp",       PROTO_XTR_TCP       },
+	};
+	uint32_t i;
+
+	for (i = 0; i < RTE_DIM(xtr_type_map); i++) {
+		if (strcmp(xtr_name, xtr_type_map[i].name) == 0)
+			return xtr_type_map[i].type;
+	}
+
+	return -1;
+}
+
+/*
+ * Parse elem, the elem could be single number/range or '(' ')' group
+ * 1) A single number elem, it's just a simple digit. e.g. 9
+ * 2) A single range elem, two digits with a '-' between. e.g. 2-6
+ * 3) A group elem, combines multiple 1) or 2) with '( )'. e.g (0,2-4,6)
+ *    Within group elem, '-' used for a range separator;
+ *                       ',' used for a single number.
+ */
+static int
+parse_queue_set(const char *input, int xtr_type, struct ice_devargs *devargs)
+{
+	const char *str = input;
+	char *end = NULL;
+	uint32_t min, max;
+	uint32_t idx;
+
+	while (isblank(*str))
+		str++;
+
+	if (!isdigit(*str) && *str != '(')
+		return -1;
+
+	/* process single number or single range of number */
+	if (*str != '(') {
+		errno = 0;
+		idx = strtoul(str, &end, 10);
+		if (errno || end == NULL || idx >= ICE_MAX_QUEUE_NUM)
+			return -1;
+
+		while (isblank(*end))
+			end++;
+
+		min = idx;
+		max = idx;
+
+		/* process single <number>-<number> */
+		if (*end == '-') {
+			end++;
+			while (isblank(*end))
+				end++;
+			if (!isdigit(*end))
+				return -1;
+
+			errno = 0;
+			idx = strtoul(end, &end, 10);
+			if (errno || end == NULL || idx >= ICE_MAX_QUEUE_NUM)
+				return -1;
+
+			max = idx;
+			while (isblank(*end))
+				end++;
+		}
+
+		if (*end != ':')
+			return -1;
+
+		for (idx = RTE_MIN(min, max);
+		     idx <= RTE_MAX(min, max); idx++)
+			devargs->proto_xtr[idx] = xtr_type;
+
+		return 0;
+	}
+
+	/* process set within bracket */
+	str++;
+	while (isblank(*str))
+		str++;
+	if (*str == '\0')
+		return -1;
+
+	min = ICE_MAX_QUEUE_NUM;
+	do {
+		/* go ahead to the first digit */
+		while (isblank(*str))
+			str++;
+		if (!isdigit(*str))
+			return -1;
+
+		/* get the digit value */
+		errno = 0;
+		idx = strtoul(str, &end, 10);
+		if (errno || end == NULL || idx >= ICE_MAX_QUEUE_NUM)
+			return -1;
+
+		/* go ahead to separator '-',',' and ')' */
+		while (isblank(*end))
+			end++;
+		if (*end == '-') {
+			if (min == ICE_MAX_QUEUE_NUM)
+				min = idx;
+			else /* avoid continuous '-' */
+				return -1;
+		} else if (*end == ',' || *end == ')') {
+			max = idx;
+			if (min == ICE_MAX_QUEUE_NUM)
+				min = idx;
+
+			for (idx = RTE_MIN(min, max);
+			     idx <= RTE_MAX(min, max); idx++)
+				devargs->proto_xtr[idx] = xtr_type;
+
+			min = ICE_MAX_QUEUE_NUM;
+		} else {
+			return -1;
+		}
+
+		str = end + 1;
+	} while (*end != ')' && *end != '\0');
+
+	return 0;
+}
+
+static int
+parse_queue_proto_xtr(const char *queues, struct ice_devargs *devargs)
+{
+	const char *queue_start;
+	uint32_t idx;
+	int xtr_type;
+	char xtr_name[32];
+
+	while (isblank(*queues))
+		queues++;
+
+	if (*queues != '[') {
+		xtr_type = lookup_proto_xtr_type(queues);
+		if (xtr_type < 0)
+			return -1;
+
+		devargs->proto_xtr_dflt = xtr_type;
+
+		return 0;
+	}
+
+	queues++;
+	do {
+		while (isblank(*queues))
+			queues++;
+		if (*queues == '\0')
+			return -1;
+
+		queue_start = queues;
+
+		/* go across a complete bracket */
+		if (*queue_start == '(') {
+			queues += strcspn(queues, ")");
+			if (*queues != ')')
+				return -1;
+		}
+
+		/* scan the separator ':' */
+		queues += strcspn(queues, ":");
+		if (*queues++ != ':')
+			return -1;
+		while (isblank(*queues))
+			queues++;
+
+		for (idx = 0; ; idx++) {
+			if (isblank(queues[idx]) ||
+			    queues[idx] == ',' ||
+			    queues[idx] == ']' ||
+			    queues[idx] == '\0')
+				break;
+
+			if (idx > sizeof(xtr_name) - 2)
+				return -1;
+
+			xtr_name[idx] = queues[idx];
+		}
+		xtr_name[idx] = '\0';
+		xtr_type = lookup_proto_xtr_type(xtr_name);
+		if (xtr_type < 0)
+			return -1;
+
+		queues += idx;
+
+		while (isblank(*queues) || *queues == ',' || *queues == ']')
+			queues++;
+
+		if (parse_queue_set(queue_start, xtr_type, devargs) < 0)
+			return -1;
+	} while (*queues != '\0');
+
+	return 0;
+}
+
+static int
+handle_proto_xtr_arg(__rte_unused const char *key, const char *value,
+		     void *extra_args)
+{
+	struct ice_devargs *devargs = extra_args;
+
+	if (value == NULL || extra_args == NULL)
+		return -EINVAL;
+
+	if (parse_queue_proto_xtr(value, devargs) < 0) {
+		PMD_DRV_LOG(ERR,
+			    "The protocol extraction parameter is wrong : '%s'",
+			    value);
+		return -1;
+	}
+
+	return 0;
+}
+
+static bool
+ice_proto_xtr_support(struct ice_hw *hw)
+{
+#define FLX_REG(val, fld, idx) \
+	(((val) & GLFLXP_RXDID_FLX_WRD_##idx##_##fld##_M) >> \
+	 GLFLXP_RXDID_FLX_WRD_##idx##_##fld##_S)
+	static struct {
+		uint32_t rxdid;
+		uint16_t protid_0;
+		uint16_t protid_1;
+	} xtr_sets[] = {
+		{ ICE_RXDID_COMMS_AUX_VLAN, ICE_PROT_EVLAN_O, ICE_PROT_VLAN_O },
+		{ ICE_RXDID_COMMS_AUX_IPV4, ICE_PROT_IPV4_OF_OR_S,
+		  ICE_PROT_IPV4_OF_OR_S },
+		{ ICE_RXDID_COMMS_AUX_IPV6, ICE_PROT_IPV6_OF_OR_S,
+		  ICE_PROT_IPV6_OF_OR_S },
+		{ ICE_RXDID_COMMS_AUX_IPV6_FLOW, ICE_PROT_IPV6_OF_OR_S,
+		  ICE_PROT_IPV6_OF_OR_S },
+		{ ICE_RXDID_COMMS_AUX_TCP, ICE_PROT_TCP_IL, ICE_PROT_ID_INVAL },
+	};
+	uint32_t i;
+
+	for (i = 0; i < RTE_DIM(xtr_sets); i++) {
+		uint32_t rxdid = xtr_sets[i].rxdid;
+		uint32_t v;
+
+		if (xtr_sets[i].protid_0 != ICE_PROT_ID_INVAL) {
+			v = ICE_READ_REG(hw, GLFLXP_RXDID_FLX_WRD_4(rxdid));
+
+			if (FLX_REG(v, PROT_MDID, 4) != xtr_sets[i].protid_0 ||
+			    FLX_REG(v, RXDID_OPCODE, 4) != ICE_RX_OPC_EXTRACT)
+				return false;
+		}
+
+		if (xtr_sets[i].protid_1 != ICE_PROT_ID_INVAL) {
+			v = ICE_READ_REG(hw, GLFLXP_RXDID_FLX_WRD_5(rxdid));
+
+			if (FLX_REG(v, PROT_MDID, 5) != xtr_sets[i].protid_1 ||
+			    FLX_REG(v, RXDID_OPCODE, 5) != ICE_RX_OPC_EXTRACT)
+				return false;
+		}
+	}
+
+	return true;
 }
 
 static int
@@ -537,7 +876,7 @@ ice_add_mac_filter(struct ice_vsi *vsi, struct rte_ether_addr *mac_addr)
 		ret = -ENOMEM;
 		goto DONE;
 	}
-	rte_memcpy(&f->mac_info.mac_addr, mac_addr, ETH_ADDR_LEN);
+	rte_ether_addr_copy(mac_addr, &f->mac_info.mac_addr);
 	TAILQ_INSERT_TAIL(&vsi->mac_list, f, next);
 	vsi->mac_num++;
 
@@ -1008,6 +1347,7 @@ ice_interrupt_handler(void *param)
 	uint8_t pf_num;
 	uint8_t event;
 	uint16_t queue;
+	int ret;
 #ifdef ICE_LSE_SPT
 	uint32_t int_fw_ctl;
 #endif
@@ -1035,7 +1375,10 @@ ice_interrupt_handler(void *param)
 #else
 	if (oicr & PFINT_OICR_LINK_STAT_CHANGE_M) {
 		PMD_DRV_LOG(INFO, "OICR: link state change event");
-		ice_link_update(dev, 0);
+		ret = ice_link_update(dev, 0);
+		if (!ret)
+			_rte_eth_dev_callback_process
+				(dev, RTE_ETH_EVENT_INTR_LSC, NULL);
 	}
 #endif
 
@@ -1075,6 +1418,81 @@ done:
 	rte_intr_ack(dev->intr_handle);
 }
 
+static void
+ice_init_proto_xtr(struct rte_eth_dev *dev)
+{
+	struct ice_adapter *ad =
+			ICE_DEV_PRIVATE_TO_ADAPTER(dev->data->dev_private);
+	struct ice_pf *pf = ICE_DEV_PRIVATE_TO_PF(dev->data->dev_private);
+	struct ice_hw *hw = ICE_PF_TO_HW(pf);
+	const struct proto_xtr_ol_flag *ol_flag;
+	bool proto_xtr_enable = false;
+	int offset;
+	uint16_t i;
+
+	if (!ice_proto_xtr_support(hw)) {
+		PMD_DRV_LOG(NOTICE, "Protocol extraction is not supported");
+		return;
+	}
+
+	pf->proto_xtr = rte_zmalloc(NULL, pf->lan_nb_qps, 0);
+	if (unlikely(pf->proto_xtr == NULL)) {
+		PMD_DRV_LOG(ERR, "No memory for setting up protocol extraction table");
+		return;
+	}
+
+	for (i = 0; i < pf->lan_nb_qps; i++) {
+		pf->proto_xtr[i] = ad->devargs.proto_xtr[i] != PROTO_XTR_NONE ?
+				   ad->devargs.proto_xtr[i] :
+				   ad->devargs.proto_xtr_dflt;
+
+		if (pf->proto_xtr[i] != PROTO_XTR_NONE) {
+			uint8_t type = pf->proto_xtr[i];
+
+			ice_proto_xtr_ol_flag_params[type].required = true;
+			proto_xtr_enable = true;
+		}
+	}
+
+	if (likely(!proto_xtr_enable))
+		return;
+
+	offset = rte_mbuf_dynfield_register(&ice_proto_xtr_metadata_param);
+	if (unlikely(offset == -1)) {
+		PMD_DRV_LOG(ERR,
+			    "Protocol extraction metadata is disabled in mbuf with error %d",
+			    -rte_errno);
+		return;
+	}
+
+	PMD_DRV_LOG(DEBUG,
+		    "Protocol extraction metadata offset in mbuf is : %d",
+		    offset);
+	rte_net_ice_dynfield_proto_xtr_metadata_offs = offset;
+
+	for (i = 0; i < RTE_DIM(ice_proto_xtr_ol_flag_params); i++) {
+		ol_flag = &ice_proto_xtr_ol_flag_params[i];
+
+		if (!ol_flag->required)
+			continue;
+
+		offset = rte_mbuf_dynflag_register(&ol_flag->param);
+		if (unlikely(offset == -1)) {
+			PMD_DRV_LOG(ERR,
+				    "Protocol extraction offload '%s' failed to register with error %d",
+				    ol_flag->param.name, -rte_errno);
+
+			rte_net_ice_dynfield_proto_xtr_metadata_offs = -1;
+			break;
+		}
+
+		PMD_DRV_LOG(DEBUG,
+			    "Protocol extraction offload '%s' offset in mbuf is : %d",
+			    ol_flag->param.name, offset);
+		*ol_flag->ol_flag = 1ULL << offset;
+	}
+}
+
 /*  Initialize SW parameters of PF */
 static int
 ice_pf_sw_init(struct rte_eth_dev *dev)
@@ -1088,10 +1506,22 @@ ice_pf_sw_init(struct rte_eth_dev *dev)
 
 	pf->lan_nb_qps = pf->lan_nb_qp_max;
 
+	ice_init_proto_xtr(dev);
+
+	if (hw->func_caps.fd_fltr_guar > 0 ||
+	    hw->func_caps.fd_fltr_best_effort > 0) {
+		pf->flags |= ICE_FLAG_FDIR;
+		pf->fdir_nb_qps = ICE_DEFAULT_QP_NUM_FDIR;
+		pf->lan_nb_qps = pf->lan_nb_qp_max - pf->fdir_nb_qps;
+	} else {
+		pf->fdir_nb_qps = 0;
+	}
+	pf->fdir_qp_offset = 0;
+
 	return 0;
 }
 
-static struct ice_vsi *
+struct ice_vsi *
 ice_setup_vsi(struct ice_pf *pf, enum ice_vsi_type type)
 {
 	struct ice_hw *hw = ICE_PF_TO_HW(pf);
@@ -1103,6 +1533,7 @@ ice_setup_vsi(struct ice_pf *pf, enum ice_vsi_type type)
 	struct rte_ether_addr mac_addr;
 	uint16_t max_txqs[ICE_MAX_TRAFFIC_CLASS] = { 0 };
 	uint8_t tc_bitmap = 0x1;
+	uint16_t cfg;
 
 	/* hw->num_lports = 1 in NIC mode */
 	vsi = rte_zmalloc(NULL, sizeof(struct ice_vsi), 0);
@@ -1126,14 +1557,10 @@ ice_setup_vsi(struct ice_pf *pf, enum ice_vsi_type type)
 	pf->flags |= ICE_FLAG_RSS_AQ_CAPABLE;
 
 	memset(&vsi_ctx, 0, sizeof(vsi_ctx));
-	/* base_queue in used in queue mapping of VSI add/update command.
-	 * Suppose vsi->base_queue is 0 now, don't consider SRIOV, VMDQ
-	 * cases in the first stage. Only Main VSI.
-	 */
-	vsi->base_queue = 0;
 	switch (type) {
 	case ICE_VSI_PF:
 		vsi->nb_qps = pf->lan_nb_qps;
+		vsi->base_queue = 1;
 		ice_vsi_config_default_rss(&vsi_ctx.info);
 		vsi_ctx.alloc_from_pool = true;
 		vsi_ctx.flags = ICE_AQ_VSI_TYPE_PF;
@@ -1147,6 +1574,18 @@ ice_setup_vsi(struct ice_pf *pf, enum ice_vsi_type type)
 		vsi_ctx.info.vlan_flags |= ICE_AQ_VSI_VLAN_EMOD_NOTHING;
 		vsi_ctx.info.q_opt_rss = ICE_AQ_VSI_Q_OPT_RSS_LUT_PF |
 					 ICE_AQ_VSI_Q_OPT_RSS_TPLZ;
+
+		/* FDIR */
+		cfg = ICE_AQ_VSI_PROP_SECURITY_VALID |
+			ICE_AQ_VSI_PROP_FLOW_DIR_VALID;
+		vsi_ctx.info.valid_sections |= rte_cpu_to_le_16(cfg);
+		cfg = ICE_AQ_VSI_FD_ENABLE;
+		vsi_ctx.info.fd_options = rte_cpu_to_le_16(cfg);
+		vsi_ctx.info.max_fd_fltr_dedicated =
+			rte_cpu_to_le_16(hw->func_caps.fd_fltr_guar);
+		vsi_ctx.info.max_fd_fltr_shared =
+			rte_cpu_to_le_16(hw->func_caps.fd_fltr_best_effort);
+
 		/* Enable VLAN/UP trip */
 		ret = ice_vsi_config_tc_queue_mapping(vsi,
 						      &vsi_ctx.info,
@@ -1159,6 +1598,29 @@ ice_setup_vsi(struct ice_pf *pf, enum ice_vsi_type type)
 			goto fail_mem;
 		}
 
+		break;
+	case ICE_VSI_CTRL:
+		vsi->nb_qps = pf->fdir_nb_qps;
+		vsi->base_queue = ICE_FDIR_QUEUE_ID;
+		vsi_ctx.alloc_from_pool = true;
+		vsi_ctx.flags = ICE_AQ_VSI_TYPE_PF;
+
+		cfg = ICE_AQ_VSI_PROP_FLOW_DIR_VALID;
+		vsi_ctx.info.valid_sections |= rte_cpu_to_le_16(cfg);
+		cfg = ICE_AQ_VSI_FD_PROG_ENABLE;
+		vsi_ctx.info.fd_options = rte_cpu_to_le_16(cfg);
+		vsi_ctx.info.sw_id = hw->port_info->sw_id;
+		vsi_ctx.info.sw_flags2 = ICE_AQ_VSI_SW_FLAG_LAN_ENA;
+		ret = ice_vsi_config_tc_queue_mapping(vsi,
+						      &vsi_ctx.info,
+						      ICE_DEFAULT_TCMAP);
+		if (ret) {
+			PMD_INIT_LOG(ERR,
+				     "tc queue mapping with vsi failed, "
+				     "err = %d",
+				     ret);
+			goto fail_mem;
+		}
 		break;
 	default:
 		/* for other types of VSI */
@@ -1177,6 +1639,14 @@ ice_setup_vsi(struct ice_pf *pf, enum ice_vsi_type type)
 		}
 		vsi->msix_intr = ret;
 		vsi->nb_msix = RTE_MIN(vsi->nb_qps, RTE_MAX_RXTX_INTR_VEC_ID);
+	} else if (type == ICE_VSI_CTRL) {
+		ret = ice_res_pool_alloc(&pf->msix_pool, 1);
+		if (ret < 0) {
+			PMD_DRV_LOG(ERR, "VSI %d get heap failed %d",
+				    vsi->vsi_id, ret);
+		}
+		vsi->msix_intr = ret;
+		vsi->nb_msix = 1;
 	} else {
 		vsi->msix_intr = 0;
 		vsi->nb_msix = 0;
@@ -1192,20 +1662,22 @@ ice_setup_vsi(struct ice_pf *pf, enum ice_vsi_type type)
 	pf->vsis_allocated = vsi_ctx.vsis_allocd;
 	pf->vsis_unallocated = vsi_ctx.vsis_unallocated;
 
-	/* MAC configuration */
-	rte_memcpy(pf->dev_addr.addr_bytes,
-		   hw->port_info->mac.perm_addr,
-		   ETH_ADDR_LEN);
+	if (type == ICE_VSI_PF) {
+		/* MAC configuration */
+		rte_ether_addr_copy((struct rte_ether_addr *)
+					hw->port_info->mac.perm_addr,
+				    &pf->dev_addr);
 
-	rte_memcpy(&mac_addr, &pf->dev_addr, RTE_ETHER_ADDR_LEN);
-	ret = ice_add_mac_filter(vsi, &mac_addr);
-	if (ret != ICE_SUCCESS)
-		PMD_INIT_LOG(ERR, "Failed to add dflt MAC filter");
+		rte_ether_addr_copy(&pf->dev_addr, &mac_addr);
+		ret = ice_add_mac_filter(vsi, &mac_addr);
+		if (ret != ICE_SUCCESS)
+			PMD_INIT_LOG(ERR, "Failed to add dflt MAC filter");
 
-	rte_memcpy(&mac_addr, &broadcast, RTE_ETHER_ADDR_LEN);
-	ret = ice_add_mac_filter(vsi, &mac_addr);
-	if (ret != ICE_SUCCESS)
-		PMD_INIT_LOG(ERR, "Failed to add MAC filter");
+		rte_ether_addr_copy(&broadcast, &mac_addr);
+		ret = ice_add_mac_filter(vsi, &mac_addr);
+		if (ret != ICE_SUCCESS)
+			PMD_INIT_LOG(ERR, "Failed to add MAC filter");
+	}
 
 	/* At the beginning, only TC0. */
 	/* What we need here is the maximam number of the TX queues.
@@ -1243,14 +1715,23 @@ ice_send_driver_ver(struct ice_hw *hw)
 static int
 ice_pf_setup(struct ice_pf *pf)
 {
+	struct ice_hw *hw = ICE_PF_TO_HW(pf);
 	struct ice_vsi *vsi;
+	uint16_t unused;
 
 	/* Clear all stats counters */
-	pf->offset_loaded = FALSE;
+	pf->offset_loaded = false;
 	memset(&pf->stats, 0, sizeof(struct ice_hw_port_stats));
 	memset(&pf->stats_offset, 0, sizeof(struct ice_hw_port_stats));
 	memset(&pf->internal_stats, 0, sizeof(struct ice_eth_stats));
 	memset(&pf->internal_stats_offset, 0, sizeof(struct ice_eth_stats));
+
+	/* force guaranteed filter pool for PF */
+	ice_alloc_fd_guar_item(hw, &unused,
+			       hw->func_caps.fd_fltr_guar);
+	/* force shared filter pool for PF */
+	ice_alloc_fd_shrd_item(hw, &unused,
+			       hw->func_caps.fd_fltr_best_effort);
 
 	vsi = ice_setup_vsi(pf, ICE_VSI_PF);
 	if (!vsi) {
@@ -1263,15 +1744,132 @@ ice_pf_setup(struct ice_pf *pf)
 	return 0;
 }
 
+/* PCIe configuration space setting */
+#define PCI_CFG_SPACE_SIZE          256
+#define PCI_CFG_SPACE_EXP_SIZE      4096
+#define PCI_EXT_CAP_ID(header)      (int)((header) & 0x0000ffff)
+#define PCI_EXT_CAP_NEXT(header)    (((header) >> 20) & 0xffc)
+#define PCI_EXT_CAP_ID_DSN          0x03
+
+static int
+ice_pci_find_next_ext_capability(struct rte_pci_device *dev, int cap)
+{
+	uint32_t header;
+	int ttl;
+	int pos = PCI_CFG_SPACE_SIZE;
+
+	/* minimum 8 bytes per capability */
+	ttl = (PCI_CFG_SPACE_EXP_SIZE - PCI_CFG_SPACE_SIZE) / 8;
+
+	if (rte_pci_read_config(dev, &header, 4, pos) < 0) {
+		PMD_INIT_LOG(ERR, "ice error reading extended capabilities\n");
+		return -1;
+	}
+
+	/*
+	 * If we have no capabilities, this is indicated by cap ID,
+	 * cap version and next pointer all being 0.
+	 */
+	if (header == 0)
+		return 0;
+
+	while (ttl-- > 0) {
+		if (PCI_EXT_CAP_ID(header) == cap)
+			return pos;
+
+		pos = PCI_EXT_CAP_NEXT(header);
+
+		if (pos < PCI_CFG_SPACE_SIZE)
+			break;
+
+		if (rte_pci_read_config(dev, &header, 4, pos) < 0) {
+			PMD_INIT_LOG(ERR, "ice error reading extended capabilities\n");
+			return -1;
+		}
+	}
+
+	return 0;
+}
+
+/*
+ * Extract device serial number from PCIe Configuration Space and
+ * determine the pkg file path according to the DSN.
+ */
+static int
+ice_pkg_file_search_path(struct rte_pci_device *pci_dev, char *pkg_file)
+{
+	int pos;
+	char opt_ddp_filename[ICE_MAX_PKG_FILENAME_SIZE];
+	uint32_t dsn_low, dsn_high;
+	memset(opt_ddp_filename, 0, ICE_MAX_PKG_FILENAME_SIZE);
+
+	pos = ice_pci_find_next_ext_capability(pci_dev, PCI_EXT_CAP_ID_DSN);
+
+	if (pos) {
+		rte_pci_read_config(pci_dev, &dsn_low, 4, pos + 4);
+		rte_pci_read_config(pci_dev, &dsn_high, 4, pos + 8);
+		snprintf(opt_ddp_filename, ICE_MAX_PKG_FILENAME_SIZE,
+			 "ice-%08x%08x.pkg", dsn_high, dsn_low);
+	} else {
+		PMD_INIT_LOG(ERR, "Failed to read device serial number\n");
+		goto fail_dsn;
+	}
+
+	strncpy(pkg_file, ICE_PKG_FILE_SEARCH_PATH_UPDATES,
+		ICE_MAX_PKG_FILENAME_SIZE);
+	if (!access(strcat(pkg_file, opt_ddp_filename), 0))
+		return 0;
+
+	strncpy(pkg_file, ICE_PKG_FILE_SEARCH_PATH_DEFAULT,
+		ICE_MAX_PKG_FILENAME_SIZE);
+	if (!access(strcat(pkg_file, opt_ddp_filename), 0))
+		return 0;
+
+fail_dsn:
+	strncpy(pkg_file, ICE_PKG_FILE_UPDATES, ICE_MAX_PKG_FILENAME_SIZE);
+	if (!access(pkg_file, 0))
+		return 0;
+	strncpy(pkg_file, ICE_PKG_FILE_DEFAULT, ICE_MAX_PKG_FILENAME_SIZE);
+	return 0;
+}
+
+static enum ice_pkg_type
+ice_load_pkg_type(struct ice_hw *hw)
+{
+	enum ice_pkg_type package_type;
+
+	/* store the activated package type (OS default or Comms) */
+	if (!strncmp((char *)hw->active_pkg_name, ICE_OS_DEFAULT_PKG_NAME,
+		ICE_PKG_NAME_SIZE))
+		package_type = ICE_PKG_TYPE_OS_DEFAULT;
+	else if (!strncmp((char *)hw->active_pkg_name, ICE_COMMS_PKG_NAME,
+		ICE_PKG_NAME_SIZE))
+		package_type = ICE_PKG_TYPE_COMMS;
+	else
+		package_type = ICE_PKG_TYPE_UNKNOWN;
+
+	PMD_INIT_LOG(NOTICE, "Active package is: %d.%d.%d.%d, %s",
+		hw->active_pkg_ver.major, hw->active_pkg_ver.minor,
+		hw->active_pkg_ver.update, hw->active_pkg_ver.draft,
+		hw->active_pkg_name);
+
+	return package_type;
+}
+
 static int ice_load_pkg(struct rte_eth_dev *dev)
 {
 	struct ice_hw *hw = ICE_DEV_PRIVATE_TO_HW(dev->data->dev_private);
-	const char *pkg_file = ICE_DFLT_PKG_FILE;
+	char pkg_file[ICE_MAX_PKG_FILENAME_SIZE];
 	int err;
 	uint8_t *buf;
 	int buf_len;
 	FILE *file;
 	struct stat fstat;
+	struct rte_pci_device *pci_dev = RTE_DEV_TO_PCI(dev->device);
+	struct ice_adapter *ad =
+		ICE_DEV_PRIVATE_TO_ADAPTER(dev->data->dev_private);
+
+	ice_pkg_file_search_path(pci_dev, pkg_file);
 
 	file = fopen(pkg_file, "rb");
 	if (!file)  {
@@ -1311,6 +1909,10 @@ static int ice_load_pkg(struct rte_eth_dev *dev)
 		PMD_INIT_LOG(ERR, "ice_copy_and_init_hw failed: %d\n", err);
 		goto fail_exit;
 	}
+
+	/* store the loaded pkg type info */
+	ad->active_pkg_type = ice_load_pkg_type(hw);
+
 	err = ice_init_hw_tbls(hw);
 	if (err) {
 		PMD_INIT_LOG(ERR, "ice_init_hw_tbls failed: %d\n", err);
@@ -1378,9 +1980,31 @@ static int ice_parse_devargs(struct rte_eth_dev *dev)
 		return -EINVAL;
 	}
 
+	ad->devargs.proto_xtr_dflt = PROTO_XTR_NONE;
+	memset(ad->devargs.proto_xtr, PROTO_XTR_NONE,
+	       sizeof(ad->devargs.proto_xtr));
+
+	ret = rte_kvargs_process(kvlist, ICE_PROTO_XTR_ARG,
+				 &handle_proto_xtr_arg, &ad->devargs);
+	if (ret)
+		goto bail;
+
 	ret = rte_kvargs_process(kvlist, ICE_SAFE_MODE_SUPPORT_ARG,
 				 &parse_bool, &ad->devargs.safe_mode_support);
+	if (ret)
+		goto bail;
 
+	ret = rte_kvargs_process(kvlist, ICE_PIPELINE_MODE_SUPPORT_ARG,
+				 &parse_bool, &ad->devargs.pipe_mode_support);
+	if (ret)
+		goto bail;
+
+	ret = rte_kvargs_process(kvlist, ICE_FLOW_MARK_SUPPORT_ARG,
+				 &parse_bool, &ad->devargs.flow_mark_support);
+	if (ret)
+		goto bail;
+
+bail:
 	rte_kvargs_free(kvlist);
 	return ret;
 }
@@ -1417,6 +2041,92 @@ ice_vsi_config_sw_lldp(struct ice_vsi *vsi,  bool on)
 	return ret;
 }
 
+static enum ice_status
+ice_get_hw_res(struct ice_hw *hw, uint16_t res_type,
+		uint16_t num, uint16_t desc_id,
+		uint16_t *prof_buf, uint16_t *num_prof)
+{
+	struct ice_aqc_get_allocd_res_desc_resp *resp_buf;
+	int ret;
+	uint16_t buf_len;
+	bool res_shared = 1;
+	struct ice_aq_desc aq_desc;
+	struct ice_sq_cd *cd = NULL;
+	struct ice_aqc_get_allocd_res_desc *cmd =
+			&aq_desc.params.get_res_desc;
+
+	buf_len = sizeof(resp_buf->elem) * num;
+	resp_buf = ice_malloc(hw, buf_len);
+	if (!resp_buf)
+		return -ENOMEM;
+
+	ice_fill_dflt_direct_cmd_desc(&aq_desc,
+			ice_aqc_opc_get_allocd_res_desc);
+
+	cmd->ops.cmd.res = CPU_TO_LE16(((res_type << ICE_AQC_RES_TYPE_S) &
+				ICE_AQC_RES_TYPE_M) | (res_shared ?
+				ICE_AQC_RES_TYPE_FLAG_SHARED : 0));
+	cmd->ops.cmd.first_desc = CPU_TO_LE16(desc_id);
+
+	ret = ice_aq_send_cmd(hw, &aq_desc, resp_buf, buf_len, cd);
+	if (!ret)
+		*num_prof = LE16_TO_CPU(cmd->ops.resp.num_desc);
+	else
+		goto exit;
+
+	ice_memcpy(prof_buf, resp_buf->elem, sizeof(resp_buf->elem) *
+			(*num_prof), ICE_NONDMA_TO_NONDMA);
+
+exit:
+	rte_free(resp_buf);
+	return ret;
+}
+static int
+ice_cleanup_resource(struct ice_hw *hw, uint16_t res_type)
+{
+	int ret;
+	uint16_t prof_id;
+	uint16_t prof_buf[ICE_MAX_RES_DESC_NUM];
+	uint16_t first_desc = 1;
+	uint16_t num_prof = 0;
+
+	ret = ice_get_hw_res(hw, res_type, ICE_MAX_RES_DESC_NUM,
+			first_desc, prof_buf, &num_prof);
+	if (ret) {
+		PMD_INIT_LOG(ERR, "Failed to get fxp resource");
+		return ret;
+	}
+
+	for (prof_id = 0; prof_id < num_prof; prof_id++) {
+		ret = ice_free_hw_res(hw, res_type, 1, &prof_buf[prof_id]);
+		if (ret) {
+			PMD_INIT_LOG(ERR, "Failed to free fxp resource");
+			return ret;
+		}
+	}
+	return 0;
+}
+
+static int
+ice_reset_fxp_resource(struct ice_hw *hw)
+{
+	int ret;
+
+	ret = ice_cleanup_resource(hw, ICE_AQC_RES_TYPE_FD_PROF_BLDR_PROFID);
+	if (ret) {
+		PMD_INIT_LOG(ERR, "Failed to clearup fdir resource");
+		return ret;
+	}
+
+	ret = ice_cleanup_resource(hw, ICE_AQC_RES_TYPE_HASH_PROF_BLDR_PROFID);
+	if (ret) {
+		PMD_INIT_LOG(ERR, "Failed to clearup rss resource");
+		return ret;
+	}
+
+	return 0;
+}
+
 static int
 ice_dev_init(struct rte_eth_dev *dev)
 {
@@ -1433,6 +2143,15 @@ ice_dev_init(struct rte_eth_dev *dev)
 	dev->rx_pkt_burst = ice_recv_pkts;
 	dev->tx_pkt_burst = ice_xmit_pkts;
 	dev->tx_pkt_prepare = ice_prep_pkts;
+
+	/* for secondary processes, we don't initialise any further as primary
+	 * has already done this work.
+	 */
+	if (rte_eal_process_type() != RTE_PROC_PRIMARY) {
+		ice_set_rx_function(dev);
+		ice_set_tx_function(dev);
+		return 0;
+	}
 
 	ice_set_default_ptype_table(dev);
 	pci_dev = RTE_DEV_TO_PCI(dev->device);
@@ -1488,6 +2207,11 @@ ice_dev_init(struct rte_eth_dev *dev)
 		goto err_init_mac;
 	}
 
+	/* Pass the information to the rte_eth_dev_close() that it should also
+	 * release the private port resources.
+	 */
+	dev->data->dev_flags |= RTE_ETH_DEV_CLOSE_REMOVE;
+
 	ret = ice_res_pool_init(&pf->msix_pool, 1,
 				hw->func_caps.common_cap.num_msix_vectors - 1);
 	if (ret) {
@@ -1510,16 +2234,16 @@ ice_dev_init(struct rte_eth_dev *dev)
 	vsi = pf->main_vsi;
 
 	/* Disable double vlan by default */
-	ice_vsi_config_double_vlan(vsi, FALSE);
+	ice_vsi_config_double_vlan(vsi, false);
 
-	ret = ice_aq_stop_lldp(hw, TRUE, FALSE, NULL);
+	ret = ice_aq_stop_lldp(hw, true, false, NULL);
 	if (ret != ICE_SUCCESS)
 		PMD_INIT_LOG(DEBUG, "lldp has already stopped\n");
-	ret = ice_init_dcb(hw, TRUE);
+	ret = ice_init_dcb(hw, true);
 	if (ret != ICE_SUCCESS)
 		PMD_INIT_LOG(DEBUG, "Failed to init DCB\n");
 	/* Forward LLDP packets to default VSI */
-	ret = ice_vsi_config_sw_lldp(vsi, TRUE);
+	ret = ice_vsi_config_sw_lldp(vsi, true);
 	if (ret != ICE_SUCCESS)
 		PMD_INIT_LOG(DEBUG, "Failed to cfg lldp\n");
 	/* register callback func to eal lib */
@@ -1534,7 +2258,19 @@ ice_dev_init(struct rte_eth_dev *dev)
 	/* get base queue pairs index  in the device */
 	ice_base_queue_get(pf);
 
-	TAILQ_INIT(&pf->flow_list);
+	if (!ad->is_safe_mode) {
+		ret = ice_flow_init(ad);
+		if (ret) {
+			PMD_INIT_LOG(ERR, "Failed to initialize flow");
+			return ret;
+		}
+	}
+
+	ret = ice_reset_fxp_resource(hw);
+	if (ret) {
+		PMD_INIT_LOG(ERR, "Failed to reset fxp resource");
+		return ret;
+	}
 
 	return 0;
 
@@ -1547,11 +2283,12 @@ err_init_mac:
 	ice_sched_cleanup_all(hw);
 	rte_free(hw->port_info);
 	ice_shutdown_all_ctrlq(hw);
+	rte_free(pf->proto_xtr);
 
 	return ret;
 }
 
-static int
+int
 ice_release_vsi(struct ice_vsi *vsi)
 {
 	struct ice_hw *hw;
@@ -1580,7 +2317,7 @@ ice_release_vsi(struct ice_vsi *vsi)
 	return 0;
 }
 
-static void
+void
 ice_vsi_disable_queues_intr(struct ice_vsi *vsi)
 {
 	struct rte_eth_dev *dev = vsi->adapter->eth_dev;
@@ -1636,7 +2373,10 @@ ice_dev_stop(struct rte_eth_dev *dev)
 	/* Clear all queues and release mbufs */
 	ice_clear_queues(dev);
 
-	ice_dev_set_link_down(dev);
+	if (pf->init_link_up)
+		ice_dev_set_link_up(dev);
+	else
+		ice_dev_set_link_down(dev);
 
 	/* Clean datapath event and queue/vec mapping */
 	rte_intr_efd_disable(intr_handle);
@@ -1653,6 +2393,10 @@ ice_dev_close(struct rte_eth_dev *dev)
 {
 	struct ice_pf *pf = ICE_DEV_PRIVATE_TO_PF(dev->data->dev_private);
 	struct ice_hw *hw = ICE_DEV_PRIVATE_TO_HW(dev->data->dev_private);
+	struct rte_pci_device *pci_dev = RTE_ETH_DEV_TO_PCI(dev);
+	struct rte_intr_handle *intr_handle = &pci_dev->intr_handle;
+	struct ice_adapter *ad =
+		ICE_DEV_PRIVATE_TO_ADAPTER(dev->data->dev_private);
 
 	/* Since stop will make link down, then the link event will be
 	 * triggered, disable the irq firstly to avoid the port_infoe etc
@@ -1663,26 +2407,21 @@ ice_dev_close(struct rte_eth_dev *dev)
 
 	ice_dev_stop(dev);
 
+	if (!ad->is_safe_mode)
+		ice_flow_uninit(ad);
+
 	/* release all queue resource */
 	ice_free_queues(dev);
 
 	ice_res_pool_destroy(&pf->msix_pool);
 	ice_release_vsi(pf->main_vsi);
 	ice_sched_cleanup_all(hw);
+	ice_free_hw_tbls(hw);
 	rte_free(hw->port_info);
 	hw->port_info = NULL;
 	ice_shutdown_all_ctrlq(hw);
-}
-
-static int
-ice_dev_uninit(struct rte_eth_dev *dev)
-{
-	struct rte_pci_device *pci_dev = RTE_ETH_DEV_TO_PCI(dev);
-	struct rte_intr_handle *intr_handle = &pci_dev->intr_handle;
-	struct ice_pf *pf = ICE_DEV_PRIVATE_TO_PF(dev->data->dev_private);
-	struct rte_flow *p_flow;
-
-	ice_dev_close(dev);
+	rte_free(pf->proto_xtr);
+	pf->proto_xtr = NULL;
 
 	dev->dev_ops = NULL;
 	dev->rx_pkt_burst = NULL;
@@ -1697,13 +2436,12 @@ ice_dev_uninit(struct rte_eth_dev *dev)
 	/* unregister callback func from eal lib */
 	rte_intr_callback_unregister(intr_handle,
 				     ice_interrupt_handler, dev);
+}
 
-	/* Remove all flows */
-	while ((p_flow = TAILQ_FIRST(&pf->flow_list))) {
-		TAILQ_REMOVE(&pf->flow_list, p_flow, node);
-		ice_free_switch_filter_rule(p_flow->rule);
-		rte_free(p_flow);
-	}
+static int
+ice_dev_uninit(struct rte_eth_dev *dev)
+{
+	ice_dev_close(dev);
 
 	return 0;
 }
@@ -1720,6 +2458,9 @@ ice_dev_configure(struct rte_eth_dev *dev)
 	ad->rx_bulk_alloc_allowed = true;
 	ad->tx_simple_allowed = true;
 
+	if (dev->data->dev_conf.rxmode.mq_mode & ETH_MQ_RX_RSS_FLAG)
+		dev->data->dev_conf.rxmode.offloads |= DEV_RX_OFFLOAD_RSS_HASH;
+
 	return 0;
 }
 
@@ -1733,6 +2474,7 @@ static int ice_init_rss(struct ice_pf *pf)
 	uint16_t i, nb_q;
 	int ret = 0;
 	bool is_safe_mode = pf->adapter->is_safe_mode;
+	uint32_t reg;
 
 	rss_conf = &dev->data->dev_conf.rx_adv_conf.rss_conf;
 	nb_q = dev->data->nb_rx_queues;
@@ -1776,54 +2518,77 @@ static int ice_init_rss(struct ice_pf *pf)
 	if (ret)
 		return -EINVAL;
 
+	/* Enable registers for symmetric_toeplitz function. */
+	reg = ICE_READ_REG(hw, VSIQF_HASH_CTL(vsi->vsi_id));
+	reg = (reg & (~VSIQF_HASH_CTL_HASH_SCHEME_M)) |
+		(1 << VSIQF_HASH_CTL_HASH_SCHEME_S);
+	ICE_WRITE_REG(hw, VSIQF_HASH_CTL(vsi->vsi_id), reg);
+
 	/* configure RSS for IPv4 with input set IPv4 src/dst */
 	ret = ice_add_rss_cfg(hw, vsi->idx, ICE_FLOW_HASH_IPV4,
-			      ICE_FLOW_SEG_HDR_IPV4);
+			      ICE_FLOW_SEG_HDR_IPV4, 0);
 	if (ret)
 		PMD_DRV_LOG(ERR, "%s IPV4 rss flow fail %d", __func__, ret);
 
 	/* configure RSS for IPv6 with input set IPv6 src/dst */
 	ret = ice_add_rss_cfg(hw, vsi->idx, ICE_FLOW_HASH_IPV6,
-			      ICE_FLOW_SEG_HDR_IPV6);
+			      ICE_FLOW_SEG_HDR_IPV6, 0);
 	if (ret)
 		PMD_DRV_LOG(ERR, "%s IPV6 rss flow fail %d", __func__, ret);
 
 	/* configure RSS for tcp6 with input set IPv6 src/dst, TCP src/dst */
 	ret = ice_add_rss_cfg(hw, vsi->idx, ICE_HASH_TCP_IPV6,
-			      ICE_FLOW_SEG_HDR_TCP | ICE_FLOW_SEG_HDR_IPV6);
+			      ICE_FLOW_SEG_HDR_TCP | ICE_FLOW_SEG_HDR_IPV6, 0);
 	if (ret)
 		PMD_DRV_LOG(ERR, "%s TCP_IPV6 rss flow fail %d", __func__, ret);
 
 	/* configure RSS for udp6 with input set IPv6 src/dst, UDP src/dst */
 	ret = ice_add_rss_cfg(hw, vsi->idx, ICE_HASH_UDP_IPV6,
-			      ICE_FLOW_SEG_HDR_UDP | ICE_FLOW_SEG_HDR_IPV6);
+			      ICE_FLOW_SEG_HDR_UDP | ICE_FLOW_SEG_HDR_IPV6, 0);
 	if (ret)
 		PMD_DRV_LOG(ERR, "%s UDP_IPV6 rss flow fail %d", __func__, ret);
 
 	/* configure RSS for sctp6 with input set IPv6 src/dst */
 	ret = ice_add_rss_cfg(hw, vsi->idx, ICE_FLOW_HASH_IPV6,
-			      ICE_FLOW_SEG_HDR_SCTP | ICE_FLOW_SEG_HDR_IPV6);
+			      ICE_FLOW_SEG_HDR_SCTP | ICE_FLOW_SEG_HDR_IPV6, 0);
 	if (ret)
 		PMD_DRV_LOG(ERR, "%s SCTP_IPV6 rss flow fail %d",
 				__func__, ret);
 
 	/* configure RSS for tcp4 with input set IP src/dst, TCP src/dst */
 	ret = ice_add_rss_cfg(hw, vsi->idx, ICE_HASH_TCP_IPV4,
-			      ICE_FLOW_SEG_HDR_TCP | ICE_FLOW_SEG_HDR_IPV4);
+			      ICE_FLOW_SEG_HDR_TCP | ICE_FLOW_SEG_HDR_IPV4, 0);
 	if (ret)
 		PMD_DRV_LOG(ERR, "%s TCP_IPV4 rss flow fail %d", __func__, ret);
 
 	/* configure RSS for udp4 with input set IP src/dst, UDP src/dst */
 	ret = ice_add_rss_cfg(hw, vsi->idx, ICE_HASH_UDP_IPV4,
-			      ICE_FLOW_SEG_HDR_UDP | ICE_FLOW_SEG_HDR_IPV4);
+			      ICE_FLOW_SEG_HDR_UDP | ICE_FLOW_SEG_HDR_IPV4, 0);
 	if (ret)
 		PMD_DRV_LOG(ERR, "%s UDP_IPV4 rss flow fail %d", __func__, ret);
 
 	/* configure RSS for sctp4 with input set IP src/dst */
 	ret = ice_add_rss_cfg(hw, vsi->idx, ICE_FLOW_HASH_IPV4,
-			      ICE_FLOW_SEG_HDR_SCTP | ICE_FLOW_SEG_HDR_IPV4);
+			      ICE_FLOW_SEG_HDR_SCTP | ICE_FLOW_SEG_HDR_IPV4, 0);
 	if (ret)
 		PMD_DRV_LOG(ERR, "%s SCTP_IPV4 rss flow fail %d",
+				__func__, ret);
+
+	/* configure RSS for gtpu with input set TEID */
+	ret = ice_add_rss_cfg(hw, vsi->idx, ICE_FLOW_HASH_GTP_U_IPV4_TEID,
+				ICE_FLOW_SEG_HDR_GTPU_IP, 0);
+	if (ret)
+		PMD_DRV_LOG(ERR, "%s GTPU_TEID rss flow fail %d",
+				__func__, ret);
+
+	/**
+	 * configure RSS for pppoe/pppod with input set
+	 * Source MAC and Session ID
+	 */
+	ret = ice_add_rss_cfg(hw, vsi->idx, ICE_FLOW_HASH_PPPOE_SESS_ID_ETH,
+				ICE_FLOW_SEG_HDR_PPPOE, 0);
+	if (ret)
+		PMD_DRV_LOG(ERR, "%s PPPoE/PPPoD_SessionID rss flow fail %d",
 				__func__, ret);
 
 	return 0;
@@ -1840,9 +2605,9 @@ __vsi_queues_bind_intr(struct ice_vsi *vsi, uint16_t msix_vect,
 	for (i = 0; i < nb_queue; i++) {
 		/*do actual bind*/
 		val = (msix_vect & QINT_RQCTL_MSIX_INDX_M) |
-		      (0 < QINT_RQCTL_ITR_INDX_S) | QINT_RQCTL_CAUSE_ENA_M;
+		      (0 << QINT_RQCTL_ITR_INDX_S) | QINT_RQCTL_CAUSE_ENA_M;
 		val_tx = (msix_vect & QINT_TQCTL_MSIX_INDX_M) |
-			 (0 < QINT_TQCTL_ITR_INDX_S) | QINT_TQCTL_CAUSE_ENA_M;
+			 (0 << QINT_TQCTL_ITR_INDX_S) | QINT_TQCTL_CAUSE_ENA_M;
 
 		PMD_DRV_LOG(INFO, "queue %d is binding to vect %d",
 			    base_queue + i, msix_vect);
@@ -1853,7 +2618,7 @@ __vsi_queues_bind_intr(struct ice_vsi *vsi, uint16_t msix_vect,
 	}
 }
 
-static void
+void
 ice_vsi_queues_bind_intr(struct ice_vsi *vsi)
 {
 	struct rte_eth_dev *dev = vsi->adapter->eth_dev;
@@ -1906,7 +2671,7 @@ ice_vsi_queues_bind_intr(struct ice_vsi *vsi)
 	}
 }
 
-static void
+void
 ice_vsi_enable_queues_intr(struct ice_vsi *vsi)
 {
 	struct rte_eth_dev *dev = vsi->adapter->eth_dev;
@@ -1981,6 +2746,27 @@ ice_rxq_intr_setup(struct rte_eth_dev *dev)
 	return 0;
 }
 
+static void
+ice_get_init_link_status(struct rte_eth_dev *dev)
+{
+	struct ice_hw *hw = ICE_DEV_PRIVATE_TO_HW(dev->data->dev_private);
+	struct ice_pf *pf = ICE_DEV_PRIVATE_TO_PF(dev->data->dev_private);
+	bool enable_lse = dev->data->dev_conf.intr_conf.lsc ? true : false;
+	struct ice_link_status link_status;
+	int ret;
+
+	ret = ice_aq_get_link_info(hw->port_info, enable_lse,
+				   &link_status, NULL);
+	if (ret != ICE_SUCCESS) {
+		PMD_DRV_LOG(ERR, "Failed to get link info");
+		pf->init_link_up = false;
+		return;
+	}
+
+	if (link_status.link_info & ICE_AQ_LINK_UP)
+		pf->init_link_up = true;
+}
+
 static int
 ice_dev_start(struct rte_eth_dev *dev)
 {
@@ -1990,6 +2776,7 @@ ice_dev_start(struct rte_eth_dev *dev)
 	struct ice_vsi *vsi = pf->main_vsi;
 	uint16_t nb_rxq = 0;
 	uint16_t nb_txq, i;
+	uint16_t max_frame_size;
 	int mask, ret;
 
 	/* program Tx queues' context in hardware */
@@ -2050,12 +2837,22 @@ ice_dev_start(struct rte_eth_dev *dev)
 	if (ret != ICE_SUCCESS)
 		PMD_DRV_LOG(WARNING, "Fail to set phy mask");
 
+	ice_get_init_link_status(dev);
+
 	ice_dev_set_link_up(dev);
 
 	/* Call get_link_info aq commond to enable/disable LSE */
 	ice_link_update(dev, 0);
 
 	pf->adapter_stopped = false;
+
+	/* Set the max frame size to default value*/
+	max_frame_size = pf->dev_data->dev_conf.rxmode.max_rx_pkt_len ?
+		pf->dev_data->dev_conf.rxmode.max_rx_pkt_len :
+		ICE_FRAME_SIZE_MAX;
+
+	/* Set the max frame size to HW*/
+	ice_aq_set_mac_cfg(hw, max_frame_size, NULL);
 
 	return 0;
 
@@ -2093,7 +2890,7 @@ ice_dev_reset(struct rte_eth_dev *dev)
 	return 0;
 }
 
-static void
+static int
 ice_dev_info_get(struct rte_eth_dev *dev, struct rte_eth_dev_info *dev_info)
 {
 	struct ice_pf *pf = ICE_DEV_PRIVATE_TO_PF(dev->data->dev_private);
@@ -2133,7 +2930,8 @@ ice_dev_info_get(struct rte_eth_dev *dev, struct rte_eth_dev_info *dev_info)
 			DEV_RX_OFFLOAD_TCP_CKSUM |
 			DEV_RX_OFFLOAD_QINQ_STRIP |
 			DEV_RX_OFFLOAD_OUTER_IPV4_CKSUM |
-			DEV_RX_OFFLOAD_VLAN_EXTEND;
+			DEV_RX_OFFLOAD_VLAN_EXTEND |
+			DEV_RX_OFFLOAD_RSS_HASH;
 		dev_info->tx_offload_capa |=
 			DEV_TX_OFFLOAD_QINQ_INSERT |
 			DEV_TX_OFFLOAD_IPV4_CKSUM |
@@ -2213,6 +3011,8 @@ ice_dev_info_get(struct rte_eth_dev *dev, struct rte_eth_dev_info *dev_info)
 	dev_info->default_txportconf.nb_queues = 1;
 	dev_info->default_rxportconf.ring_size = ICE_BUF_SIZE_MIN;
 	dev_info->default_txportconf.ring_size = ICE_BUF_SIZE_MIN;
+
+	return 0;
 }
 
 static inline int
@@ -2471,7 +3271,7 @@ static int ice_macaddr_set(struct rte_eth_dev *dev,
 		PMD_DRV_LOG(ERR, "Failed to add mac filter");
 		return -EIO;
 	}
-	memcpy(&pf->dev_addr, mac_addr, ETH_ADDR_LEN);
+	rte_ether_addr_copy(mac_addr, &pf->dev_addr);
 
 	flags = ICE_AQC_MAN_MAC_UPDATE_LAA_WOL;
 	ret = ice_aq_manage_mac_write(hw, mac_addr->addr_bytes, flags, NULL);
@@ -2649,76 +3449,26 @@ ice_vlan_offload_set(struct rte_eth_dev *dev, int mask)
 	rxmode = &dev->data->dev_conf.rxmode;
 	if (mask & ETH_VLAN_FILTER_MASK) {
 		if (rxmode->offloads & DEV_RX_OFFLOAD_VLAN_FILTER)
-			ice_vsi_config_vlan_filter(vsi, TRUE);
+			ice_vsi_config_vlan_filter(vsi, true);
 		else
-			ice_vsi_config_vlan_filter(vsi, FALSE);
+			ice_vsi_config_vlan_filter(vsi, false);
 	}
 
 	if (mask & ETH_VLAN_STRIP_MASK) {
 		if (rxmode->offloads & DEV_RX_OFFLOAD_VLAN_STRIP)
-			ice_vsi_config_vlan_stripping(vsi, TRUE);
+			ice_vsi_config_vlan_stripping(vsi, true);
 		else
-			ice_vsi_config_vlan_stripping(vsi, FALSE);
+			ice_vsi_config_vlan_stripping(vsi, false);
 	}
 
 	if (mask & ETH_VLAN_EXTEND_MASK) {
 		if (rxmode->offloads & DEV_RX_OFFLOAD_VLAN_EXTEND)
-			ice_vsi_config_double_vlan(vsi, TRUE);
+			ice_vsi_config_double_vlan(vsi, true);
 		else
-			ice_vsi_config_double_vlan(vsi, FALSE);
+			ice_vsi_config_double_vlan(vsi, false);
 	}
 
 	return 0;
-}
-
-static int
-ice_vlan_tpid_set(struct rte_eth_dev *dev,
-		  enum rte_vlan_type vlan_type,
-		  uint16_t tpid)
-{
-	struct ice_hw *hw = ICE_DEV_PRIVATE_TO_HW(dev->data->dev_private);
-	uint64_t reg_r = 0, reg_w = 0;
-	uint16_t reg_id = 0;
-	int ret = 0;
-	int qinq = dev->data->dev_conf.rxmode.offloads &
-		   DEV_RX_OFFLOAD_VLAN_EXTEND;
-
-	switch (vlan_type) {
-	case ETH_VLAN_TYPE_OUTER:
-		if (qinq)
-			reg_id = 3;
-		else
-			reg_id = 5;
-		break;
-	case ETH_VLAN_TYPE_INNER:
-		if (qinq) {
-			reg_id = 5;
-		} else {
-			PMD_DRV_LOG(ERR,
-				    "Unsupported vlan type in single vlan.");
-			return -EINVAL;
-		}
-		break;
-	default:
-		PMD_DRV_LOG(ERR, "Unsupported vlan type %d", vlan_type);
-		return -EINVAL;
-	}
-	reg_r = ICE_READ_REG(hw, GL_SWT_L2TAGCTRL(reg_id));
-	PMD_DRV_LOG(DEBUG, "Debug read from ICE GL_SWT_L2TAGCTRL[%d]: "
-		    "0x%08"PRIx64"", reg_id, reg_r);
-
-	reg_w = reg_r & (~(GL_SWT_L2TAGCTRL_ETHERTYPE_M));
-	reg_w |= ((uint64_t)tpid << GL_SWT_L2TAGCTRL_ETHERTYPE_S);
-	if (reg_r == reg_w) {
-		PMD_DRV_LOG(DEBUG, "No need to write");
-		return 0;
-	}
-
-	ICE_WRITE_REG(hw, GL_SWT_L2TAGCTRL(reg_id), reg_w);
-	PMD_DRV_LOG(DEBUG, "Debug write 0x%08"PRIx64" to "
-		    "ICE GL_SWT_L2TAGCTRL[%d]", reg_w, reg_id);
-
-	return ret;
 }
 
 static int
@@ -2732,8 +3482,8 @@ ice_get_rss_lut(struct ice_vsi *vsi, uint8_t *lut, uint16_t lut_size)
 		return -EINVAL;
 
 	if (pf->flags & ICE_FLAG_RSS_AQ_CAPABLE) {
-		ret = ice_aq_get_rss_lut(hw, vsi->idx, TRUE,
-					 lut, lut_size);
+		ret = ice_aq_get_rss_lut(hw, vsi->idx,
+			ICE_AQC_GSET_RSS_LUT_TABLE_TYPE_PF, lut, lut_size);
 		if (ret) {
 			PMD_DRV_LOG(ERR, "Failed to get RSS lookup table");
 			return -EINVAL;
@@ -2763,8 +3513,8 @@ ice_set_rss_lut(struct ice_vsi *vsi, uint8_t *lut, uint16_t lut_size)
 	hw = ICE_VSI_TO_HW(vsi);
 
 	if (pf->flags & ICE_FLAG_RSS_AQ_CAPABLE) {
-		ret = ice_aq_set_rss_lut(hw, vsi->idx, TRUE,
-					 lut, lut_size);
+		ret = ice_aq_set_rss_lut(hw, vsi->idx,
+			ICE_AQC_GSET_RSS_LUT_TABLE_TYPE_PF, lut, lut_size);
 		if (ret) {
 			PMD_DRV_LOG(ERR, "Failed to set RSS lookup table");
 			return -EINVAL;
@@ -2959,7 +3709,7 @@ ice_rss_hash_conf_get(struct rte_eth_dev *dev,
 	return 0;
 }
 
-static void
+static int
 ice_promisc_enable(struct rte_eth_dev *dev)
 {
 	struct ice_pf *pf = ICE_DEV_PRIVATE_TO_PF(dev->data->dev_private);
@@ -2967,18 +3717,26 @@ ice_promisc_enable(struct rte_eth_dev *dev)
 	struct ice_vsi *vsi = pf->main_vsi;
 	enum ice_status status;
 	uint8_t pmask;
+	int ret = 0;
 
 	pmask = ICE_PROMISC_UCAST_RX | ICE_PROMISC_UCAST_TX |
 		ICE_PROMISC_MCAST_RX | ICE_PROMISC_MCAST_TX;
 
 	status = ice_set_vsi_promisc(hw, vsi->idx, pmask, 0);
-	if (status == ICE_ERR_ALREADY_EXISTS)
+	switch (status) {
+	case ICE_ERR_ALREADY_EXISTS:
 		PMD_DRV_LOG(DEBUG, "Promisc mode has already been enabled");
-	else if (status != ICE_SUCCESS)
+	case ICE_SUCCESS:
+		break;
+	default:
 		PMD_DRV_LOG(ERR, "Failed to enable promisc, err=%d", status);
+		ret = -EAGAIN;
+	}
+
+	return ret;
 }
 
-static void
+static int
 ice_promisc_disable(struct rte_eth_dev *dev)
 {
 	struct ice_pf *pf = ICE_DEV_PRIVATE_TO_PF(dev->data->dev_private);
@@ -2986,16 +3744,21 @@ ice_promisc_disable(struct rte_eth_dev *dev)
 	struct ice_vsi *vsi = pf->main_vsi;
 	enum ice_status status;
 	uint8_t pmask;
+	int ret = 0;
 
 	pmask = ICE_PROMISC_UCAST_RX | ICE_PROMISC_UCAST_TX |
 		ICE_PROMISC_MCAST_RX | ICE_PROMISC_MCAST_TX;
 
 	status = ice_clear_vsi_promisc(hw, vsi->idx, pmask, 0);
-	if (status != ICE_SUCCESS)
+	if (status != ICE_SUCCESS) {
 		PMD_DRV_LOG(ERR, "Failed to clear promisc, err=%d", status);
+		ret = -EAGAIN;
+	}
+
+	return ret;
 }
 
-static void
+static int
 ice_allmulti_enable(struct rte_eth_dev *dev)
 {
 	struct ice_pf *pf = ICE_DEV_PRIVATE_TO_PF(dev->data->dev_private);
@@ -3003,15 +3766,26 @@ ice_allmulti_enable(struct rte_eth_dev *dev)
 	struct ice_vsi *vsi = pf->main_vsi;
 	enum ice_status status;
 	uint8_t pmask;
+	int ret = 0;
 
 	pmask = ICE_PROMISC_MCAST_RX | ICE_PROMISC_MCAST_TX;
 
 	status = ice_set_vsi_promisc(hw, vsi->idx, pmask, 0);
-	if (status != ICE_SUCCESS)
+
+	switch (status) {
+	case ICE_ERR_ALREADY_EXISTS:
+		PMD_DRV_LOG(DEBUG, "Allmulti has already been enabled");
+	case ICE_SUCCESS:
+		break;
+	default:
 		PMD_DRV_LOG(ERR, "Failed to enable allmulti, err=%d", status);
+		ret = -EAGAIN;
+	}
+
+	return ret;
 }
 
-static void
+static int
 ice_allmulti_disable(struct rte_eth_dev *dev)
 {
 	struct ice_pf *pf = ICE_DEV_PRIVATE_TO_PF(dev->data->dev_private);
@@ -3019,15 +3793,20 @@ ice_allmulti_disable(struct rte_eth_dev *dev)
 	struct ice_vsi *vsi = pf->main_vsi;
 	enum ice_status status;
 	uint8_t pmask;
+	int ret = 0;
 
 	if (dev->data->promiscuous == 1)
-		return; /* must remain in all_multicast mode */
+		return 0; /* must remain in all_multicast mode */
 
 	pmask = ICE_PROMISC_MCAST_RX | ICE_PROMISC_MCAST_TX;
 
 	status = ice_clear_vsi_promisc(hw, vsi->idx, pmask, 0);
-	if (status != ICE_SUCCESS)
+	if (status != ICE_SUCCESS) {
 		PMD_DRV_LOG(ERR, "Failed to clear allmulti, err=%d", status);
+		ret = -EAGAIN;
+	}
+
+	return ret;
 }
 
 static int ice_rx_queue_intr_enable(struct rte_eth_dev *dev,
@@ -3593,7 +4372,7 @@ ice_stats_get(struct rte_eth_dev *dev, struct rte_eth_stats *stats)
 }
 
 /* Reset the statistics */
-static void
+static int
 ice_stats_reset(struct rte_eth_dev *dev)
 {
 	struct ice_pf *pf = ICE_DEV_PRIVATE_TO_PF(dev->data->dev_private);
@@ -3606,6 +4385,8 @@ ice_stats_reset(struct rte_eth_dev *dev)
 
 	/* read the stats, reading current register values into offset */
 	ice_read_stats_registers(pf, hw);
+
+	return 0;
 }
 
 static uint32_t
@@ -3795,7 +4576,10 @@ RTE_PMD_REGISTER_PCI(net_ice, rte_ice_pmd);
 RTE_PMD_REGISTER_PCI_TABLE(net_ice, pci_id_ice_map);
 RTE_PMD_REGISTER_KMOD_DEP(net_ice, "* igb_uio | uio_pci_generic | vfio-pci");
 RTE_PMD_REGISTER_PARAM_STRING(net_ice,
-			      ICE_SAFE_MODE_SUPPORT_ARG "=<0|1>");
+			      ICE_PROTO_XTR_ARG "=[queue:]<vlan|ipv4|ipv6|ipv6_flow|tcp>"
+			      ICE_SAFE_MODE_SUPPORT_ARG "=<0|1>"
+			      ICE_PIPELINE_MODE_SUPPORT_ARG "=<0|1>"
+			      ICE_FLOW_MARK_SUPPORT_ARG "=<0|1>");
 
 RTE_INIT(ice_init_log)
 {
@@ -3805,4 +4589,22 @@ RTE_INIT(ice_init_log)
 	ice_logtype_driver = rte_log_register("pmd.net.ice.driver");
 	if (ice_logtype_driver >= 0)
 		rte_log_set_level(ice_logtype_driver, RTE_LOG_NOTICE);
+
+#ifdef RTE_LIBRTE_ICE_DEBUG_RX
+	ice_logtype_rx = rte_log_register("pmd.net.ice.rx");
+	if (ice_logtype_rx >= 0)
+		rte_log_set_level(ice_logtype_rx, RTE_LOG_DEBUG);
+#endif
+
+#ifdef RTE_LIBRTE_ICE_DEBUG_TX
+	ice_logtype_tx = rte_log_register("pmd.net.ice.tx");
+	if (ice_logtype_tx >= 0)
+		rte_log_set_level(ice_logtype_tx, RTE_LOG_DEBUG);
+#endif
+
+#ifdef RTE_LIBRTE_ICE_DEBUG_TX_FREE
+	ice_logtype_tx_free = rte_log_register("pmd.net.ice.tx_free");
+	if (ice_logtype_tx_free >= 0)
+		rte_log_set_level(ice_logtype_tx_free, RTE_LOG_DEBUG);
+#endif
 }

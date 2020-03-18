@@ -28,7 +28,10 @@
 #include <rte_atomic.h>
 #include <rte_cycles.h>
 #include <rte_ethdev.h>
+#ifdef RTE_LIBRTE_I40E_PMD
 #include <rte_pmd_i40e.h>
+#endif
+#include <rte_power.h>
 
 #include <libvirt/libvirt.h>
 #include "channel_monitor.h"
@@ -436,8 +439,12 @@ get_pfid(struct policy *pol)
 	for (i = 0; i < pol->pkt.nb_mac_to_monitor; i++) {
 
 		RTE_ETH_FOREACH_DEV(x) {
+#ifdef RTE_LIBRTE_I40E_PMD
 			ret = rte_pmd_i40e_query_vfid_by_mac(x,
 				(struct rte_ether_addr *)&(pol->pkt.vfid[i]));
+#else
+			ret = -ENOTSUP;
+#endif
 			if (ret != -EINVAL) {
 				pol->port[i] = x;
 				break;
@@ -531,15 +538,21 @@ get_pkt_diff(struct policy *pol)
 		vsi_pkt_count_prev_total = 0;
 	double rdtsc_curr, rdtsc_diff, diff;
 	int x;
+#ifdef RTE_LIBRTE_I40E_PMD
 	struct rte_eth_stats vf_stats;
+#endif
 
 	for (x = 0; x < pol->pkt.nb_mac_to_monitor; x++) {
 
+#ifdef RTE_LIBRTE_I40E_PMD
 		/*Read vsi stats*/
 		if (rte_pmd_i40e_get_vf_stats(x, pol->pfid[x], &vf_stats) == 0)
 			vsi_pkt_count = vf_stats.ipackets;
 		else
 			vsi_pkt_count = -1;
+#else
+		vsi_pkt_count = -1;
+#endif
 
 		vsi_pkt_total += vsi_pkt_count;
 
@@ -672,6 +685,137 @@ apply_policy(struct policy *pol)
 }
 
 static int
+write_binary_packet(void *buffer,
+		size_t buffer_len,
+		struct channel_info *chan_info)
+{
+	int ret;
+
+	if (buffer_len == 0 || buffer == NULL)
+		return -1;
+
+	if (chan_info->fd < 0) {
+		RTE_LOG(ERR, CHANNEL_MONITOR, "Channel is not connected\n");
+		return -1;
+	}
+
+	while (buffer_len > 0) {
+		ret = write(chan_info->fd, buffer, buffer_len);
+		if (ret == -1) {
+			if (errno == EINTR)
+				continue;
+			RTE_LOG(ERR, CHANNEL_MONITOR, "Write function failed due to %s.\n",
+					strerror(errno));
+			return -1;
+		}
+		buffer = (char *)buffer + ret;
+		buffer_len -= ret;
+	}
+	return 0;
+}
+
+static int
+send_freq(struct channel_packet *pkt,
+		struct channel_info *chan_info,
+		bool freq_list)
+{
+	unsigned int vcore_id = pkt->resource_id;
+	struct channel_packet_freq_list channel_pkt_freq_list;
+	struct vm_info info;
+
+	if (get_info_vm(pkt->vm_name, &info) != 0)
+		return -1;
+
+	if (!freq_list && vcore_id >= MAX_VCPU_PER_VM)
+		return -1;
+
+	if (!info.allow_query)
+		return -1;
+
+	channel_pkt_freq_list.command = CPU_POWER_FREQ_LIST;
+	channel_pkt_freq_list.num_vcpu = info.num_vcpus;
+
+	if (freq_list) {
+		unsigned int i;
+		for (i = 0; i < info.num_vcpus; i++)
+			channel_pkt_freq_list.freq_list[i] =
+			  power_manager_get_current_frequency(info.pcpu_map[i]);
+	} else {
+		channel_pkt_freq_list.freq_list[vcore_id] =
+		  power_manager_get_current_frequency(info.pcpu_map[vcore_id]);
+	}
+
+	return write_binary_packet(&channel_pkt_freq_list,
+			sizeof(channel_pkt_freq_list),
+			chan_info);
+}
+
+static int
+send_capabilities(struct channel_packet *pkt,
+		struct channel_info *chan_info,
+		bool list_requested)
+{
+	unsigned int vcore_id = pkt->resource_id;
+	struct channel_packet_caps_list channel_pkt_caps_list;
+	struct vm_info info;
+	struct rte_power_core_capabilities caps;
+	int ret;
+
+	if (get_info_vm(pkt->vm_name, &info) != 0)
+		return -1;
+
+	if (!list_requested && vcore_id >= MAX_VCPU_PER_VM)
+		return -1;
+
+	if (!info.allow_query)
+		return -1;
+
+	channel_pkt_caps_list.command = CPU_POWER_CAPS_LIST;
+	channel_pkt_caps_list.num_vcpu = info.num_vcpus;
+
+	if (list_requested) {
+		unsigned int i;
+		for (i = 0; i < info.num_vcpus; i++) {
+			ret = rte_power_get_capabilities(info.pcpu_map[i],
+					&caps);
+			if (ret == 0) {
+				channel_pkt_caps_list.turbo[i] =
+						caps.turbo;
+				channel_pkt_caps_list.priority[i] =
+						caps.priority;
+			} else
+				return -1;
+
+		}
+	} else {
+		ret = rte_power_get_capabilities(info.pcpu_map[vcore_id],
+				&caps);
+		if (ret == 0) {
+			channel_pkt_caps_list.turbo[vcore_id] =
+					caps.turbo;
+			channel_pkt_caps_list.priority[vcore_id] =
+					caps.priority;
+		} else
+			return -1;
+	}
+
+	return write_binary_packet(&channel_pkt_caps_list,
+			sizeof(channel_pkt_caps_list),
+			chan_info);
+}
+
+static int
+send_ack_for_received_cmd(struct channel_packet *pkt,
+		struct channel_info *chan_info,
+		uint32_t command)
+{
+	pkt->command = command;
+	return write_binary_packet(pkt,
+			sizeof(struct channel_packet),
+			chan_info);
+}
+
+static int
 process_request(struct channel_packet *pkt, struct channel_info *chan_info)
 {
 	int ret;
@@ -694,33 +838,54 @@ process_request(struct channel_packet *pkt, struct channel_info *chan_info)
 		RTE_LOG(DEBUG, CHANNEL_MONITOR, "Processing requested cmd for cpu:%d\n",
 			core_num);
 
+		int scale_res;
+		bool valid_unit = true;
+
 		switch (pkt->unit) {
 		case(CPU_POWER_SCALE_MIN):
-			power_manager_scale_core_min(core_num);
+			scale_res = power_manager_scale_core_min(core_num);
 			break;
 		case(CPU_POWER_SCALE_MAX):
-			power_manager_scale_core_max(core_num);
+			scale_res = power_manager_scale_core_max(core_num);
 			break;
 		case(CPU_POWER_SCALE_DOWN):
-			power_manager_scale_core_down(core_num);
+			scale_res = power_manager_scale_core_down(core_num);
 			break;
 		case(CPU_POWER_SCALE_UP):
-			power_manager_scale_core_up(core_num);
+			scale_res = power_manager_scale_core_up(core_num);
 			break;
 		case(CPU_POWER_ENABLE_TURBO):
-			power_manager_enable_turbo_core(core_num);
+			scale_res = power_manager_enable_turbo_core(core_num);
 			break;
 		case(CPU_POWER_DISABLE_TURBO):
-			power_manager_disable_turbo_core(core_num);
+			scale_res = power_manager_disable_turbo_core(core_num);
 			break;
 		default:
+			valid_unit = false;
 			break;
 		}
+
+		if (valid_unit) {
+			ret = send_ack_for_received_cmd(pkt,
+					chan_info,
+					scale_res >= 0 ?
+						CPU_POWER_CMD_ACK :
+						CPU_POWER_CMD_NACK);
+			if (ret < 0)
+				RTE_LOG(ERR, CHANNEL_MONITOR, "Error during sending ack command.\n");
+		} else
+			RTE_LOG(ERR, CHANNEL_MONITOR, "Unexpected unit type.\n");
+
 	}
 
 	if (pkt->command == PKT_POLICY) {
 		RTE_LOG(INFO, CHANNEL_MONITOR, "Processing policy request %s\n",
 				pkt->vm_name);
+		int ret = send_ack_for_received_cmd(pkt,
+				chan_info,
+				CPU_POWER_CMD_ACK);
+		if (ret < 0)
+			RTE_LOG(ERR, CHANNEL_MONITOR, "Error during sending ack command.\n");
 		update_policy(pkt);
 		policy_is_set = 1;
 	}
@@ -733,6 +898,30 @@ process_request(struct channel_packet *pkt, struct channel_info *chan_info)
 		else
 			RTE_LOG(INFO, CHANNEL_MONITOR,
 				 "Policy %s does not exist\n", pkt->vm_name);
+	}
+
+	if (pkt->command == CPU_POWER_QUERY_FREQ_LIST ||
+		pkt->command == CPU_POWER_QUERY_FREQ) {
+
+		RTE_LOG(INFO, CHANNEL_MONITOR,
+			"Frequency for %s requested.\n", pkt->vm_name);
+		int ret = send_freq(pkt,
+				chan_info,
+				pkt->command == CPU_POWER_QUERY_FREQ_LIST);
+		if (ret < 0)
+			RTE_LOG(ERR, CHANNEL_MONITOR, "Error during frequency sending.\n");
+	}
+
+	if (pkt->command == CPU_POWER_QUERY_CAPS_LIST ||
+		pkt->command == CPU_POWER_QUERY_CAPS) {
+
+		RTE_LOG(INFO, CHANNEL_MONITOR,
+			"Capabilities for %s requested.\n", pkt->vm_name);
+		int ret = send_capabilities(pkt,
+				chan_info,
+				pkt->command == CPU_POWER_QUERY_CAPS_LIST);
+		if (ret < 0)
+			RTE_LOG(ERR, CHANNEL_MONITOR, "Error during sending capabilities.\n");
 	}
 
 	/*

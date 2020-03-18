@@ -72,7 +72,6 @@ common_headers = files(
 	'include/rte_lcore.h',
 	'include/rte_log.h',
 	'include/rte_malloc.h',
-	'include/rte_malloc_heap.h',
 	'include/rte_memory.h',
 	'include/rte_memzone.h',
 	'include/rte_option.h',
@@ -87,7 +86,8 @@ common_headers = files(
 	'include/rte_tailq.h',
 	'include/rte_time.h',
 	'include/rte_uuid.h',
-	'include/rte_version.h')
+	'include/rte_version.h',
+	'include/rte_vfio.h')
 
 # special case install the generic headers, since they go in a subdir
 generic_headers = files(

@@ -176,9 +176,13 @@ signal_handler(int signum)
 		return;
 	}
 
-	/* When we receive a RTMIN or SIGINT signal, stop kni processing */
-	if (signum == SIGRTMIN || signum == SIGINT){
-		printf("\nSIGRTMIN/SIGINT received. KNI processing stopping.\n");
+	/*
+	 * When we receive a RTMIN or SIGINT or SIGTERM signal,
+	 * stop kni processing
+	 */
+	if (signum == SIGRTMIN || signum == SIGINT || signum == SIGTERM) {
+		printf("\nSIGRTMIN/SIGINT/SIGTERM received. "
+			"KNI processing stopping.\n");
 		rte_atomic32_inc(&kni_stop);
 		return;
         }
@@ -595,7 +599,13 @@ init_port(uint16_t port)
 	/* Initialise device and RX/TX queues */
 	RTE_LOG(INFO, APP, "Initialising port %u ...\n", (unsigned)port);
 	fflush(stdout);
-	rte_eth_dev_info_get(port, &dev_info);
+
+	ret = rte_eth_dev_info_get(port, &dev_info);
+	if (ret != 0)
+		rte_exit(EXIT_FAILURE,
+			"Error during getting device (port %u) info: %s\n",
+			port, strerror(-ret));
+
 	if (dev_info.tx_offload_capa & DEV_TX_OFFLOAD_MBUF_FAST_FREE)
 		local_port_conf.txmode.offloads |=
 			DEV_TX_OFFLOAD_MBUF_FAST_FREE;
@@ -630,8 +640,13 @@ init_port(uint16_t port)
 		rte_exit(EXIT_FAILURE, "Could not start port%u (%d)\n",
 						(unsigned)port, ret);
 
-	if (promiscuous_on)
-		rte_eth_promiscuous_enable(port);
+	if (promiscuous_on) {
+		ret = rte_eth_promiscuous_enable(port);
+		if (ret != 0)
+			rte_exit(EXIT_FAILURE,
+				"Could not enable promiscuous mode for port%u: %s\n",
+				port, rte_strerror(-ret));
+	}
 }
 
 /* Check the link status of all ports in up to 9s, and print them finally */
@@ -643,6 +658,7 @@ check_all_ports_link_status(uint32_t port_mask)
 	uint16_t portid;
 	uint8_t count, all_ports_up, print_flag = 0;
 	struct rte_eth_link link;
+	int ret;
 
 	printf("\nChecking link status\n");
 	fflush(stdout);
@@ -652,7 +668,14 @@ check_all_ports_link_status(uint32_t port_mask)
 			if ((port_mask & (1 << portid)) == 0)
 				continue;
 			memset(&link, 0, sizeof(link));
-			rte_eth_link_get_nowait(portid, &link);
+			ret = rte_eth_link_get_nowait(portid, &link);
+			if (ret < 0) {
+				all_ports_up = 0;
+				if (print_flag == 1)
+					printf("Port %u link get failed: %s\n",
+						portid, rte_strerror(-ret));
+				continue;
+			}
 			/* print link status if flag set */
 			if (print_flag == 1) {
 				if (link.link_status)
@@ -720,6 +743,7 @@ monitor_all_ports_link_status(void *arg)
 	struct kni_port_params **p = kni_port_params_array;
 	int prev;
 	(void) arg;
+	int ret;
 
 	while (monitor_links) {
 		rte_delay_ms(500);
@@ -727,7 +751,13 @@ monitor_all_ports_link_status(void *arg)
 			if ((ports_mask & (1 << portid)) == 0)
 				continue;
 			memset(&link, 0, sizeof(link));
-			rte_eth_link_get_nowait(portid, &link);
+			ret = rte_eth_link_get_nowait(portid, &link);
+			if (ret < 0) {
+				RTE_LOG(ERR, APP,
+					"Get link failed (port %u): %s\n",
+					portid, rte_strerror(-ret));
+				continue;
+			}
 			for (i = 0; i < p[portid]->nb_kni; i++) {
 				prev = rte_kni_update_link(p[portid]->kni[i],
 						link.link_status);
@@ -780,7 +810,15 @@ kni_change_mtu(uint16_t port_id, unsigned int new_mtu)
 				"for port%u (%d)\n", (unsigned int)port_id,
 				ret);
 
-	rte_eth_dev_info_get(port_id, &dev_info);
+	ret = rte_eth_dev_info_get(port_id, &dev_info);
+	if (ret != 0) {
+		RTE_LOG(ERR, APP,
+			"Error during getting device (port %u) info: %s\n",
+			port_id, strerror(-ret));
+
+		return ret;
+	}
+
 	rxq_conf = dev_info.default_rxconf;
 	rxq_conf.offloads = conf.rxmode.offloads;
 	ret = rte_eth_rx_queue_setup(port_id, 0, nb_rxd,
@@ -869,6 +907,7 @@ kni_alloc(uint16_t port_id)
 	struct rte_kni *kni;
 	struct rte_kni_conf conf;
 	struct kni_port_params **params = kni_port_params_array;
+	int ret;
 
 	if (port_id >= RTE_MAX_ETHPORTS || !params[port_id])
 		return -1;
@@ -898,14 +937,24 @@ kni_alloc(uint16_t port_id)
 			struct rte_kni_ops ops;
 			struct rte_eth_dev_info dev_info;
 
-			memset(&dev_info, 0, sizeof(dev_info));
-			rte_eth_dev_info_get(port_id, &dev_info);
+			ret = rte_eth_dev_info_get(port_id, &dev_info);
+			if (ret != 0)
+				rte_exit(EXIT_FAILURE,
+					"Error during getting device (port %u) info: %s\n",
+					port_id, strerror(-ret));
 
 			/* Get the interface default mac address */
-			rte_eth_macaddr_get(port_id,
+			ret = rte_eth_macaddr_get(port_id,
 				(struct rte_ether_addr *)&conf.mac_addr);
+			if (ret != 0)
+				rte_exit(EXIT_FAILURE,
+					"Failed to get MAC address (port %u): %s\n",
+					port_id, rte_strerror(-ret));
 
 			rte_eth_dev_get_mtu(port_id, &conf.mtu);
+
+			conf.min_mtu = dev_info.min_mtu;
+			conf.max_mtu = dev_info.max_mtu;
 
 			memset(&ops, 0, sizeof(ops));
 			ops.port_id = port_id;
@@ -961,6 +1010,7 @@ main(int argc, char** argv)
 	signal(SIGUSR2, signal_handler);
 	signal(SIGRTMIN, signal_handler);
 	signal(SIGINT, signal_handler);
+	signal(SIGTERM, signal_handler);
 
 	/* Initialise EAL */
 	ret = rte_eal_init(argc, argv);

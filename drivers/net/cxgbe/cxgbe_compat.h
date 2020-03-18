@@ -10,6 +10,7 @@
 #include <stdint.h>
 #include <stdio.h>
 #include <stdarg.h>
+#include <stdbool.h>
 
 #include <rte_common.h>
 #include <rte_memcpy.h>
@@ -20,53 +21,27 @@
 #include <rte_io.h>
 #include <rte_net.h>
 
-#define dev_printf(level, fmt, ...) \
-	RTE_LOG(level, PMD, "rte_cxgbe_pmd: " fmt, ##__VA_ARGS__)
+extern int cxgbe_logtype;
+extern int cxgbe_mbox_logtype;
 
-#define dev_err(x, fmt, ...) dev_printf(ERR, fmt, ##__VA_ARGS__)
-#define dev_info(x, fmt, ...) dev_printf(INFO, fmt, ##__VA_ARGS__)
-#define dev_warn(x, fmt, ...) dev_printf(WARNING, fmt, ##__VA_ARGS__)
+#define dev_printf(level, logtype, fmt, ...) \
+	rte_log(RTE_LOG_ ## level, logtype, \
+		"rte_cxgbe_pmd: " fmt, ##__VA_ARGS__)
 
-#ifdef RTE_LIBRTE_CXGBE_DEBUG
-#define dev_debug(x, fmt, ...) dev_printf(INFO, fmt, ##__VA_ARGS__)
-#else
-#define dev_debug(x, fmt, ...) do { } while (0)
-#endif
+#define dev_err(x, fmt, ...) \
+	dev_printf(ERR, cxgbe_logtype, fmt, ##__VA_ARGS__)
+#define dev_info(x, fmt, ...) \
+	dev_printf(INFO, cxgbe_logtype, fmt, ##__VA_ARGS__)
+#define dev_warn(x, fmt, ...) \
+	dev_printf(WARNING, cxgbe_logtype, fmt, ##__VA_ARGS__)
+#define dev_debug(x, fmt, ...) \
+	dev_printf(DEBUG, cxgbe_logtype, fmt, ##__VA_ARGS__)
 
-#ifdef RTE_LIBRTE_CXGBE_DEBUG_REG
-#define CXGBE_DEBUG_REG(x, fmt, ...) \
-	dev_printf(INFO, "REG:" fmt, ##__VA_ARGS__)
-#else
-#define CXGBE_DEBUG_REG(x, fmt, ...) do { } while (0)
-#endif
-
-#ifdef RTE_LIBRTE_CXGBE_DEBUG_MBOX
 #define CXGBE_DEBUG_MBOX(x, fmt, ...) \
-	dev_printf(INFO, "MBOX:" fmt, ##__VA_ARGS__)
-#else
-#define CXGBE_DEBUG_MBOX(x, fmt, ...) do { } while (0)
-#endif
+	dev_printf(DEBUG, cxgbe_mbox_logtype, "MBOX:" fmt, ##__VA_ARGS__)
 
-#ifdef RTE_LIBRTE_CXGBE_DEBUG_TX
-#define CXGBE_DEBUG_TX(x, fmt, ...) \
-	dev_printf(INFO, "TX:" fmt, ##__VA_ARGS__)
-#else
-#define CXGBE_DEBUG_TX(x, fmt, ...) do { } while (0)
-#endif
-
-#ifdef RTE_LIBRTE_CXGBE_DEBUG_RX
-#define CXGBE_DEBUG_RX(x, fmt, ...) \
-	dev_printf(INFO, "RX:" fmt, ##__VA_ARGS__)
-#else
-#define CXGBE_DEBUG_RX(x, fmt, ...) do { } while (0)
-#endif
-
-#ifdef RTE_LIBRTE_CXGBE_DEBUG
 #define CXGBE_FUNC_TRACE() \
-	RTE_LOG(DEBUG, PMD, "CXGBE trace: %s\n", __func__)
-#else
-#define CXGBE_FUNC_TRACE() do { } while (0)
-#endif
+	dev_printf(DEBUG, cxgbe_logtype, "CXGBE trace: %s\n", __func__)
 
 #define pr_err(fmt, ...) dev_err(0, fmt, ##__VA_ARGS__)
 #define pr_warn(fmt, ...) dev_warn(0, fmt, ##__VA_ARGS__)
@@ -112,7 +87,6 @@ typedef uint16_t  u16;
 typedef uint32_t  u32;
 typedef int32_t   s32;
 typedef uint64_t  u64;
-typedef int       bool;
 typedef uint64_t  dma_addr_t;
 
 #ifndef __le16
@@ -148,8 +122,6 @@ typedef uint64_t  dma_addr_t;
 
 #define FALSE	0
 #define TRUE	1
-#define false	0
-#define true	1
 
 #ifndef min
 #define min(a, b) RTE_MIN(a, b)

@@ -1,4 +1,5 @@
 #! /bin/bash
+# SPDX-License-Identifier: BSD-3-Clause
 
 CRYPTO_DEV=${CRYPTO_DEV:-'--vdev="crypto_aesni_mb0"'}
 
@@ -32,14 +33,14 @@ cipher_key \
 de:ad:be:ef:de:ad:be:ef:de:ad:be:ef:de:ad:be:ef:de:ad:be:ef:de:ad:be:ef \
 auth_algo sha1-hmac \
 auth_key de:ad:be:ef:de:ad:be:ef:de:ad:be:ef:de:ad:be:ef:de:ad:be:ef \
-mode ipv4-tunnel src ${REMOTE_IPV4} dst ${LOCAL_IPV4}
+mode ipv4-tunnel src ${REMOTE_IPV4} dst ${LOCAL_IPV4} ${SGW_CFG_XPRM}
 
 sa in 9 cipher_algo 3des-cbc \
 cipher_key \
 de:ad:be:ef:de:ad:be:ef:de:ad:be:ef:de:ad:be:ef:de:ad:be:ef:de:ad:be:ef \
 auth_algo sha1-hmac \
 auth_key de:ad:be:ef:de:ad:be:ef:de:ad:be:ef:de:ad:be:ef:de:ad:be:ef \
-mode ipv6-tunnel src ${REMOTE_IPV6} dst ${LOCAL_IPV6}
+mode ipv6-tunnel src ${REMOTE_IPV6} dst ${LOCAL_IPV6} ${SGW_CFG_XPRM}
 
 #SA out rules
 sa out 7 cipher_algo 3des-cbc \
@@ -47,14 +48,14 @@ cipher_key \
 de:ad:be:ef:de:ad:be:ef:de:ad:be:ef:de:ad:be:ef:de:ad:be:ef:de:ad:be:ef \
 auth_algo sha1-hmac \
 auth_key de:ad:be:ef:de:ad:be:ef:de:ad:be:ef:de:ad:be:ef:de:ad:be:ef \
-mode ipv4-tunnel src ${LOCAL_IPV4} dst ${REMOTE_IPV4}
+mode ipv4-tunnel src ${LOCAL_IPV4} dst ${REMOTE_IPV4} ${SGW_CFG_XPRM}
 
 sa out 9 cipher_algo 3des-cbc \
 cipher_key \
 de:ad:be:ef:de:ad:be:ef:de:ad:be:ef:de:ad:be:ef:de:ad:be:ef:de:ad:be:ef \
 auth_algo sha1-hmac \
 auth_key de:ad:be:ef:de:ad:be:ef:de:ad:be:ef:de:ad:be:ef:de:ad:be:ef \
-mode ipv6-tunnel src ${LOCAL_IPV6} dst ${REMOTE_IPV6}
+mode ipv6-tunnel src ${LOCAL_IPV6} dst ${REMOTE_IPV6} ${SGW_CFG_XPRM}
 
 #Routing rules
 rt ipv4 dst ${REMOTE_IPV4}/32 port 0

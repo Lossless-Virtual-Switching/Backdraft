@@ -265,6 +265,9 @@ eth_pcap_rx(void *queue, struct rte_mbuf **bufs, uint16_t nb_pkts)
 		}
 
 		mbuf->pkt_len = (uint16_t)header.caplen;
+		mbuf->timestamp = (uint64_t)header.ts.tv_sec * 1000000
+							+ header.ts.tv_usec;
+		mbuf->ol_flags |= PKT_RX_TIMESTAMP;
 		mbuf->port = pcap_q->port_id;
 		bufs[num_rx] = mbuf;
 		num_rx++;
@@ -310,7 +313,7 @@ eth_pcap_tx_dumper(void *queue, struct rte_mbuf **bufs, uint16_t nb_pkts)
 	struct pcap_pkthdr header;
 	pcap_dumper_t *dumper;
 	unsigned char temp_data[RTE_ETH_PCAP_SNAPLEN];
-	size_t len;
+	size_t len, caplen;
 
 	pp = rte_eth_devices[dumper_q->port_id].process_private;
 	dumper = pp->tx_dumper[dumper_q->queue_id];
@@ -322,28 +325,24 @@ eth_pcap_tx_dumper(void *queue, struct rte_mbuf **bufs, uint16_t nb_pkts)
 	 * dumper */
 	for (i = 0; i < nb_pkts; i++) {
 		mbuf = bufs[i];
-		len = rte_pktmbuf_pkt_len(mbuf);
+		len = caplen = rte_pktmbuf_pkt_len(mbuf);
 		if (unlikely(!rte_pktmbuf_is_contiguous(mbuf) &&
 				len > sizeof(temp_data))) {
-			PMD_LOG(ERR,
-				"Dropping multi segment PCAP packet. Size (%zd) > max size (%zd).",
-				len, sizeof(temp_data));
-			rte_pktmbuf_free(mbuf);
-			continue;
+			caplen = sizeof(temp_data);
 		}
 
 		calculate_timestamp(&header.ts);
 		header.len = len;
-		header.caplen = header.len;
+		header.caplen = caplen;
 		/* rte_pktmbuf_read() returns a pointer to the data directly
 		 * in the mbuf (when the mbuf is contiguous) or, otherwise,
 		 * a pointer to temp_data after copying into it.
 		 */
 		pcap_dump((u_char *)dumper, &header,
-			rte_pktmbuf_read(mbuf, 0, len, temp_data));
+			rte_pktmbuf_read(mbuf, 0, caplen, temp_data));
 
 		num_tx++;
-		tx_bytes += len;
+		tx_bytes += caplen;
 		rte_pktmbuf_free(mbuf);
 	}
 
@@ -649,7 +648,7 @@ eth_dev_configure(struct rte_eth_dev *dev __rte_unused)
 	return 0;
 }
 
-static void
+static int
 eth_dev_info(struct rte_eth_dev *dev,
 		struct rte_eth_dev_info *dev_info)
 {
@@ -661,6 +660,8 @@ eth_dev_info(struct rte_eth_dev *dev,
 	dev_info->max_rx_queues = dev->data->nb_rx_queues;
 	dev_info->max_tx_queues = dev->data->nb_tx_queues;
 	dev_info->min_rx_bufsize = 0;
+
+	return 0;
 }
 
 static int
@@ -698,7 +699,7 @@ eth_stats_get(struct rte_eth_dev *dev, struct rte_eth_stats *stats)
 	return 0;
 }
 
-static void
+static int
 eth_stats_reset(struct rte_eth_dev *dev)
 {
 	unsigned int i;
@@ -714,6 +715,8 @@ eth_stats_reset(struct rte_eth_dev *dev)
 		internal->tx_queue[i].tx_stat.bytes = 0;
 		internal->tx_queue[i].tx_stat.err_pkts = 0;
 	}
+
+	return 0;
 }
 
 static void
@@ -1122,6 +1125,8 @@ pmd_init_internals(struct rte_vdev_device *vdev,
 	data->nb_tx_queues = (uint16_t)nb_tx_queues;
 	data->dev_link = pmd_link;
 	data->mac_addrs = &(*internals)->eth_addr;
+	data->promiscuous = 1;
+	data->all_multicast = 1;
 
 	/*
 	 * NOTE: we'll replace the data element, of originally allocated
@@ -1230,12 +1235,6 @@ eth_from_pcaps_common(struct rte_vdev_device *vdev,
 	const unsigned int nb_rx_queues = rx_queues->num_of_queue;
 	const unsigned int nb_tx_queues = tx_queues->num_of_queue;
 	unsigned int i;
-
-	/* do some parameter checking */
-	if (rx_queues == NULL && nb_rx_queues > 0)
-		return -1;
-	if (tx_queues == NULL && nb_tx_queues > 0)
-		return -1;
 
 	if (pmd_init_internals(vdev, nb_rx_queues, nb_tx_queues, internals,
 			eth_dev) < 0)

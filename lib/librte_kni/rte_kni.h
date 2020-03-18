@@ -48,6 +48,9 @@ struct rte_kni_ops {
 
 	/* Pointer to function of configuring promiscuous mode */
 	int (*config_promiscusity)(uint16_t port_id, uint8_t to_on);
+
+	/* Pointer to function of configuring allmulticast mode */
+	int (*config_allmulticast)(uint16_t port_id, uint8_t to_on);
 };
 
 /**
@@ -70,6 +73,8 @@ struct rte_kni_conf {
 	uint8_t force_bind : 1; /* Flag to bind kernel thread */
 	uint8_t mac_addr[RTE_ETHER_ADDR_LEN]; /* MAC address assigned to KNI */
 	uint16_t mtu;
+	uint16_t min_mtu;
+	uint16_t max_mtu;
 };
 
 /**

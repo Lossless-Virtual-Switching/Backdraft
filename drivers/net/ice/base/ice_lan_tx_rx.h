@@ -173,7 +173,6 @@ struct ice_fltr_desc {
 			(0xFFFFFFFFULL << ICE_FXD_FLTR_QW1_FDID_S)
 #define ICE_FXD_FLTR_QW1_FDID_ZERO	0x0ULL
 
-
 enum ice_rx_desc_status_bits {
 	/* Note: These are predefined bit offsets */
 	ICE_RX_DESC_STATUS_DD_S			= 0,
@@ -204,14 +203,12 @@ enum ice_rx_desc_status_bits {
 #define ICE_RXD_QW1_STATUS_TSYNVALID_S ICE_RX_DESC_STATUS_TSYNVALID_S
 #define ICE_RXD_QW1_STATUS_TSYNVALID_M BIT_ULL(ICE_RXD_QW1_STATUS_TSYNVALID_S)
 
-
 enum ice_rx_desc_fltstat_values {
 	ICE_RX_DESC_FLTSTAT_NO_DATA	= 0,
 	ICE_RX_DESC_FLTSTAT_RSV_FD_ID	= 1, /* 16byte desc? FD_ID : RSV */
 	ICE_RX_DESC_FLTSTAT_RSV		= 2,
 	ICE_RX_DESC_FLTSTAT_RSS_HASH	= 3,
 };
-
 
 #define ICE_RXD_QW1_ERROR_S	19
 #define ICE_RXD_QW1_ERROR_M		(0xFFUL << ICE_RXD_QW1_ERROR_S)
@@ -310,7 +307,6 @@ enum ice_rx_ptype_payload_layer {
 	ICE_RX_PTYPE_PAYLOAD_LAYER_PAY4	= 3,
 };
 
-
 #define ICE_RXD_QW1_LEN_PBUF_S	38
 #define ICE_RXD_QW1_LEN_PBUF_M	(0x3FFFULL << ICE_RXD_QW1_LEN_PBUF_S)
 
@@ -319,7 +315,6 @@ enum ice_rx_ptype_payload_layer {
 
 #define ICE_RXD_QW1_LEN_SPH_S	63
 #define ICE_RXD_QW1_LEN_SPH_M	BIT_ULL(ICE_RXD_QW1_LEN_SPH_S)
-
 
 enum ice_rx_desc_ext_status_bits {
 	/* Note: These are predefined bit offsets */
@@ -330,7 +325,6 @@ enum ice_rx_desc_ext_status_bits {
 	ICE_RX_DESC_EXT_STATUS_FDLONGB_S	= 9,
 	ICE_RX_DESC_EXT_STATUS_PELONGB_S	= 11,
 };
-
 
 enum ice_rx_desc_pe_status_bits {
 	/* Note: These are predefined bit offsets */
@@ -352,7 +346,6 @@ enum ice_rx_desc_pe_status_bits {
 #define ICE_RX_PROG_STATUS_DESC_QW1_PROGID_M	\
 			(0x7UL << ICE_RX_PROG_STATUS_DESC_QW1_PROGID_S)
 
-
 #define ICE_RX_PROG_STATUS_DESC_QW1_ERROR_S	19
 #define ICE_RX_PROG_STATUS_DESC_QW1_ERROR_M	\
 			(0x3FUL << ICE_RX_PROG_STATUS_DESC_QW1_ERROR_S)
@@ -373,10 +366,34 @@ enum ice_rx_prog_status_desc_error_bits {
 	ICE_RX_PROG_STATUS_DESC_NO_FD_ENTRY_S	= 1,
 };
 
-/* Rx Flex Descriptor
- * This descriptor is used instead of the legacy version descriptor when
+/* Rx Flex Descriptors
+ * These descriptors are used instead of the legacy version descriptors when
  * ice_rlan_ctx.adv_desc is set
  */
+union ice_16b_rx_flex_desc {
+	struct {
+		__le64 pkt_addr; /* Packet buffer address */
+		__le64 hdr_addr; /* Header buffer address */
+				 /* bit 0 of hdr_addr is DD bit */
+	} read;
+	struct {
+		/* Qword 0 */
+		u8 rxdid; /* descriptor builder profile ID */
+		u8 mir_id_umb_cast; /* mirror=[5:0], umb=[7:6] */
+		__le16 ptype_flex_flags0; /* ptype=[9:0], ff0=[15:10] */
+		__le16 pkt_len; /* [15:14] are reserved */
+		__le16 hdr_len_sph_flex_flags1; /* header=[10:0] */
+						/* sph=[11:11] */
+						/* ff1/ext=[15:12] */
+
+		/* Qword 1 */
+		__le16 status_error0;
+		__le16 l2tag1;
+		__le16 flex_meta0;
+		__le16 flex_meta1;
+	} wb; /* writeback */
+};
+
 union ice_32b_rx_flex_desc {
 	struct {
 		__le64 pkt_addr; /* Packet buffer address */
@@ -595,6 +612,46 @@ struct ice_32b_rx_flex_desc_nic_2 {
 	} flex_ts;
 };
 
+/* Rx Flex Descriptor for Comms Package Profile
+ * RxDID Profile ID 16-21
+ * Flex-field 0: RSS hash lower 16-bits
+ * Flex-field 1: RSS hash upper 16-bits
+ * Flex-field 2: Flow ID lower 16-bits
+ * Flex-field 3: Flow ID upper 16-bits
+ * Flex-field 4: AUX0
+ * Flex-field 5: AUX1
+ */
+struct ice_32b_rx_flex_desc_comms {
+	/* Qword 0 */
+	u8 rxdid;
+	u8 mir_id_umb_cast;
+	__le16 ptype_flexi_flags0;
+	__le16 pkt_len;
+	__le16 hdr_len_sph_flex_flags1;
+
+	/* Qword 1 */
+	__le16 status_error0;
+	__le16 l2tag1;
+	__le32 rss_hash;
+
+	/* Qword 2 */
+	__le16 status_error1;
+	u8 flexi_flags2;
+	u8 ts_low;
+	__le16 l2tag2_1st;
+	__le16 l2tag2_2nd;
+
+	/* Qword 3 */
+	__le32 flow_id;
+	union {
+		struct {
+			__le16 aux0;
+			__le16 aux1;
+		} flex;
+		__le32 ts_high;
+	} flex_ts;
+};
+
 /* Receive Flex Descriptor profile IDs: There are a total
  * of 64 profiles where profile IDs 0/1 are for legacy; and
  * profiles 2-63 are flex profiles that can be programmed
@@ -606,6 +663,12 @@ enum ice_rxdid {
 	ICE_RXDID_FLEX_NIC		= 2,
 	ICE_RXDID_FLEX_NIC_2		= 6,
 	ICE_RXDID_HW			= 7,
+	ICE_RXDID_COMMS_GENERIC		= 16,
+	ICE_RXDID_COMMS_AUX_VLAN	= 17,
+	ICE_RXDID_COMMS_AUX_IPV4	= 18,
+	ICE_RXDID_COMMS_AUX_IPV6	= 19,
+	ICE_RXDID_COMMS_AUX_IPV6_FLOW	= 20,
+	ICE_RXDID_COMMS_AUX_TCP		= 21,
 	ICE_RXDID_LAST			= 63,
 };
 
@@ -667,7 +730,7 @@ enum ice_flg64_bits {
 	ICE_FLG_PKT_DSI		= 0,
 	/* If there is a 1 in this bit position then that means Rx packet */
 	ICE_FLG_PKT_DIR		= 4,
-	ICE_FLG_EVLAN_x8100	= 15,
+	ICE_FLG_EVLAN_x8100	= 14,
 	ICE_FLG_EVLAN_x9100,
 	ICE_FLG_VLAN_x8100,
 	ICE_FLG_TNL_MAC		= 22,
@@ -769,7 +832,6 @@ enum ice_rx_flex_desc_exstat_bits {
 	ICE_RX_FLEX_DESC_EXSTAT_RECIPE_S = 2,
 	ICE_RX_FLEX_DESC_EXSTAT_OVERSIZE_S = 3,
 };
-
 
 #define ICE_RXQ_CTX_SIZE_DWORDS		8
 #define ICE_RXQ_CTX_SZ			(ICE_RXQ_CTX_SIZE_DWORDS * sizeof(u32))
@@ -985,7 +1047,6 @@ enum ice_tx_ctx_desc_eipt_offload {
 
 #define ICE_TXD_CTX_QW0_L4T_CS_S	23
 #define ICE_TXD_CTX_QW0_L4T_CS_M	BIT_ULL(ICE_TXD_CTX_QW0_L4T_CS_S)
-
 
 #define ICE_LAN_TXQ_MAX_QGRPS	127
 #define ICE_LAN_TXQ_MAX_QDIS	1023

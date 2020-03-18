@@ -32,6 +32,7 @@
 #include <rte_bus.h>
 #include <rte_mbuf_pool_ops.h>
 
+#include <dpaa_of.h>
 #include <rte_dpaa_bus.h>
 #include <rte_dpaa_logs.h>
 #include <dpaax_iova_table.h>
@@ -39,7 +40,6 @@
 #include <fsl_usd.h>
 #include <fsl_qman.h>
 #include <fsl_bman.h>
-#include <of.h>
 #include <netcfg.h>
 
 int dpaa_logtype_bus;
@@ -218,7 +218,7 @@ dpaa_create_device_list(void)
 		 * allocated for dev->name/
 		 */
 		memset(dev->name, 0, RTE_ETH_NAME_MAX_LEN);
-		sprintf(dev->name, "dpaa-sec%d", i);
+		sprintf(dev->name, "dpaa_sec-%d", i+1);
 		DPAA_BUS_LOG(INFO, "%s cryptodev added", dev->name);
 		dev->device.name = dev->name;
 		dev->device.devargs = dpaa_devargs_lookup(dev);
@@ -250,11 +250,9 @@ dpaa_clean_device_list(void)
 
 int rte_dpaa_portal_init(void *arg)
 {
-	pthread_t id;
 	unsigned int cpu, lcore = rte_lcore_id();
 	int ret;
 	struct dpaa_portal *dpaa_io_portal;
-	rte_cpuset_t cpuset;
 
 	BUS_INIT_FUNC_TRACE();
 
@@ -265,17 +263,6 @@ int rte_dpaa_portal_init(void *arg)
 			return -1;
 
 	cpu = rte_lcore_to_cpu_id(lcore);
-
-	/* Set CPU affinity for this thread.*/
-	id = pthread_self();
-	cpuset = rte_lcore_cpuset(lcore);
-	ret = pthread_setaffinity_np(id, sizeof(cpu_set_t),
-				     &cpuset);
-	if (ret) {
-		DPAA_BUS_LOG(ERR, "pthread_setaffinity_np failed on core :%u"
-			     " (lcore=%u) with ret: %d", cpu, lcore, ret);
-		return ret;
-	}
 
 	/* Initialise bman thread portals */
 	ret = bman_thread_init();
@@ -334,7 +321,6 @@ rte_dpaa_portal_fq_init(void *arg, struct qman_fq *fq)
 {
 	/* Affine above created portal with channel*/
 	u32 sdqcr;
-	struct qman_portal *qp;
 	int ret;
 
 	if (unlikely(!RTE_PER_LCORE(dpaa_io))) {
@@ -346,21 +332,21 @@ rte_dpaa_portal_fq_init(void *arg, struct qman_fq *fq)
 	}
 
 	/* Initialise qman specific portals */
-	qp = fsl_qman_portal_create();
-	if (!qp) {
-		DPAA_BUS_LOG(ERR, "Unable to alloc fq portal");
+	ret = fsl_qman_fq_portal_init(fq->qp);
+	if (ret) {
+		DPAA_BUS_LOG(ERR, "Unable to init fq portal");
 		return -1;
 	}
-	fq->qp = qp;
+
 	sdqcr = QM_SDQCR_CHANNELS_POOL_CONV(fq->ch_id);
-	qman_static_dequeue_add(sdqcr, qp);
+	qman_static_dequeue_add(sdqcr, fq->qp);
 
 	return 0;
 }
 
 int rte_dpaa_portal_fq_close(struct qman_fq *fq)
 {
-	return fsl_qman_portal_destroy(fq->qp);
+	return fsl_qman_fq_portal_destroy(fq->qp);
 }
 
 void
@@ -397,7 +383,7 @@ rte_dpaa_bus_parse(const char *name, void *out_name)
 	 * without separator. Both need to be handled.
 	 * It is also possible that "name=fm1-mac3" is passed along.
 	 */
-	DPAA_BUS_DEBUG("Parse device name (%s)\n", name);
+	DPAA_BUS_DEBUG("Parse device name (%s)", name);
 
 	/* Check for dpaa_bus:fm1-mac3 style */
 	dup_name = strdup(name);
@@ -428,7 +414,7 @@ rte_dpaa_bus_parse(const char *name, void *out_name)
 	for (i = 0; i < RTE_LIBRTE_DPAA_MAX_CRYPTODEV; i++) {
 		char sec_name[16];
 
-		snprintf(sec_name, 16, "dpaa-sec%d", i);
+		snprintf(sec_name, 16, "dpaa_sec-%d", i+1);
 		if (strcmp(sec_name, sep) == 0) {
 			if (out_name)
 				strcpy(out_name, sep);
@@ -575,8 +561,24 @@ rte_dpaa_bus_probe(void)
 		return 0;
 
 	/* Device list creation is only done once */
-	if (!process_once)
+	if (!process_once) {
 		rte_dpaa_bus_dev_build();
+		if (rte_eal_process_type() == RTE_PROC_PRIMARY) {
+			/* One time load of Qman/Bman drivers */
+			ret = qman_global_init();
+			if (ret) {
+				DPAA_PMD_ERR("QMAN initialization failed: %d",
+					     ret);
+				return ret;
+			}
+			ret = bman_global_init();
+			if (ret) {
+				DPAA_PMD_ERR("BMAN initialization failed: %d",
+					     ret);
+				return ret;
+			}
+		}
+	}
 	process_once = 1;
 
 	/* If no device present on DPAA bus nothing needs to be done */
@@ -614,7 +616,8 @@ rte_dpaa_bus_probe(void)
 			    RTE_DEV_WHITELISTED)) {
 				ret = drv->probe(drv, dev);
 				if (ret) {
-					DPAA_BUS_ERR("Unable to probe.\n");
+					DPAA_BUS_ERR("unable to probe:%s",
+						     dev->name);
 				} else {
 					dev->driver = drv;
 					dev->device.driver = &drv->driver;

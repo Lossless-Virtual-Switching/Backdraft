@@ -32,7 +32,7 @@
 #define MBUF_BURST_SZ 32
 
 /* Default carrier state for created KNI network interfaces */
-extern uint32_t dflt_carrier;
+extern uint32_t kni_dflt_carrier;
 
 /**
  * A structure describing the private information for a kni device.
@@ -40,6 +40,8 @@ extern uint32_t dflt_carrier;
 struct kni_dev {
 	/* kni list */
 	struct list_head list;
+
+	uint8_t iova_mode;
 
 	uint32_t core_id;            /* Core ID to bind */
 	char name[RTE_KNI_NAMESIZE]; /* Network device name */
@@ -84,7 +86,37 @@ struct kni_dev {
 	void *va[MBUF_BURST_SZ];
 	void *alloc_pa[MBUF_BURST_SZ];
 	void *alloc_va[MBUF_BURST_SZ];
+
+	struct task_struct *usr_tsk;
 };
+
+#ifdef HAVE_IOVA_TO_KVA_MAPPING_SUPPORT
+static inline phys_addr_t iova_to_phys(struct task_struct *tsk,
+				       unsigned long iova)
+{
+	phys_addr_t offset, phys_addr;
+	struct page *page = NULL;
+	long ret;
+
+	offset = iova & (PAGE_SIZE - 1);
+
+	/* Read one page struct info */
+	ret = get_user_pages_remote(tsk, tsk->mm, iova, 1,
+				    FOLL_TOUCH, &page, NULL, NULL);
+	if (ret < 0)
+		return 0;
+
+	phys_addr = page_to_phys(page) | offset;
+	put_page(page);
+
+	return phys_addr;
+}
+
+static inline void *iova_to_kva(struct task_struct *tsk, unsigned long iova)
+{
+	return phys_to_virt(iova_to_phys(tsk, iova));
+}
+#endif
 
 void kni_net_release_fifo_phy(struct kni_dev *kni);
 void kni_net_rx(struct kni_dev *kni);

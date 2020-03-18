@@ -244,8 +244,14 @@ eth_af_packet_tx(void *queue, struct rte_mbuf **bufs, uint16_t nb_pkts)
 	}
 
 	/* kick-off transmits */
-	if (sendto(pkt_q->sockfd, NULL, 0, MSG_DONTWAIT, NULL, 0) == -1) {
-		/* error sending -- no packets transmitted */
+	if (sendto(pkt_q->sockfd, NULL, 0, MSG_DONTWAIT, NULL, 0) == -1 &&
+			errno != ENOBUFS && errno != EAGAIN) {
+		/*
+		 * In case of a ENOBUFS/EAGAIN error all of the enqueued
+		 * packets will be considered successful even though only some
+		 * are sent.
+		 */
+
 		num_tx = 0;
 		num_tx_bytes = 0;
 	}
@@ -299,7 +305,7 @@ eth_dev_configure(struct rte_eth_dev *dev __rte_unused)
 	return 0;
 }
 
-static void
+static int
 eth_dev_info(struct rte_eth_dev *dev, struct rte_eth_dev_info *dev_info)
 {
 	struct pmd_internals *internals = dev->data->dev_private;
@@ -310,6 +316,10 @@ eth_dev_info(struct rte_eth_dev *dev, struct rte_eth_dev_info *dev_info)
 	dev_info->max_rx_queues = (uint16_t)internals->nb_queues;
 	dev_info->max_tx_queues = (uint16_t)internals->nb_queues;
 	dev_info->min_rx_bufsize = 0;
+	dev_info->tx_offload_capa = DEV_TX_OFFLOAD_MULTI_SEGS |
+		DEV_TX_OFFLOAD_VLAN_INSERT;
+
+	return 0;
 }
 
 static int
@@ -347,7 +357,7 @@ eth_stats_get(struct rte_eth_dev *dev, struct rte_eth_stats *igb_stats)
 	return 0;
 }
 
-static void
+static int
 eth_stats_reset(struct rte_eth_dev *dev)
 {
 	unsigned i;
@@ -363,6 +373,8 @@ eth_stats_reset(struct rte_eth_dev *dev)
 		internal->tx_queue[i].err_pkts = 0;
 		internal->tx_queue[i].tx_bytes = 0;
 	}
+
+	return 0;
 }
 
 static void
@@ -456,41 +468,47 @@ eth_dev_mtu_set(struct rte_eth_dev *dev, uint16_t mtu)
 	return 0;
 }
 
-static void
+static int
 eth_dev_change_flags(char *if_name, uint32_t flags, uint32_t mask)
 {
 	struct ifreq ifr;
+	int ret = 0;
 	int s;
 
 	s = socket(PF_INET, SOCK_DGRAM, 0);
 	if (s < 0)
-		return;
+		return -errno;
 
 	strlcpy(ifr.ifr_name, if_name, IFNAMSIZ);
-	if (ioctl(s, SIOCGIFFLAGS, &ifr) < 0)
+	if (ioctl(s, SIOCGIFFLAGS, &ifr) < 0) {
+		ret = -errno;
 		goto out;
+	}
 	ifr.ifr_flags &= mask;
 	ifr.ifr_flags |= flags;
-	if (ioctl(s, SIOCSIFFLAGS, &ifr) < 0)
+	if (ioctl(s, SIOCSIFFLAGS, &ifr) < 0) {
+		ret = -errno;
 		goto out;
+	}
 out:
 	close(s);
+	return ret;
 }
 
-static void
+static int
 eth_dev_promiscuous_enable(struct rte_eth_dev *dev)
 {
 	struct pmd_internals *internals = dev->data->dev_private;
 
-	eth_dev_change_flags(internals->if_name, IFF_PROMISC, ~0);
+	return eth_dev_change_flags(internals->if_name, IFF_PROMISC, ~0);
 }
 
-static void
+static int
 eth_dev_promiscuous_disable(struct rte_eth_dev *dev)
 {
 	struct pmd_internals *internals = dev->data->dev_private;
 
-	eth_dev_change_flags(internals->if_name, 0, ~IFF_PROMISC);
+	return eth_dev_change_flags(internals->if_name, 0, ~IFF_PROMISC);
 }
 
 static const struct eth_dev_ops ops = {
@@ -972,6 +990,7 @@ rte_pmd_af_packet_remove(struct rte_vdev_device *dev)
 {
 	struct rte_eth_dev *eth_dev = NULL;
 	struct pmd_internals *internals;
+	struct tpacket_req *req;
 	unsigned q;
 
 	PMD_LOG(INFO, "Closing AF_PACKET ethdev on numa socket %u",
@@ -992,7 +1011,10 @@ rte_pmd_af_packet_remove(struct rte_vdev_device *dev)
 		return rte_eth_dev_release_port(eth_dev);
 
 	internals = eth_dev->data->dev_private;
+	req = &internals->req;
 	for (q = 0; q < internals->nb_queues; q++) {
+		munmap(internals->rx_queue[q].map,
+			2 * req->tp_block_size * req->tp_block_nr);
 		rte_free(internals->rx_queue[q].rd);
 		rte_free(internals->tx_queue[q].rd);
 	}

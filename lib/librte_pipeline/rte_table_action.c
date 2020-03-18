@@ -14,6 +14,7 @@
 #include <rte_esp.h>
 #include <rte_tcp.h>
 #include <rte_udp.h>
+#include <rte_vxlan.h>
 #include <rte_cryptodev.h>
 #include <rte_cryptodev_pmd.h>
 
@@ -438,7 +439,7 @@ encap_cfg_check(struct rte_table_action_encap_config *encap)
 
 struct encap_ether_data {
 	struct rte_ether_hdr ether;
-} __attribute__((__packed__));
+};
 
 #define VLAN(pcp, dei, vid)                                \
 	((uint16_t)((((uint64_t)(pcp)) & 0x7LLU) << 13) |  \
@@ -448,13 +449,13 @@ struct encap_ether_data {
 struct encap_vlan_data {
 	struct rte_ether_hdr ether;
 	struct rte_vlan_hdr vlan;
-} __attribute__((__packed__));
+};
 
 struct encap_qinq_data {
 	struct rte_ether_hdr ether;
 	struct rte_vlan_hdr svlan;
 	struct rte_vlan_hdr cvlan;
-} __attribute__((__packed__));
+};
 
 #define ETHER_TYPE_MPLS_UNICAST                            0x8847
 
@@ -470,7 +471,7 @@ struct encap_mpls_data {
 	struct rte_ether_hdr ether;
 	uint32_t mpls[RTE_TABLE_ACTION_MPLS_LABELS_MAX];
 	uint32_t mpls_count;
-} __attribute__((__packed__));
+} __attribute__((__packed__)) __attribute__((aligned(2)));
 
 #define PPP_PROTOCOL_IP                                    0x0021
 
@@ -479,12 +480,12 @@ struct pppoe_ppp_hdr {
 	uint16_t session_id;
 	uint16_t length;
 	uint16_t protocol;
-} __attribute__((__packed__));
+};
 
 struct encap_pppoe_data {
 	struct rte_ether_hdr ether;
 	struct pppoe_ppp_hdr pppoe_ppp;
-} __attribute__((__packed__));
+};
 
 #define IP_PROTO_UDP                                       17
 
@@ -493,7 +494,7 @@ struct encap_vxlan_ipv4_data {
 	struct rte_ipv4_hdr ipv4;
 	struct rte_udp_hdr udp;
 	struct rte_vxlan_hdr vxlan;
-} __attribute__((__packed__));
+} __attribute__((__packed__)) __attribute__((aligned(2)));
 
 struct encap_vxlan_ipv4_vlan_data {
 	struct rte_ether_hdr ether;
@@ -501,14 +502,14 @@ struct encap_vxlan_ipv4_vlan_data {
 	struct rte_ipv4_hdr ipv4;
 	struct rte_udp_hdr udp;
 	struct rte_vxlan_hdr vxlan;
-} __attribute__((__packed__));
+} __attribute__((__packed__)) __attribute__((aligned(2)));
 
 struct encap_vxlan_ipv6_data {
 	struct rte_ether_hdr ether;
 	struct rte_ipv6_hdr ipv6;
 	struct rte_udp_hdr udp;
 	struct rte_vxlan_hdr vxlan;
-} __attribute__((__packed__));
+} __attribute__((__packed__)) __attribute__((aligned(2)));
 
 struct encap_vxlan_ipv6_vlan_data {
 	struct rte_ether_hdr ether;
@@ -516,14 +517,14 @@ struct encap_vxlan_ipv6_vlan_data {
 	struct rte_ipv6_hdr ipv6;
 	struct rte_udp_hdr udp;
 	struct rte_vxlan_hdr vxlan;
-} __attribute__((__packed__));
+} __attribute__((__packed__)) __attribute__((aligned(2)));
 
 struct encap_qinq_pppoe_data {
 	struct rte_ether_hdr ether;
 	struct rte_vlan_hdr svlan;
 	struct rte_vlan_hdr cvlan;
 	struct pppoe_ppp_hdr pppoe_ppp;
-} __attribute__((__packed__));
+} __attribute__((__packed__)) __attribute__((aligned(2)));
 
 static size_t
 encap_data_size(struct rte_table_action_encap_config *encap)
@@ -696,7 +697,7 @@ encap_qinq_pppoe_apply(void *data,
 	d->cvlan.vlan_tci = rte_htons(VLAN(p->qinq.cvlan.pcp,
 		p->qinq.cvlan.dei,
 		p->qinq.cvlan.vid));
-	d->cvlan.eth_proto = rte_htons(ETHER_TYPE_PPPOE_SESSION);
+	d->cvlan.eth_proto = rte_htons(RTE_ETHER_TYPE_PPPOE_SESSION);
 
 	/* PPPoE and PPP*/
 	d->pppoe_ppp.ver_type_code = rte_htons(0x1100);
@@ -747,7 +748,7 @@ encap_pppoe_apply(void *data,
 	/* Ethernet */
 	rte_ether_addr_copy(&p->pppoe.ether.da, &d->ether.d_addr);
 	rte_ether_addr_copy(&p->pppoe.ether.sa, &d->ether.s_addr);
-	d->ether.ether_type = rte_htons(ETHER_TYPE_PPPOE_SESSION);
+	d->ether.ether_type = rte_htons(RTE_ETHER_TYPE_PPPOE_SESSION);
 
 	/* PPPoE and PPP*/
 	d->pppoe_ppp.ver_type_code = rte_htons(0x1100);

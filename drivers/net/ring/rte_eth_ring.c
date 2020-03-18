@@ -151,7 +151,7 @@ eth_tx_queue_setup(struct rte_eth_dev *dev, uint16_t tx_queue_id,
 }
 
 
-static void
+static int
 eth_dev_info(struct rte_eth_dev *dev,
 	     struct rte_eth_dev_info *dev_info)
 {
@@ -162,6 +162,8 @@ eth_dev_info(struct rte_eth_dev *dev,
 	dev_info->max_rx_queues = (uint16_t)internals->max_rx_queues;
 	dev_info->max_tx_queues = (uint16_t)internals->max_tx_queues;
 	dev_info->min_rx_bufsize = 0;
+
+	return 0;
 }
 
 static int
@@ -189,7 +191,7 @@ eth_stats_get(struct rte_eth_dev *dev, struct rte_eth_stats *stats)
 	return 0;
 }
 
-static void
+static int
 eth_stats_reset(struct rte_eth_dev *dev)
 {
 	unsigned int i;
@@ -199,6 +201,8 @@ eth_stats_reset(struct rte_eth_dev *dev)
 		internal->rx_ring_queues[i].rx_pkts.cnt = 0;
 	for (i = 0; i < dev->data->nb_tx_queues; i++)
 		internal->tx_ring_queues[i].tx_pkts.cnt = 0;
+
+	return 0;
 }
 
 static void
@@ -314,6 +318,8 @@ do_eth_dev_ring_create(const char *name,
 	data->nb_tx_queues = (uint16_t)nb_tx_queues;
 	data->dev_link = pmd_link;
 	data->mac_addrs = &internals->address;
+	data->promiscuous = 1;
+	data->all_multicast = 1;
 
 	eth_dev->dev_ops = &ops;
 	data->kdrv = RTE_KDRV_NONE;

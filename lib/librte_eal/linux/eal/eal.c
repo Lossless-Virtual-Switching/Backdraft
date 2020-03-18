@@ -25,6 +25,7 @@
 #if defined(RTE_ARCH_X86)
 #include <sys/io.h>
 #endif
+#include <linux/version.h>
 
 #include <rte_compat.h>
 #include <rte_common.h>
@@ -32,7 +33,6 @@
 #include <rte_memory.h>
 #include <rte_launch.h>
 #include <rte_eal.h>
-#include <rte_eal_memconfig.h>
 #include <rte_errno.h>
 #include <rte_per_lcore.h>
 #include <rte_lcore.h>
@@ -307,7 +307,10 @@ eal_parse_sysfs_value(const char *filename, unsigned long *val)
 static int
 rte_eal_config_create(void)
 {
-	void *rte_mem_cfg_addr;
+	size_t page_sz = sysconf(_SC_PAGE_SIZE);
+	size_t cfg_len = sizeof(*rte_config.mem_config);
+	size_t cfg_len_aligned = RTE_ALIGN(cfg_len, page_sz);
+	void *rte_mem_cfg_addr, *mapped_mem_cfg_addr;
 	int retval;
 
 	const char *pathname = eal_runtime_config_path();
@@ -319,7 +322,7 @@ rte_eal_config_create(void)
 	if (internal_config.base_virtaddr != 0)
 		rte_mem_cfg_addr = (void *)
 			RTE_ALIGN_FLOOR(internal_config.base_virtaddr -
-			sizeof(struct rte_mem_config), sysconf(_SC_PAGE_SIZE));
+			sizeof(struct rte_mem_config), page_sz);
 	else
 		rte_mem_cfg_addr = NULL;
 
@@ -332,7 +335,7 @@ rte_eal_config_create(void)
 		}
 	}
 
-	retval = ftruncate(mem_cfg_fd, sizeof(*rte_config.mem_config));
+	retval = ftruncate(mem_cfg_fd, cfg_len);
 	if (retval < 0){
 		close(mem_cfg_fd);
 		mem_cfg_fd = -1;
@@ -350,13 +353,25 @@ rte_eal_config_create(void)
 		return -1;
 	}
 
-	rte_mem_cfg_addr = mmap(rte_mem_cfg_addr, sizeof(*rte_config.mem_config),
-				PROT_READ | PROT_WRITE, MAP_SHARED, mem_cfg_fd, 0);
-
-	if (rte_mem_cfg_addr == MAP_FAILED){
+	/* reserve space for config */
+	rte_mem_cfg_addr = eal_get_virtual_area(rte_mem_cfg_addr,
+			&cfg_len_aligned, page_sz, 0, 0);
+	if (rte_mem_cfg_addr == NULL) {
+		RTE_LOG(ERR, EAL, "Cannot mmap memory for rte_config\n");
 		close(mem_cfg_fd);
 		mem_cfg_fd = -1;
-		RTE_LOG(ERR, EAL, "Cannot mmap memory for rte_config\n");
+		return -1;
+	}
+
+	/* remap the actual file into the space we've just reserved */
+	mapped_mem_cfg_addr = mmap(rte_mem_cfg_addr,
+			cfg_len_aligned, PROT_READ | PROT_WRITE,
+			MAP_SHARED | MAP_FIXED, mem_cfg_fd, 0);
+	if (mapped_mem_cfg_addr == MAP_FAILED) {
+		munmap(rte_mem_cfg_addr, cfg_len);
+		close(mem_cfg_fd);
+		mem_cfg_fd = -1;
+		RTE_LOG(ERR, EAL, "Cannot remap memory for rte_config\n");
 		return -1;
 	}
 
@@ -436,8 +451,9 @@ rte_eal_config_reattach(void)
 		if (mem_config != MAP_FAILED) {
 			/* errno is stale, don't use */
 			RTE_LOG(ERR, EAL, "Cannot mmap memory for rte_config at [%p], got [%p]"
-				" - please use '--base-virtaddr' option\n",
-				rte_mem_cfg_addr, mem_config);
+				" - please use '--" OPT_BASE_VIRTADDR
+				"' option\n", rte_mem_cfg_addr, mem_config);
+			munmap(mem_config, sizeof(struct rte_mem_config));
 			return -1;
 		}
 		RTE_LOG(ERR, EAL, "Cannot mmap memory for rte_config! error %i (%s)\n",
@@ -539,7 +555,6 @@ eal_usage(const char *prgname)
 	       "  --"OPT_SOCKET_LIMIT"      Limit memory allocation on sockets (comma separated values)\n"
 	       "  --"OPT_HUGE_DIR"          Directory where hugetlbfs is mounted\n"
 	       "  --"OPT_FILE_PREFIX"       Prefix for hugepage filenames\n"
-	       "  --"OPT_BASE_VIRTADDR"     Base virtual address\n"
 	       "  --"OPT_CREATE_UIO_DEV"    Create /dev/uioX (usually done by hotplug)\n"
 	       "  --"OPT_VFIO_INTR"         Interrupt mode for VFIO (legacy|msi|msix)\n"
 	       "  --"OPT_LEGACY_MEM"        Legacy memory mode (no dynamic allocation, contiguous segments)\n"
@@ -607,35 +622,6 @@ eal_parse_socket_arg(char *strval, volatile uint64_t *socket_arg)
 		total_mem += val;
 		socket_arg[i] = val;
 	}
-
-	return 0;
-}
-
-static int
-eal_parse_base_virtaddr(const char *arg)
-{
-	char *end;
-	uint64_t addr;
-
-	errno = 0;
-	addr = strtoull(arg, &end, 16);
-
-	/* check for errors */
-	if ((errno != 0) || (arg[0] == '\0') || end == NULL || (*end != '\0'))
-		return -1;
-
-	/* make sure we don't exceed 32-bit boundary on 32-bit target */
-#ifndef RTE_ARCH_64
-	if (addr >= UINTPTR_MAX)
-		return -1;
-#endif
-
-	/* align the addr on 16M boundary, 16MB is the minimum huge page
-	 * size on IBM Power architecture. If the addr is aligned to 16MB,
-	 * it can align to 2MB for x86. So this alignment can also be used
-	 * on x86 */
-	internal_config.base_virtaddr =
-		RTE_PTR_ALIGN_CEIL((uintptr_t)addr, (size_t)RTE_PGSIZE_16M);
 
 	return 0;
 }
@@ -796,16 +782,6 @@ eal_parse_args(int argc, char **argv)
 				goto out;
 			}
 			internal_config.force_socket_limits = 1;
-			break;
-
-		case OPT_BASE_VIRTADDR_NUM:
-			if (eal_parse_base_virtaddr(optarg) < 0) {
-				RTE_LOG(ERR, EAL, "invalid parameter for --"
-						OPT_BASE_VIRTADDR "\n");
-				eal_usage(prgname);
-				ret = -1;
-				goto out;
-			}
 			break;
 
 		case OPT_VFIO_INTR_NUM:
@@ -1098,6 +1074,11 @@ rte_eal_init(int argc, char **argv)
 				 */
 				iova_mode = RTE_IOVA_VA;
 				RTE_LOG(DEBUG, EAL, "Physical addresses are unavailable, selecting IOVA as VA mode.\n");
+#if defined(RTE_LIBRTE_KNI) && LINUX_VERSION_CODE >= KERNEL_VERSION(4, 10, 0)
+			} else if (rte_eal_check_module("rte_kni") == 1) {
+				iova_mode = RTE_IOVA_PA;
+				RTE_LOG(DEBUG, EAL, "KNI is loaded, selecting IOVA as PA mode for better KNI perfomance.\n");
+#endif
 			} else if (is_iommu_enabled()) {
 				/* we have an IOMMU, pick IOVA as VA mode */
 				iova_mode = RTE_IOVA_VA;
@@ -1110,8 +1091,10 @@ rte_eal_init(int argc, char **argv)
 				RTE_LOG(DEBUG, EAL, "IOMMU is not available, selecting IOVA as PA mode.\n");
 			}
 		}
-#ifdef RTE_LIBRTE_KNI
-		/* Workaround for KNI which requires physical address to work */
+#if defined(RTE_LIBRTE_KNI) && LINUX_VERSION_CODE < KERNEL_VERSION(4, 10, 0)
+		/* Workaround for KNI which requires physical address to work
+		 * in kernels < 4.10
+		 */
 		if (iova_mode == RTE_IOVA_VA &&
 				rte_eal_check_module("rte_kni") == 1) {
 			if (phys_addrs) {
@@ -1346,13 +1329,6 @@ rte_eal_cleanup(void)
 	rte_mp_channel_cleanup();
 	eal_cleanup_config(&internal_config);
 	return 0;
-}
-
-/* get core role */
-enum rte_lcore_role_t
-rte_eal_lcore_role(unsigned lcore_id)
-{
-	return rte_config.lcore_role[lcore_id];
 }
 
 enum rte_proc_type_t

@@ -7,6 +7,13 @@
 
 #include "otx2_tim_evdev.h"
 
+static inline uint8_t
+tim_bkt_fetch_lock(uint64_t w1)
+{
+	return (w1 >> TIM_BUCKET_W1_S_LOCK) &
+		TIM_BUCKET_W1_M_LOCK;
+}
+
 static inline int16_t
 tim_bkt_fetch_rem(uint64_t w1)
 {
@@ -108,28 +115,41 @@ tim_bkt_clr_nent(struct otx2_tim_bkt *bktp)
 	return __atomic_and_fetch(&bktp->w1, v, __ATOMIC_ACQ_REL);
 }
 
-static __rte_always_inline struct otx2_tim_bkt *
+static __rte_always_inline void
 tim_get_target_bucket(struct otx2_tim_ring * const tim_ring,
-		      const uint32_t rel_bkt, const uint8_t flag)
+		      const uint32_t rel_bkt, struct otx2_tim_bkt **bkt,
+		      struct otx2_tim_bkt **mirr_bkt, const uint8_t flag)
 {
 	const uint64_t bkt_cyc = rte_rdtsc() - tim_ring->ring_start_cyc;
 	uint32_t bucket = rte_reciprocal_divide_u64(bkt_cyc,
 			&tim_ring->fast_div) + rel_bkt;
+	uint32_t mirr_bucket = 0;
 
-	if (flag & OTX2_TIM_BKT_MOD)
+	if (flag & OTX2_TIM_BKT_MOD) {
 		bucket = bucket % tim_ring->nb_bkts;
-	if (flag & OTX2_TIM_BKT_AND)
+		mirr_bucket = (bucket + (tim_ring->nb_bkts >> 1)) %
+						tim_ring->nb_bkts;
+	}
+	if (flag & OTX2_TIM_BKT_AND) {
 		bucket = bucket & (tim_ring->nb_bkts - 1);
+		mirr_bucket = (bucket + (tim_ring->nb_bkts >> 1)) &
+						(tim_ring->nb_bkts - 1);
+	}
 
-	return &tim_ring->bkt[bucket];
+	*bkt = &tim_ring->bkt[bucket];
+	*mirr_bkt = &tim_ring->bkt[mirr_bucket];
 }
 
 static struct otx2_tim_ent *
 tim_clr_bkt(struct otx2_tim_ring * const tim_ring,
 	    struct otx2_tim_bkt * const bkt)
 {
+#define TIM_MAX_OUTSTANDING_OBJ		64
+	void *pend_chunks[TIM_MAX_OUTSTANDING_OBJ];
 	struct otx2_tim_ent *chunk;
 	struct otx2_tim_ent *pnext;
+	uint8_t objs = 0;
+
 
 	chunk = ((struct otx2_tim_ent *)(uintptr_t)bkt->first_chunk);
 	chunk = (struct otx2_tim_ent *)(uintptr_t)(chunk +
@@ -137,15 +157,25 @@ tim_clr_bkt(struct otx2_tim_ring * const tim_ring,
 	while (chunk) {
 		pnext = (struct otx2_tim_ent *)(uintptr_t)
 			((chunk + tim_ring->nb_chunk_slots)->w0);
-		rte_mempool_put(tim_ring->chunk_pool, chunk);
+		if (objs == TIM_MAX_OUTSTANDING_OBJ) {
+			rte_mempool_put_bulk(tim_ring->chunk_pool, pend_chunks,
+					     objs);
+			objs = 0;
+		}
+		pend_chunks[objs++] = chunk;
 		chunk = pnext;
 	}
+
+	if (objs)
+		rte_mempool_put_bulk(tim_ring->chunk_pool, pend_chunks,
+				objs);
 
 	return (struct otx2_tim_ent *)(uintptr_t)bkt->first_chunk;
 }
 
 static struct otx2_tim_ent *
 tim_refill_chunk(struct otx2_tim_bkt * const bkt,
+		 struct otx2_tim_bkt * const mirr_bkt,
 		 struct otx2_tim_ring * const tim_ring)
 {
 	struct otx2_tim_ent *chunk;
@@ -155,8 +185,8 @@ tim_refill_chunk(struct otx2_tim_bkt * const bkt,
 					     (void **)&chunk)))
 			return NULL;
 		if (bkt->nb_entry) {
-			*(uint64_t *)(((struct otx2_tim_ent *)(uintptr_t)
-						bkt->current_chunk) +
+			*(uint64_t *)(((struct otx2_tim_ent *)
+						mirr_bkt->current_chunk) +
 					tim_ring->nb_chunk_slots) =
 				(uintptr_t)chunk;
 		} else {
@@ -173,6 +203,7 @@ tim_refill_chunk(struct otx2_tim_bkt * const bkt,
 
 static struct otx2_tim_ent *
 tim_insert_chunk(struct otx2_tim_bkt * const bkt,
+		 struct otx2_tim_bkt * const mirr_bkt,
 		 struct otx2_tim_ring * const tim_ring)
 {
 	struct otx2_tim_ent *chunk;
@@ -183,12 +214,11 @@ tim_insert_chunk(struct otx2_tim_bkt * const bkt,
 	*(uint64_t *)(chunk + tim_ring->nb_chunk_slots) = 0;
 	if (bkt->nb_entry) {
 		*(uint64_t *)(((struct otx2_tim_ent *)(uintptr_t)
-					bkt->current_chunk) +
+					mirr_bkt->current_chunk) +
 				tim_ring->nb_chunk_slots) = (uintptr_t)chunk;
 	} else {
 		bkt->first_chunk = (uintptr_t)chunk;
 	}
-
 	return chunk;
 }
 
@@ -199,41 +229,69 @@ tim_add_entry_sp(struct otx2_tim_ring * const tim_ring,
 		 const struct otx2_tim_ent * const pent,
 		 const uint8_t flags)
 {
+	struct otx2_tim_bkt *mirr_bkt;
 	struct otx2_tim_ent *chunk;
 	struct otx2_tim_bkt *bkt;
 	uint64_t lock_sema;
 	int16_t rem;
 
-	bkt = tim_get_target_bucket(tim_ring, rel_bkt, flags);
-
 __retry:
+	tim_get_target_bucket(tim_ring, rel_bkt, &bkt, &mirr_bkt, flags);
+
 	/* Get Bucket sema*/
-	lock_sema = tim_bkt_fetch_sema(bkt);
+	lock_sema = tim_bkt_fetch_sema_lock(bkt);
 
 	/* Bucket related checks. */
-	if (unlikely(tim_bkt_get_hbt(lock_sema)))
-		goto __retry;
+	if (unlikely(tim_bkt_get_hbt(lock_sema))) {
+		if (tim_bkt_get_nent(lock_sema) != 0) {
+			uint64_t hbt_state;
+#ifdef RTE_ARCH_ARM64
+			asm volatile(
+					"	ldaxr %[hbt], [%[w1]]	\n"
+					"	tbz %[hbt], 33, dne%=	\n"
+					"	sevl			\n"
+					"rty%=: wfe			\n"
+					"	ldaxr %[hbt], [%[w1]]	\n"
+					"	tbnz %[hbt], 33, rty%=	\n"
+					"dne%=:				\n"
+					: [hbt] "=&r" (hbt_state)
+					: [w1] "r" ((&bkt->w1))
+					: "memory"
+				    );
+#else
+			do {
+				hbt_state = __atomic_load_n(&bkt->w1,
+						__ATOMIC_ACQUIRE);
+			} while (hbt_state & BIT_ULL(33));
+#endif
 
+			if (!(hbt_state & BIT_ULL(34))) {
+				tim_bkt_dec_lock(bkt);
+				goto __retry;
+			}
+		}
+	}
 	/* Insert the work. */
 	rem = tim_bkt_fetch_rem(lock_sema);
 
 	if (!rem) {
 		if (flags & OTX2_TIM_ENA_FB)
-			chunk = tim_refill_chunk(bkt, tim_ring);
+			chunk = tim_refill_chunk(bkt, mirr_bkt, tim_ring);
 		if (flags & OTX2_TIM_ENA_DFB)
-			chunk = tim_insert_chunk(bkt, tim_ring);
+			chunk = tim_insert_chunk(bkt, mirr_bkt, tim_ring);
 
 		if (unlikely(chunk == NULL)) {
-			tim_bkt_set_rem(bkt, 0);
+			bkt->chunk_remainder = 0;
+			tim_bkt_dec_lock(bkt);
 			tim->impl_opaque[0] = 0;
 			tim->impl_opaque[1] = 0;
 			tim->state = RTE_EVENT_TIMER_ERROR;
 			return -ENOMEM;
 		}
-		bkt->current_chunk = (uintptr_t)chunk;
-		tim_bkt_set_rem(bkt, tim_ring->nb_chunk_slots - 1);
+		mirr_bkt->current_chunk = (uintptr_t)chunk;
+		bkt->chunk_remainder = tim_ring->nb_chunk_slots - 1;
 	} else {
-		chunk = (struct otx2_tim_ent *)(uintptr_t)bkt->current_chunk;
+		chunk = (struct otx2_tim_ent *)mirr_bkt->current_chunk;
 		chunk += tim_ring->nb_chunk_slots - rem;
 	}
 
@@ -241,6 +299,7 @@ __retry:
 	*chunk = *pent;
 
 	tim_bkt_inc_nent(bkt);
+	tim_bkt_dec_lock(bkt);
 
 	tim->impl_opaque[0] = (uintptr_t)chunk;
 	tim->impl_opaque[1] = (uintptr_t)bkt;
@@ -256,35 +315,77 @@ tim_add_entry_mp(struct otx2_tim_ring * const tim_ring,
 		 const struct otx2_tim_ent * const pent,
 		 const uint8_t flags)
 {
+	struct otx2_tim_bkt *mirr_bkt;
 	struct otx2_tim_ent *chunk;
 	struct otx2_tim_bkt *bkt;
 	uint64_t lock_sema;
 	int16_t rem;
 
 __retry:
-	bkt = tim_get_target_bucket(tim_ring, rel_bkt, flags);
-
+	tim_get_target_bucket(tim_ring, rel_bkt, &bkt, &mirr_bkt, flags);
 	/* Get Bucket sema*/
 	lock_sema = tim_bkt_fetch_sema_lock(bkt);
 
 	/* Bucket related checks. */
 	if (unlikely(tim_bkt_get_hbt(lock_sema))) {
-		tim_bkt_dec_lock(bkt);
-		goto __retry;
+		if (tim_bkt_get_nent(lock_sema) != 0) {
+			uint64_t hbt_state;
+#ifdef RTE_ARCH_ARM64
+			asm volatile(
+					"	ldaxr %[hbt], [%[w1]]	\n"
+					"	tbz %[hbt], 33, dne%=	\n"
+					"	sevl			\n"
+					"rty%=: wfe			\n"
+					"	ldaxr %[hbt], [%[w1]]	\n"
+					"	tbnz %[hbt], 33, rty%=	\n"
+					"dne%=:				\n"
+					: [hbt] "=&r" (hbt_state)
+					: [w1] "r" ((&bkt->w1))
+					: "memory"
+				    );
+#else
+			do {
+				hbt_state = __atomic_load_n(&bkt->w1,
+						__ATOMIC_ACQUIRE);
+			} while (hbt_state & BIT_ULL(33));
+#endif
+
+			if (!(hbt_state & BIT_ULL(34))) {
+				tim_bkt_dec_lock(bkt);
+				goto __retry;
+			}
+		}
 	}
 
 	rem = tim_bkt_fetch_rem(lock_sema);
-
 	if (rem < 0) {
+#ifdef RTE_ARCH_ARM64
+		asm volatile(
+				"	ldaxrh %w[rem], [%[crem]]	\n"
+				"	tbz %w[rem], 15, dne%=		\n"
+				"	sevl				\n"
+				"rty%=: wfe				\n"
+				"	ldaxrh %w[rem], [%[crem]]	\n"
+				"	tbnz %w[rem], 15, rty%=		\n"
+				"dne%=:					\n"
+				: [rem] "=&r" (rem)
+				: [crem] "r" (&bkt->chunk_remainder)
+				: "memory"
+			    );
+#else
+		while (__atomic_load_n(&bkt->chunk_remainder,
+				       __ATOMIC_ACQUIRE) < 0)
+			;
+#endif
 		/* Goto diff bucket. */
 		tim_bkt_dec_lock(bkt);
 		goto __retry;
 	} else if (!rem) {
 		/* Only one thread can be here*/
 		if (flags & OTX2_TIM_ENA_FB)
-			chunk = tim_refill_chunk(bkt, tim_ring);
+			chunk = tim_refill_chunk(bkt, mirr_bkt, tim_ring);
 		if (flags & OTX2_TIM_ENA_DFB)
-			chunk = tim_insert_chunk(bkt, tim_ring);
+			chunk = tim_insert_chunk(bkt, mirr_bkt, tim_ring);
 
 		if (unlikely(chunk == NULL)) {
 			tim_bkt_set_rem(bkt, 0);
@@ -294,17 +395,23 @@ __retry:
 			tim->state = RTE_EVENT_TIMER_ERROR;
 			return -ENOMEM;
 		}
-		bkt->current_chunk = (uintptr_t)chunk;
-		tim_bkt_set_rem(bkt, tim_ring->nb_chunk_slots - 1);
+		*chunk = *pent;
+		while (tim_bkt_fetch_lock(lock_sema) !=
+				(-tim_bkt_fetch_rem(lock_sema)))
+			lock_sema = __atomic_load_n(&bkt->w1, __ATOMIC_ACQUIRE);
+
+		mirr_bkt->current_chunk = (uintptr_t)chunk;
+		__atomic_store_n(&bkt->chunk_remainder,
+				tim_ring->nb_chunk_slots - 1, __ATOMIC_RELEASE);
 	} else {
-		chunk = (struct otx2_tim_ent *)(uintptr_t)bkt->current_chunk;
+		chunk = (struct otx2_tim_ent *)mirr_bkt->current_chunk;
 		chunk += tim_ring->nb_chunk_slots - rem;
+		*chunk = *pent;
 	}
 
 	/* Copy work entry. */
-	*chunk = *pent;
-	tim_bkt_dec_lock(bkt);
 	tim_bkt_inc_nent(bkt);
+	tim_bkt_dec_lock(bkt);
 	tim->impl_opaque[0] = (uintptr_t)chunk;
 	tim->impl_opaque[1] = (uintptr_t)bkt;
 	tim->state = RTE_EVENT_TIMER_ARMED;
@@ -337,7 +444,8 @@ tim_add_entry_brst(struct otx2_tim_ring * const tim_ring,
 		   const struct otx2_tim_ent *ents,
 		   const uint16_t nb_timers, const uint8_t flags)
 {
-	struct otx2_tim_ent *chunk;
+	struct otx2_tim_ent *chunk = NULL;
+	struct otx2_tim_bkt *mirr_bkt;
 	struct otx2_tim_bkt *bkt;
 	uint16_t chunk_remainder;
 	uint16_t index = 0;
@@ -346,7 +454,7 @@ tim_add_entry_brst(struct otx2_tim_ring * const tim_ring,
 	uint8_t lock_cnt;
 
 __retry:
-	bkt = tim_get_target_bucket(tim_ring, rel_bkt, flags);
+	tim_get_target_bucket(tim_ring, rel_bkt, &bkt, &mirr_bkt, flags);
 
 	/* Only one thread beyond this. */
 	lock_sema = tim_bkt_inc_lock(bkt);
@@ -360,8 +468,33 @@ __retry:
 
 	/* Bucket related checks. */
 	if (unlikely(tim_bkt_get_hbt(lock_sema))) {
-		tim_bkt_dec_lock(bkt);
-		goto __retry;
+		if (tim_bkt_get_nent(lock_sema) != 0) {
+			uint64_t hbt_state;
+#ifdef RTE_ARCH_ARM64
+			asm volatile(
+					"	ldaxr %[hbt], [%[w1]]	\n"
+					"	tbz %[hbt], 33, dne%=	\n"
+					"	sevl			\n"
+					"rty%=: wfe			\n"
+					"	ldaxr %[hbt], [%[w1]]	\n"
+					"	tbnz %[hbt], 33, rty%=	\n"
+					"dne%=:				\n"
+					: [hbt] "=&r" (hbt_state)
+					: [w1] "r" ((&bkt->w1))
+					: "memory"
+					);
+#else
+			do {
+				hbt_state = __atomic_load_n(&bkt->w1,
+						__ATOMIC_ACQUIRE);
+			} while (hbt_state & BIT_ULL(33));
+#endif
+
+			if (!(hbt_state & BIT_ULL(34))) {
+				tim_bkt_dec_lock(bkt);
+				goto __retry;
+			}
+		}
 	}
 
 	chunk_remainder = tim_bkt_fetch_rem(lock_sema);
@@ -370,7 +503,7 @@ __retry:
 		crem = tim_ring->nb_chunk_slots - chunk_remainder;
 		if (chunk_remainder && crem) {
 			chunk = ((struct otx2_tim_ent *)
-					(uintptr_t)bkt->current_chunk) + crem;
+					mirr_bkt->current_chunk) + crem;
 
 			index = tim_cpy_wrk(index, chunk_remainder, chunk, tim,
 					    ents, bkt);
@@ -379,9 +512,9 @@ __retry:
 		}
 
 		if (flags & OTX2_TIM_ENA_FB)
-			chunk = tim_refill_chunk(bkt, tim_ring);
+			chunk = tim_refill_chunk(bkt, mirr_bkt, tim_ring);
 		if (flags & OTX2_TIM_ENA_DFB)
-			chunk = tim_insert_chunk(bkt, tim_ring);
+			chunk = tim_insert_chunk(bkt, mirr_bkt, tim_ring);
 
 		if (unlikely(chunk == NULL)) {
 			tim_bkt_dec_lock(bkt);
@@ -390,14 +523,14 @@ __retry:
 			return crem;
 		}
 		*(uint64_t *)(chunk + tim_ring->nb_chunk_slots) = 0;
-		bkt->current_chunk = (uintptr_t)chunk;
+		mirr_bkt->current_chunk = (uintptr_t)chunk;
 		tim_cpy_wrk(index, nb_timers, chunk, tim, ents, bkt);
 
 		rem = nb_timers - chunk_remainder;
 		tim_bkt_set_rem(bkt, tim_ring->nb_chunk_slots - rem);
 		tim_bkt_add_nent(bkt, rem);
 	} else {
-		chunk = (struct otx2_tim_ent *)(uintptr_t)bkt->current_chunk;
+		chunk = (struct otx2_tim_ent *)mirr_bkt->current_chunk;
 		chunk += (tim_ring->nb_chunk_slots - chunk_remainder);
 
 		tim_cpy_wrk(index, nb_timers, chunk, tim, ents, bkt);

@@ -17,12 +17,13 @@ LDLIBS += -lrte_rawdev
 
 EXPORT_MAP := rte_rawdev_ntb_version.map
 
-LIBABIVER := 1
-
 #
 # all source are stored in SRCS-y
 #
 SRCS-$(CONFIG_RTE_LIBRTE_PMD_NTB_RAWDEV) += ntb.c
 SRCS-$(CONFIG_RTE_LIBRTE_PMD_NTB_RAWDEV) += ntb_hw_intel.c
+
+# install this header file
+SYMLINK-$(CONFIG_RTE_LIBRTE_PMD_NTB_RAWDEV)-include := rte_pmd_ntb.h
 
 include $(RTE_SDK)/mk/rte.lib.mk

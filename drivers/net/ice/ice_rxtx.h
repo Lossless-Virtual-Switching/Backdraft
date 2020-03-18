@@ -20,9 +20,9 @@
 #define ICE_CHK_Q_ENA_INTERVAL_US  100
 
 #ifdef RTE_LIBRTE_ICE_16BYTE_RX_DESC
-#define ice_rx_desc ice_16byte_rx_desc
+#define ice_rx_flex_desc ice_16b_rx_flex_desc
 #else
-#define ice_rx_desc ice_32byte_rx_desc
+#define ice_rx_flex_desc ice_32b_rx_flex_desc
 #endif
 
 #define ICE_SUPPORT_CHAIN_NUM 5
@@ -36,6 +36,8 @@
 #define ICE_TX_MAX_FREE_BUF_SZ      64
 #define ICE_DESCS_PER_LOOP          4
 
+#define ICE_FDIR_PKT_LEN	512
+
 typedef void (*ice_rx_release_mbufs_t)(struct ice_rx_queue *rxq);
 typedef void (*ice_tx_release_mbufs_t)(struct ice_tx_queue *txq);
 
@@ -45,7 +47,7 @@ struct ice_rx_entry {
 
 struct ice_rx_queue {
 	struct rte_mempool *mp; /* mbuf pool to populate RX ring */
-	volatile union ice_rx_desc *rx_ring;/* RX ring virtual address */
+	volatile union ice_rx_flex_desc *rx_ring;/* RX ring virtual address */
 	rte_iova_t rx_ring_dma; /* RX ring DMA address */
 	struct ice_rx_entry *sw_ring; /* address of RX soft ring */
 	uint16_t nb_rx_desc; /* number of RX descriptors */
@@ -76,6 +78,7 @@ struct ice_rx_queue {
 	uint16_t max_pkt_len; /* Maximum packet length */
 	bool q_set; /* indicate if rx queue has been configured */
 	bool rx_deferred_start; /* don't start this queue in dev start */
+	uint8_t proto_xtr; /* Protocol extraction from flexible descriptor */
 	ice_rx_release_mbufs_t rx_rel_mbufs;
 };
 
@@ -147,10 +150,16 @@ int ice_rx_queue_start(struct rte_eth_dev *dev, uint16_t rx_queue_id);
 int ice_rx_queue_stop(struct rte_eth_dev *dev, uint16_t rx_queue_id);
 int ice_tx_queue_start(struct rte_eth_dev *dev, uint16_t tx_queue_id);
 int ice_tx_queue_stop(struct rte_eth_dev *dev, uint16_t tx_queue_id);
+int ice_fdir_rx_queue_start(struct rte_eth_dev *dev, uint16_t rx_queue_id);
+int ice_fdir_tx_queue_start(struct rte_eth_dev *dev, uint16_t tx_queue_id);
+int ice_fdir_rx_queue_stop(struct rte_eth_dev *dev, uint16_t rx_queue_id);
+int ice_fdir_tx_queue_stop(struct rte_eth_dev *dev, uint16_t tx_queue_id);
 void ice_rx_queue_release(void *rxq);
 void ice_tx_queue_release(void *txq);
 void ice_clear_queues(struct rte_eth_dev *dev);
 void ice_free_queues(struct rte_eth_dev *dev);
+int ice_fdir_setup_tx_resources(struct ice_pf *pf);
+int ice_fdir_setup_rx_resources(struct ice_pf *pf);
 uint16_t ice_recv_pkts(void *rx_queue, struct rte_mbuf **rx_pkts,
 		       uint16_t nb_pkts);
 uint16_t ice_xmit_pkts(void *tx_queue, struct rte_mbuf **tx_pkts,
@@ -166,6 +175,10 @@ void ice_rxq_info_get(struct rte_eth_dev *dev, uint16_t queue_id,
 		      struct rte_eth_rxq_info *qinfo);
 void ice_txq_info_get(struct rte_eth_dev *dev, uint16_t queue_id,
 		      struct rte_eth_txq_info *qinfo);
+int ice_rx_burst_mode_get(struct rte_eth_dev *dev, uint16_t queue_id,
+			  struct rte_eth_burst_mode *mode);
+int ice_tx_burst_mode_get(struct rte_eth_dev *dev, uint16_t queue_id,
+			  struct rte_eth_burst_mode *mode);
 int ice_rx_descriptor_status(void *rx_queue, uint16_t offset);
 int ice_tx_descriptor_status(void *tx_queue, uint16_t offset);
 void ice_set_default_ptype_table(struct rte_eth_dev *dev);
@@ -188,4 +201,7 @@ uint16_t ice_recv_scattered_pkts_vec_avx2(void *rx_queue,
 					  uint16_t nb_pkts);
 uint16_t ice_xmit_pkts_vec_avx2(void *tx_queue, struct rte_mbuf **tx_pkts,
 				uint16_t nb_pkts);
+int ice_fdir_programming(struct ice_pf *pf, struct ice_fltr_desc *fdir_desc);
+int ice_tx_done_cleanup(void *txq, uint32_t free_cnt);
+
 #endif /* _ICE_RXTX_H_ */

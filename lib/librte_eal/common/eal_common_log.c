@@ -45,7 +45,7 @@ static struct rte_eal_opt_loglevel_list opt_loglevel_list =
 static FILE *default_log_stream;
 
 /**
- * This global structure stores some informations about the message
+ * This global structure stores some information about the message
  * that is currently being processed by one lcore
  */
 struct log_cur_msg {
@@ -69,6 +69,24 @@ rte_openlog_stream(FILE *f)
 {
 	rte_logs.file = f;
 	return 0;
+}
+
+FILE *
+rte_log_get_stream(void)
+{
+	FILE *f = rte_logs.file;
+
+	if (f == NULL) {
+		/*
+		 * Grab the current value of stderr here, rather than
+		 * just initializing default_log_stream to stderr. This
+		 * ensures that we will always use the current value
+		 * of stderr, even if the application closes and
+		 * reopens it.
+		 */
+		return default_log_stream ? : stderr;
+	}
+	return f;
 }
 
 /* Set global log level */
@@ -396,21 +414,8 @@ rte_log_dump(FILE *f)
 int
 rte_vlog(uint32_t level, uint32_t logtype, const char *format, va_list ap)
 {
+	FILE *f = rte_log_get_stream();
 	int ret;
-	FILE *f = rte_logs.file;
-	if (f == NULL) {
-		f = default_log_stream;
-		if (f == NULL) {
-			/*
-			 * Grab the current value of stderr here, rather than
-			 * just initializing default_log_stream to stderr. This
-			 * ensures that we will always use the current value
-			 * of stderr, even if the application closes and
-			 * reopens it.
-			 */
-			f = stderr;
-		}
-	}
 
 	if (level > rte_logs.level)
 		return 0;

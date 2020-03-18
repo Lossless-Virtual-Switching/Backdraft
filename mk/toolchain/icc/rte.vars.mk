@@ -47,12 +47,16 @@ WERROR_FLAGS += -diag-disable 13368 -diag-disable 15527
 WERROR_FLAGS += -diag-disable 188
 WERROR_FLAGS += -diag-disable 11074 -diag-disable 11076 -Wdeprecated
 
-ifeq ($(RTE_DEVEL_BUILD),y)
-WERROR_FLAGS += -Werror-all
-endif
-
 # process cpu flags
 include $(RTE_SDK)/mk/toolchain/$(RTE_TOOLCHAIN)/rte.toolchain-compat.mk
+
+ifeq ($(CONFIG_RTE_ENABLE_LTO),y)
+# 'fat-lto' is used since pmdinfogen needs to have 'this_pmd_nameX'
+# exported in symbol table and without this option only internal
+# representation is present.
+TOOLCHAIN_CFLAGS += -flto -ffat-lto-objects
+TOOLCHAIN_LDFLAGS += -flto
+endif
 
 export CC AS AR LD OBJCOPY OBJDUMP STRIP READELF
 export TOOLCHAIN_CFLAGS TOOLCHAIN_LDFLAGS TOOLCHAIN_ASFLAGS

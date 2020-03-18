@@ -205,10 +205,10 @@ int mlx4_mtu_get(struct mlx4_priv *priv, uint16_t *mtu);
 int mlx4_mtu_set(struct rte_eth_dev *dev, uint16_t mtu);
 int mlx4_dev_set_link_down(struct rte_eth_dev *dev);
 int mlx4_dev_set_link_up(struct rte_eth_dev *dev);
-void mlx4_promiscuous_enable(struct rte_eth_dev *dev);
-void mlx4_promiscuous_disable(struct rte_eth_dev *dev);
-void mlx4_allmulticast_enable(struct rte_eth_dev *dev);
-void mlx4_allmulticast_disable(struct rte_eth_dev *dev);
+int mlx4_promiscuous_enable(struct rte_eth_dev *dev);
+int mlx4_promiscuous_disable(struct rte_eth_dev *dev);
+int mlx4_allmulticast_enable(struct rte_eth_dev *dev);
+int mlx4_allmulticast_disable(struct rte_eth_dev *dev);
 void mlx4_mac_addr_remove(struct rte_eth_dev *dev, uint32_t index);
 int mlx4_mac_addr_add(struct rte_eth_dev *dev, struct rte_ether_addr *mac_addr,
 		      uint32_t index, uint32_t vmdq);
@@ -217,10 +217,10 @@ int mlx4_set_mc_addr_list(struct rte_eth_dev *dev, struct rte_ether_addr *list,
 			  uint32_t num);
 int mlx4_vlan_filter_set(struct rte_eth_dev *dev, uint16_t vlan_id, int on);
 int mlx4_stats_get(struct rte_eth_dev *dev, struct rte_eth_stats *stats);
-void mlx4_stats_reset(struct rte_eth_dev *dev);
+int mlx4_stats_reset(struct rte_eth_dev *dev);
 int mlx4_fw_version_get(struct rte_eth_dev *dev, char *fw_ver, size_t fw_size);
-void mlx4_dev_infos_get(struct rte_eth_dev *dev,
-			struct rte_eth_dev_info *info);
+int mlx4_dev_infos_get(struct rte_eth_dev *dev,
+		       struct rte_eth_dev_info *info);
 int mlx4_link_update(struct rte_eth_dev *dev, int wait_to_complete);
 int mlx4_flow_ctrl_get(struct rte_eth_dev *dev,
 		       struct rte_eth_fc_conf *fc_conf);

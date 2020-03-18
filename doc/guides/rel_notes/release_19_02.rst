@@ -109,7 +109,7 @@ New Features
     ``CONFIG_RTE_IBVERBS_LINK_DLOPEN`` for make and ``ibverbs_link`` for meson.
   * Added static linkage of ``mlx`` dependency.
   * Improved stability of E-Switch flow driver.
-  * Added new make build configuration to set the cacheline size for Bluefield
+  * Added new make build configuration to set the cacheline size for BlueField
     correctly - ``arm64-bluefield-linux-gcc``.
 
 * **Updated the enic driver.**
@@ -265,11 +265,11 @@ ABI Changes
 * mbuf: The format of the sched field of ``rte_mbuf`` has been changed
   to include the following fields: ``queue ID``, ``traffic class``, ``color``.
 
-* cryptodev: as shown in the the 18.11 deprecation notice, the structure
+* cryptodev: as shown in the 18.11 deprecation notice, the structure
   ``rte_cryptodev_qp_conf`` has added two parameters for symmetric session
   mempool and symmetric session private data mempool.
 
-* cryptodev: as shown in the the 18.11 deprecation notice, the structure
+* cryptodev: as shown in the 18.11 deprecation notice, the structure
   ``rte_cryptodev_sym_session`` has been updated to contain more information
   to ensure safely accessing the session and session private data.
 

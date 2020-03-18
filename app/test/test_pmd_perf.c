@@ -125,6 +125,7 @@ check_all_ports_link_status(uint16_t port_num, uint32_t port_mask)
 	uint16_t portid;
 	uint8_t count, all_ports_up, print_flag = 0;
 	struct rte_eth_link link;
+	int ret;
 
 	printf("Checking link statuses...\n");
 	fflush(stdout);
@@ -134,7 +135,15 @@ check_all_ports_link_status(uint16_t port_num, uint32_t port_mask)
 			if ((port_mask & (1 << portid)) == 0)
 				continue;
 			memset(&link, 0, sizeof(link));
-			rte_eth_link_get_nowait(portid, &link);
+			ret = rte_eth_link_get_nowait(portid, &link);
+			if (ret < 0) {
+				all_ports_up = 0;
+				if (print_flag == 1)
+					printf("Port %u link get failed: %s\n",
+						portid, rte_strerror(-ret));
+				continue;
+			}
+
 			/* print link status if flag set */
 			if (print_flag == 1) {
 				if (link.link_status) {
@@ -715,7 +724,12 @@ test_pmd_perf(void)
 				"Cannot configure device: err=%d, port=%d\n",
 				 ret, portid);
 
-		rte_eth_macaddr_get(portid, &ports_eth_addr[portid]);
+		ret = rte_eth_macaddr_get(portid, &ports_eth_addr[portid]);
+		if (ret < 0)
+			rte_exit(EXIT_FAILURE,
+				"Cannot get mac address: err=%d, port=%d\n",
+				 ret, portid);
+
 		printf("Port %u ", portid);
 		print_ethaddr("Address:", &ports_eth_addr[portid]);
 		printf("\n");
@@ -745,7 +759,11 @@ test_pmd_perf(void)
 				ret, portid);
 
 		/* always eanble promiscuous */
-		rte_eth_promiscuous_enable(portid);
+		ret = rte_eth_promiscuous_enable(portid);
+		if (ret != 0)
+			rte_exit(EXIT_FAILURE,
+				 "rte_eth_promiscuous_enable: err=%s, port=%d\n",
+				 rte_strerror(-ret), portid);
 
 		lcore_conf[slave_id].portlist[num++] = portid;
 		lcore_conf[slave_id].nb_ports++;

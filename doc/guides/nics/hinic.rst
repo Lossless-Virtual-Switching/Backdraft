@@ -24,6 +24,16 @@ Features
 - Link state information
 - Link flow control
 - Scattered and gather for TX and RX
+- SR-IOV - Partially supported at this point, VFIO only
+- VLAN filter and VLAN offload
+- Allmulticast mode
+- MTU update
+- Unicast MAC filter
+- Multicast MAC filter
+- Flow API
+- Set Link down or up
+- FW version
+- LRO
 
 Prerequisites
 -------------

@@ -39,7 +39,7 @@ static uint32_t multiple_kthread_on;
 
 /* Default carrier state for created KNI network interfaces */
 static char *carrier;
-uint32_t dflt_carrier;
+uint32_t kni_dflt_carrier;
 
 #define KNI_DEV_IN_USE_BIT_NUM 0 /* Bit number for device in use */
 
@@ -348,15 +348,36 @@ kni_ioctl_create(struct net *net, uint32_t ioctl_num,
 	strncpy(kni->name, dev_info.name, RTE_KNI_NAMESIZE);
 
 	/* Translate user space info into kernel space info */
-	kni->tx_q = phys_to_virt(dev_info.tx_phys);
-	kni->rx_q = phys_to_virt(dev_info.rx_phys);
-	kni->alloc_q = phys_to_virt(dev_info.alloc_phys);
-	kni->free_q = phys_to_virt(dev_info.free_phys);
+	if (dev_info.iova_mode) {
+#ifdef HAVE_IOVA_TO_KVA_MAPPING_SUPPORT
+		kni->tx_q = iova_to_kva(current, dev_info.tx_phys);
+		kni->rx_q = iova_to_kva(current, dev_info.rx_phys);
+		kni->alloc_q = iova_to_kva(current, dev_info.alloc_phys);
+		kni->free_q = iova_to_kva(current, dev_info.free_phys);
 
-	kni->req_q = phys_to_virt(dev_info.req_phys);
-	kni->resp_q = phys_to_virt(dev_info.resp_phys);
-	kni->sync_va = dev_info.sync_va;
-	kni->sync_kva = phys_to_virt(dev_info.sync_phys);
+		kni->req_q = iova_to_kva(current, dev_info.req_phys);
+		kni->resp_q = iova_to_kva(current, dev_info.resp_phys);
+		kni->sync_va = dev_info.sync_va;
+		kni->sync_kva = iova_to_kva(current, dev_info.sync_phys);
+		kni->usr_tsk = current;
+		kni->iova_mode = 1;
+#else
+		pr_err("KNI module does not support IOVA to VA translation\n");
+		return -EINVAL;
+#endif
+	} else {
+
+		kni->tx_q = phys_to_virt(dev_info.tx_phys);
+		kni->rx_q = phys_to_virt(dev_info.rx_phys);
+		kni->alloc_q = phys_to_virt(dev_info.alloc_phys);
+		kni->free_q = phys_to_virt(dev_info.free_phys);
+
+		kni->req_q = phys_to_virt(dev_info.req_phys);
+		kni->resp_q = phys_to_virt(dev_info.resp_phys);
+		kni->sync_va = dev_info.sync_va;
+		kni->sync_kva = phys_to_virt(dev_info.sync_phys);
+		kni->iova_mode = 0;
+	}
 
 	kni->mbuf_size = dev_info.mbuf_size;
 
@@ -388,6 +409,12 @@ kni_ioctl_create(struct net *net, uint32_t ioctl_num,
 		net_dev->mtu = dev_info.mtu;
 #ifdef HAVE_MAX_MTU_PARAM
 	net_dev->max_mtu = net_dev->mtu;
+
+	if (dev_info.min_mtu)
+		net_dev->min_mtu = dev_info.min_mtu;
+
+	if (dev_info.max_mtu)
+		net_dev->max_mtu = dev_info.max_mtu;
 #endif
 
 	ret = register_netdev(net_dev);
@@ -527,14 +554,14 @@ static int __init
 kni_parse_carrier_state(void)
 {
 	if (!carrier) {
-		dflt_carrier = 0;
+		kni_dflt_carrier = 0;
 		return 0;
 	}
 
 	if (strcmp(carrier, "off") == 0)
-		dflt_carrier = 0;
+		kni_dflt_carrier = 0;
 	else if (strcmp(carrier, "on") == 0)
-		dflt_carrier = 1;
+		kni_dflt_carrier = 1;
 	else
 		return -1;
 
@@ -561,7 +588,7 @@ kni_init(void)
 		return -EINVAL;
 	}
 
-	if (dflt_carrier == 0)
+	if (kni_dflt_carrier == 0)
 		pr_debug("Default carrier state set to off.\n");
 	else
 		pr_debug("Default carrier state set to on.\n");

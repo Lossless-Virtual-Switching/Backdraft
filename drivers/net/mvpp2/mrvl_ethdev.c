@@ -994,22 +994,29 @@ mrvl_link_update(struct rte_eth_dev *dev, int wait_to_complete __rte_unused)
  *
  * @param dev
  *   Pointer to Ethernet device structure.
+ *
+ * @return
+ *   0 on success, negative error value otherwise.
  */
-static void
+static int
 mrvl_promiscuous_enable(struct rte_eth_dev *dev)
 {
 	struct mrvl_priv *priv = dev->data->dev_private;
 	int ret;
 
 	if (!priv->ppio)
-		return;
+		return 0;
 
 	if (priv->isolated)
-		return;
+		return 0;
 
 	ret = pp2_ppio_set_promisc(priv->ppio, 1);
-	if (ret)
+	if (ret) {
 		MRVL_LOG(ERR, "Failed to enable promiscuous mode");
+		return -EAGAIN;
+	}
+
+	return 0;
 }
 
 /**
@@ -1017,22 +1024,29 @@ mrvl_promiscuous_enable(struct rte_eth_dev *dev)
  *
  * @param dev
  *   Pointer to Ethernet device structure.
+ *
+ * @return
+ *   0 on success, negative error value otherwise.
  */
-static void
+static int
 mrvl_allmulticast_enable(struct rte_eth_dev *dev)
 {
 	struct mrvl_priv *priv = dev->data->dev_private;
 	int ret;
 
 	if (!priv->ppio)
-		return;
+		return 0;
 
 	if (priv->isolated)
-		return;
+		return 0;
 
 	ret = pp2_ppio_set_mc_promisc(priv->ppio, 1);
-	if (ret)
+	if (ret) {
 		MRVL_LOG(ERR, "Failed enable all-multicast mode");
+		return -EAGAIN;
+	}
+
+	return 0;
 }
 
 /**
@@ -1040,19 +1054,26 @@ mrvl_allmulticast_enable(struct rte_eth_dev *dev)
  *
  * @param dev
  *   Pointer to Ethernet device structure.
+ *
+ * @return
+ *   0 on success, negative error value otherwise.
  */
-static void
+static int
 mrvl_promiscuous_disable(struct rte_eth_dev *dev)
 {
 	struct mrvl_priv *priv = dev->data->dev_private;
 	int ret;
 
 	if (!priv->ppio)
-		return;
+		return 0;
 
 	ret = pp2_ppio_set_promisc(priv->ppio, 0);
-	if (ret)
+	if (ret) {
 		MRVL_LOG(ERR, "Failed to disable promiscuous mode");
+		return -EAGAIN;
+	}
+
+	return 0;
 }
 
 /**
@@ -1060,19 +1081,26 @@ mrvl_promiscuous_disable(struct rte_eth_dev *dev)
  *
  * @param dev
  *   Pointer to Ethernet device structure.
+ *
+ * @return
+ *   0 on success, negative error value otherwise.
  */
-static void
+static int
 mrvl_allmulticast_disable(struct rte_eth_dev *dev)
 {
 	struct mrvl_priv *priv = dev->data->dev_private;
 	int ret;
 
 	if (!priv->ppio)
-		return;
+		return 0;
 
 	ret = pp2_ppio_set_mc_promisc(priv->ppio, 0);
-	if (ret)
+	if (ret) {
 		MRVL_LOG(ERR, "Failed to disable all-multicast mode");
+		return -EAGAIN;
+	}
+
+	return 0;
 }
 
 /**
@@ -1301,15 +1329,18 @@ mrvl_stats_get(struct rte_eth_dev *dev, struct rte_eth_stats *stats)
  *
  * @param dev
  *   Pointer to Ethernet device structure.
+ *
+ * @return
+ *   0 on success, negative error value otherwise.
  */
-static void
+static int
 mrvl_stats_reset(struct rte_eth_dev *dev)
 {
 	struct mrvl_priv *priv = dev->data->dev_private;
 	int i;
 
 	if (!priv->ppio)
-		return;
+		return 0;
 
 	for (i = 0; i < dev->data->nb_rx_queues; i++) {
 		struct mrvl_rxq *rxq = dev->data->rx_queues[i];
@@ -1327,7 +1358,7 @@ mrvl_stats_reset(struct rte_eth_dev *dev)
 		txq->bytes_sent = 0;
 	}
 
-	pp2_ppio_get_statistics(priv->ppio, NULL, 1);
+	return pp2_ppio_get_statistics(priv->ppio, NULL, 1);
 }
 
 /**
@@ -1378,11 +1409,14 @@ mrvl_xstats_get(struct rte_eth_dev *dev,
  *
  * @param dev
  *   Pointer to Ethernet device structure.
+ *
+ * @return
+ *   0 on success, negative error value otherwise.
  */
-static void
+static int
 mrvl_xstats_reset(struct rte_eth_dev *dev)
 {
-	mrvl_stats_reset(dev);
+	return mrvl_stats_reset(dev);
 }
 
 /**
@@ -1422,7 +1456,7 @@ mrvl_xstats_get_names(struct rte_eth_dev *dev __rte_unused,
  * @param info
  *   Info structure output buffer.
  */
-static void
+static int
 mrvl_dev_infos_get(struct rte_eth_dev *dev __rte_unused,
 		   struct rte_eth_dev_info *info)
 {
@@ -1457,6 +1491,8 @@ mrvl_dev_infos_get(struct rte_eth_dev *dev __rte_unused,
 	info->default_rxconf.rx_drop_en = 1;
 
 	info->max_rx_pktlen = MRVL_PKT_SIZE_MAX;
+
+	return 0;
 }
 
 /**

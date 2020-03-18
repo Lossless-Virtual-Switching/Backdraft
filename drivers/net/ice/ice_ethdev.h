@@ -124,6 +124,13 @@
 #define ICE_ETH_OVERHEAD \
 	(RTE_ETHER_HDR_LEN + RTE_ETHER_CRC_LEN + ICE_VLAN_TAG_SIZE * 2)
 
+/* DDP package type */
+enum ice_pkg_type {
+	ICE_PKG_TYPE_UNKNOWN,
+	ICE_PKG_TYPE_OS_DEFAULT,
+	ICE_PKG_TYPE_COMMS,
+};
+
 struct ice_adapter;
 
 /**
@@ -234,15 +241,108 @@ struct ice_vsi {
 	bool offset_loaded;
 };
 
-extern const struct rte_flow_ops ice_flow_ops;
-
-/* Struct to store flow created. */
-struct rte_flow {
-	TAILQ_ENTRY(rte_flow) node;
-	void *rule;
+enum proto_xtr_type {
+	PROTO_XTR_NONE,
+	PROTO_XTR_VLAN,
+	PROTO_XTR_IPV4,
+	PROTO_XTR_IPV6,
+	PROTO_XTR_IPV6_FLOW,
+	PROTO_XTR_TCP,
 };
 
+enum ice_fdir_tunnel_type {
+	ICE_FDIR_TUNNEL_TYPE_NONE = 0,
+	ICE_FDIR_TUNNEL_TYPE_VXLAN,
+	ICE_FDIR_TUNNEL_TYPE_GTPU,
+	ICE_FDIR_TUNNEL_TYPE_GTPU_EH,
+};
+
+struct rte_flow;
 TAILQ_HEAD(ice_flow_list, rte_flow);
+
+struct ice_flow_parser_node;
+TAILQ_HEAD(ice_parser_list, ice_flow_parser_node);
+
+struct ice_fdir_filter_conf {
+	struct ice_fdir_fltr input;
+	enum ice_fdir_tunnel_type tunnel_type;
+
+	struct ice_fdir_counter *counter; /* flow specific counter context */
+	struct rte_flow_action_count act_count;
+
+	uint64_t input_set;
+};
+
+#define ICE_MAX_FDIR_FILTER_NUM		(1024 * 16)
+
+struct ice_fdir_fltr_pattern {
+	enum ice_fltr_ptype flow_type;
+
+	union {
+		struct ice_fdir_v4 v4;
+		struct ice_fdir_v6 v6;
+	} ip, mask;
+
+	struct ice_fdir_udp_gtp gtpu_data;
+	struct ice_fdir_udp_gtp gtpu_mask;
+
+	struct ice_fdir_extra ext_data;
+	struct ice_fdir_extra ext_mask;
+
+	enum ice_fdir_tunnel_type tunnel_type;
+};
+
+#define ICE_FDIR_COUNTER_DEFAULT_POOL_SIZE	1
+#define ICE_FDIR_COUNTER_MAX_POOL_SIZE		32
+#define ICE_FDIR_COUNTERS_PER_BLOCK		256
+#define ICE_FDIR_COUNTER_INDEX(base_idx) \
+				((base_idx) * ICE_FDIR_COUNTERS_PER_BLOCK)
+struct ice_fdir_counter_pool;
+
+struct ice_fdir_counter {
+	TAILQ_ENTRY(ice_fdir_counter) next;
+	struct ice_fdir_counter_pool *pool;
+	uint8_t shared;
+	uint32_t ref_cnt;
+	uint32_t id;
+	uint64_t hits;
+	uint64_t bytes;
+	uint32_t hw_index;
+};
+
+TAILQ_HEAD(ice_fdir_counter_list, ice_fdir_counter);
+
+struct ice_fdir_counter_pool {
+	TAILQ_ENTRY(ice_fdir_counter_pool) next;
+	struct ice_fdir_counter_list counter_list;
+	struct ice_fdir_counter counters[0];
+};
+
+TAILQ_HEAD(ice_fdir_counter_pool_list, ice_fdir_counter_pool);
+
+struct ice_fdir_counter_pool_container {
+	struct ice_fdir_counter_pool_list pool_list;
+	struct ice_fdir_counter_pool *pools[ICE_FDIR_COUNTER_MAX_POOL_SIZE];
+	uint8_t index_free;
+};
+
+/**
+ *  A structure used to define fields of a FDIR related info.
+ */
+struct ice_fdir_info {
+	struct ice_vsi *fdir_vsi;     /* pointer to fdir VSI structure */
+	struct ice_tx_queue *txq;
+	struct ice_rx_queue *rxq;
+	void *prg_pkt;                 /* memory for fdir program packet */
+	uint64_t dma_addr;             /* physic address of packet memory*/
+	const struct rte_memzone *mz;
+	struct ice_fdir_filter_conf conf;
+
+	struct ice_fdir_filter_conf **hash_map;
+	struct rte_hash *hash_table;
+
+	struct ice_fdir_counter_pool_container counter;
+};
 
 struct ice_pf {
 	struct ice_adapter *adapter; /* The adapter this PF associate to */
@@ -263,6 +363,12 @@ struct ice_pf {
 	uint16_t lan_nb_qp_max;
 	uint16_t lan_nb_qps; /* The number of queue pairs of LAN */
 	uint16_t base_queue; /* The base queue pairs index  in the device */
+	uint8_t *proto_xtr; /* Protocol extraction type for all queues */
+	uint16_t fdir_nb_qps; /* The number of queue pairs of Flow Director */
+	uint16_t fdir_qp_offset;
+	struct ice_fdir_info fdir; /* flow director info */
+	uint16_t hw_prof_cnt[ICE_FLTR_PTYPE_MAX][ICE_FD_HW_SEG_MAX];
+	uint16_t fdir_fltr_cnt[ICE_FLTR_PTYPE_MAX][ICE_FD_HW_SEG_MAX];
 	struct ice_hw_port_stats stats_offset;
 	struct ice_hw_port_stats stats;
 	/* internal packet statistics, it should be excluded from the total */
@@ -271,13 +377,23 @@ struct ice_pf {
 	bool offset_loaded;
 	bool adapter_stopped;
 	struct ice_flow_list flow_list;
+	struct ice_parser_list rss_parser_list;
+	struct ice_parser_list perm_parser_list;
+	struct ice_parser_list dist_parser_list;
+	bool init_link_up;
 };
+
+#define ICE_MAX_QUEUE_NUM  2048
 
 /**
  * Cache devargs parse result.
  */
 struct ice_devargs {
 	int safe_mode_support;
+	uint8_t proto_xtr_dflt;
+	int pipe_mode_support;
+	int flow_mark_support;
+	uint8_t proto_xtr[ICE_MAX_QUEUE_NUM];
 };
 
 /**
@@ -289,11 +405,14 @@ struct ice_adapter {
 	struct rte_eth_dev *eth_dev;
 	struct ice_pf pf;
 	bool rx_bulk_alloc_allowed;
+	bool rx_vec_allowed;
+	bool tx_vec_allowed;
 	bool tx_simple_allowed;
 	/* ptype mapping table */
 	uint32_t ptype_tbl[ICE_MAX_PKT_TYPE] __rte_cache_min_aligned;
 	bool is_safe_mode;
 	struct ice_devargs devargs;
+	enum ice_pkg_type active_pkg_type; /* loaded ddp package type */
 };
 
 struct ice_vsi_vlan_pvid_info {
@@ -337,6 +456,14 @@ struct ice_vsi_vlan_pvid_info {
 	((struct ice_adapter *)(pf)->adapter)
 #define ICE_PF_TO_ETH_DEV(pf) \
 	(((struct ice_pf *)pf)->adapter->eth_dev)
+
+struct ice_vsi *
+ice_setup_vsi(struct ice_pf *pf, enum ice_vsi_type type);
+int
+ice_release_vsi(struct ice_vsi *vsi);
+void ice_vsi_enable_queues_intr(struct ice_vsi *vsi);
+void ice_vsi_disable_queues_intr(struct ice_vsi *vsi);
+void ice_vsi_queues_bind_intr(struct ice_vsi *vsi);
 
 static inline int
 ice_align_floor(int n)

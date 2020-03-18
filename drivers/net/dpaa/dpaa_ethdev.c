@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: BSD-3-Clause
  *
  *   Copyright 2016 Freescale Semiconductor, Inc. All rights reserved.
- *   Copyright 2017 NXP
+ *   Copyright 2017-2019 NXP
  *
  */
 /* System headers */
@@ -56,10 +56,13 @@ static uint64_t dev_rx_offloads_nodis =
 		DEV_RX_OFFLOAD_IPV4_CKSUM |
 		DEV_RX_OFFLOAD_UDP_CKSUM |
 		DEV_RX_OFFLOAD_TCP_CKSUM |
-		DEV_RX_OFFLOAD_OUTER_IPV4_CKSUM;
+		DEV_RX_OFFLOAD_OUTER_IPV4_CKSUM |
+		DEV_RX_OFFLOAD_RSS_HASH;
 
 /* Supported Tx offloads */
-static uint64_t dev_tx_offloads_sup;
+static uint64_t dev_tx_offloads_sup =
+		DEV_TX_OFFLOAD_MT_LOCKFREE |
+		DEV_TX_OFFLOAD_MBUF_FAST_FREE;
 
 /* Tx offloads which cannot be disabled */
 static uint64_t dev_tx_offloads_nodis =
@@ -68,9 +71,7 @@ static uint64_t dev_tx_offloads_nodis =
 		DEV_TX_OFFLOAD_TCP_CKSUM |
 		DEV_TX_OFFLOAD_SCTP_CKSUM |
 		DEV_TX_OFFLOAD_OUTER_IPV4_CKSUM |
-		DEV_TX_OFFLOAD_MULTI_SEGS |
-		DEV_TX_OFFLOAD_MT_LOCKFREE |
-		DEV_TX_OFFLOAD_MBUF_FAST_FREE;
+		DEV_TX_OFFLOAD_MULTI_SEGS;
 
 /* Keep track of whether QMAN and BMAN have been globally initialized */
 static int is_global_init;
@@ -124,7 +125,7 @@ static const struct rte_dpaa_xstats_name_off dpaa_xstats_strings[] = {
 
 static struct rte_dpaa_driver rte_dpaa_pmd;
 
-static void
+static int
 dpaa_eth_dev_info(struct rte_eth_dev *dev, struct rte_eth_dev_info *dev_info);
 
 static inline void
@@ -173,7 +174,7 @@ dpaa_mtu_set(struct rte_eth_dev *dev, uint16_t mtu)
 	}
 
 	if (frame_size > RTE_ETHER_MAX_LEN)
-		dev->data->dev_conf.rxmode.offloads &=
+		dev->data->dev_conf.rxmode.offloads |=
 						DEV_RX_OFFLOAD_JUMBO_FRAME;
 	else
 		dev->data->dev_conf.rxmode.offloads &=
@@ -196,20 +197,20 @@ dpaa_eth_dev_configure(struct rte_eth_dev *dev)
 
 	PMD_INIT_FUNC_TRACE();
 
-	/* Rx offloads validation */
+	/* Rx offloads which are enabled by default */
 	if (dev_rx_offloads_nodis & ~rx_offloads) {
-		DPAA_PMD_WARN(
-		"Rx offloads non configurable - requested 0x%" PRIx64
-		" ignored 0x%" PRIx64,
-			rx_offloads, dev_rx_offloads_nodis);
+		DPAA_PMD_INFO(
+		"Some of rx offloads enabled by default - requested 0x%" PRIx64
+		" fixed are 0x%" PRIx64,
+		rx_offloads, dev_rx_offloads_nodis);
 	}
 
-	/* Tx offloads validation */
+	/* Tx offloads which are enabled by default */
 	if (dev_tx_offloads_nodis & ~tx_offloads) {
-		DPAA_PMD_WARN(
-		"Tx offloads non configurable - requested 0x%" PRIx64
-		" ignored 0x%" PRIx64,
-			tx_offloads, dev_tx_offloads_nodis);
+		DPAA_PMD_INFO(
+		"Some of tx offloads enabled by default - requested 0x%" PRIx64
+		" fixed are 0x%" PRIx64,
+		tx_offloads, dev_tx_offloads_nodis);
 	}
 
 	if (rx_offloads & DEV_RX_OFFLOAD_JUMBO_FRAME) {
@@ -330,12 +331,12 @@ dpaa_fw_version_get(struct rte_eth_dev *dev __rte_unused,
 		return 0;
 }
 
-static void dpaa_eth_dev_info(struct rte_eth_dev *dev,
-			      struct rte_eth_dev_info *dev_info)
+static int dpaa_eth_dev_info(struct rte_eth_dev *dev,
+			     struct rte_eth_dev_info *dev_info)
 {
 	struct dpaa_if *dpaa_intf = dev->data->dev_private;
 
-	PMD_INIT_FUNC_TRACE();
+	DPAA_PMD_DEBUG(": %s", dpaa_intf->name);
 
 	dev_info->max_rx_queues = dpaa_intf->nb_rx_queues;
 	dev_info->max_tx_queues = dpaa_intf->nb_tx_queues;
@@ -346,13 +347,15 @@ static void dpaa_eth_dev_info(struct rte_eth_dev *dev,
 	dev_info->max_vmdq_pools = ETH_16_POOLS;
 	dev_info->flow_type_rss_offloads = DPAA_RSS_OFFLOAD_ALL;
 
-	if (dpaa_intf->fif->mac_type == fman_mac_1g)
+	if (dpaa_intf->fif->mac_type == fman_mac_1g) {
 		dev_info->speed_capa = ETH_LINK_SPEED_1G;
-	else if (dpaa_intf->fif->mac_type == fman_mac_10g)
+	} else if (dpaa_intf->fif->mac_type == fman_mac_10g) {
 		dev_info->speed_capa = (ETH_LINK_SPEED_1G | ETH_LINK_SPEED_10G);
-	else
+	} else {
 		DPAA_PMD_ERR("invalid link_speed: %s, %d",
 			     dpaa_intf->name, dpaa_intf->fif->mac_type);
+		return -EINVAL;
+	}
 
 	dev_info->rx_offload_capa = dev_rx_offloads_sup |
 					dev_rx_offloads_nodis;
@@ -360,6 +363,8 @@ static void dpaa_eth_dev_info(struct rte_eth_dev *dev,
 					dev_tx_offloads_nodis;
 	dev_info->default_rxportconf.burst_size = DPAA_DEF_RX_BURST_SIZE;
 	dev_info->default_txportconf.burst_size = DPAA_DEF_TX_BURST_SIZE;
+
+	return 0;
 }
 
 static int dpaa_eth_link_update(struct rte_eth_dev *dev,
@@ -395,13 +400,15 @@ static int dpaa_eth_stats_get(struct rte_eth_dev *dev,
 	return 0;
 }
 
-static void dpaa_eth_stats_reset(struct rte_eth_dev *dev)
+static int dpaa_eth_stats_reset(struct rte_eth_dev *dev)
 {
 	struct dpaa_if *dpaa_intf = dev->data->dev_private;
 
 	PMD_INIT_FUNC_TRACE();
 
 	fman_if_stats_reset(dpaa_intf->fif);
+
+	return 0;
 }
 
 static int
@@ -510,40 +517,48 @@ dpaa_xstats_get_names_by_id(
 	return limit;
 }
 
-static void dpaa_eth_promiscuous_enable(struct rte_eth_dev *dev)
+static int dpaa_eth_promiscuous_enable(struct rte_eth_dev *dev)
 {
 	struct dpaa_if *dpaa_intf = dev->data->dev_private;
 
 	PMD_INIT_FUNC_TRACE();
 
 	fman_if_promiscuous_enable(dpaa_intf->fif);
+
+	return 0;
 }
 
-static void dpaa_eth_promiscuous_disable(struct rte_eth_dev *dev)
+static int dpaa_eth_promiscuous_disable(struct rte_eth_dev *dev)
 {
 	struct dpaa_if *dpaa_intf = dev->data->dev_private;
 
 	PMD_INIT_FUNC_TRACE();
 
 	fman_if_promiscuous_disable(dpaa_intf->fif);
+
+	return 0;
 }
 
-static void dpaa_eth_multicast_enable(struct rte_eth_dev *dev)
+static int dpaa_eth_multicast_enable(struct rte_eth_dev *dev)
 {
 	struct dpaa_if *dpaa_intf = dev->data->dev_private;
 
 	PMD_INIT_FUNC_TRACE();
 
 	fman_if_set_mcast_filter_table(dpaa_intf->fif);
+
+	return 0;
 }
 
-static void dpaa_eth_multicast_disable(struct rte_eth_dev *dev)
+static int dpaa_eth_multicast_disable(struct rte_eth_dev *dev)
 {
 	struct dpaa_if *dpaa_intf = dev->data->dev_private;
 
 	PMD_INIT_FUNC_TRACE();
 
 	fman_if_reset_mcast_filter_table(dpaa_intf->fif);
+
+	return 0;
 }
 
 static
@@ -628,7 +643,11 @@ int dpaa_eth_rx_queue_setup(struct rte_eth_dev *dev, uint16_t queue_idx,
 		fman_if_get_sg_enable(dpaa_intf->fif),
 		dev->data->dev_conf.rxmode.max_rx_pkt_len);
 	/* checking if push mode only, no error check for now */
-	if (dpaa_push_mode_max_queue > dpaa_push_queue_idx) {
+	if (!rxq->is_static &&
+	    dpaa_push_mode_max_queue > dpaa_push_queue_idx) {
+		struct qman_portal *qp;
+		int q_fd;
+
 		dpaa_push_queue_idx++;
 		opts.we_mask = QM_INITFQ_WE_FQCTRL | QM_INITFQ_WE_CONTEXTA;
 		opts.fqd.fq_ctrl = QM_FQCTRL_AVOIDBLOCK |
@@ -672,6 +691,37 @@ int dpaa_eth_rx_queue_setup(struct rte_eth_dev *dev, uint16_t queue_idx,
 		}
 
 		rxq->is_static = true;
+
+		/* Allocate qman specific portals */
+		qp = fsl_qman_fq_portal_create(&q_fd);
+		if (!qp) {
+			DPAA_PMD_ERR("Unable to alloc fq portal");
+			return -1;
+		}
+		rxq->qp = qp;
+
+		/* Set up the device interrupt handler */
+		if (!dev->intr_handle) {
+			struct rte_dpaa_device *dpaa_dev;
+			struct rte_device *rdev = dev->device;
+
+			dpaa_dev = container_of(rdev, struct rte_dpaa_device,
+						device);
+			dev->intr_handle = &dpaa_dev->intr_handle;
+			dev->intr_handle->intr_vec = rte_zmalloc(NULL,
+					dpaa_push_mode_max_queue, 0);
+			if (!dev->intr_handle->intr_vec) {
+				DPAA_PMD_ERR("intr_vec alloc failed");
+				return -ENOMEM;
+			}
+			dev->intr_handle->nb_efd = dpaa_push_mode_max_queue;
+			dev->intr_handle->max_intr = dpaa_push_mode_max_queue;
+		}
+
+		dev->intr_handle->type = RTE_INTR_HANDLE_EXT;
+		dev->intr_handle->intr_vec[queue_idx] = queue_idx + 1;
+		dev->intr_handle->efds[queue_idx] = q_fd;
+		rxq->q_fd = q_fd;
 	}
 	rxq->bp_array = rte_dpaa_bpid_info;
 	dev->data->rx_queues[queue_idx] = rxq;
@@ -978,6 +1028,40 @@ dpaa_dev_set_mac_addr(struct rte_eth_dev *dev,
 	return ret;
 }
 
+static int dpaa_dev_queue_intr_enable(struct rte_eth_dev *dev,
+				      uint16_t queue_id)
+{
+	struct dpaa_if *dpaa_intf = dev->data->dev_private;
+	struct qman_fq *rxq = &dpaa_intf->rx_queues[queue_id];
+
+	if (!rxq->is_static)
+		return -EINVAL;
+
+	return qman_fq_portal_irqsource_add(rxq->qp, QM_PIRQ_DQRI);
+}
+
+static int dpaa_dev_queue_intr_disable(struct rte_eth_dev *dev,
+				       uint16_t queue_id)
+{
+	struct dpaa_if *dpaa_intf = dev->data->dev_private;
+	struct qman_fq *rxq = &dpaa_intf->rx_queues[queue_id];
+	uint32_t temp;
+	ssize_t temp1;
+
+	if (!rxq->is_static)
+		return -EINVAL;
+
+	qman_fq_portal_irqsource_remove(rxq->qp, ~0);
+
+	temp1 = read(rxq->q_fd, &temp, sizeof(temp));
+	if (temp1 != sizeof(temp))
+		DPAA_EVENTDEV_ERR("irq read error");
+
+	qman_fq_portal_thread_irq(rxq->qp);
+
+	return 0;
+}
+
 static struct eth_dev_ops dpaa_devops = {
 	.dev_configure		  = dpaa_eth_dev_configure,
 	.dev_start		  = dpaa_eth_dev_start,
@@ -1015,6 +1099,9 @@ static struct eth_dev_ops dpaa_devops = {
 	.mac_addr_set		  = dpaa_dev_set_mac_addr,
 
 	.fw_version_get		  = dpaa_fw_version_get,
+
+	.rx_queue_intr_enable	  = dpaa_dev_queue_intr_enable,
+	.rx_queue_intr_disable	  = dpaa_dev_queue_intr_disable,
 };
 
 static bool
@@ -1100,8 +1187,6 @@ static int dpaa_rx_queue_init(struct qman_fq *fq, struct qman_cgr *cgr_rx,
 		}
 	};
 
-	PMD_INIT_FUNC_TRACE();
-
 	if (fqid) {
 		ret = qman_reserve_fqid(fqid);
 		if (ret) {
@@ -1152,8 +1237,6 @@ static int dpaa_tx_queue_init(struct qman_fq *fq,
 {
 	struct qm_mcc_initfq opts = {0};
 	int ret;
-
-	PMD_INIT_FUNC_TRACE();
 
 	ret = qman_create_fq(0, QMAN_FQ_FLAG_DYNAMIC_FQID |
 			     QMAN_FQ_FLAG_TO_DCPORTAL, fq);
@@ -1494,20 +1577,6 @@ rte_dpaa_probe(struct rte_dpaa_driver *dpaa_drv __rte_unused,
 	}
 
 	if (!is_global_init && (rte_eal_process_type() == RTE_PROC_PRIMARY)) {
-		/* One time load of Qman/Bman drivers */
-		ret = qman_global_init();
-		if (ret) {
-			DPAA_PMD_ERR("QMAN initialization failed: %d",
-				     ret);
-			return ret;
-		}
-		ret = bman_global_init();
-		if (ret) {
-			DPAA_PMD_ERR("BMAN initialization failed: %d",
-				     ret);
-			return ret;
-		}
-
 		if (access("/tmp/fmc.bin", F_OK) == -1) {
 			RTE_LOG(INFO, PMD,
 				"* FMC not configured.Enabling default mode\n");

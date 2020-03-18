@@ -5,7 +5,8 @@
 APP = l3fwd
 
 # all source are stored in SRCS-y
-SRCS-y := main.c l3fwd_lpm.c l3fwd_em.c
+SRCS-y := main.c l3fwd_lpm.c l3fwd_em.c l3fwd_event.c
+SRCS-y += l3fwd_event_generic.c l3fwd_event_internal_port.c
 
 # Build using pkg-config variables if possible
 ifeq ($(shell pkg-config --exists libdpdk && echo 0),0)
@@ -17,9 +18,9 @@ shared: build/$(APP)-shared
 static: build/$(APP)-static
 	ln -sf $(APP)-static build/$(APP)
 
-PKGCONF=pkg-config --define-prefix
+PKGCONF ?= pkg-config
 
-PC_FILE := $(shell $(PKGCONF) --path libdpdk)
+PC_FILE := $(shell $(PKGCONF) --path libdpdk 2>/dev/null)
 CFLAGS += -O3 $(shell $(PKGCONF) --cflags libdpdk)
 LDFLAGS_SHARED = $(shell $(PKGCONF) --libs libdpdk)
 LDFLAGS_STATIC = -Wl,-Bstatic $(shell $(PKGCONF) --static --libs libdpdk)

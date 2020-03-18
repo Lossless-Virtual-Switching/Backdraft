@@ -44,7 +44,6 @@
 
 #define VMXNET3_TX_OFFLOAD_CAP		\
 	(DEV_TX_OFFLOAD_VLAN_INSERT |	\
-	 DEV_TX_OFFLOAD_IPV4_CKSUM |	\
 	 DEV_TX_OFFLOAD_TCP_CKSUM |	\
 	 DEV_TX_OFFLOAD_UDP_CKSUM |	\
 	 DEV_TX_OFFLOAD_TCP_TSO |	\
@@ -54,11 +53,11 @@
 	(DEV_RX_OFFLOAD_VLAN_STRIP |	\
 	 DEV_RX_OFFLOAD_VLAN_FILTER |   \
 	 DEV_RX_OFFLOAD_SCATTER |	\
-	 DEV_RX_OFFLOAD_IPV4_CKSUM |	\
 	 DEV_RX_OFFLOAD_UDP_CKSUM |	\
 	 DEV_RX_OFFLOAD_TCP_CKSUM |	\
 	 DEV_RX_OFFLOAD_TCP_LRO |	\
-	 DEV_RX_OFFLOAD_JUMBO_FRAME)
+	 DEV_RX_OFFLOAD_JUMBO_FRAME |   \
+	 DEV_RX_OFFLOAD_RSS_HASH)
 
 static int eth_vmxnet3_dev_init(struct rte_eth_dev *eth_dev);
 static int eth_vmxnet3_dev_uninit(struct rte_eth_dev *eth_dev);
@@ -67,10 +66,10 @@ static int vmxnet3_dev_start(struct rte_eth_dev *dev);
 static void vmxnet3_dev_stop(struct rte_eth_dev *dev);
 static void vmxnet3_dev_close(struct rte_eth_dev *dev);
 static void vmxnet3_dev_set_rxmode(struct vmxnet3_hw *hw, uint32_t feature, int set);
-static void vmxnet3_dev_promiscuous_enable(struct rte_eth_dev *dev);
-static void vmxnet3_dev_promiscuous_disable(struct rte_eth_dev *dev);
-static void vmxnet3_dev_allmulticast_enable(struct rte_eth_dev *dev);
-static void vmxnet3_dev_allmulticast_disable(struct rte_eth_dev *dev);
+static int vmxnet3_dev_promiscuous_enable(struct rte_eth_dev *dev);
+static int vmxnet3_dev_promiscuous_disable(struct rte_eth_dev *dev);
+static int vmxnet3_dev_allmulticast_enable(struct rte_eth_dev *dev);
+static int vmxnet3_dev_allmulticast_disable(struct rte_eth_dev *dev);
 static int __vmxnet3_dev_link_update(struct rte_eth_dev *dev,
 				     int wait_to_complete);
 static int vmxnet3_dev_link_update(struct rte_eth_dev *dev,
@@ -78,14 +77,14 @@ static int vmxnet3_dev_link_update(struct rte_eth_dev *dev,
 static void vmxnet3_hw_stats_save(struct vmxnet3_hw *hw);
 static int vmxnet3_dev_stats_get(struct rte_eth_dev *dev,
 				  struct rte_eth_stats *stats);
-static void vmxnet3_dev_stats_reset(struct rte_eth_dev *dev);
+static int vmxnet3_dev_stats_reset(struct rte_eth_dev *dev);
 static int vmxnet3_dev_xstats_get_names(struct rte_eth_dev *dev,
 					struct rte_eth_xstat_name *xstats,
 					unsigned int n);
 static int vmxnet3_dev_xstats_get(struct rte_eth_dev *dev,
 				  struct rte_eth_xstat *xstats, unsigned int n);
-static void vmxnet3_dev_info_get(struct rte_eth_dev *dev,
-				 struct rte_eth_dev_info *dev_info);
+static int vmxnet3_dev_info_get(struct rte_eth_dev *dev,
+				struct rte_eth_dev_info *dev_info);
 static const uint32_t *
 vmxnet3_dev_supported_ptypes_get(struct rte_eth_dev *dev);
 static int vmxnet3_dev_vlan_filter_set(struct rte_eth_dev *dev,
@@ -408,6 +407,9 @@ vmxnet3_dev_configure(struct rte_eth_dev *dev)
 	size_t size;
 
 	PMD_INIT_FUNC_TRACE();
+
+	if (dev->data->dev_conf.rxmode.mq_mode & ETH_MQ_RX_RSS_FLAG)
+		dev->data->dev_conf.rxmode.offloads |= DEV_RX_OFFLOAD_RSS_HASH;
 
 	if (dev->data->nb_tx_queues > VMXNET3_MAX_TX_QUEUES ||
 	    dev->data->nb_rx_queues > VMXNET3_MAX_RX_QUEUES) {
@@ -1127,7 +1129,7 @@ vmxnet3_dev_stats_get(struct rte_eth_dev *dev, struct rte_eth_stats *stats)
 	return 0;
 }
 
-static void
+static int
 vmxnet3_dev_stats_reset(struct rte_eth_dev *dev)
 {
 	unsigned int i;
@@ -1149,10 +1151,12 @@ vmxnet3_dev_stats_reset(struct rte_eth_dev *dev)
 		memcpy(&hw->snapshot_rx_stats[i], &rxStats,
 			sizeof(hw->snapshot_rx_stats[0]));
 	}
+
+	return 0;
 }
 
-static void
-vmxnet3_dev_info_get(struct rte_eth_dev *dev __rte_unused,
+static int
+vmxnet3_dev_info_get(struct rte_eth_dev *dev,
 		     struct rte_eth_dev_info *dev_info)
 {
 	struct vmxnet3_hw *hw = dev->data->dev_private;
@@ -1188,6 +1192,8 @@ vmxnet3_dev_info_get(struct rte_eth_dev *dev __rte_unused,
 	dev_info->rx_queue_offload_capa = 0;
 	dev_info->tx_offload_capa = VMXNET3_TX_OFFLOAD_CAP;
 	dev_info->tx_queue_offload_capa = 0;
+
+	return 0;
 }
 
 static const uint32_t *
@@ -1262,7 +1268,7 @@ vmxnet3_dev_set_rxmode(struct vmxnet3_hw *hw, uint32_t feature, int set)
 }
 
 /* Promiscuous supported only if Vmxnet3_DriverShared is initialized in adapter */
-static void
+static int
 vmxnet3_dev_promiscuous_enable(struct rte_eth_dev *dev)
 {
 	struct vmxnet3_hw *hw = dev->data->dev_private;
@@ -1273,10 +1279,12 @@ vmxnet3_dev_promiscuous_enable(struct rte_eth_dev *dev)
 
 	VMXNET3_WRITE_BAR1_REG(hw, VMXNET3_REG_CMD,
 			       VMXNET3_CMD_UPDATE_VLAN_FILTERS);
+
+	return 0;
 }
 
 /* Promiscuous supported only if Vmxnet3_DriverShared is initialized in adapter */
-static void
+static int
 vmxnet3_dev_promiscuous_disable(struct rte_eth_dev *dev)
 {
 	struct vmxnet3_hw *hw = dev->data->dev_private;
@@ -1290,24 +1298,30 @@ vmxnet3_dev_promiscuous_disable(struct rte_eth_dev *dev)
 	vmxnet3_dev_set_rxmode(hw, VMXNET3_RXM_PROMISC, 0);
 	VMXNET3_WRITE_BAR1_REG(hw, VMXNET3_REG_CMD,
 			       VMXNET3_CMD_UPDATE_VLAN_FILTERS);
+
+	return 0;
 }
 
 /* Allmulticast supported only if Vmxnet3_DriverShared is initialized in adapter */
-static void
+static int
 vmxnet3_dev_allmulticast_enable(struct rte_eth_dev *dev)
 {
 	struct vmxnet3_hw *hw = dev->data->dev_private;
 
 	vmxnet3_dev_set_rxmode(hw, VMXNET3_RXM_ALL_MULTI, 1);
+
+	return 0;
 }
 
 /* Allmulticast supported only if Vmxnet3_DriverShared is initialized in adapter */
-static void
+static int
 vmxnet3_dev_allmulticast_disable(struct rte_eth_dev *dev)
 {
 	struct vmxnet3_hw *hw = dev->data->dev_private;
 
 	vmxnet3_dev_set_rxmode(hw, VMXNET3_RXM_ALL_MULTI, 0);
+
+	return 0;
 }
 
 /* Enable/disable filter on vlan */

@@ -57,6 +57,7 @@ usage(char* progname)
 	       "[--help|-h] | [--auto-start|-a] | ["
 	       "--tx-first | --stats-period=PERIOD | "
 	       "--coremask=COREMASK --portmask=PORTMASK --numa "
+	       "--portlist=PORTLIST "
 	       "--mbuf-size= | --total-num-mbufs= | "
 	       "--nb-cores= | --nb-ports= | "
 #ifdef RTE_LIBRTE_CMDLINE
@@ -68,7 +69,8 @@ usage(char* progname)
 	       "--rss-ip | --rss-udp | "
 	       "--rxpt= | --rxht= | --rxwt= | --rxfreet= | "
 	       "--txpt= | --txht= | --txwt= | --txfreet= | "
-	       "--txrst= | --tx-offloads= | --vxlan-gpe-port= ]\n",
+	       "--txrst= | --tx-offloads= | | --rx-offloads= | "
+	       "--vxlan-gpe-port= ]\n",
 	       progname);
 #ifdef RTE_LIBRTE_CMDLINE
 	printf("  --interactive: run in interactive mode.\n");
@@ -91,6 +93,7 @@ usage(char* progname)
 	       "packet forwarding.\n");
 	printf("  --portmask=PORTMASK: hexadecimal bitmask of ports used "
 	       "by the packet forwarding test.\n");
+	printf("  --portlist=PORTLIST: list of forwarding ports\n");
 	printf("  --numa: enable NUMA-aware allocation of RX/TX rings and of "
 	       "RX memory buffers (mbufs).\n");
 	printf("  --port-numa-config=(port,socket)[,(port,socket)]: "
@@ -106,6 +109,8 @@ usage(char* progname)
 	printf("  --total-num-mbufs=N: set the number of mbufs to be allocated "
 	       "in mbuf pools.\n");
 	printf("  --max-pkt-len=N: set the maximum size of packet to N bytes.\n");
+	printf("  --max-lro-pkt-size=N: set the maximum LRO aggregated packet "
+	       "size to N bytes.\n");
 #ifdef RTE_LIBRTE_CMDLINE
 	printf("  --eth-peers-configfile=name: config file with ethernet addresses "
 	       "of peer ports.\n");
@@ -135,10 +140,11 @@ usage(char* progname)
 	printf("  --enable-hw-vlan-filter: enable hardware vlan filter.\n");
 	printf("  --enable-hw-vlan-strip: enable hardware vlan strip.\n");
 	printf("  --enable-hw-vlan-extend: enable hardware vlan extend.\n");
+	printf("  --enable-hw-qinq-strip: enable hardware qinq strip.\n");
 	printf("  --enable-drop-en: enable per queue packet drop.\n");
 	printf("  --disable-rss: disable rss.\n");
-	printf("  --port-topology=N: set port topology (N: paired (default) or "
-	       "chained).\n");
+	printf("  --port-topology=<paired|chained|loop>: set port topology (paired "
+	       "is default).\n");
 	printf("  --forward-mode=N: set forwarding mode (N: %s).\n",
 	       list_pkt_forwarding_modes());
 	printf("  --rss-ip: set RSS functions to IPv4/IPv6 only .\n");
@@ -147,6 +153,8 @@ usage(char* progname)
 	printf("  --rxd=N: set the number of descriptors in RX rings to N.\n");
 	printf("  --txq=N: set the number of TX queues per port to N.\n");
 	printf("  --txd=N: set the number of descriptors in TX rings to N.\n");
+	printf("  --hairpinq=N: set the number of hairpin queues per port to "
+	       "N.\n");
 	printf("  --burst=N: set the number of packets per burst to N.\n");
 	printf("  --mbcache=N: set the cache of mbuf memory pool to N.\n");
 	printf("  --rxpt=N: set prefetch threshold register of RX rings to N.\n");
@@ -186,6 +194,7 @@ usage(char* progname)
 	printf("  --flow-isolate-all: "
 	       "requests flow API isolated mode on all ports at initialization time.\n");
 	printf("  --tx-offloads=0xXXXXXXXX: hexadecimal bitmask of TX queue offloads\n");
+	printf("  --rx-offloads=0xXXXXXXXX: hexadecimal bitmask of RX queue offloads\n");
 	printf("  --hot-plug: enable hot plug for device.\n");
 	printf("  --vxlan-gpe-port=N: UPD port of tunnel VXLAN-GPE\n");
 	printf("  --mlockall: lock all memory\n");
@@ -562,6 +571,7 @@ launch_args_parse(int argc, char** argv)
 	uint64_t tx_offloads = tx_mode.offloads;
 	struct rte_eth_dev_info dev_info;
 	uint16_t rec_nb_pkts;
+	int ret;
 
 	static struct option lgopts[] = {
 		{ "help",			0, 0, 0 },
@@ -579,6 +589,7 @@ launch_args_parse(int argc, char** argv)
 		{ "nb-ports",			1, 0, 0 },
 		{ "coremask",			1, 0, 0 },
 		{ "portmask",			1, 0, 0 },
+		{ "portlist",			1, 0, 0 },
 		{ "numa",			0, 0, 0 },
 		{ "no-numa",			0, 0, 0 },
 		{ "mp-anon",			0, 0, 0 },
@@ -588,6 +599,7 @@ launch_args_parse(int argc, char** argv)
 		{ "mbuf-size",			1, 0, 0 },
 		{ "total-num-mbufs",		1, 0, 0 },
 		{ "max-pkt-len",		1, 0, 0 },
+		{ "max-lro-pkt-size",		1, 0, 0 },
 		{ "pkt-filter-mode",            1, 0, 0 },
 		{ "pkt-filter-report-hash",     1, 0, 0 },
 		{ "pkt-filter-size",            1, 0, 0 },
@@ -607,6 +619,7 @@ launch_args_parse(int argc, char** argv)
 		{ "enable-hw-vlan-filter",      0, 0, 0 },
 		{ "enable-hw-vlan-strip",       0, 0, 0 },
 		{ "enable-hw-vlan-extend",      0, 0, 0 },
+		{ "enable-hw-qinq-strip",       0, 0, 0 },
 		{ "enable-drop-en",            0, 0, 0 },
 		{ "disable-rss",                0, 0, 0 },
 		{ "port-topology",              1, 0, 0 },
@@ -617,6 +630,7 @@ launch_args_parse(int argc, char** argv)
 		{ "txq",			1, 0, 0 },
 		{ "rxd",			1, 0, 0 },
 		{ "txd",			1, 0, 0 },
+		{ "hairpinq",			1, 0, 0 },
 		{ "burst",			1, 0, 0 },
 		{ "mbcache",			1, 0, 0 },
 		{ "txpt",			1, 0, 0 },
@@ -641,6 +655,7 @@ launch_args_parse(int argc, char** argv)
 		{ "print-event",		1, 0, 0 },
 		{ "mask-event",			1, 0, 0 },
 		{ "tx-offloads",		1, 0, 0 },
+		{ "rx-offloads",		1, 0, 0 },
 		{ "hot-plug",			0, 0, 0 },
 		{ "vxlan-gpe-port",		1, 0, 0 },
 		{ "mlockall",			0, 0, 0 },
@@ -813,6 +828,8 @@ launch_args_parse(int argc, char** argv)
 				parse_fwd_coremask(optarg);
 			if (!strcmp(lgopts[opt_idx].name, "portmask"))
 				parse_fwd_portmask(optarg);
+			if (!strcmp(lgopts[opt_idx].name, "portlist"))
+				parse_fwd_portlist(optarg);
 			if (!strcmp(lgopts[opt_idx].name, "no-numa"))
 				numa_support = 0;
 			if (!strcmp(lgopts[opt_idx].name, "numa"))
@@ -829,6 +846,8 @@ launch_args_parse(int argc, char** argv)
 					mp_alloc_type = MP_ALLOC_XMEM;
 				else if (!strcmp(optarg, "xmemhuge"))
 					mp_alloc_type = MP_ALLOC_XMEM_HUGE;
+				else if (!strcmp(optarg, "xbuf"))
+					mp_alloc_type = MP_ALLOC_XBUF;
 				else
 					rte_exit(EXIT_FAILURE,
 						"mp-alloc %s invalid - must be: "
@@ -881,6 +900,10 @@ launch_args_parse(int argc, char** argv)
 					rte_exit(EXIT_FAILURE,
 						 "Invalid max-pkt-len=%d - should be > %d\n",
 						 n, RTE_ETHER_MIN_LEN);
+			}
+			if (!strcmp(lgopts[opt_idx].name, "max-lro-pkt-size")) {
+				n = atoi(optarg);
+				rx_mode.max_lro_pkt_size = (uint32_t) n;
 			}
 			if (!strcmp(lgopts[opt_idx].name, "pkt-filter-mode")) {
 				if (!strcmp(optarg, "signature"))
@@ -994,6 +1017,10 @@ launch_args_parse(int argc, char** argv)
 					"enable-hw-vlan-extend"))
 				rx_offloads |= DEV_RX_OFFLOAD_VLAN_EXTEND;
 
+			if (!strcmp(lgopts[opt_idx].name,
+					"enable-hw-qinq-strip"))
+				rx_offloads |= DEV_RX_OFFLOAD_QINQ_STRIP;
+
 			if (!strcmp(lgopts[opt_idx].name, "enable-drop-en"))
 				rx_drop_en = 1;
 
@@ -1035,6 +1062,31 @@ launch_args_parse(int argc, char** argv)
 						  " >= 0 && <= %u\n", n,
 						  get_allowed_max_nb_txq(&pid));
 			}
+			if (!strcmp(lgopts[opt_idx].name, "hairpinq")) {
+				n = atoi(optarg);
+				if (n >= 0 &&
+				    check_nb_hairpinq((queueid_t)n) == 0)
+					nb_hairpinq = (queueid_t) n;
+				else
+					rte_exit(EXIT_FAILURE, "txq %d invalid - must be"
+						  " >= 0 && <= %u\n", n,
+						  get_allowed_max_nb_hairpinq
+						  (&pid));
+				if ((n + nb_txq) < 0 ||
+				    check_nb_txq((queueid_t)(n + nb_txq)) != 0)
+					rte_exit(EXIT_FAILURE, "txq + hairpinq "
+						 "%d invalid - must be"
+						  " >= 0 && <= %u\n",
+						  n + nb_txq,
+						  get_allowed_max_nb_txq(&pid));
+				if ((n + nb_rxq) < 0 ||
+				    check_nb_rxq((queueid_t)(n + nb_rxq)) != 0)
+					rte_exit(EXIT_FAILURE, "rxq + hairpinq "
+						 "%d invalid - must be"
+						  " >= 0 && <= %u\n",
+						  n + nb_rxq,
+						  get_allowed_max_nb_rxq(&pid));
+			}
 			if (!nb_rxq && !nb_txq) {
 				rte_exit(EXIT_FAILURE, "Either rx or tx queues should "
 						"be non-zero\n");
@@ -1050,7 +1102,12 @@ launch_args_parse(int argc, char** argv)
 					 * value, on the assumption that all
 					 * ports are of the same NIC model.
 					 */
-					rte_eth_dev_info_get(0, &dev_info);
+					ret = eth_dev_info_get_print_err(
+								0,
+								&dev_info);
+					if (ret != 0)
+						return;
+
 					rec_nb_pkts = dev_info
 						.default_rxportconf.burst_size;
 
@@ -1215,6 +1272,17 @@ launch_args_parse(int argc, char** argv)
 					rte_exit(EXIT_FAILURE,
 						 "tx-offloads must be >= 0\n");
 			}
+
+			if (!strcmp(lgopts[opt_idx].name, "rx-offloads")) {
+				char *end = NULL;
+				n = strtoull(optarg, &end, 16);
+				if (n >= 0)
+					rx_offloads = (uint64_t)n;
+				else
+					rte_exit(EXIT_FAILURE,
+						 "rx-offloads must be >= 0\n");
+			}
+
 			if (!strcmp(lgopts[opt_idx].name, "vxlan-gpe-port")) {
 				n = atoi(optarg);
 				if (n >= 0)
@@ -1302,10 +1370,17 @@ launch_args_parse(int argc, char** argv)
 			break;
 		default:
 			usage(argv[0]);
+			printf("Invalid option: %s\n", argv[optind]);
 			rte_exit(EXIT_FAILURE,
 				 "Command line is incomplete or incorrect\n");
 			break;
 		}
+	}
+
+	if (optind != argc) {
+		usage(argv[0]);
+		printf("Invalid parameter: %s\n", argv[optind]);
+		rte_exit(EXIT_FAILURE, "Command line is incorrect\n");
 	}
 
 	/* Set offload configuration from command line parameters. */

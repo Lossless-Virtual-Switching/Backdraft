@@ -37,8 +37,8 @@ What is Quiescent State
 -----------------------
 
 Quiescent State can be defined as "any point in the thread execution where the
-thread does not hold a reference to shared memory". It is up to the application
-to determine its quiescent state.
+thread does not hold a reference to shared memory". It is the responsibility of
+the application to determine its quiescent state.
 
 Let us consider the following diagram:
 
@@ -61,7 +61,7 @@ wait till thread 2 enters quiescent state as well.
 
 However, the writer does not need to wait for reader thread 3 to enter
 quiescent state. Reader thread 3 was not accessing D1 when the delete
-operation happened. So, reader thread 1 will not have a reference to the
+operation happened. So, reader thread 3 will not have a reference to the
 deleted entry.
 
 It can be noted that, the critical sections for D2 is a quiescent state
@@ -76,7 +76,7 @@ Factors affecting the RCU mechanism
 
 It is important to make sure that this library keeps the overhead of
 identifying the end of grace period and subsequent freeing of memory,
-to a minimum. The following explains how grace period and critical
+to a minimum. The following paras explain how grace period and critical
 section affect this overhead.
 
 The writer has to poll the readers to identify the end of grace period.
@@ -91,14 +91,14 @@ critical sections smaller requires additional CPU cycles (due to additional
 reporting) in the readers.
 
 Hence, we need the characteristics of a small grace period and large critical
-section. This library addresses this by allowing the writer to do
-other work without having to block until the readers report their quiescent
-state.
+section. This library addresses these characteristics by allowing the writer
+to do other work without having to block until the readers report their
+quiescent state.
 
 RCU in DPDK
 -----------
 
-For DPDK applications, the start and end of a ``while(1)`` loop (where no
+For DPDK applications, the beginning and end of a ``while(1)`` loop (where no
 references to shared data structures are kept) act as perfect quiescent
 states. This will combine all the shared data structure accesses into a
 single, large critical section which helps keep the overhead on the
@@ -106,11 +106,11 @@ reader side to a minimum.
 
 DPDK supports a pipeline model of packet processing and service cores.
 In these use cases, a given data structure may not be used by all the
-workers in the application. The writer does not have to wait for all
-the workers to report their quiescent state. To provide the required
-flexibility, this library has a concept of a QS variable. The application
-can create one QS variable per data structure to help it track the
-end of grace period for each data structure. This helps keep the grace
+workers in the application. The writer has to wait only for the workers that
+use the data structure to report their quiescent state. To provide the required
+flexibility, this library has a concept of a QS variable. If required, the
+application can create one QS variable per data structure to help it track the
+end of grace period for each data structure. This helps keep the length of grace
 period to a minimum.
 
 How to use this library
@@ -120,8 +120,7 @@ The application must allocate memory and initialize a QS variable.
 
 Applications can call ``rte_rcu_qsbr_get_memsize()`` to calculate the size
 of memory to allocate. This API takes a maximum number of reader threads,
-using this variable, as a parameter. Currently, a maximum of 1024 threads
-are supported.
+using this variable, as a parameter.
 
 Further, the application can initialize a QS variable using the API
 ``rte_rcu_qsbr_init()``.
@@ -163,14 +162,19 @@ running as worker threads.
 The separation of triggering the reporting from querying the status provides
 the writer threads flexibility to do useful work instead of blocking for the
 reader threads to enter the quiescent state or go offline. This reduces the
-memory accesses due to continuous polling for the status.
+memory accesses due to continuous polling for the status. But, since the
+resource is freed at a later time, the token and the reference to the deleted
+resource need to be stored for later queries.
 
 The ``rte_rcu_qsbr_synchronize()`` API combines the functionality of
 ``rte_rcu_qsbr_start()`` and blocking ``rte_rcu_qsbr_check()`` into a single
 API. This API triggers the reader threads to report their quiescent state and
 polls till all the readers enter the quiescent state or go offline. This API
 does not allow the writer to do useful work while waiting and introduces
-additional memory accesses due to continuous polling.
+additional memory accesses due to continuous polling. However, the application
+does not have to store the token or the reference to the deleted resource. The
+resource can be freed immediately after ``rte_rcu_qsbr_synchronize()`` API
+returns.
 
 The reader thread must call ``rte_rcu_qsbr_thread_offline()`` and
 ``rte_rcu_qsbr_thread_unregister()`` APIs to remove itself from reporting its

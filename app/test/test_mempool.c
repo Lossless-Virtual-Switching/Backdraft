@@ -26,6 +26,7 @@
 #include <rte_spinlock.h>
 #include <rte_malloc.h>
 #include <rte_mbuf_pool_ops.h>
+#include <rte_mbuf.h>
 
 #include "test.h"
 
@@ -453,14 +454,41 @@ walk_cb(struct rte_mempool *mp, void *userdata __rte_unused)
 	printf("\t%s\n", mp->name);
 }
 
+struct mp_data {
+	int16_t ret;
+};
+
+static void
+test_mp_mem_init(struct rte_mempool *mp,
+		__rte_unused void *opaque,
+		__rte_unused struct rte_mempool_memhdr *memhdr,
+		__rte_unused unsigned int mem_idx)
+{
+	struct mp_data *data = opaque;
+
+	if (mp == NULL) {
+		data->ret = -1;
+		return;
+	}
+	/* nothing to be implemented here*/
+	data->ret = 0;
+}
+
 static int
 test_mempool(void)
 {
 	int ret = -1;
+	uint32_t nb_objs = 0;
+	uint32_t nb_mem_chunks = 0;
 	struct rte_mempool *mp_cache = NULL;
 	struct rte_mempool *mp_nocache = NULL;
+	struct rte_mempool *mp_stack_anon = NULL;
+	struct rte_mempool *mp_stack_mempool_iter = NULL;
 	struct rte_mempool *mp_stack = NULL;
 	struct rte_mempool *default_pool = NULL;
+	struct mp_data cb_arg = {
+		.ret = -1
+	};
 	const char *default_pool_ops = rte_mbuf_best_mempool_ops();
 
 	rte_atomic32_init(&synchro);
@@ -474,7 +502,7 @@ test_mempool(void)
 
 	if (mp_nocache == NULL) {
 		printf("cannot allocate mp_nocache mempool\n");
-		goto err;
+		GOTO_ERR(ret, err);
 	}
 
 	/* create a mempool (with cache) */
@@ -487,8 +515,52 @@ test_mempool(void)
 
 	if (mp_cache == NULL) {
 		printf("cannot allocate mp_cache mempool\n");
-		goto err;
+		GOTO_ERR(ret, err);
 	}
+
+	/* create an empty mempool  */
+	mp_stack_anon = rte_mempool_create_empty("test_stack_anon",
+		MEMPOOL_SIZE,
+		MEMPOOL_ELT_SIZE,
+		RTE_MEMPOOL_CACHE_MAX_SIZE, 0,
+		SOCKET_ID_ANY, 0);
+
+	if (mp_stack_anon == NULL)
+		GOTO_ERR(ret, err);
+
+	/* populate an empty mempool */
+	ret = rte_mempool_populate_anon(mp_stack_anon);
+	printf("%s ret = %d\n", __func__, ret);
+	if (ret < 0)
+		GOTO_ERR(ret, err);
+
+	/* Try to populate when already populated */
+	ret = rte_mempool_populate_anon(mp_stack_anon);
+	if (ret != 0)
+		GOTO_ERR(ret, err);
+
+	/* create a mempool  */
+	mp_stack_mempool_iter = rte_mempool_create("test_iter_obj",
+		MEMPOOL_SIZE,
+		MEMPOOL_ELT_SIZE,
+		RTE_MEMPOOL_CACHE_MAX_SIZE, 0,
+		NULL, NULL,
+		my_obj_init, NULL,
+		SOCKET_ID_ANY, 0);
+
+	if (mp_stack_mempool_iter == NULL)
+		GOTO_ERR(ret, err);
+
+	/* test to initialize mempool objects and memory */
+	nb_objs = rte_mempool_obj_iter(mp_stack_mempool_iter, rte_pktmbuf_init,
+			NULL);
+	if (nb_objs == 0)
+		GOTO_ERR(ret, err);
+
+	nb_mem_chunks = rte_mempool_mem_iter(mp_stack_mempool_iter,
+			test_mp_mem_init, &cb_arg);
+	if (nb_mem_chunks == 0 || cb_arg.ret < 0)
+		GOTO_ERR(ret, err);
 
 	/* create a mempool with an external handler */
 	mp_stack = rte_mempool_create_empty("test_stack",
@@ -499,15 +571,15 @@ test_mempool(void)
 
 	if (mp_stack == NULL) {
 		printf("cannot allocate mp_stack mempool\n");
-		goto err;
+		GOTO_ERR(ret, err);
 	}
 	if (rte_mempool_set_ops_byname(mp_stack, "stack", NULL) < 0) {
 		printf("cannot set stack handler\n");
-		goto err;
+		GOTO_ERR(ret, err);
 	}
 	if (rte_mempool_populate_default(mp_stack) < 0) {
 		printf("cannot populate mp_stack mempool\n");
-		goto err;
+		GOTO_ERR(ret, err);
 	}
 	rte_mempool_obj_iter(mp_stack, my_obj_init, NULL);
 
@@ -521,23 +593,23 @@ test_mempool(void)
 
 	if (default_pool == NULL) {
 		printf("cannot allocate default mempool\n");
-		goto err;
+		GOTO_ERR(ret, err);
 	}
 	if (rte_mempool_set_ops_byname(default_pool,
 				default_pool_ops, NULL) < 0) {
 		printf("cannot set %s handler\n", default_pool_ops);
-		goto err;
+		GOTO_ERR(ret, err);
 	}
 	if (rte_mempool_populate_default(default_pool) < 0) {
 		printf("cannot populate %s mempool\n", default_pool_ops);
-		goto err;
+		GOTO_ERR(ret, err);
 	}
 	rte_mempool_obj_iter(default_pool, my_obj_init, NULL);
 
 	/* retrieve the mempool from its name */
 	if (rte_mempool_lookup("test_nocache") != mp_nocache) {
 		printf("Cannot lookup mempool from its name\n");
-		goto err;
+		GOTO_ERR(ret, err);
 	}
 
 	printf("Walk into mempools:\n");
@@ -547,36 +619,36 @@ test_mempool(void)
 
 	/* basic tests without cache */
 	if (test_mempool_basic(mp_nocache, 0) < 0)
-		goto err;
+		GOTO_ERR(ret, err);
 
 	/* basic tests with cache */
 	if (test_mempool_basic(mp_cache, 0) < 0)
-		goto err;
+		GOTO_ERR(ret, err);
 
 	/* basic tests with user-owned cache */
 	if (test_mempool_basic(mp_nocache, 1) < 0)
-		goto err;
+		GOTO_ERR(ret, err);
 
 	/* more basic tests without cache */
 	if (test_mempool_basic_ex(mp_nocache) < 0)
-		goto err;
+		GOTO_ERR(ret, err);
 
 	/* mempool operation test based on single producer and single comsumer */
 	if (test_mempool_sp_sc() < 0)
-		goto err;
+		GOTO_ERR(ret, err);
 
 	if (test_mempool_creation_with_exceeded_cache_size() < 0)
-		goto err;
+		GOTO_ERR(ret, err);
 
 	if (test_mempool_same_name_twice_creation() < 0)
-		goto err;
+		GOTO_ERR(ret, err);
 
 	/* test the stack handler */
 	if (test_mempool_basic(mp_stack, 1) < 0)
-		goto err;
+		GOTO_ERR(ret, err);
 
 	if (test_mempool_basic(default_pool, 1) < 0)
-		goto err;
+		GOTO_ERR(ret, err);
 
 	rte_mempool_list_dump(stdout);
 
@@ -585,6 +657,8 @@ test_mempool(void)
 err:
 	rte_mempool_free(mp_nocache);
 	rte_mempool_free(mp_cache);
+	rte_mempool_free(mp_stack_anon);
+	rte_mempool_free(mp_stack_mempool_iter);
 	rte_mempool_free(mp_stack);
 	rte_mempool_free(default_pool);
 

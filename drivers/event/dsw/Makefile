@@ -11,14 +11,15 @@ ifneq ($(CONFIG_RTE_TOOLCHAIN_ICC),y)
 CFLAGS += -Wno-format-nonliteral
 endif
 
+# Depends on rte_ring_elem_*()
+CFLAGS += -DALLOW_EXPERIMENTAL_API
+
 LDLIBS += -lrte_eal
 LDLIBS += -lrte_mbuf
 LDLIBS += -lrte_mempool
 LDLIBS += -lrte_ring
 LDLIBS += -lrte_eventdev
 LDLIBS += -lrte_bus_vdev
-
-LIBABIVER := 1
 
 EXPORT_MAP := rte_pmd_dsw_event_version.map
 

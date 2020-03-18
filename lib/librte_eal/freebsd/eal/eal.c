@@ -26,7 +26,6 @@
 #include <rte_memory.h>
 #include <rte_launch.h>
 #include <rte_eal.h>
-#include <rte_eal_memconfig.h>
 #include <rte_errno.h>
 #include <rte_per_lcore.h>
 #include <rte_lcore.h>
@@ -219,13 +218,24 @@ eal_parse_sysfs_value(const char *filename, unsigned long *val)
 static int
 rte_eal_config_create(void)
 {
-	void *rte_mem_cfg_addr;
+	size_t page_sz = sysconf(_SC_PAGE_SIZE);
+	size_t cfg_len = sizeof(*rte_config.mem_config);
+	size_t cfg_len_aligned = RTE_ALIGN(cfg_len, page_sz);
+	void *rte_mem_cfg_addr, *mapped_mem_cfg_addr;
 	int retval;
 
 	const char *pathname = eal_runtime_config_path();
 
 	if (internal_config.no_shconf)
 		return 0;
+
+	/* map the config before base address so that we don't waste a page */
+	if (internal_config.base_virtaddr != 0)
+		rte_mem_cfg_addr = (void *)
+			RTE_ALIGN_FLOOR(internal_config.base_virtaddr -
+			sizeof(struct rte_mem_config), page_sz);
+	else
+		rte_mem_cfg_addr = NULL;
 
 	if (mem_cfg_fd < 0){
 		mem_cfg_fd = open(pathname, O_RDWR | O_CREAT, 0600);
@@ -236,7 +246,7 @@ rte_eal_config_create(void)
 		}
 	}
 
-	retval = ftruncate(mem_cfg_fd, sizeof(*rte_config.mem_config));
+	retval = ftruncate(mem_cfg_fd, cfg_len);
 	if (retval < 0){
 		close(mem_cfg_fd);
 		mem_cfg_fd = -1;
@@ -254,15 +264,28 @@ rte_eal_config_create(void)
 		return -1;
 	}
 
-	rte_mem_cfg_addr = mmap(NULL, sizeof(*rte_config.mem_config),
-				PROT_READ | PROT_WRITE, MAP_SHARED, mem_cfg_fd, 0);
-
-	if (rte_mem_cfg_addr == MAP_FAILED){
+	/* reserve space for config */
+	rte_mem_cfg_addr = eal_get_virtual_area(rte_mem_cfg_addr,
+			&cfg_len_aligned, page_sz, 0, 0);
+	if (rte_mem_cfg_addr == NULL) {
 		RTE_LOG(ERR, EAL, "Cannot mmap memory for rte_config\n");
 		close(mem_cfg_fd);
 		mem_cfg_fd = -1;
 		return -1;
 	}
+
+	/* remap the actual file into the space we've just reserved */
+	mapped_mem_cfg_addr = mmap(rte_mem_cfg_addr,
+			cfg_len_aligned, PROT_READ | PROT_WRITE,
+			MAP_SHARED | MAP_FIXED, mem_cfg_fd, 0);
+	if (mapped_mem_cfg_addr == MAP_FAILED) {
+		RTE_LOG(ERR, EAL, "Cannot remap memory for rte_config\n");
+		munmap(rte_mem_cfg_addr, cfg_len);
+		close(mem_cfg_fd);
+		mem_cfg_fd = -1;
+		return -1;
+	}
+
 	memcpy(rte_mem_cfg_addr, &early_mem_config, sizeof(early_mem_config));
 	rte_config.mem_config = rte_mem_cfg_addr;
 
@@ -333,14 +356,18 @@ rte_eal_config_reattach(void)
 	close(mem_cfg_fd);
 	mem_cfg_fd = -1;
 
-	if (mem_config == MAP_FAILED) {
+	if (mem_config == MAP_FAILED || mem_config != rte_mem_cfg_addr) {
+		if (mem_config != MAP_FAILED) {
+			/* errno is stale, don't use */
+			RTE_LOG(ERR, EAL, "Cannot mmap memory for rte_config at [%p], got [%p]"
+					  " - please use '--" OPT_BASE_VIRTADDR
+					  "' option\n",
+				rte_mem_cfg_addr, mem_config);
+			munmap(mem_config, sizeof(struct rte_mem_config));
+			return -1;
+		}
 		RTE_LOG(ERR, EAL, "Cannot mmap memory for rte_config! error %i (%s)\n",
-				errno, strerror(errno));
-		return -1;
-	} else if (mem_config != rte_mem_cfg_addr) {
-		/* errno is stale, don't use */
-		RTE_LOG(ERR, EAL, "Cannot mmap memory for rte_config at [%p], got [%p]\n",
-			  rte_mem_cfg_addr, mem_config);
+			errno, strerror(errno));
 		return -1;
 	}
 
@@ -943,13 +970,6 @@ rte_eal_cleanup(void)
 	return 0;
 }
 
-/* get core role */
-enum rte_lcore_role_t
-rte_eal_lcore_role(unsigned lcore_id)
-{
-	return rte_config.lcore_role[lcore_id];
-}
-
 enum rte_proc_type_t
 rte_eal_process_type(void)
 {
@@ -1005,20 +1025,6 @@ int rte_vfio_noiommu_is_enabled(void)
 int rte_vfio_clear_group(__rte_unused int vfio_group_fd)
 {
 	return 0;
-}
-
-int
-rte_vfio_dma_map(uint64_t __rte_unused vaddr, __rte_unused uint64_t iova,
-		  __rte_unused uint64_t len)
-{
-	return -1;
-}
-
-int
-rte_vfio_dma_unmap(uint64_t __rte_unused vaddr, uint64_t __rte_unused iova,
-		    __rte_unused uint64_t len)
-{
-	return -1;
 }
 
 int

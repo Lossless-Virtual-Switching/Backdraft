@@ -225,6 +225,7 @@ static int
 add_slave(struct slave_conf *slave, uint8_t start)
 {
 	struct rte_ether_addr addr, addr_check;
+	int retval;
 
 	/* Some sanity check */
 	RTE_VERIFY(test_params.slave_ports <= slave &&
@@ -252,7 +253,9 @@ add_slave(struct slave_conf *slave, uint8_t start)
 			"Failed to start slave %u", slave->port_id);
 	}
 
-	rte_eth_macaddr_get(slave->port_id, &addr_check);
+	retval = rte_eth_macaddr_get(slave->port_id, &addr_check);
+	TEST_ASSERT_SUCCESS(retval, "Failed to get slave mac address: %s",
+			    strerror(-retval));
 	TEST_ASSERT_EQUAL(rte_is_same_ether_addr(&addr, &addr_check), 1,
 			"Slave MAC address is not as expected");
 
@@ -312,6 +315,7 @@ static int
 initialize_bonded_device_with_slaves(uint16_t slave_count, uint8_t external_sm)
 {
 	uint8_t i;
+	int ret;
 
 	RTE_VERIFY(test_params.bonded_port_id != INVALID_PORT_ID);
 
@@ -323,7 +327,10 @@ initialize_bonded_device_with_slaves(uint16_t slave_count, uint8_t external_sm)
 
 	/* Reset mode 4 configuration */
 	rte_eth_bond_8023ad_setup(test_params.bonded_port_id, NULL);
-	rte_eth_promiscuous_disable(test_params.bonded_port_id);
+	ret = rte_eth_promiscuous_disable(test_params.bonded_port_id);
+	TEST_ASSERT_SUCCESS(ret,
+		"Failed disable promiscuous mode for port %d: %s",
+		test_params.bonded_port_id, rte_strerror(-ret));
 
 	if (external_sm) {
 		struct rte_eth_bond_8023ad_conf conf;
@@ -578,7 +585,13 @@ bond_get_update_timeout_ms(void)
 {
 	struct rte_eth_bond_8023ad_conf conf;
 
-	rte_eth_bond_8023ad_conf_get(test_params.bonded_port_id, &conf);
+	if (rte_eth_bond_8023ad_conf_get(test_params.bonded_port_id, &conf) < 0) {
+		RTE_LOG(DEBUG, EAL, "Failed to get bonding configuration: "
+				    "%s at %d\n", __func__, __LINE__);
+		RTE_TEST_TRACE_FAILURE(__FILE__, __LINE__, __func__);
+		return 0;
+	}
+
 	return conf.update_timeout_ms;
 }
 
@@ -812,7 +825,9 @@ test_mode4_rx(void)
 	retval = bond_handshake();
 	TEST_ASSERT_SUCCESS(retval, "Initial handshake failed");
 
-	rte_eth_macaddr_get(test_params.bonded_port_id, &bonded_mac);
+	retval = rte_eth_macaddr_get(test_params.bonded_port_id, &bonded_mac);
+	TEST_ASSERT_SUCCESS(retval, "Failed to get mac address: %s",
+			    strerror(-retval));
 	rte_ether_addr_copy(&bonded_mac, &dst_mac);
 
 	/* Assert that dst address is not bonding address.  Do not set the
@@ -824,7 +839,10 @@ test_mode4_rx(void)
 	/* First try with promiscuous mode enabled.
 	 * Add 2 packets to each slave. First with bonding MAC address, second with
 	 * different. Check if we received all of them. */
-	rte_eth_promiscuous_enable(test_params.bonded_port_id);
+	retval = rte_eth_promiscuous_enable(test_params.bonded_port_id);
+	TEST_ASSERT_SUCCESS(retval,
+			"Failed to enable promiscuous mode for port %d: %s",
+			test_params.bonded_port_id, rte_strerror(-retval));
 
 	expected_pkts_cnt = 0;
 	FOR_EACH_SLAVE(i, slave) {
@@ -869,7 +887,10 @@ test_mode4_rx(void)
 
 	/* Now, disable promiscuous mode. When promiscuous mode is disabled we
 	 * expect to receive only packets that are directed to bonding port. */
-	rte_eth_promiscuous_disable(test_params.bonded_port_id);
+	retval = rte_eth_promiscuous_disable(test_params.bonded_port_id);
+	TEST_ASSERT_SUCCESS(retval,
+		"Failed to disable promiscuous mode for port %d: %s",
+		test_params.bonded_port_id, rte_strerror(-retval));
 
 	expected_pkts_cnt = 0;
 	FOR_EACH_SLAVE(i, slave) {
@@ -992,8 +1013,9 @@ test_mode4_tx_burst(void)
 	retval = bond_handshake();
 	TEST_ASSERT_SUCCESS(retval, "Initial handshake failed");
 
-	rte_eth_macaddr_get(test_params.bonded_port_id, &bonded_mac);
-
+	retval = rte_eth_macaddr_get(test_params.bonded_port_id, &bonded_mac);
+	TEST_ASSERT_SUCCESS(retval, "Failed to get mac address: %s",
+			    strerror(-retval));
 	/* Prepare burst */
 	for (pkts_cnt = 0; pkts_cnt < RTE_DIM(pkts); pkts_cnt++) {
 		dst_mac.addr_bytes[RTE_ETHER_ADDR_LEN - 1] = pkts_cnt;

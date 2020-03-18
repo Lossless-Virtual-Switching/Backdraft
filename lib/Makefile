@@ -46,11 +46,15 @@ DIRS-$(CONFIG_RTE_LIBRTE_RAWDEV) += librte_rawdev
 DEPDIRS-librte_rawdev := librte_eal librte_ethdev
 DIRS-$(CONFIG_RTE_LIBRTE_VHOST) += librte_vhost
 DEPDIRS-librte_vhost := librte_eal librte_mempool librte_mbuf librte_ethdev \
-			librte_net
+			librte_net librte_hash librte_cryptodev
 DIRS-$(CONFIG_RTE_LIBRTE_HASH) += librte_hash
 DEPDIRS-librte_hash := librte_eal librte_ring
 DIRS-$(CONFIG_RTE_LIBRTE_EFD) += librte_efd
 DEPDIRS-librte_efd := librte_eal librte_ring librte_hash
+DIRS-$(CONFIG_RTE_LIBRTE_RIB) += librte_rib
+DEPDIRS-librte_rib := librte_eal librte_mempool
+DIRS-$(CONFIG_RTE_LIBRTE_FIB) += librte_fib
+DEPDIRS-librte_fib := librte_eal librte_rib
 DIRS-$(CONFIG_RTE_LIBRTE_LPM) += librte_lpm
 DEPDIRS-librte_lpm := librte_eal librte_hash
 DIRS-$(CONFIG_RTE_LIBRTE_ACL) += librte_acl
@@ -85,7 +89,7 @@ DIRS-$(CONFIG_RTE_LIBRTE_DISTRIBUTOR) += librte_distributor
 DEPDIRS-librte_distributor := librte_eal librte_mbuf librte_ethdev
 DIRS-$(CONFIG_RTE_LIBRTE_PORT) += librte_port
 DEPDIRS-librte_port := librte_eal librte_mempool librte_mbuf librte_ethdev
-DEPDIRS-librte_port += librte_ip_frag librte_sched
+DEPDIRS-librte_port += librte_ip_frag librte_sched librte_eventdev
 ifeq ($(CONFIG_RTE_LIBRTE_KNI),y)
 DEPDIRS-librte_port += librte_kni
 endif

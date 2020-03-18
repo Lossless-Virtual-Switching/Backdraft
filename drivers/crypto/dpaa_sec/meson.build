@@ -6,9 +6,11 @@ if not is_linux
 	reason = 'only supported on linux'
 endif
 
-deps += ['bus_dpaa', 'security']
+deps += ['bus_dpaa', 'mempool_dpaa', 'security']
 sources = files('dpaa_sec.c')
 
 allow_experimental_apis = true
 
-includes += include_directories('../dpaa2_sec/')
+includes += include_directories('../../bus/dpaa/include')
+includes += include_directories('../../common/dpaax')
+includes += include_directories('../../common/dpaax/caamflib/')
