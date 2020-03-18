@@ -19,6 +19,10 @@
 #define otx2_dev_is_lbk(dev)	((dev->hwcap & OTX2_HWCAP_F_VF) && \
 				 (dev->tx_chan_base < 0x700))
 #define otx2_dev_revid(dev)	(dev->hwcap & 0xFF)
+#define otx2_dev_is_sdp(dev)	(dev->sdp_link)
+
+#define otx2_dev_is_vf_or_sdp(dev)				\
+	(otx2_dev_is_vf(dev) || otx2_dev_is_sdp(dev))
 
 #define otx2_dev_is_A0(dev)					\
 	((RVU_PCI_REV_MAJOR(otx2_dev_revid(dev)) == 0x0) &&	\
@@ -99,11 +103,7 @@ otx2_dev_init(struct rte_pci_device *pci_dev, void *otx2_dev)
 		return rc;
 	}
 
-	if (pci_dev->id.subsystem_device_id == PCI_SUBSYS_DEVID_96XX_95XX)
-		dev->hwcap = rev_id;
-	else
-		dev->hwcap = 0;
-
+	dev->hwcap = rev_id;
 	return otx2_dev_priv_init(pci_dev, otx2_dev);
 }
 

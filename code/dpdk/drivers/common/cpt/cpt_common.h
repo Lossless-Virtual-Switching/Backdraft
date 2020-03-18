@@ -19,9 +19,6 @@
 #define CPT_COUNT_THOLD		32
 #define CPT_TIMER_THOLD		0x3F
 
-#define AE_TYPE 1
-#define SE_TYPE 2
-
 #ifndef ROUNDUP4
 #define ROUNDUP4(val)	(((val) + 3) & 0xfffffffc)
 #endif
@@ -78,6 +75,7 @@ struct cpt_request_info {
 		uint64_t ei2;
 		uint64_t ei3;
 	} ist;
+	uint8_t *rptr;
 
 	/** Control path fields */
 	uint64_t time_out;

@@ -50,6 +50,11 @@ CONFIG_RTE_FORCE_INTRINSICS=n
 CONFIG_RTE_ARCH_STRICT_ALIGN=n
 
 #
+# Enable link time optimization
+#
+CONFIG_RTE_ENABLE_LTO=n
+
+#
 # Compile to share library
 #
 CONFIG_RTE_BUILD_SHARED_LIB=n
@@ -58,11 +63,6 @@ CONFIG_RTE_BUILD_SHARED_LIB=n
 # Use newest code breaking previous ABI
 #
 CONFIG_RTE_NEXT_ABI=y
-
-#
-# Major ABI to overwrite library specific LIBABIVER
-#
-CONFIG_RTE_MAJOR_ABI=
 
 #
 # Machine's cache line size
@@ -102,7 +102,6 @@ CONFIG_RTE_LOG_DP_LEVEL=RTE_LOG_INFO
 CONFIG_RTE_LOG_HISTORY=256
 CONFIG_RTE_BACKTRACE=y
 CONFIG_RTE_LIBEAL_USE_HPET=n
-CONFIG_RTE_EAL_ALLOW_INV_SOCKET_ID=n
 CONFIG_RTE_EAL_ALWAYS_PANIC_ON_ERROR=n
 CONFIG_RTE_EAL_IGB_UIO=n
 CONFIG_RTE_EAL_VFIO=n
@@ -111,6 +110,11 @@ CONFIG_RTE_MAX_VFIO_CONTAINERS=64
 CONFIG_RTE_MALLOC_DEBUG=n
 CONFIG_RTE_EAL_NUMA_AWARE_HUGEPAGES=n
 CONFIG_RTE_USE_LIBBSD=n
+# Use WFE instructions to implement the rte_wait_for_equal_xxx APIs,
+# calling these APIs put the cores in low power state while waiting
+# for the memory address to become equal to the expected value.
+# This is supported only by aarch64.
+CONFIG_RTE_ARM_USE_WFE=n
 
 #
 # Recognize/ignore the AVX/AVX512 CPU flags for performance/power testing.
@@ -119,6 +123,9 @@ CONFIG_RTE_USE_LIBBSD=n
 #
 CONFIG_RTE_ENABLE_AVX=y
 CONFIG_RTE_ENABLE_AVX512=n
+
+# Use ARM LSE ATOMIC instructions
+CONFIG_RTE_ARM_FEATURE_ATOMICS=n
 
 # Default driver path (or "" to disable)
 CONFIG_RTE_EAL_PMD_PATH=""
@@ -217,12 +224,11 @@ CONFIG_RTE_LIBRTE_BNXT_PMD=y
 # Compile burst-oriented Chelsio Terminator (CXGBE) PMD
 #
 CONFIG_RTE_LIBRTE_CXGBE_PMD=y
-CONFIG_RTE_LIBRTE_CXGBE_DEBUG=n
-CONFIG_RTE_LIBRTE_CXGBE_DEBUG_REG=n
-CONFIG_RTE_LIBRTE_CXGBE_DEBUG_MBOX=n
-CONFIG_RTE_LIBRTE_CXGBE_DEBUG_TX=n
-CONFIG_RTE_LIBRTE_CXGBE_DEBUG_RX=n
-CONFIG_RTE_LIBRTE_CXGBE_TPUT=y
+
+#
+# Compile burst-oriented NXP PFE PMD driver
+#
+CONFIG_RTE_LIBRTE_PFE_PMD=n
 
 # NXP DPAA Bus
 CONFIG_RTE_LIBRTE_DPAA_BUS=n
@@ -282,6 +288,16 @@ CONFIG_RTE_LIBRTE_E1000_PF_DISABLE_STRIP_CRC=n
 CONFIG_RTE_LIBRTE_HINIC_PMD=n
 
 #
+# Compile burst-oriented HNS3 PMD driver
+#
+CONFIG_RTE_LIBRTE_HNS3_PMD=n
+
+#
+# Compile Pensando IONIC PMD driver
+#
+CONFIG_RTE_LIBRTE_IONIC_PMD=y
+
+#
 # Compile burst-oriented IXGBE PMD driver
 #
 CONFIG_RTE_LIBRTE_IXGBE_PMD=y
@@ -289,7 +305,6 @@ CONFIG_RTE_LIBRTE_IXGBE_DEBUG_RX=n
 CONFIG_RTE_LIBRTE_IXGBE_DEBUG_TX=n
 CONFIG_RTE_LIBRTE_IXGBE_DEBUG_TX_FREE=n
 CONFIG_RTE_LIBRTE_IXGBE_PF_DISABLE_STRIP_CRC=n
-CONFIG_RTE_IXGBE_INC_VECTOR=y
 CONFIG_RTE_LIBRTE_IXGBE_BYPASS=n
 
 #
@@ -328,7 +343,6 @@ CONFIG_RTE_LIBRTE_ICE_16BYTE_RX_DESC=n
 # Compile burst-oriented IAVF PMD driver
 #
 CONFIG_RTE_LIBRTE_IAVF_PMD=y
-CONFIG_RTE_LIBRTE_IAVF_INC_VECTOR=y
 CONFIG_RTE_LIBRTE_IAVF_DEBUG_TX=n
 CONFIG_RTE_LIBRTE_IAVF_DEBUG_TX_FREE=n
 CONFIG_RTE_LIBRTE_IAVF_DEBUG_RX=n
@@ -337,7 +351,7 @@ CONFIG_RTE_LIBRTE_IAVF_16BYTE_RX_DESC=n
 #
 # Compile burst-oriented IPN3KE PMD driver
 #
-CONFIG_RTE_LIBRTE_IPN3KE_PMD=y
+CONFIG_RTE_LIBRTE_IPN3KE_PMD=n
 
 #
 # Compile burst-oriented Mellanox ConnectX-3 (MLX4) PMD
@@ -347,10 +361,15 @@ CONFIG_RTE_LIBRTE_MLX4_DEBUG=n
 
 #
 # Compile burst-oriented Mellanox ConnectX-4, ConnectX-5,
-# ConnectX-6 & Bluefield (MLX5) PMD
+# ConnectX-6 & BlueField (MLX5) PMD
 #
 CONFIG_RTE_LIBRTE_MLX5_PMD=n
 CONFIG_RTE_LIBRTE_MLX5_DEBUG=n
+
+#
+# Compile vdpa-oriented Mellanox ConnectX-6 & BlueField (MLX5) PMD
+#
+CONFIG_RTE_LIBRTE_MLX5_VDPA_PMD=n
 
 # Linking method for mlx4/5 dependency on ibverbs and related libraries
 # Default linking is dynamic by linker.
@@ -556,7 +575,7 @@ CONFIG_RTE_LIBRTE_PMD_BBDEV_TURBO_SW=y
 #
 # Compile PMD for Intel FPGA LTE FEC bbdev device
 #
-CONFIG_RTE_LIBRTE_PMD_FPGA_LTE_FEC=y
+CONFIG_RTE_LIBRTE_PMD_BBDEV_FPGA_LTE_FEC=y
 
 #
 # Compile generic crypto device library
@@ -591,6 +610,11 @@ CONFIG_RTE_LIBRTE_DPAA_MAX_CRYPTODEV=4
 # Compile PMD for Cavium OCTEON TX crypto device
 #
 CONFIG_RTE_LIBRTE_PMD_OCTEONTX_CRYPTO=y
+
+#
+# Compile PMD for Marvell OCTEON TX2 crypto device
+#
+CONFIG_RTE_LIBRTE_PMD_OCTEONTX2_CRYPTO=y
 
 #
 # Compile PMD for QuickAssist based devices - see docs for details
@@ -662,6 +686,11 @@ CONFIG_RTE_LIBRTE_PMD_CCP=n
 # Compile PMD for Marvell Crypto device
 #
 CONFIG_RTE_LIBRTE_PMD_MVSAM_CRYPTO=n
+
+#
+# Compile PMD for NITROX crypto device
+#
+CONFIG_RTE_LIBRTE_PMD_NITROX=y
 
 #
 # Compile generic security library
@@ -768,7 +797,7 @@ CONFIG_RTE_LIBRTE_PMD_DPAA2_QDMA_RAWDEV=n
 #
 # Compile PMD for Intel FPGA raw device
 #
-CONFIG_RTE_LIBRTE_PMD_IFPGA_RAWDEV=y
+CONFIG_RTE_LIBRTE_PMD_IFPGA_RAWDEV=n
 
 #
 # Compile PMD for Intel IOAT raw device
@@ -779,6 +808,11 @@ CONFIG_RTE_LIBRTE_PMD_IOAT_RAWDEV=y
 # Compile PMD for octeontx2 DMA raw device
 #
 CONFIG_RTE_LIBRTE_PMD_OCTEONTX2_DMA_RAWDEV=y
+
+#
+# Compile PMD for octeontx2 EP raw device
+#
+CONFIG_RTE_LIBRTE_PMD_OCTEONTX2_EP_RAWDEV=y
 
 #
 # Compile PMD for NTB raw device
@@ -892,6 +926,17 @@ CONFIG_RTE_LIBRTE_TELEMETRY=n
 #
 CONFIG_RTE_LIBRTE_RCU=y
 CONFIG_RTE_LIBRTE_RCU_DEBUG=n
+
+#
+# Compile librte_rib
+#
+CONFIG_RTE_LIBRTE_RIB=y
+
+#
+# Compile librte_fib
+#
+CONFIG_RTE_LIBRTE_FIB=y
+CONFIG_RTE_LIBRTE_FIB_DEBUG=n
 
 #
 # Compile librte_lpm

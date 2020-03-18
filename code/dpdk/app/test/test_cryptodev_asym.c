@@ -18,6 +18,8 @@
 #include "test_cryptodev.h"
 #include "test_cryptodev_dh_test_vectors.h"
 #include "test_cryptodev_dsa_test_vectors.h"
+#include "test_cryptodev_ecdsa_test_vectors.h"
+#include "test_cryptodev_ecpm_test_vectors.h"
 #include "test_cryptodev_mod_test_vectors.h"
 #include "test_cryptodev_rsa_test_vectors.h"
 #include "test_cryptodev_asym_util.h"
@@ -25,10 +27,6 @@
 
 #define TEST_NUM_BUFS 10
 #define TEST_NUM_SESSIONS 4
-
-#ifndef ARRAY_SIZE
-#define ARRAY_SIZE(x) (sizeof(x) / sizeof((x)[0]))
-#endif
 
 #ifndef TEST_DATA_SIZE
 	#define TEST_DATA_SIZE 4096
@@ -54,6 +52,7 @@ struct crypto_unittest_params {
 union test_case_structure {
 	struct modex_test_data modex;
 	struct modinv_test_data modinv;
+	struct rsa_test_data_2 rsa_data;
 };
 
 struct test_cases_array {
@@ -246,10 +245,12 @@ error_exit:
 	return status;
 }
 static int
-test_cryptodev_asym_ver(union test_case_structure *data_tc,
-						struct rte_crypto_op *result_op)
+test_cryptodev_asym_ver(struct rte_crypto_op *op,
+				struct rte_crypto_asym_xform *xform_tc,
+				union test_case_structure *data_tc,
+				struct rte_crypto_op *result_op)
 {
-	int status = TEST_SUCCESS;
+	int status = TEST_FAILED;
 	int ret = 0;
 	uint8_t *data_expected = NULL, *data_received = NULL;
 	size_t data_size = 0;
@@ -265,17 +266,35 @@ test_cryptodev_asym_ver(union test_case_structure *data_tc,
 		data_received = result_op->asym->modinv.result.data;
 		data_size = result_op->asym->modinv.result.length;
 		break;
+	case RTE_CRYPTO_ASYM_XFORM_RSA:
+		if (op->asym->rsa.op_type == RTE_CRYPTO_ASYM_OP_ENCRYPT) {
+			data_size = xform_tc->rsa.n.length;
+			data_received = result_op->asym->rsa.cipher.data;
+			data_expected = data_tc->rsa_data.ct.data;
+		} else if (op->asym->rsa.op_type == RTE_CRYPTO_ASYM_OP_DECRYPT) {
+			data_size = xform_tc->rsa.n.length;
+			data_expected = data_tc->rsa_data.pt.data;
+			data_received = result_op->asym->rsa.message.data;
+		} else if (op->asym->rsa.op_type == RTE_CRYPTO_ASYM_OP_SIGN) {
+			data_size = xform_tc->rsa.n.length;
+			data_expected = data_tc->rsa_data.sign.data;
+			data_received = result_op->asym->rsa.sign.data;
+		} else if (op->asym->rsa.op_type == RTE_CRYPTO_ASYM_OP_VERIFY) {
+			data_size = xform_tc->rsa.n.length;
+			data_expected = data_tc->rsa_data.pt.data;
+			data_received = result_op->asym->rsa.cipher.data;
+		}
+		break;
 	case RTE_CRYPTO_ASYM_XFORM_DH:
 	case RTE_CRYPTO_ASYM_XFORM_DSA:
-	case RTE_CRYPTO_ASYM_XFORM_RSA:
 	case RTE_CRYPTO_ASYM_XFORM_NONE:
 	case RTE_CRYPTO_ASYM_XFORM_UNSPECIFIED:
 	default:
 		break;
 	}
 	ret = memcmp(data_expected, data_received, data_size);
-	if (ret)
-		status = TEST_FAILED;
+	if (!ret && data_size)
+		status = TEST_SUCCESS;
 
 	return status;
 }
@@ -283,7 +302,8 @@ test_cryptodev_asym_ver(union test_case_structure *data_tc,
 static int
 test_cryptodev_asym_op(struct crypto_testsuite_params *ts_params,
 	union test_case_structure *data_tc,
-	char *test_msg)
+	char *test_msg, int sessionless, enum rte_crypto_asym_op_type type,
+	enum rte_crypto_rsa_priv_key_type key_type)
 {
 	struct rte_crypto_asym_op *asym_op = NULL;
 	struct rte_crypto_op *op = NULL;
@@ -368,9 +388,57 @@ test_cryptodev_asym_op(struct crypto_testsuite_params *ts_params,
 			goto error_exit;
 		}
 		break;
+	case RTE_CRYPTO_ASYM_XFORM_RSA:
+		result = rte_zmalloc(NULL, data_tc->rsa_data.n.len, 0);
+		op->asym->rsa.op_type = type;
+		xform_tc.rsa.e.data = data_tc->rsa_data.e.data;
+		xform_tc.rsa.e.length = data_tc->rsa_data.e.len;
+		xform_tc.rsa.n.data = data_tc->rsa_data.n.data;
+		xform_tc.rsa.n.length = data_tc->rsa_data.n.len;
+
+		if (key_type == RTE_RSA_KEY_TYPE_EXP) {
+			xform_tc.rsa.d.data = data_tc->rsa_data.d.data;
+			xform_tc.rsa.d.length = data_tc->rsa_data.d.len;
+		} else {
+			xform_tc.rsa.qt.p.data = data_tc->rsa_data.p.data;
+			xform_tc.rsa.qt.p.length = data_tc->rsa_data.p.len;
+			xform_tc.rsa.qt.q.data = data_tc->rsa_data.q.data;
+			xform_tc.rsa.qt.q.length = data_tc->rsa_data.q.len;
+			xform_tc.rsa.qt.dP.data = data_tc->rsa_data.dP.data;
+			xform_tc.rsa.qt.dP.length = data_tc->rsa_data.dP.len;
+			xform_tc.rsa.qt.dQ.data = data_tc->rsa_data.dQ.data;
+			xform_tc.rsa.qt.dQ.length = data_tc->rsa_data.dQ.len;
+			xform_tc.rsa.qt.qInv.data = data_tc->rsa_data.qInv.data;
+			xform_tc.rsa.qt.qInv.length = data_tc->rsa_data.qInv.len;
+		}
+
+		xform_tc.rsa.key_type = key_type;
+		op->asym->rsa.pad = data_tc->rsa_data.padding;
+
+		if (op->asym->rsa.op_type == RTE_CRYPTO_ASYM_OP_ENCRYPT) {
+			asym_op->rsa.message.data = data_tc->rsa_data.pt.data;
+			asym_op->rsa.message.length = data_tc->rsa_data.pt.len;
+			asym_op->rsa.cipher.data = result;
+			asym_op->rsa.cipher.length = data_tc->rsa_data.n.len;
+		} else if (op->asym->rsa.op_type == RTE_CRYPTO_ASYM_OP_DECRYPT) {
+			asym_op->rsa.message.data = result;
+			asym_op->rsa.message.length = data_tc->rsa_data.n.len;
+			asym_op->rsa.cipher.data = data_tc->rsa_data.ct.data;
+			asym_op->rsa.cipher.length = data_tc->rsa_data.ct.len;
+		} else if (op->asym->rsa.op_type == RTE_CRYPTO_ASYM_OP_SIGN) {
+			asym_op->rsa.sign.data = result;
+			asym_op->rsa.sign.length = data_tc->rsa_data.n.len;
+			asym_op->rsa.message.data = data_tc->rsa_data.pt.data;
+			asym_op->rsa.message.length = data_tc->rsa_data.pt.len;
+		} else if (op->asym->rsa.op_type == RTE_CRYPTO_ASYM_OP_VERIFY) {
+			asym_op->rsa.cipher.data = result;
+			asym_op->rsa.cipher.length = data_tc->rsa_data.n.len;
+			asym_op->rsa.sign.data = data_tc->rsa_data.sign.data;
+			asym_op->rsa.sign.length = data_tc->rsa_data.sign.len;
+		}
+		break;
 	case RTE_CRYPTO_ASYM_XFORM_DH:
 	case RTE_CRYPTO_ASYM_XFORM_DSA:
-	case RTE_CRYPTO_ASYM_XFORM_RSA:
 	case RTE_CRYPTO_ASYM_XFORM_NONE:
 	case RTE_CRYPTO_ASYM_XFORM_UNSPECIFIED:
 	default:
@@ -382,27 +450,31 @@ test_cryptodev_asym_op(struct crypto_testsuite_params *ts_params,
 		goto error_exit;
 	}
 
-	sess = rte_cryptodev_asym_session_create(ts_params->session_mpool);
-	if (!sess) {
-		snprintf(test_msg, ASYM_TEST_MSG_LEN,
-				"line %u "
-				"FAILED: %s", __LINE__,
-				"Session creation failed");
-		status = TEST_FAILED;
-		goto error_exit;
+	if (!sessionless) {
+		sess = rte_cryptodev_asym_session_create(ts_params->session_mpool);
+		if (!sess) {
+			snprintf(test_msg, ASYM_TEST_MSG_LEN,
+					"line %u "
+					"FAILED: %s", __LINE__,
+					"Session creation failed");
+			status = TEST_FAILED;
+			goto error_exit;
+		}
+
+		if (rte_cryptodev_asym_session_init(dev_id, sess, &xform_tc,
+				ts_params->session_mpool) < 0) {
+			snprintf(test_msg, ASYM_TEST_MSG_LEN,
+					"line %u FAILED: %s",
+					__LINE__, "unabled to config sym session");
+			status = TEST_FAILED;
+			goto error_exit;
+		}
+
+		rte_crypto_op_attach_asym_session(op, sess);
+	} else {
+		asym_op->xform = &xform_tc;
+		op->sess_type = RTE_CRYPTO_OP_SESSIONLESS;
 	}
-
-	if (rte_cryptodev_asym_session_init(dev_id, sess, &xform_tc,
-			ts_params->session_mpool) < 0) {
-		snprintf(test_msg, ASYM_TEST_MSG_LEN,
-				"line %u FAILED: %s",
-				__LINE__, "unabled to config sym session");
-		status = TEST_FAILED;
-		goto error_exit;
-	}
-
-	rte_crypto_op_attach_asym_session(op, sess);
-
 	RTE_LOG(DEBUG, USER1, "Process ASYM operation");
 
 	/* Process crypto operation */
@@ -425,7 +497,7 @@ test_cryptodev_asym_op(struct crypto_testsuite_params *ts_params,
 		goto error_exit;
 	}
 
-	if (test_cryptodev_asym_ver(data_tc, result_op) != TEST_SUCCESS) {
+	if (test_cryptodev_asym_ver(op, &xform_tc, data_tc, result_op) != TEST_SUCCESS) {
 		snprintf(test_msg, ASYM_TEST_MSG_LEN,
 			"line %u FAILED: %s",
 			__LINE__, "Verification failed ");
@@ -433,7 +505,10 @@ test_cryptodev_asym_op(struct crypto_testsuite_params *ts_params,
 		goto error_exit;
 	}
 
-	snprintf(test_msg, ASYM_TEST_MSG_LEN, "PASS");
+	if (!sessionless)
+		snprintf(test_msg, ASYM_TEST_MSG_LEN, "PASS");
+	else
+		snprintf(test_msg, ASYM_TEST_MSG_LEN, "SESSIONLESS PASS");
 
 error_exit:
 		if (sess != NULL) {
@@ -451,19 +526,49 @@ error_exit:
 }
 
 static int
-test_one_case(const void *test_case)
+test_one_case(const void *test_case, int sessionless)
 {
-	int status = TEST_SUCCESS;
+	int status = TEST_SUCCESS, i = 0;
 	char test_msg[ASYM_TEST_MSG_LEN + 1];
 
 	/* Map the case to union */
 	union test_case_structure tc;
 	memcpy(&tc, test_case, sizeof(tc));
 
-	status = test_cryptodev_asym_op(&testsuite_params, &tc, test_msg);
-
-	printf("  %u) TestCase %s %s\n", test_index++,
-		tc.modex.description, test_msg);
+	if (tc.modex.xform_type == RTE_CRYPTO_ASYM_XFORM_MODEX
+			|| tc.modex.xform_type == RTE_CRYPTO_ASYM_XFORM_MODINV) {
+		status = test_cryptodev_asym_op(&testsuite_params, &tc, test_msg,
+				sessionless, 0, 0);
+		printf("  %u) TestCase %s %s\n", test_index++,
+			tc.modex.description, test_msg);
+	} else {
+		for (i = 0; i < RTE_CRYPTO_ASYM_OP_LIST_END; i++) {
+			if (tc.modex.xform_type == RTE_CRYPTO_ASYM_XFORM_RSA) {
+				if (tc.rsa_data.op_type_flags & (1 << i)) {
+					if (tc.rsa_data.key_exp) {
+						status = test_cryptodev_asym_op(
+							&testsuite_params, &tc,
+							test_msg, sessionless, i,
+							RTE_RSA_KEY_TYPE_EXP);
+					}
+					if (status)
+						break;
+					if (tc.rsa_data.key_qt && (i ==
+							RTE_CRYPTO_ASYM_OP_DECRYPT ||
+							i == RTE_CRYPTO_ASYM_OP_SIGN)) {
+						status = test_cryptodev_asym_op(
+							&testsuite_params,
+							&tc, test_msg, sessionless, i,
+							RTE_RSA_KET_TYPE_QT);
+					}
+					if (status)
+						break;
+				}
+			}
+		}
+		printf("  %u) TestCase %s %s\n", test_index++,
+			tc.modex.description, test_msg);
+	}
 
 	return status;
 }
@@ -473,7 +578,7 @@ load_test_vectors(void)
 {
 	uint32_t i = 0, v_size = 0;
 	/* Load MODEX vector*/
-	v_size = ARRAY_SIZE(modex_test_case);
+	v_size = RTE_DIM(modex_test_case);
 	for (i = 0; i < v_size; i++) {
 		if (test_vector.size >= (TEST_VECTOR_SIZE)) {
 			RTE_LOG(DEBUG, USER1,
@@ -484,7 +589,7 @@ load_test_vectors(void)
 		test_vector.size++;
 	}
 	/* Load MODINV vector*/
-	v_size = ARRAY_SIZE(modinv_test_case);
+	v_size = RTE_DIM(modinv_test_case);
 	for (i = 0; i < v_size; i++) {
 		if (test_vector.size >= (TEST_VECTOR_SIZE)) {
 			RTE_LOG(DEBUG, USER1,
@@ -494,6 +599,17 @@ load_test_vectors(void)
 		test_vector.address[test_vector.size] = &modinv_test_case[i];
 		test_vector.size++;
 	}
+	/* Load RSA vector*/
+	v_size = RTE_DIM(rsa_test_case_list);
+	for (i = 0; i < v_size; i++) {
+		if (test_vector.size >= (TEST_VECTOR_SIZE)) {
+			RTE_LOG(DEBUG, USER1,
+				"TEST_VECTOR_SIZE too small\n");
+			return -1;
+		}
+		test_vector.address[test_vector.size] = &rsa_test_case_list[i];
+		test_vector.size++;
+	}
 	return 0;
 }
 
@@ -501,13 +617,30 @@ static int
 test_one_by_one(void)
 {
 	int status = TEST_SUCCESS;
+	struct crypto_testsuite_params *ts_params = &testsuite_params;
 	uint32_t i = 0;
+	uint8_t dev_id = ts_params->valid_devs[0];
+	struct rte_cryptodev_info dev_info;
+	int sessionless = 0;
+
+	rte_cryptodev_info_get(dev_id, &dev_info);
+	if ((dev_info.feature_flags &
+			RTE_CRYPTODEV_FF_ASYM_SESSIONLESS)) {
+		sessionless = 1;
+	}
 
 	/* Go through all test cases */
 	test_index = 0;
 	for (i = 0; i < test_vector.size; i++) {
-		if (test_one_case(test_vector.address[i]) != TEST_SUCCESS)
+		if (test_one_case(test_vector.address[i], 0) != TEST_SUCCESS)
 			status = TEST_FAILED;
+	}
+	if (sessionless) {
+		for (i = 0; i < test_vector.size; i++) {
+			if (test_one_case(test_vector.address[i], 1)
+					!= TEST_SUCCESS)
+				status = TEST_FAILED;
+		}
 	}
 
 	TEST_ASSERT_EQUAL(status, 0, "Test failed");
@@ -906,14 +1039,17 @@ static inline void print_asym_capa(
 		case RTE_CRYPTO_ASYM_XFORM_MODEX:
 		case RTE_CRYPTO_ASYM_XFORM_DH:
 		case RTE_CRYPTO_ASYM_XFORM_DSA:
-			printf(" modlen: min %d max %d increment %d\n",
+			printf(" modlen: min %d max %d increment %d",
 					capa->modlen.min,
 					capa->modlen.max,
 					capa->modlen.increment);
 		break;
+		case RTE_CRYPTO_ASYM_XFORM_ECDSA:
+		case RTE_CRYPTO_ASYM_XFORM_ECPM:
 		default:
 			break;
 		}
+		printf("\n");
 }
 
 static int
@@ -1761,6 +1897,391 @@ test_dsa(void)
 	return status;
 }
 
+static int
+test_ecdsa_sign_verify(enum curve curve_id)
+{
+	struct crypto_testsuite_params *ts_params = &testsuite_params;
+	struct rte_mempool *sess_mpool = ts_params->session_mpool;
+	struct rte_mempool *op_mpool = ts_params->op_mpool;
+	struct crypto_testsuite_ecdsa_params input_params;
+	struct rte_cryptodev_asym_session *sess = NULL;
+	uint8_t dev_id = ts_params->valid_devs[0];
+	struct rte_crypto_op *result_op = NULL;
+	uint8_t output_buf_r[TEST_DATA_SIZE];
+	uint8_t output_buf_s[TEST_DATA_SIZE];
+	struct rte_crypto_asym_xform xform;
+	struct rte_crypto_asym_op *asym_op;
+	struct rte_cryptodev_info dev_info;
+	struct rte_crypto_op *op = NULL;
+	int status = TEST_SUCCESS, ret;
+
+	switch (curve_id) {
+	case SECP192R1:
+		input_params = ecdsa_param_secp192r1;
+		break;
+	case SECP224R1:
+		input_params = ecdsa_param_secp224r1;
+		break;
+	case SECP256R1:
+		input_params = ecdsa_param_secp256r1;
+		break;
+	case SECP384R1:
+		input_params = ecdsa_param_secp384r1;
+		break;
+	case SECP521R1:
+		input_params = ecdsa_param_secp521r1;
+		break;
+	default:
+		RTE_LOG(ERR, USER1,
+				"line %u FAILED: %s", __LINE__,
+				"Unsupported curve id\n");
+		status = TEST_FAILED;
+		goto exit;
+	}
+
+	rte_cryptodev_info_get(dev_id, &dev_info);
+
+	sess = rte_cryptodev_asym_session_create(sess_mpool);
+	if (sess == NULL) {
+		RTE_LOG(ERR, USER1,
+				"line %u FAILED: %s", __LINE__,
+				"Session creation failed\n");
+		status = TEST_FAILED;
+		goto exit;
+	}
+
+	/* Setup crypto op data structure */
+	op = rte_crypto_op_alloc(op_mpool, RTE_CRYPTO_OP_TYPE_ASYMMETRIC);
+	if (op == NULL) {
+		RTE_LOG(ERR, USER1,
+				"line %u FAILED: %s", __LINE__,
+				"Failed to allocate asymmetric crypto "
+				"operation struct\n");
+		status = TEST_FAILED;
+		goto exit;
+	}
+	asym_op = op->asym;
+
+	/* Setup asym xform */
+	xform.next = NULL;
+	xform.xform_type = RTE_CRYPTO_ASYM_XFORM_ECDSA;
+	xform.ec.curve_id = input_params.curve;
+
+	if (rte_cryptodev_asym_session_init(dev_id, sess, &xform,
+				sess_mpool) < 0) {
+		RTE_LOG(ERR, USER1,
+				"line %u FAILED: %s", __LINE__,
+				"Unable to config asym session\n");
+		status = TEST_FAILED;
+		goto exit;
+	}
+
+	/* Attach asymmetric crypto session to crypto operations */
+	rte_crypto_op_attach_asym_session(op, sess);
+
+	/* Compute sign */
+
+	/* Populate op with operational details */
+	op->asym->ecdsa.op_type = RTE_CRYPTO_ASYM_OP_SIGN;
+	op->asym->ecdsa.message.data = input_params.digest.data;
+	op->asym->ecdsa.message.length = input_params.digest.length;
+	op->asym->ecdsa.k.data = input_params.scalar.data;
+	op->asym->ecdsa.k.length = input_params.scalar.length;
+	op->asym->ecdsa.pkey.data = input_params.pkey.data;
+	op->asym->ecdsa.pkey.length = input_params.pkey.length;
+
+	/* Init out buf */
+	op->asym->ecdsa.r.data = output_buf_r;
+	op->asym->ecdsa.s.data = output_buf_s;
+
+	RTE_LOG(DEBUG, USER1, "Process ASYM operation\n");
+
+	/* Process crypto operation */
+	if (rte_cryptodev_enqueue_burst(dev_id, 0, &op, 1) != 1) {
+		RTE_LOG(ERR, USER1,
+				"line %u FAILED: %s", __LINE__,
+				"Error sending packet for operation\n");
+		status = TEST_FAILED;
+		goto exit;
+	}
+
+	while (rte_cryptodev_dequeue_burst(dev_id, 0, &result_op, 1) == 0)
+		rte_pause();
+
+	if (result_op == NULL) {
+		RTE_LOG(ERR, USER1,
+				"line %u FAILED: %s", __LINE__,
+				"Failed to process asym crypto op\n");
+		status = TEST_FAILED;
+		goto exit;
+	}
+
+	if (result_op->status != RTE_CRYPTO_OP_STATUS_SUCCESS) {
+		RTE_LOG(ERR, USER1,
+				"line %u FAILED: %s", __LINE__,
+				"Failed to process asym crypto op\n");
+		status = TEST_FAILED;
+		goto exit;
+	}
+
+	asym_op = result_op->asym;
+
+	debug_hexdump(stdout, "r:",
+			asym_op->ecdsa.r.data, asym_op->ecdsa.r.length);
+	debug_hexdump(stdout, "s:",
+			asym_op->ecdsa.s.data, asym_op->ecdsa.s.length);
+
+	ret = verify_ecdsa_sign(input_params.sign_r.data,
+				input_params.sign_s.data, result_op);
+	if (ret) {
+		status = TEST_FAILED;
+		RTE_LOG(ERR, USER1,
+				"line %u FAILED: %s", __LINE__,
+				"ECDSA sign failed.\n");
+		goto exit;
+	}
+
+	/* Verify sign */
+
+	/* Populate op with operational details */
+	op->asym->ecdsa.op_type = RTE_CRYPTO_ASYM_OP_VERIFY;
+	op->asym->ecdsa.q.x.data = input_params.pubkey_qx.data;
+	op->asym->ecdsa.q.x.length = input_params.pubkey_qx.length;
+	op->asym->ecdsa.q.y.data = input_params.pubkey_qy.data;
+	op->asym->ecdsa.q.y.length = input_params.pubkey_qx.length;
+	op->asym->ecdsa.r.data = asym_op->ecdsa.r.data;
+	op->asym->ecdsa.r.length = asym_op->ecdsa.r.length;
+	op->asym->ecdsa.s.data = asym_op->ecdsa.s.data;
+	op->asym->ecdsa.s.length = asym_op->ecdsa.s.length;
+
+	/* Enqueue sign result for verify */
+	if (rte_cryptodev_enqueue_burst(dev_id, 0, &op, 1) != 1) {
+		status = TEST_FAILED;
+		RTE_LOG(ERR, USER1,
+				"line %u FAILED: %s", __LINE__,
+				"Error sending packet for operation\n");
+		goto exit;
+	}
+
+	while (rte_cryptodev_dequeue_burst(dev_id, 0, &result_op, 1) == 0)
+		rte_pause();
+
+	if (result_op == NULL) {
+		status = TEST_FAILED;
+		goto exit;
+	}
+	if (result_op->status != RTE_CRYPTO_OP_STATUS_SUCCESS) {
+		status = TEST_FAILED;
+		RTE_LOG(ERR, USER1,
+				"line %u FAILED: %s", __LINE__,
+				"ECDSA verify failed.\n");
+		goto exit;
+	}
+
+exit:
+	if (sess != NULL) {
+		rte_cryptodev_asym_session_clear(dev_id, sess);
+		rte_cryptodev_asym_session_free(sess);
+	}
+	if (op != NULL)
+		rte_crypto_op_free(op);
+	return status;
+};
+
+static int
+test_ecdsa_sign_verify_all_curve(void)
+{
+	int status, overall_status = TEST_SUCCESS;
+	enum curve curve_id;
+	int test_index = 0;
+	const char *msg;
+
+	for (curve_id = SECP192R1; curve_id < END_OF_CURVE_LIST; curve_id++) {
+		status = test_ecdsa_sign_verify(curve_id);
+		if (status == TEST_SUCCESS) {
+			msg = "succeeded";
+		} else {
+			msg = "failed";
+			overall_status = status;
+		}
+		printf("  %u) TestCase Sign/Veriy Curve %s  %s\n",
+		       test_index ++, curve[curve_id], msg);
+	}
+	return overall_status;
+}
+
+static int
+test_ecpm(enum curve curve_id)
+{
+	struct crypto_testsuite_params *ts_params = &testsuite_params;
+	struct rte_mempool *sess_mpool = ts_params->session_mpool;
+	struct rte_mempool *op_mpool = ts_params->op_mpool;
+	struct crypto_testsuite_ecpm_params input_params;
+	struct rte_cryptodev_asym_session *sess = NULL;
+	uint8_t dev_id = ts_params->valid_devs[0];
+	struct rte_crypto_op *result_op = NULL;
+	uint8_t output_buf_x[TEST_DATA_SIZE];
+	uint8_t output_buf_y[TEST_DATA_SIZE];
+	struct rte_crypto_asym_xform xform;
+	struct rte_crypto_asym_op *asym_op;
+	struct rte_cryptodev_info dev_info;
+	struct rte_crypto_op *op = NULL;
+	int status = TEST_SUCCESS, ret;
+
+	switch (curve_id) {
+	case SECP192R1:
+		input_params = ecpm_param_secp192r1;
+		break;
+	case SECP224R1:
+		input_params = ecpm_param_secp224r1;
+		break;
+	case SECP256R1:
+		input_params = ecpm_param_secp256r1;
+		break;
+	case SECP384R1:
+		input_params = ecpm_param_secp384r1;
+		break;
+	case SECP521R1:
+		input_params = ecpm_param_secp521r1;
+		break;
+	default:
+		RTE_LOG(ERR, USER1,
+				"line %u FAILED: %s", __LINE__,
+				"Unsupported curve id\n");
+		status = TEST_FAILED;
+		goto exit;
+	}
+
+	rte_cryptodev_info_get(dev_id, &dev_info);
+
+	sess = rte_cryptodev_asym_session_create(sess_mpool);
+	if (sess == NULL) {
+		RTE_LOG(ERR, USER1,
+				"line %u FAILED: %s", __LINE__,
+				"Session creation failed\n");
+		status = TEST_FAILED;
+		goto exit;
+	}
+
+	/* Setup crypto op data structure */
+	op = rte_crypto_op_alloc(op_mpool, RTE_CRYPTO_OP_TYPE_ASYMMETRIC);
+	if (op == NULL) {
+		RTE_LOG(ERR, USER1,
+				"line %u FAILED: %s", __LINE__,
+				"Failed to allocate asymmetric crypto "
+				"operation struct\n");
+		status = TEST_FAILED;
+		goto exit;
+	}
+	asym_op = op->asym;
+
+	/* Setup asym xform */
+	xform.next = NULL;
+	xform.xform_type = RTE_CRYPTO_ASYM_XFORM_ECPM;
+	xform.ec.curve_id = input_params.curve;
+
+	if (rte_cryptodev_asym_session_init(dev_id, sess, &xform,
+				sess_mpool) < 0) {
+		RTE_LOG(ERR, USER1,
+				"line %u FAILED: %s", __LINE__,
+				"Unable to config asym session\n");
+		status = TEST_FAILED;
+		goto exit;
+	}
+
+	/* Attach asymmetric crypto session to crypto operations */
+	rte_crypto_op_attach_asym_session(op, sess);
+
+	/* Populate op with operational details */
+	op->asym->ecpm.p.x.data = input_params.gen_x.data;
+	op->asym->ecpm.p.x.length = input_params.gen_x.length;
+	op->asym->ecpm.p.y.data = input_params.gen_y.data;
+	op->asym->ecpm.p.y.length = input_params.gen_y.length;
+	op->asym->ecpm.scalar.data = input_params.privkey.data;
+	op->asym->ecpm.scalar.length = input_params.privkey.length;
+
+	/* Init out buf */
+	op->asym->ecpm.r.x.data = output_buf_x;
+	op->asym->ecpm.r.y.data = output_buf_y;
+
+	RTE_LOG(DEBUG, USER1, "Process ASYM operation\n");
+
+	/* Process crypto operation */
+	if (rte_cryptodev_enqueue_burst(dev_id, 0, &op, 1) != 1) {
+		RTE_LOG(ERR, USER1,
+				"line %u FAILED: %s", __LINE__,
+				"Error sending packet for operation\n");
+		status = TEST_FAILED;
+		goto exit;
+	}
+
+	while (rte_cryptodev_dequeue_burst(dev_id, 0, &result_op, 1) == 0)
+		rte_pause();
+
+	if (result_op == NULL) {
+		RTE_LOG(ERR, USER1,
+				"line %u FAILED: %s", __LINE__,
+				"Failed to process asym crypto op\n");
+		status = TEST_FAILED;
+		goto exit;
+	}
+
+	if (result_op->status != RTE_CRYPTO_OP_STATUS_SUCCESS) {
+		RTE_LOG(ERR, USER1,
+				"line %u FAILED: %s", __LINE__,
+				"Failed to process asym crypto op\n");
+		status = TEST_FAILED;
+		goto exit;
+	}
+
+	asym_op = result_op->asym;
+
+	debug_hexdump(stdout, "r x:",
+			asym_op->ecpm.r.x.data, asym_op->ecpm.r.x.length);
+	debug_hexdump(stdout, "r y:",
+			asym_op->ecpm.r.y.data, asym_op->ecpm.r.y.length);
+
+	ret = verify_ecpm(input_params.pubkey_x.data,
+				input_params.pubkey_y.data, result_op);
+	if (ret) {
+		status = TEST_FAILED;
+		RTE_LOG(ERR, USER1,
+				"line %u FAILED: %s", __LINE__,
+				"EC Point Multiplication failed.\n");
+		goto exit;
+	}
+
+exit:
+	if (sess != NULL) {
+		rte_cryptodev_asym_session_clear(dev_id, sess);
+		rte_cryptodev_asym_session_free(sess);
+	}
+	if (op != NULL)
+		rte_crypto_op_free(op);
+	return status;
+}
+
+static int
+test_ecpm_all_curve(void)
+{
+	int status, overall_status = TEST_SUCCESS;
+	enum curve curve_id;
+	int test_index = 0;
+	const char *msg;
+
+	for (curve_id = SECP192R1; curve_id < END_OF_CURVE_LIST; curve_id++) {
+		status = test_ecpm(curve_id);
+		if (status == TEST_SUCCESS) {
+			msg = "succeeded";
+		} else {
+			msg = "failed";
+			overall_status = status;
+		}
+		printf("  %u) TestCase EC Point Mul Curve %s  %s\n",
+		       test_index ++, curve[curve_id], msg);
+	}
+	return overall_status;
+}
 
 static struct unit_test_suite cryptodev_openssl_asym_testsuite  = {
 	.suite_name = "Crypto Device OPENSSL ASYM Unit Test Suite",
@@ -1787,6 +2308,22 @@ static struct unit_test_suite cryptodev_qat_asym_testsuite  = {
 	.teardown = testsuite_teardown,
 	.unit_test_cases = {
 		TEST_CASE_ST(ut_setup, ut_teardown, test_one_by_one),
+		TEST_CASES_END() /**< NULL terminate unit test array */
+	}
+};
+
+static struct unit_test_suite cryptodev_octeontx_asym_testsuite  = {
+	.suite_name = "Crypto Device OCTEONTX ASYM Unit Test Suite",
+	.setup = testsuite_setup,
+	.teardown = testsuite_teardown,
+	.unit_test_cases = {
+		TEST_CASE_ST(ut_setup, ut_teardown, test_capability),
+		TEST_CASE_ST(ut_setup, ut_teardown, test_rsa_enc_dec_crt),
+		TEST_CASE_ST(ut_setup, ut_teardown, test_rsa_sign_verify_crt),
+		TEST_CASE_ST(ut_setup, ut_teardown, test_mod_exp),
+		TEST_CASE_ST(ut_setup, ut_teardown,
+			     test_ecdsa_sign_verify_all_curve),
+		TEST_CASE_ST(ut_setup, ut_teardown, test_ecpm_all_curve),
 		TEST_CASES_END() /**< NULL terminate unit test array */
 	}
 };
@@ -1823,7 +2360,45 @@ test_cryptodev_qat_asym(void)
 	return unit_test_suite_runner(&cryptodev_qat_asym_testsuite);
 }
 
+static int
+test_cryptodev_octeontx_asym(void)
+{
+	gbl_driver_id = rte_cryptodev_driver_id_get(
+			RTE_STR(CRYPTODEV_NAME_OCTEONTX_SYM_PMD));
+	if (gbl_driver_id == -1) {
+		RTE_LOG(ERR, USER1, "OCTEONTX PMD must be loaded. Check if "
+				"CONFIG_RTE_LIBRTE_PMD_OCTEONTX_CRYPTO is "
+				"enabled in config file to run this "
+				"testsuite.\n");
+		return TEST_FAILED;
+	}
+	return unit_test_suite_runner(&cryptodev_octeontx_asym_testsuite);
+}
+
+static int
+test_cryptodev_octeontx2_asym(void)
+{
+	gbl_driver_id = rte_cryptodev_driver_id_get(
+			RTE_STR(CRYPTODEV_NAME_OCTEONTX2_PMD));
+	if (gbl_driver_id == -1) {
+		RTE_LOG(ERR, USER1, "OCTEONTX2 PMD must be loaded. Check if "
+				"CONFIG_RTE_LIBRTE_PMD_OCTEONTX2_CRYPTO is "
+				"enabled in config file to run this "
+				"testsuite.\n");
+		return TEST_FAILED;
+	}
+
+	/* Use test suite registered for crypto_octeontx PMD */
+	return unit_test_suite_runner(&cryptodev_octeontx_asym_testsuite);
+}
+
 REGISTER_TEST_COMMAND(cryptodev_openssl_asym_autotest,
 					  test_cryptodev_openssl_asym);
 
 REGISTER_TEST_COMMAND(cryptodev_qat_asym_autotest, test_cryptodev_qat_asym);
+
+REGISTER_TEST_COMMAND(cryptodev_octeontx_asym_autotest,
+					  test_cryptodev_octeontx_asym);
+
+REGISTER_TEST_COMMAND(cryptodev_octeontx2_asym_autotest,
+					  test_cryptodev_octeontx2_asym);

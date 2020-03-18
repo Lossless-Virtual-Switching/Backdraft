@@ -148,7 +148,12 @@ slave_port_init(uint16_t portid, struct rte_mempool *mbuf_pool)
 	if (!rte_eth_dev_is_valid_port(portid))
 		rte_exit(EXIT_FAILURE, "Invalid port\n");
 
-	rte_eth_dev_info_get(portid, &dev_info);
+	retval = rte_eth_dev_info_get(portid, &dev_info);
+	if (retval != 0)
+		rte_exit(EXIT_FAILURE,
+			"Error during getting device (port %u) info: %s\n",
+			portid, strerror(-retval));
+
 	if (dev_info.tx_offload_capa & DEV_TX_OFFLOAD_MBUF_FAST_FREE)
 		local_port_conf.txmode.offloads |=
 			DEV_TX_OFFLOAD_MBUF_FAST_FREE;
@@ -203,7 +208,12 @@ slave_port_init(uint16_t portid, struct rte_mempool *mbuf_pool)
 
 	struct rte_ether_addr addr;
 
-	rte_eth_macaddr_get(portid, &addr);
+	retval = rte_eth_macaddr_get(portid, &addr);
+	if (retval != 0)
+		rte_exit(retval,
+				"Mac address get port %d failed (res=%d)",
+				portid, retval);
+
 	printf("Port %u MAC: ", portid);
 	PRINT_MAC(addr);
 	printf("\n");
@@ -230,7 +240,12 @@ bond_port_init(struct rte_mempool *mbuf_pool)
 
 	BOND_PORT = retval;
 
-	rte_eth_dev_info_get(BOND_PORT, &dev_info);
+	retval = rte_eth_dev_info_get(BOND_PORT, &dev_info);
+	if (retval != 0)
+		rte_exit(EXIT_FAILURE,
+			"Error during getting device (port %u) info: %s\n",
+			BOND_PORT, strerror(-retval));
+
 	if (dev_info.tx_offload_capa & DEV_TX_OFFLOAD_MBUF_FAST_FREE)
 		local_port_conf.txmode.offloads |=
 			DEV_TX_OFFLOAD_MBUF_FAST_FREE;
@@ -289,11 +304,21 @@ bond_port_init(struct rte_mempool *mbuf_pool)
 			rte_exit(-1, "\nFailed to activate slaves\n");
 	}
 
-	rte_eth_promiscuous_enable(BOND_PORT);
+	retval = rte_eth_promiscuous_enable(BOND_PORT);
+	if (retval != 0) {
+		rte_exit(EXIT_FAILURE,
+				"port %u: promiscuous mode enable failed: %s\n",
+				BOND_PORT, rte_strerror(-retval));
+		return;
+	}
 
 	struct rte_ether_addr addr;
 
-	rte_eth_macaddr_get(BOND_PORT, &addr);
+	retval = rte_eth_macaddr_get(BOND_PORT, &addr);
+	if (retval != 0)
+		rte_exit(retval, "port %u: Mac address get failed (res=%d)",
+				BOND_PORT, retval);
+
 	printf("Port %u MAC: ", (unsigned)BOND_PORT);
 		PRINT_MAC(addr);
 		printf("\n");
@@ -339,6 +364,7 @@ static int lcore_main(__attribute__((unused)) void *arg1)
 	struct rte_mbuf *pkts[MAX_PKT_BURST] __rte_cache_aligned;
 	struct rte_ether_addr d_addr;
 
+	struct rte_ether_addr bond_mac_addr;
 	struct rte_ether_hdr *eth_hdr;
 	struct rte_arp_hdr *arp_hdr;
 	struct rte_ipv4_hdr *ipv4_hdr;
@@ -348,6 +374,7 @@ static int lcore_main(__attribute__((unused)) void *arg1)
 	uint32_t bond_ip;
 	int i = 0;
 	uint8_t is_free;
+	int ret;
 
 	bond_ip = BOND_IP_1 | (BOND_IP_2 << 8) |
 				(BOND_IP_3 << 16) | (BOND_IP_4 << 24);
@@ -362,6 +389,15 @@ static int lcore_main(__attribute__((unused)) void *arg1)
 		/* If didn't receive any packets, wait and go to next iteration */
 		if (rx_cnt == 0) {
 			rte_delay_us(50);
+			continue;
+		}
+
+		ret = rte_eth_macaddr_get(BOND_PORT, &bond_mac_addr);
+		if (ret != 0) {
+			printf("Bond (port %u) MAC address get failed: %s.\n"
+			       "%u packets dropped", BOND_PORT, strerror(-ret),
+			       rx_cnt);
+			rte_pktmbuf_free(pkts[i]);
 			continue;
 		}
 
@@ -391,11 +427,11 @@ static int lcore_main(__attribute__((unused)) void *arg1)
 						arp_hdr->arp_opcode = rte_cpu_to_be_16(RTE_ARP_OP_REPLY);
 						/* Switch src and dst data and set bonding MAC */
 						rte_ether_addr_copy(&eth_hdr->s_addr, &eth_hdr->d_addr);
-						rte_eth_macaddr_get(BOND_PORT, &eth_hdr->s_addr);
+						rte_ether_addr_copy(&bond_mac_addr, &eth_hdr->s_addr);
 						rte_ether_addr_copy(&arp_hdr->arp_data.arp_sha,
 								&arp_hdr->arp_data.arp_tha);
 						arp_hdr->arp_data.arp_tip = arp_hdr->arp_data.arp_sip;
-						rte_eth_macaddr_get(BOND_PORT, &d_addr);
+						rte_ether_addr_copy(&bond_mac_addr, &d_addr);
 						rte_ether_addr_copy(&d_addr, &arp_hdr->arp_data.arp_sha);
 						arp_hdr->arp_data.arp_sip = bond_ip;
 						rte_eth_tx_burst(BOND_PORT, 0, &pkts[i], 1);
@@ -412,7 +448,7 @@ static int lcore_main(__attribute__((unused)) void *arg1)
 				ipv4_hdr = (struct rte_ipv4_hdr *)((char *)(eth_hdr + 1) + offset);
 				if (ipv4_hdr->dst_addr == bond_ip) {
 					rte_ether_addr_copy(&eth_hdr->s_addr, &eth_hdr->d_addr);
-					rte_eth_macaddr_get(BOND_PORT, &eth_hdr->s_addr);
+					rte_ether_addr_copy(&bond_mac_addr, &eth_hdr->s_addr);
 					ipv4_hdr->dst_addr = ipv4_hdr->src_addr;
 					ipv4_hdr->src_addr = bond_ip;
 					rte_eth_tx_burst(BOND_PORT, 0, &pkts[i], 1);
@@ -452,12 +488,14 @@ static void cmd_obj_send_parsed(void *parsed_result,
 	struct cmd_obj_send_result *res = parsed_result;
 	char ip_str[INET6_ADDRSTRLEN];
 
+	struct rte_ether_addr bond_mac_addr;
 	struct rte_mbuf *created_pkt;
 	struct rte_ether_hdr *eth_hdr;
 	struct rte_arp_hdr *arp_hdr;
 
 	uint32_t bond_ip;
 	size_t pkt_size;
+	int ret;
 
 	if (res->ip.family == AF_INET)
 		get_string(res, ip_str, INET_ADDRSTRLEN);
@@ -466,6 +504,13 @@ static void cmd_obj_send_parsed(void *parsed_result,
 
 	bond_ip = BOND_IP_1 | (BOND_IP_2 << 8) |
 				(BOND_IP_3 << 16) | (BOND_IP_4 << 24);
+
+	ret = rte_eth_macaddr_get(BOND_PORT, &bond_mac_addr);
+	if (ret != 0) {
+		cmdline_printf(cl,
+			       "Failed to get bond (port %u) MAC address: %s\n",
+			       BOND_PORT, strerror(-ret));
+	}
 
 	created_pkt = rte_pktmbuf_alloc(mbuf_pool);
 	if (created_pkt == NULL) {
@@ -478,7 +523,7 @@ static void cmd_obj_send_parsed(void *parsed_result,
 	created_pkt->pkt_len = pkt_size;
 
 	eth_hdr = rte_pktmbuf_mtod(created_pkt, struct rte_ether_hdr *);
-	rte_eth_macaddr_get(BOND_PORT, &eth_hdr->s_addr);
+	rte_ether_addr_copy(&bond_mac_addr, &eth_hdr->s_addr);
 	memset(&eth_hdr->d_addr, 0xFF, RTE_ETHER_ADDR_LEN);
 	eth_hdr->ether_type = rte_cpu_to_be_16(RTE_ETHER_TYPE_ARP);
 
@@ -490,7 +535,7 @@ static void cmd_obj_send_parsed(void *parsed_result,
 	arp_hdr->arp_plen = sizeof(uint32_t);
 	arp_hdr->arp_opcode = rte_cpu_to_be_16(RTE_ARP_OP_REQUEST);
 
-	rte_eth_macaddr_get(BOND_PORT, &arp_hdr->arp_data.arp_sha);
+	rte_ether_addr_copy(&bond_mac_addr, &arp_hdr->arp_data.arp_sha);
 	arp_hdr->arp_data.arp_sip = bond_ip;
 	memset(&arp_hdr->arp_data.arp_tha, 0, RTE_ETHER_ADDR_LEN);
 	arp_hdr->arp_data.arp_tip =
@@ -705,13 +750,20 @@ static void cmd_show_parsed(__attribute__((unused)) void *parsed_result,
 	uint16_t slaves[16] = {0};
 	uint8_t len = 16;
 	struct rte_ether_addr addr;
-	uint16_t i = 0;
+	uint16_t i;
+	int ret;
 
-	while (i < slaves_count)	{
-		rte_eth_macaddr_get(i, &addr);
+	for (i = 0; i < slaves_count; i++) {
+		ret = rte_eth_macaddr_get(i, &addr);
+		if (ret != 0) {
+			cmdline_printf(cl,
+				"Failed to get port %u MAC address: %s\n",
+				i, strerror(-ret));
+			continue;
+		}
+
 		PRINT_MAC(addr);
 		printf("\n");
-		i++;
 	}
 
 	rte_spinlock_trylock(&global_flag_stru_p->lock);

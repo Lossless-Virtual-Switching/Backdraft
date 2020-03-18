@@ -298,8 +298,6 @@ dpaa_populate(struct rte_mempool *mp, unsigned int max_objs,
 	struct dpaa_bp_info *bp_info;
 	unsigned int total_elt_sz;
 
-	MEMPOOL_INIT_FUNC_TRACE();
-
 	if (!mp || !mp->pool_data) {
 		DPAA_MEMPOOL_ERR("Invalid mempool provided\n");
 		return 0;
@@ -311,7 +309,7 @@ dpaa_populate(struct rte_mempool *mp, unsigned int max_objs,
 	bp_info = DPAA_MEMPOOL_TO_POOL_INFO(mp);
 	total_elt_sz = mp->header_size + mp->elt_size + mp->trailer_size;
 
-	DPAA_MEMPOOL_DEBUG("Req size %" PRIx64 " vs Available %u\n",
+	DPAA_MEMPOOL_DPDEBUG("Req size %" PRIx64 " vs Available %u\n",
 			   (uint64_t)len, total_elt_sz * mp->size);
 
 	/* Detect pool area has sufficient space for elements in this memzone */
@@ -343,8 +341,8 @@ dpaa_populate(struct rte_mempool *mp, unsigned int max_objs,
 	 */
 	TAILQ_INSERT_HEAD(&rte_dpaa_memsegs, ms, next);
 
-	return rte_mempool_op_populate_default(mp, max_objs, vaddr, paddr, len,
-					       obj_cb, obj_cb_arg);
+	return rte_mempool_op_populate_helper(mp, 0, max_objs, vaddr, paddr,
+					       len, obj_cb, obj_cb_arg);
 }
 
 static const struct rte_mempool_ops dpaa_mpool_ops = {

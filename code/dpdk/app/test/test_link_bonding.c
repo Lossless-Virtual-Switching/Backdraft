@@ -399,9 +399,11 @@ test_remove_slave_from_bonded_device(void)
 	mac_addr->addr_bytes[RTE_ETHER_ADDR_LEN-1] =
 			test_params->bonded_slave_count-1;
 
-	rte_eth_macaddr_get(
+	TEST_ASSERT_SUCCESS(rte_eth_macaddr_get(
 			test_params->slave_port_ids[test_params->bonded_slave_count-1],
-			&read_mac_addr);
+			&read_mac_addr),
+			"Failed to get mac address (port %d)",
+			test_params->slave_port_ids[test_params->bonded_slave_count-1]);
 	TEST_ASSERT_SUCCESS(memcmp(mac_addr, &read_mac_addr, sizeof(read_mac_addr)),
 			"bonded port mac address not set to that of primary port\n");
 
@@ -554,6 +556,7 @@ test_start_bonded_device(void)
 
 	int current_slave_count, current_bonding_mode, primary_port;
 	uint16_t slaves[RTE_MAX_ETHPORTS];
+	int retval;
 
 	/* Add slave to bonded device*/
 	TEST_ASSERT_SUCCESS(test_add_slave_to_bonded_device(),
@@ -590,7 +593,10 @@ test_start_bonded_device(void)
 			"Primary port (%d) is not expected value (%d).",
 			primary_port, test_params->slave_port_ids[0]);
 
-	rte_eth_link_get(test_params->bonded_port_id, &link_status);
+	retval = rte_eth_link_get(test_params->bonded_port_id, &link_status);
+	TEST_ASSERT(retval >= 0,
+			"Bonded port (%d) link get failed: %s\n",
+			test_params->bonded_port_id, rte_strerror(-retval));
 	TEST_ASSERT_EQUAL(link_status.link_status, 1,
 			"Bonded port (%d) status (%d) is not expected value (%d).\n",
 			test_params->bonded_port_id, link_status.link_status, 1);
@@ -605,10 +611,14 @@ test_stop_bonded_device(void)
 	uint16_t slaves[RTE_MAX_ETHPORTS];
 
 	struct rte_eth_link link_status;
+	int retval;
 
 	rte_eth_dev_stop(test_params->bonded_port_id);
 
-	rte_eth_link_get(test_params->bonded_port_id, &link_status);
+	retval = rte_eth_link_get(test_params->bonded_port_id, &link_status);
+	TEST_ASSERT(retval >= 0,
+			"Bonded port (%d) link get failed: %s\n",
+			test_params->bonded_port_id, rte_strerror(-retval));
 	TEST_ASSERT_EQUAL(link_status.link_status, 0,
 			"Bonded port (%d) status (%d) is not expected value (%d).",
 			test_params->bonded_port_id, link_status.link_status, 0);
@@ -755,13 +765,17 @@ test_set_primary_slave(void)
 		expected_mac_addr->addr_bytes[RTE_ETHER_ADDR_LEN-1] = i;
 
 		/* Check primary slave MAC */
-		rte_eth_macaddr_get(test_params->slave_port_ids[i], &read_mac_addr);
+		TEST_ASSERT_SUCCESS(rte_eth_macaddr_get(test_params->slave_port_ids[i], &read_mac_addr),
+				"Failed to get mac address (port %d)",
+				test_params->slave_port_ids[i]);
 		TEST_ASSERT_SUCCESS(memcmp(expected_mac_addr, &read_mac_addr,
 				sizeof(read_mac_addr)),
 				"bonded port mac address not set to that of primary port\n");
 
 		/* Check bonded MAC */
-		rte_eth_macaddr_get(test_params->bonded_port_id, &read_mac_addr);
+		TEST_ASSERT_SUCCESS(rte_eth_macaddr_get(test_params->bonded_port_id, &read_mac_addr),
+				"Failed to get mac address (port %d)",
+				test_params->bonded_port_id);
 		TEST_ASSERT_SUCCESS(memcmp(&read_mac_addr, &read_mac_addr,
 				sizeof(read_mac_addr)),
 				"bonded port mac address not set to that of primary port\n");
@@ -769,8 +783,10 @@ test_set_primary_slave(void)
 		/* Check other slaves MACs */
 		for (j = 0; j < 4; j++) {
 			if (j != i) {
-				rte_eth_macaddr_get(test_params->slave_port_ids[j],
-						&read_mac_addr);
+				TEST_ASSERT_SUCCESS(rte_eth_macaddr_get(test_params->slave_port_ids[j],
+						&read_mac_addr),
+						"Failed to get mac address (port %d)",
+						test_params->slave_port_ids[j]);
 				TEST_ASSERT_SUCCESS(memcmp(expected_mac_addr, &read_mac_addr,
 						sizeof(read_mac_addr)),
 						"slave port mac address not set to that of primary "
@@ -835,13 +851,17 @@ test_set_explicit_bonded_mac(void)
 	}
 
 	/* Check bonded MAC */
-	rte_eth_macaddr_get(test_params->bonded_port_id, &read_mac_addr);
+	TEST_ASSERT_SUCCESS(rte_eth_macaddr_get(test_params->bonded_port_id, &read_mac_addr),
+			"Failed to get mac address (port %d)",
+			test_params->bonded_port_id);
 	TEST_ASSERT_SUCCESS(memcmp(mac_addr, &read_mac_addr, sizeof(read_mac_addr)),
 			"bonded port mac address not set to that of primary port");
 
 	/* Check other slaves MACs */
 	for (i = 0; i < 4; i++) {
-		rte_eth_macaddr_get(test_params->slave_port_ids[i], &read_mac_addr);
+		TEST_ASSERT_SUCCESS(rte_eth_macaddr_get(test_params->slave_port_ids[i], &read_mac_addr),
+				"Failed to get mac address (port %d)",
+				test_params->slave_port_ids[i]);
 		TEST_ASSERT_SUCCESS(memcmp(mac_addr, &read_mac_addr,
 				sizeof(read_mac_addr)),
 				"slave port mac address not set to that of primary port");
@@ -965,24 +985,32 @@ test_set_bonded_port_initialization_mac_assignment(void)
 				slave_port_ids[i], 1);
 	}
 
-	rte_eth_macaddr_get(bonded_port_id, &read_mac_addr);
+	TEST_ASSERT_SUCCESS(rte_eth_macaddr_get(bonded_port_id, &read_mac_addr),
+			"Failed to get mac address (port %d)",
+			bonded_port_id);
 	TEST_ASSERT_SUCCESS(memcmp(&bonded_mac_addr, &read_mac_addr,
 			sizeof(read_mac_addr)),
 			"bonded port mac address not as expected");
 
-	rte_eth_macaddr_get(slave_port_ids[0], &read_mac_addr);
+	TEST_ASSERT_SUCCESS(rte_eth_macaddr_get(slave_port_ids[0], &read_mac_addr),
+			"Failed to get mac address (port %d)",
+			slave_port_ids[0]);
 	TEST_ASSERT_SUCCESS(memcmp(&bonded_mac_addr, &read_mac_addr,
 			sizeof(read_mac_addr)),
 			"slave port 0 mac address not as expected");
 
 	slave_mac_addr.addr_bytes[RTE_ETHER_ADDR_LEN-1] = 1 + 100;
-	rte_eth_macaddr_get(slave_port_ids[1], &read_mac_addr);
+	TEST_ASSERT_SUCCESS(rte_eth_macaddr_get(slave_port_ids[1], &read_mac_addr),
+			"Failed to get mac address (port %d)",
+			slave_port_ids[1]);
 	TEST_ASSERT_SUCCESS(memcmp(&slave_mac_addr, &read_mac_addr,
 			sizeof(read_mac_addr)),
 			"slave port 1 mac address not as expected");
 
 	slave_mac_addr.addr_bytes[RTE_ETHER_ADDR_LEN-1] = 2 + 100;
-	rte_eth_macaddr_get(slave_port_ids[2], &read_mac_addr);
+	TEST_ASSERT_SUCCESS(rte_eth_macaddr_get(slave_port_ids[2], &read_mac_addr),
+			"Failed to get mac address (port %d)",
+			slave_port_ids[2]);
 	TEST_ASSERT_SUCCESS(memcmp(&slave_mac_addr, &read_mac_addr,
 			sizeof(read_mac_addr)),
 			"slave port 2 mac address not as expected");
@@ -1001,24 +1029,32 @@ test_set_bonded_port_initialization_mac_assignment(void)
 				"Failed to start bonded pmd eth device %d.",
 				bonded_port_id);
 
-	rte_eth_macaddr_get(bonded_port_id, &read_mac_addr);
+	TEST_ASSERT_SUCCESS(rte_eth_macaddr_get(bonded_port_id, &read_mac_addr),
+			"Failed to get mac address (port %d)",
+			bonded_port_id);
 	TEST_ASSERT_SUCCESS(memcmp(&bonded_mac_addr, &read_mac_addr,
 			sizeof(read_mac_addr)),
 			"bonded port mac address not as expected");
 
 	slave_mac_addr.addr_bytes[RTE_ETHER_ADDR_LEN-1] = 0 + 100;
-	rte_eth_macaddr_get(slave_port_ids[0], &read_mac_addr);
+	TEST_ASSERT_SUCCESS(rte_eth_macaddr_get(slave_port_ids[0], &read_mac_addr),
+			"Failed to get mac address (port %d)",
+			slave_port_ids[0]);
 	TEST_ASSERT_SUCCESS(memcmp(&slave_mac_addr, &read_mac_addr,
 			sizeof(read_mac_addr)),
 			"slave port 0 mac address not as expected");
 
 	slave_mac_addr.addr_bytes[RTE_ETHER_ADDR_LEN-1] = 1 + 100;
-	rte_eth_macaddr_get(slave_port_ids[1], &read_mac_addr);
+	TEST_ASSERT_SUCCESS(rte_eth_macaddr_get(slave_port_ids[1], &read_mac_addr),
+			"Failed to get mac address (port %d)",
+			slave_port_ids[1]);
 	TEST_ASSERT_SUCCESS(memcmp(&slave_mac_addr, &read_mac_addr,
 			sizeof(read_mac_addr)),
 			"slave port 1 mac address not as expected");
 
-	rte_eth_macaddr_get(slave_port_ids[2], &read_mac_addr);
+	TEST_ASSERT_SUCCESS(rte_eth_macaddr_get(slave_port_ids[2], &read_mac_addr),
+			"Failed to get mac address (port %d)",
+			slave_port_ids[2]);
 	TEST_ASSERT_SUCCESS(memcmp(&bonded_mac_addr, &read_mac_addr,
 			sizeof(read_mac_addr)),
 			"slave port 2 mac address not as expected");
@@ -1044,19 +1080,25 @@ test_set_bonded_port_initialization_mac_assignment(void)
 			slave_count, 0);
 
 	slave_mac_addr.addr_bytes[RTE_ETHER_ADDR_LEN-1] = 0 + 100;
-	rte_eth_macaddr_get(slave_port_ids[0], &read_mac_addr);
+	TEST_ASSERT_SUCCESS(rte_eth_macaddr_get(slave_port_ids[0], &read_mac_addr),
+			"Failed to get mac address (port %d)",
+			slave_port_ids[0]);
 	TEST_ASSERT_SUCCESS(memcmp(&slave_mac_addr, &read_mac_addr,
 			sizeof(read_mac_addr)),
 			"slave port 0 mac address not as expected");
 
 	slave_mac_addr.addr_bytes[RTE_ETHER_ADDR_LEN-1] = 1 + 100;
-	rte_eth_macaddr_get(slave_port_ids[1], &read_mac_addr);
+	TEST_ASSERT_SUCCESS(rte_eth_macaddr_get(slave_port_ids[1], &read_mac_addr),
+			"Failed to get mac address (port %d)",
+			slave_port_ids[1]);
 	TEST_ASSERT_SUCCESS(memcmp(&slave_mac_addr, &read_mac_addr,
 			sizeof(read_mac_addr)),
 			"slave port 1 mac address not as expected");
 
 	slave_mac_addr.addr_bytes[RTE_ETHER_ADDR_LEN-1] = 2 + 100;
-	rte_eth_macaddr_get(slave_port_ids[2], &read_mac_addr);
+	TEST_ASSERT_SUCCESS(rte_eth_macaddr_get(slave_port_ids[2], &read_mac_addr),
+			"Failed to get mac address (port %d)",
+			slave_port_ids[2]);
 	TEST_ASSERT_SUCCESS(memcmp(&slave_mac_addr, &read_mac_addr,
 			sizeof(read_mac_addr)),
 			"slave port 2 mac address not as expected");
@@ -1126,7 +1168,7 @@ test_adding_slave_after_bonded_device_started(void)
 }
 
 #define TEST_STATUS_INTERRUPT_SLAVE_COUNT	4
-#define TEST_LSC_WAIT_TIMEOUT_MS	500
+#define TEST_LSC_WAIT_TIMEOUT_US	500000
 
 int test_lsc_interrupt_count;
 
@@ -1160,6 +1202,11 @@ lsc_timeout(int wait_us)
 	ts.tv_sec = tp.tv_sec;
 	ts.tv_nsec = tp.tv_usec * 1000;
 	ts.tv_nsec += wait_us * 1000;
+	/* Normalize tv_nsec to [0,999999999L] */
+	while (ts.tv_nsec > 1000000000L) {
+		ts.tv_nsec -= 1000000000L;
+		ts.tv_sec += 1;
+	}
 
 	pthread_mutex_lock(&mutex);
 	if (test_lsc_interrupt_count < 1)
@@ -1214,7 +1261,7 @@ test_status_interrupt(void)
 	virtual_ethdev_simulate_link_status_interrupt(
 			test_params->slave_port_ids[3], 0);
 
-	TEST_ASSERT(lsc_timeout(TEST_LSC_WAIT_TIMEOUT_MS) == 0,
+	TEST_ASSERT(lsc_timeout(TEST_LSC_WAIT_TIMEOUT_US) == 0,
 			"timed out waiting for interrupt");
 
 	TEST_ASSERT(test_lsc_interrupt_count > 0,
@@ -1233,7 +1280,7 @@ test_status_interrupt(void)
 	virtual_ethdev_simulate_link_status_interrupt(
 			test_params->slave_port_ids[0], 1);
 
-	TEST_ASSERT(lsc_timeout(TEST_LSC_WAIT_TIMEOUT_MS) == 0,
+	TEST_ASSERT(lsc_timeout(TEST_LSC_WAIT_TIMEOUT_US) == 0,
 			"timed out waiting for interrupt");
 
 	/* test that we have received another lsc interrupt */
@@ -1247,7 +1294,7 @@ test_status_interrupt(void)
 	virtual_ethdev_simulate_link_status_interrupt(
 			test_params->slave_port_ids[0], 1);
 
-	TEST_ASSERT(lsc_timeout(TEST_LSC_WAIT_TIMEOUT_MS) != 0,
+	TEST_ASSERT(lsc_timeout(TEST_LSC_WAIT_TIMEOUT_US) != 0,
 			"received unexpected interrupt");
 
 	TEST_ASSERT_EQUAL(test_lsc_interrupt_count, 0,
@@ -1680,8 +1727,12 @@ test_roundrobin_verify_mac_assignment(void)
 
 	int i;
 
-	rte_eth_macaddr_get(test_params->slave_port_ids[0], &expected_mac_addr_0);
-	rte_eth_macaddr_get(test_params->slave_port_ids[2], &expected_mac_addr_2);
+	TEST_ASSERT_SUCCESS(rte_eth_macaddr_get(test_params->slave_port_ids[0], &expected_mac_addr_0),
+			"Failed to get mac address (port %d)",
+			test_params->slave_port_ids[0]);
+	TEST_ASSERT_SUCCESS(rte_eth_macaddr_get(test_params->slave_port_ids[2], &expected_mac_addr_2),
+			"Failed to get mac address (port %d)",
+			test_params->slave_port_ids[2]);
 
 	/* Initialize bonded device with 4 slaves in round robin mode */
 	TEST_ASSERT_SUCCESS(initialize_bonded_device_with_slaves(
@@ -1690,7 +1741,9 @@ test_roundrobin_verify_mac_assignment(void)
 
 	/* Verify that all MACs are the same as first slave added to bonded dev */
 	for (i = 0; i < test_params->bonded_slave_count; i++) {
-		rte_eth_macaddr_get(test_params->slave_port_ids[i], &read_mac_addr);
+		TEST_ASSERT_SUCCESS(rte_eth_macaddr_get(test_params->slave_port_ids[i], &read_mac_addr),
+				"Failed to get mac address (port %d)",
+				test_params->slave_port_ids[i]);
 		TEST_ASSERT_SUCCESS(memcmp(&expected_mac_addr_0, &read_mac_addr,
 				sizeof(read_mac_addr)),
 				"slave port (%d) mac address not set to that of primary port",
@@ -1704,7 +1757,9 @@ test_roundrobin_verify_mac_assignment(void)
 			test_params->bonded_port_id, test_params->slave_port_ids[i]);
 
 	for (i = 0; i < test_params->bonded_slave_count; i++) {
-		rte_eth_macaddr_get(test_params->slave_port_ids[i], &read_mac_addr);
+		TEST_ASSERT_SUCCESS(rte_eth_macaddr_get(test_params->slave_port_ids[i], &read_mac_addr),
+				"Failed to get mac address (port %d)",
+				test_params->slave_port_ids[i]);
 		TEST_ASSERT_SUCCESS(memcmp(&expected_mac_addr_0, &read_mac_addr,
 				sizeof(read_mac_addr)),
 				"slave port (%d) mac address has changed to that of primary"
@@ -1719,14 +1774,18 @@ test_roundrobin_verify_mac_assignment(void)
 	TEST_ASSERT_SUCCESS(rte_eth_dev_start(test_params->bonded_port_id),
 			"Failed to start bonded device");
 
-	rte_eth_macaddr_get(test_params->bonded_port_id, &read_mac_addr);
+	TEST_ASSERT_SUCCESS(rte_eth_macaddr_get(test_params->bonded_port_id, &read_mac_addr),
+			"Failed to get mac address (port %d)",
+			test_params->bonded_port_id);
 	TEST_ASSERT_SUCCESS(
 			memcmp(&expected_mac_addr_2, &read_mac_addr, sizeof(read_mac_addr)),
 			"bonded port (%d) mac address not set to that of new primary port",
 			test_params->slave_port_ids[i]);
 
 	for (i = 0; i < test_params->bonded_slave_count; i++) {
-		rte_eth_macaddr_get(test_params->slave_port_ids[i], &read_mac_addr);
+		TEST_ASSERT_SUCCESS(rte_eth_macaddr_get(test_params->slave_port_ids[i], &read_mac_addr),
+				"Failed to get mac address (port %d)",
+				test_params->slave_port_ids[i]);
 		TEST_ASSERT_SUCCESS(memcmp(&expected_mac_addr_2, &read_mac_addr,
 				sizeof(read_mac_addr)),
 				"slave port (%d) mac address not set to that of new primary"
@@ -1739,14 +1798,18 @@ test_roundrobin_verify_mac_assignment(void)
 			(struct rte_ether_addr *)bonded_mac),
 			"Failed to set MAC");
 
-	rte_eth_macaddr_get(test_params->bonded_port_id, &read_mac_addr);
+	TEST_ASSERT_SUCCESS(rte_eth_macaddr_get(test_params->bonded_port_id, &read_mac_addr),
+			"Failed to get mac address (port %d)",
+			test_params->bonded_port_id);
 	TEST_ASSERT_SUCCESS(memcmp(bonded_mac, &read_mac_addr,
 			sizeof(read_mac_addr)),
 			"bonded port (%d) mac address not set to that of new primary port",
 				test_params->slave_port_ids[i]);
 
 	for (i = 0; i < test_params->bonded_slave_count; i++) {
-		rte_eth_macaddr_get(test_params->slave_port_ids[i], &read_mac_addr);
+		TEST_ASSERT_SUCCESS(rte_eth_macaddr_get(test_params->slave_port_ids[i], &read_mac_addr),
+				"Failed to get mac address (port %d)",
+				test_params->slave_port_ids[i]);
 		TEST_ASSERT_SUCCESS(memcmp(bonded_mac, &read_mac_addr,
 				sizeof(read_mac_addr)), "slave port (%d) mac address not set to"
 				" that of new primary port\n", test_params->slave_port_ids[i]);
@@ -1760,13 +1823,17 @@ static int
 test_roundrobin_verify_promiscuous_enable_disable(void)
 {
 	int i, promiscuous_en;
+	int ret;
 
 	/* Initialize bonded device with 4 slaves in round robin mode */
 	TEST_ASSERT_SUCCESS(initialize_bonded_device_with_slaves(
 			BONDING_MODE_ROUND_ROBIN, 0, 4, 1),
 			"Failed to initialize bonded device with slaves");
 
-	rte_eth_promiscuous_enable(test_params->bonded_port_id);
+	ret = rte_eth_promiscuous_enable(test_params->bonded_port_id);
+	TEST_ASSERT_SUCCESS(ret,
+		"Failed to enable promiscuous mode for port %d: %s",
+		test_params->bonded_port_id, rte_strerror(-ret));
 
 	promiscuous_en = rte_eth_promiscuous_get(test_params->bonded_port_id);
 	TEST_ASSERT_EQUAL(promiscuous_en, 1,
@@ -1781,7 +1848,10 @@ test_roundrobin_verify_promiscuous_enable_disable(void)
 				test_params->slave_port_ids[i]);
 	}
 
-	rte_eth_promiscuous_disable(test_params->bonded_port_id);
+	ret = rte_eth_promiscuous_disable(test_params->bonded_port_id);
+	TEST_ASSERT_SUCCESS(ret,
+		"Failed to disable promiscuous mode for port %d: %s",
+		test_params->bonded_port_id, rte_strerror(-ret));
 
 	promiscuous_en = rte_eth_promiscuous_get(test_params->bonded_port_id);
 	TEST_ASSERT_EQUAL(promiscuous_en, 0,
@@ -2200,6 +2270,7 @@ static int
 test_activebackup_verify_promiscuous_enable_disable(void)
 {
 	int i, primary_port, promiscuous_en;
+	int ret;
 
 	/* Initialize bonded device with 4 slaves in round robin mode */
 	TEST_ASSERT_SUCCESS(initialize_bonded_device_with_slaves(
@@ -2211,7 +2282,10 @@ test_activebackup_verify_promiscuous_enable_disable(void)
 			"failed to get primary slave for bonded port (%d)",
 			test_params->bonded_port_id);
 
-	rte_eth_promiscuous_enable(test_params->bonded_port_id);
+	ret = rte_eth_promiscuous_enable(test_params->bonded_port_id);
+	TEST_ASSERT_SUCCESS(ret,
+		"Failed to enable promiscuous mode for port %d: %s",
+		test_params->bonded_port_id, rte_strerror(-ret));
 
 	TEST_ASSERT_EQUAL(rte_eth_promiscuous_get(test_params->bonded_port_id), 1,
 			"Port (%d) promiscuous mode not enabled",
@@ -2232,7 +2306,10 @@ test_activebackup_verify_promiscuous_enable_disable(void)
 
 	}
 
-	rte_eth_promiscuous_disable(test_params->bonded_port_id);
+	ret = rte_eth_promiscuous_disable(test_params->bonded_port_id);
+	TEST_ASSERT_SUCCESS(ret,
+		"Failed to disable promiscuous mode for port %d: %s",
+		test_params->bonded_port_id, rte_strerror(-ret));
 
 	TEST_ASSERT_EQUAL(rte_eth_promiscuous_get(test_params->bonded_port_id), 0,
 			"Port (%d) promiscuous mode not disabled\n",
@@ -2256,8 +2333,12 @@ test_activebackup_verify_mac_assignment(void)
 	struct rte_ether_addr read_mac_addr;
 	struct rte_ether_addr expected_mac_addr_0, expected_mac_addr_1;
 
-	rte_eth_macaddr_get(test_params->slave_port_ids[0], &expected_mac_addr_0);
-	rte_eth_macaddr_get(test_params->slave_port_ids[1], &expected_mac_addr_1);
+	TEST_ASSERT_SUCCESS(rte_eth_macaddr_get(test_params->slave_port_ids[0], &expected_mac_addr_0),
+			"Failed to get mac address (port %d)",
+			test_params->slave_port_ids[0]);
+	TEST_ASSERT_SUCCESS(rte_eth_macaddr_get(test_params->slave_port_ids[1], &expected_mac_addr_1),
+			"Failed to get mac address (port %d)",
+			test_params->slave_port_ids[1]);
 
 	/* Initialize bonded device with 2 slaves in active backup mode */
 	TEST_ASSERT_SUCCESS(initialize_bonded_device_with_slaves(
@@ -2266,19 +2347,25 @@ test_activebackup_verify_mac_assignment(void)
 
 	/* Verify that bonded MACs is that of first slave and that the other slave
 	 * MAC hasn't been changed */
-	rte_eth_macaddr_get(test_params->bonded_port_id, &read_mac_addr);
+	TEST_ASSERT_SUCCESS(rte_eth_macaddr_get(test_params->bonded_port_id, &read_mac_addr),
+			"Failed to get mac address (port %d)",
+			test_params->bonded_port_id);
 	TEST_ASSERT_SUCCESS(memcmp(&expected_mac_addr_0, &read_mac_addr,
 			sizeof(read_mac_addr)),
 			"bonded port (%d) mac address not set to that of primary port",
 			test_params->bonded_port_id);
 
-	rte_eth_macaddr_get(test_params->slave_port_ids[0], &read_mac_addr);
+	TEST_ASSERT_SUCCESS(rte_eth_macaddr_get(test_params->slave_port_ids[0], &read_mac_addr),
+			"Failed to get mac address (port %d)",
+			test_params->slave_port_ids[0]);
 	TEST_ASSERT_SUCCESS(memcmp(&expected_mac_addr_0, &read_mac_addr,
 			sizeof(read_mac_addr)),
 			"slave port (%d) mac address not set to that of primary port",
 			test_params->slave_port_ids[0]);
 
-	rte_eth_macaddr_get(test_params->slave_port_ids[1], &read_mac_addr);
+	TEST_ASSERT_SUCCESS(rte_eth_macaddr_get(test_params->slave_port_ids[1], &read_mac_addr),
+			"Failed to get mac address (port %d)",
+			test_params->slave_port_ids[1]);
 	TEST_ASSERT_SUCCESS(memcmp(&expected_mac_addr_1, &read_mac_addr,
 			sizeof(read_mac_addr)),
 			"slave port (%d) mac address not as expected",
@@ -2290,19 +2377,25 @@ test_activebackup_verify_mac_assignment(void)
 			"Failed to set bonded port (%d) primary port to (%d)",
 			test_params->bonded_port_id, test_params->slave_port_ids[1]);
 
-	rte_eth_macaddr_get(test_params->bonded_port_id, &read_mac_addr);
+	TEST_ASSERT_SUCCESS(rte_eth_macaddr_get(test_params->bonded_port_id, &read_mac_addr),
+			"Failed to get mac address (port %d)",
+			test_params->bonded_port_id);
 	TEST_ASSERT_SUCCESS(memcmp(&expected_mac_addr_0, &read_mac_addr,
 			sizeof(read_mac_addr)),
 			"bonded port (%d) mac address not set to that of primary port",
 			test_params->bonded_port_id);
 
-	rte_eth_macaddr_get(test_params->slave_port_ids[0], &read_mac_addr);
+	TEST_ASSERT_SUCCESS(rte_eth_macaddr_get(test_params->slave_port_ids[0], &read_mac_addr),
+			"Failed to get mac address (port %d)",
+			test_params->slave_port_ids[0]);
 	TEST_ASSERT_SUCCESS(memcmp(&expected_mac_addr_0, &read_mac_addr,
 			sizeof(read_mac_addr)),
 			"slave port (%d) mac address not set to that of primary port",
 			test_params->slave_port_ids[0]);
 
-	rte_eth_macaddr_get(test_params->slave_port_ids[1], &read_mac_addr);
+	TEST_ASSERT_SUCCESS(rte_eth_macaddr_get(test_params->slave_port_ids[1], &read_mac_addr),
+			"Failed to get mac address (port %d)",
+			test_params->slave_port_ids[1]);
 	TEST_ASSERT_SUCCESS(memcmp(&expected_mac_addr_1, &read_mac_addr,
 			sizeof(read_mac_addr)),
 			"slave port (%d) mac address not as expected",
@@ -2316,19 +2409,25 @@ test_activebackup_verify_mac_assignment(void)
 	TEST_ASSERT_SUCCESS(rte_eth_dev_start(test_params->bonded_port_id),
 			"Failed to start device");
 
-	rte_eth_macaddr_get(test_params->bonded_port_id, &read_mac_addr);
+	TEST_ASSERT_SUCCESS(rte_eth_macaddr_get(test_params->bonded_port_id, &read_mac_addr),
+			"Failed to get mac address (port %d)",
+			test_params->bonded_port_id);
 	TEST_ASSERT_SUCCESS(memcmp(&expected_mac_addr_1, &read_mac_addr,
 			sizeof(read_mac_addr)),
 			"bonded port (%d) mac address not set to that of primary port",
 			test_params->bonded_port_id);
 
-	rte_eth_macaddr_get(test_params->slave_port_ids[0], &read_mac_addr);
+	TEST_ASSERT_SUCCESS(rte_eth_macaddr_get(test_params->slave_port_ids[0], &read_mac_addr),
+			"Failed to get mac address (port %d)",
+			test_params->slave_port_ids[0]);
 	TEST_ASSERT_SUCCESS(memcmp(&expected_mac_addr_0, &read_mac_addr,
 			sizeof(read_mac_addr)),
 			"slave port (%d) mac address not as expected",
 			test_params->slave_port_ids[0]);
 
-	rte_eth_macaddr_get(test_params->slave_port_ids[1], &read_mac_addr);
+	TEST_ASSERT_SUCCESS(rte_eth_macaddr_get(test_params->slave_port_ids[1], &read_mac_addr),
+			"Failed to get mac address (port %d)",
+			test_params->slave_port_ids[1]);
 	TEST_ASSERT_SUCCESS(memcmp(&expected_mac_addr_1, &read_mac_addr,
 			sizeof(read_mac_addr)),
 			"slave port (%d) mac address not set to that of primary port",
@@ -2340,19 +2439,25 @@ test_activebackup_verify_mac_assignment(void)
 			(struct rte_ether_addr *)bonded_mac),
 			"failed to set MAC address");
 
-	rte_eth_macaddr_get(test_params->bonded_port_id, &read_mac_addr);
+	TEST_ASSERT_SUCCESS(rte_eth_macaddr_get(test_params->bonded_port_id, &read_mac_addr),
+			"Failed to get mac address (port %d)",
+			test_params->bonded_port_id);
 	TEST_ASSERT_SUCCESS(memcmp(&bonded_mac, &read_mac_addr,
 			sizeof(read_mac_addr)),
 			"bonded port (%d) mac address not set to that of bonded port",
 			test_params->bonded_port_id);
 
-	rte_eth_macaddr_get(test_params->slave_port_ids[0], &read_mac_addr);
+	TEST_ASSERT_SUCCESS(rte_eth_macaddr_get(test_params->slave_port_ids[0], &read_mac_addr),
+			"Failed to get mac address (port %d)",
+			test_params->slave_port_ids[0]);
 	TEST_ASSERT_SUCCESS(memcmp(&expected_mac_addr_0, &read_mac_addr,
 			sizeof(read_mac_addr)),
 			"slave port (%d) mac address not as expected",
 			test_params->slave_port_ids[0]);
 
-	rte_eth_macaddr_get(test_params->slave_port_ids[1], &read_mac_addr);
+	TEST_ASSERT_SUCCESS(rte_eth_macaddr_get(test_params->slave_port_ids[1], &read_mac_addr),
+			"Failed to get mac address (port %d)",
+			test_params->slave_port_ids[1]);
 	TEST_ASSERT_SUCCESS(memcmp(&bonded_mac, &read_mac_addr,
 			sizeof(read_mac_addr)),
 			"slave port (%d) mac address not set to that of bonded port",
@@ -3110,13 +3215,17 @@ static int
 test_balance_verify_promiscuous_enable_disable(void)
 {
 	int i;
+	int ret;
 
 	/* Initialize bonded device with 4 slaves in round robin mode */
 	TEST_ASSERT_SUCCESS(initialize_bonded_device_with_slaves(
 			BONDING_MODE_BALANCE, 0, 4, 1),
 			"Failed to initialise bonded device");
 
-	rte_eth_promiscuous_enable(test_params->bonded_port_id);
+	ret = rte_eth_promiscuous_enable(test_params->bonded_port_id);
+	TEST_ASSERT_SUCCESS(ret,
+		"Failed to enable promiscuous mode for port %d: %s",
+		test_params->bonded_port_id, rte_strerror(-ret));
 
 	TEST_ASSERT_EQUAL(rte_eth_promiscuous_get(test_params->bonded_port_id), 1,
 			"Port (%d) promiscuous mode not enabled",
@@ -3129,7 +3238,10 @@ test_balance_verify_promiscuous_enable_disable(void)
 				test_params->slave_port_ids[i]);
 	}
 
-	rte_eth_promiscuous_disable(test_params->bonded_port_id);
+	ret = rte_eth_promiscuous_disable(test_params->bonded_port_id);
+	TEST_ASSERT_SUCCESS(ret,
+		"Failed to disable promiscuous mode for port %d: %s",
+		test_params->bonded_port_id, rte_strerror(-ret));
 
 	TEST_ASSERT_EQUAL(rte_eth_promiscuous_get(test_params->bonded_port_id), 0,
 			"Port (%d) promiscuous mode not disabled",
@@ -3152,8 +3264,12 @@ test_balance_verify_mac_assignment(void)
 	struct rte_ether_addr read_mac_addr;
 	struct rte_ether_addr expected_mac_addr_0, expected_mac_addr_1;
 
-	rte_eth_macaddr_get(test_params->slave_port_ids[0], &expected_mac_addr_0);
-	rte_eth_macaddr_get(test_params->slave_port_ids[1], &expected_mac_addr_1);
+	TEST_ASSERT_SUCCESS(rte_eth_macaddr_get(test_params->slave_port_ids[0], &expected_mac_addr_0),
+			"Failed to get mac address (port %d)",
+			test_params->slave_port_ids[0]);
+	TEST_ASSERT_SUCCESS(rte_eth_macaddr_get(test_params->slave_port_ids[1], &expected_mac_addr_1),
+			"Failed to get mac address (port %d)",
+			test_params->slave_port_ids[1]);
 
 	/* Initialize bonded device with 2 slaves in active backup mode */
 	TEST_ASSERT_SUCCESS(initialize_bonded_device_with_slaves(
@@ -3162,19 +3278,25 @@ test_balance_verify_mac_assignment(void)
 
 	/* Verify that bonded MACs is that of first slave and that the other slave
 	 * MAC hasn't been changed */
-	rte_eth_macaddr_get(test_params->bonded_port_id, &read_mac_addr);
+	TEST_ASSERT_SUCCESS(rte_eth_macaddr_get(test_params->bonded_port_id, &read_mac_addr),
+			"Failed to get mac address (port %d)",
+			test_params->bonded_port_id);
 	TEST_ASSERT_SUCCESS(memcmp(&expected_mac_addr_0, &read_mac_addr,
 			sizeof(read_mac_addr)),
 			"bonded port (%d) mac address not set to that of primary port",
 			test_params->bonded_port_id);
 
-	rte_eth_macaddr_get(test_params->slave_port_ids[0], &read_mac_addr);
+	TEST_ASSERT_SUCCESS(rte_eth_macaddr_get(test_params->slave_port_ids[0], &read_mac_addr),
+			"Failed to get mac address (port %d)",
+			test_params->slave_port_ids[0]);
 	TEST_ASSERT_SUCCESS(memcmp(&expected_mac_addr_0, &read_mac_addr,
 			sizeof(read_mac_addr)),
 			"slave port (%d) mac address not set to that of primary port",
 			test_params->slave_port_ids[0]);
 
-	rte_eth_macaddr_get(test_params->slave_port_ids[1], &read_mac_addr);
+	TEST_ASSERT_SUCCESS(rte_eth_macaddr_get(test_params->slave_port_ids[1], &read_mac_addr),
+			"Failed to get mac address (port %d)",
+			test_params->slave_port_ids[1]);
 	TEST_ASSERT_SUCCESS(memcmp(&expected_mac_addr_0, &read_mac_addr,
 			sizeof(read_mac_addr)),
 			"slave port (%d) mac address not set to that of primary port",
@@ -3186,19 +3308,25 @@ test_balance_verify_mac_assignment(void)
 			"Failed to set bonded port (%d) primary port to (%d)\n",
 			test_params->bonded_port_id, test_params->slave_port_ids[1]);
 
-	rte_eth_macaddr_get(test_params->bonded_port_id, &read_mac_addr);
+	TEST_ASSERT_SUCCESS(rte_eth_macaddr_get(test_params->bonded_port_id, &read_mac_addr),
+			"Failed to get mac address (port %d)",
+			test_params->bonded_port_id);
 	TEST_ASSERT_SUCCESS(memcmp(&expected_mac_addr_0, &read_mac_addr,
 			sizeof(read_mac_addr)),
 			"bonded port (%d) mac address not set to that of primary port",
 			test_params->bonded_port_id);
 
-	rte_eth_macaddr_get(test_params->slave_port_ids[0], &read_mac_addr);
+	TEST_ASSERT_SUCCESS(rte_eth_macaddr_get(test_params->slave_port_ids[0], &read_mac_addr),
+			"Failed to get mac address (port %d)",
+			test_params->slave_port_ids[0]);
 	TEST_ASSERT_SUCCESS(memcmp(&expected_mac_addr_0, &read_mac_addr,
 			sizeof(read_mac_addr)),
 			"slave port (%d) mac address not set to that of primary port",
 			test_params->slave_port_ids[0]);
 
-	rte_eth_macaddr_get(test_params->slave_port_ids[1], &read_mac_addr);
+	TEST_ASSERT_SUCCESS(rte_eth_macaddr_get(test_params->slave_port_ids[1], &read_mac_addr),
+			"Failed to get mac address (port %d)",
+			test_params->slave_port_ids[1]);
 	TEST_ASSERT_SUCCESS(memcmp(&expected_mac_addr_0, &read_mac_addr,
 			sizeof(read_mac_addr)),
 			"slave port (%d) mac address not set to that of primary port",
@@ -3212,19 +3340,25 @@ test_balance_verify_mac_assignment(void)
 	TEST_ASSERT_SUCCESS(rte_eth_dev_start(test_params->bonded_port_id),
 			"Failed to start bonded device");
 
-	rte_eth_macaddr_get(test_params->bonded_port_id, &read_mac_addr);
+	TEST_ASSERT_SUCCESS(rte_eth_macaddr_get(test_params->bonded_port_id, &read_mac_addr),
+			"Failed to get mac address (port %d)",
+			test_params->bonded_port_id);
 	TEST_ASSERT_SUCCESS(memcmp(&expected_mac_addr_1, &read_mac_addr,
 			sizeof(read_mac_addr)),
 			"bonded port (%d) mac address not set to that of primary port",
 			test_params->bonded_port_id);
 
-	rte_eth_macaddr_get(test_params->slave_port_ids[0], &read_mac_addr);
+	TEST_ASSERT_SUCCESS(rte_eth_macaddr_get(test_params->slave_port_ids[0], &read_mac_addr),
+			"Failed to get mac address (port %d)",
+			test_params->slave_port_ids[0]);
 	TEST_ASSERT_SUCCESS(memcmp(&expected_mac_addr_1, &read_mac_addr,
 			sizeof(read_mac_addr)),
 			"slave port (%d) mac address not set to that of primary port",
 			test_params->slave_port_ids[0]);
 
-	rte_eth_macaddr_get(test_params->slave_port_ids[1], &read_mac_addr);
+	TEST_ASSERT_SUCCESS(rte_eth_macaddr_get(test_params->slave_port_ids[1], &read_mac_addr),
+			"Failed to get mac address (port %d)",
+			test_params->slave_port_ids[1]);
 	TEST_ASSERT_SUCCESS(memcmp(&expected_mac_addr_1, &read_mac_addr,
 			sizeof(read_mac_addr)),
 			"slave port (%d) mac address not set to that of primary port",
@@ -3236,19 +3370,25 @@ test_balance_verify_mac_assignment(void)
 			(struct rte_ether_addr *)bonded_mac),
 			"failed to set MAC");
 
-	rte_eth_macaddr_get(test_params->bonded_port_id, &read_mac_addr);
+	TEST_ASSERT_SUCCESS(rte_eth_macaddr_get(test_params->bonded_port_id, &read_mac_addr),
+			"Failed to get mac address (port %d)",
+			test_params->bonded_port_id);
 	TEST_ASSERT_SUCCESS(memcmp(&bonded_mac, &read_mac_addr,
 			sizeof(read_mac_addr)),
 			"bonded port (%d) mac address not set to that of bonded port",
 			test_params->bonded_port_id);
 
-	rte_eth_macaddr_get(test_params->slave_port_ids[0], &read_mac_addr);
+	TEST_ASSERT_SUCCESS(rte_eth_macaddr_get(test_params->slave_port_ids[0], &read_mac_addr),
+			"Failed to get mac address (port %d)",
+			test_params->slave_port_ids[0]);
 	TEST_ASSERT_SUCCESS(memcmp(&bonded_mac, &read_mac_addr,
 			sizeof(read_mac_addr)),
 			"slave port (%d) mac address not as expected\n",
 				test_params->slave_port_ids[0]);
 
-	rte_eth_macaddr_get(test_params->slave_port_ids[1], &read_mac_addr);
+	TEST_ASSERT_SUCCESS(rte_eth_macaddr_get(test_params->slave_port_ids[1], &read_mac_addr),
+			"Failed to get mac address (port %d)",
+			test_params->slave_port_ids[1]);
 	TEST_ASSERT_SUCCESS(memcmp(&bonded_mac, &read_mac_addr,
 			sizeof(read_mac_addr)),
 			"slave port (%d) mac address not set to that of bonded port",
@@ -3696,13 +3836,17 @@ static int
 test_broadcast_verify_promiscuous_enable_disable(void)
 {
 	int i;
+	int ret;
 
 	/* Initialize bonded device with 4 slaves in round robin mode */
 	TEST_ASSERT_SUCCESS(initialize_bonded_device_with_slaves(
 			BONDING_MODE_BROADCAST, 0, 4, 1),
 			"Failed to initialise bonded device");
 
-	rte_eth_promiscuous_enable(test_params->bonded_port_id);
+	ret = rte_eth_promiscuous_enable(test_params->bonded_port_id);
+	TEST_ASSERT_SUCCESS(ret,
+		"Failed to enable promiscuous mode for port %d: %s",
+		test_params->bonded_port_id, rte_strerror(-ret));
 
 
 	TEST_ASSERT_EQUAL(rte_eth_promiscuous_get(test_params->bonded_port_id), 1,
@@ -3716,7 +3860,10 @@ test_broadcast_verify_promiscuous_enable_disable(void)
 				test_params->slave_port_ids[i]);
 	}
 
-	rte_eth_promiscuous_disable(test_params->bonded_port_id);
+	ret = rte_eth_promiscuous_disable(test_params->bonded_port_id);
+	TEST_ASSERT_SUCCESS(ret,
+		"Failed to disable promiscuous mode for port %d: %s",
+		test_params->bonded_port_id, rte_strerror(-ret));
 
 	TEST_ASSERT_EQUAL(rte_eth_promiscuous_get(test_params->bonded_port_id), 0,
 			"Port (%d) promiscuous mode not disabled",
@@ -3741,8 +3888,12 @@ test_broadcast_verify_mac_assignment(void)
 
 	int i;
 
-	rte_eth_macaddr_get(test_params->slave_port_ids[0], &expected_mac_addr_0);
-	rte_eth_macaddr_get(test_params->slave_port_ids[2], &expected_mac_addr_1);
+	TEST_ASSERT_SUCCESS(rte_eth_macaddr_get(test_params->slave_port_ids[0], &expected_mac_addr_0),
+			"Failed to get mac address (port %d)",
+			test_params->slave_port_ids[0]);
+	TEST_ASSERT_SUCCESS(rte_eth_macaddr_get(test_params->slave_port_ids[2], &expected_mac_addr_1),
+			"Failed to get mac address (port %d)",
+			test_params->slave_port_ids[2]);
 
 	/* Initialize bonded device with 4 slaves in round robin mode */
 	TEST_ASSERT_SUCCESS(initialize_bonded_device_with_slaves(
@@ -3752,7 +3903,9 @@ test_broadcast_verify_mac_assignment(void)
 	/* Verify that all MACs are the same as first slave added to bonded
 	 * device */
 	for (i = 0; i < test_params->bonded_slave_count; i++) {
-		rte_eth_macaddr_get(test_params->slave_port_ids[i], &read_mac_addr);
+		TEST_ASSERT_SUCCESS(rte_eth_macaddr_get(test_params->slave_port_ids[i], &read_mac_addr),
+				"Failed to get mac address (port %d)",
+				test_params->slave_port_ids[i]);
 		TEST_ASSERT_SUCCESS(memcmp(&expected_mac_addr_0, &read_mac_addr,
 				sizeof(read_mac_addr)),
 				"slave port (%d) mac address not set to that of primary port",
@@ -3766,7 +3919,9 @@ test_broadcast_verify_mac_assignment(void)
 			test_params->bonded_port_id, test_params->slave_port_ids[i]);
 
 	for (i = 0; i < test_params->bonded_slave_count; i++) {
-		rte_eth_macaddr_get(test_params->slave_port_ids[i], &read_mac_addr);
+		TEST_ASSERT_SUCCESS(rte_eth_macaddr_get(test_params->slave_port_ids[i], &read_mac_addr),
+				"Failed to get mac address (port %d)",
+				test_params->slave_port_ids[i]);
 		TEST_ASSERT_SUCCESS(memcmp(&expected_mac_addr_0, &read_mac_addr,
 				sizeof(read_mac_addr)),
 				"slave port (%d) mac address has changed to that of primary "
@@ -3782,14 +3937,18 @@ test_broadcast_verify_mac_assignment(void)
 	TEST_ASSERT_SUCCESS(rte_eth_dev_start(test_params->bonded_port_id),
 			"Failed to start bonded device");
 
-	rte_eth_macaddr_get(test_params->bonded_port_id, &read_mac_addr);
+	TEST_ASSERT_SUCCESS(rte_eth_macaddr_get(test_params->bonded_port_id, &read_mac_addr),
+			"Failed to get mac address (port %d)",
+			test_params->bonded_port_id);
 	TEST_ASSERT_SUCCESS(memcmp(&expected_mac_addr_1, &read_mac_addr,
 			sizeof(read_mac_addr)),
 			"bonded port (%d) mac address not set to that of new primary  port",
 			test_params->slave_port_ids[i]);
 
 	for (i = 0; i < test_params->bonded_slave_count; i++) {
-		rte_eth_macaddr_get(test_params->slave_port_ids[i], &read_mac_addr);
+		TEST_ASSERT_SUCCESS(rte_eth_macaddr_get(test_params->slave_port_ids[i], &read_mac_addr),
+				"Failed to get mac address (port %d)",
+				test_params->slave_port_ids[i]);
 		TEST_ASSERT_SUCCESS(memcmp(&expected_mac_addr_1, &read_mac_addr,
 				sizeof(read_mac_addr)),
 				"slave port (%d) mac address not set to that of new primary "
@@ -3802,7 +3961,9 @@ test_broadcast_verify_mac_assignment(void)
 			(struct rte_ether_addr *)bonded_mac),
 			"Failed to set MAC address");
 
-	rte_eth_macaddr_get(test_params->bonded_port_id, &read_mac_addr);
+	TEST_ASSERT_SUCCESS(rte_eth_macaddr_get(test_params->bonded_port_id, &read_mac_addr),
+			"Failed to get mac address (port %d)",
+			test_params->bonded_port_id);
 	TEST_ASSERT_SUCCESS(memcmp(bonded_mac, &read_mac_addr,
 			sizeof(read_mac_addr)),
 			"bonded port (%d) mac address not set to that of new primary port",
@@ -3810,7 +3971,9 @@ test_broadcast_verify_mac_assignment(void)
 
 
 	for (i = 0; i < test_params->bonded_slave_count; i++) {
-		rte_eth_macaddr_get(test_params->slave_port_ids[i], &read_mac_addr);
+		TEST_ASSERT_SUCCESS(rte_eth_macaddr_get(test_params->slave_port_ids[i], &read_mac_addr),
+				"Failed to get mac address (port %d)",
+				test_params->slave_port_ids[i]);
 		TEST_ASSERT_SUCCESS(memcmp(bonded_mac, &read_mac_addr,
 				sizeof(read_mac_addr)),
 				"slave port (%d) mac address not set to that of new primary "
@@ -4174,6 +4337,7 @@ static int
 test_tlb_verify_promiscuous_enable_disable(void)
 {
 	int i, primary_port, promiscuous_en;
+	int ret;
 
 	/* Initialize bonded device with 4 slaves in transmit load balancing mode */
 	TEST_ASSERT_SUCCESS( initialize_bonded_device_with_slaves(
@@ -4185,7 +4349,10 @@ test_tlb_verify_promiscuous_enable_disable(void)
 			"failed to get primary slave for bonded port (%d)",
 			test_params->bonded_port_id);
 
-	rte_eth_promiscuous_enable(test_params->bonded_port_id);
+	ret = rte_eth_promiscuous_enable(test_params->bonded_port_id);
+	TEST_ASSERT_SUCCESS(ret,
+		"Failed to enable promiscuous mode for port %d: %s",
+		test_params->bonded_port_id, rte_strerror(-ret));
 
 	promiscuous_en = rte_eth_promiscuous_get(test_params->bonded_port_id);
 	TEST_ASSERT_EQUAL(promiscuous_en, (int)1,
@@ -4206,7 +4373,10 @@ test_tlb_verify_promiscuous_enable_disable(void)
 
 	}
 
-	rte_eth_promiscuous_disable(test_params->bonded_port_id);
+	ret = rte_eth_promiscuous_disable(test_params->bonded_port_id);
+	TEST_ASSERT_SUCCESS(ret,
+		"Failed to disable promiscuous mode for port %d: %s\n",
+		test_params->bonded_port_id, rte_strerror(-ret));
 
 	promiscuous_en = rte_eth_promiscuous_get(test_params->bonded_port_id);
 	TEST_ASSERT_EQUAL(promiscuous_en, (int)0,
@@ -4231,8 +4401,12 @@ test_tlb_verify_mac_assignment(void)
 	struct rte_ether_addr read_mac_addr;
 	struct rte_ether_addr expected_mac_addr_0, expected_mac_addr_1;
 
-	rte_eth_macaddr_get(test_params->slave_port_ids[0], &expected_mac_addr_0);
-	rte_eth_macaddr_get(test_params->slave_port_ids[1], &expected_mac_addr_1);
+	TEST_ASSERT_SUCCESS(rte_eth_macaddr_get(test_params->slave_port_ids[0], &expected_mac_addr_0),
+			"Failed to get mac address (port %d)",
+			test_params->slave_port_ids[0]);
+	TEST_ASSERT_SUCCESS(rte_eth_macaddr_get(test_params->slave_port_ids[1], &expected_mac_addr_1),
+			"Failed to get mac address (port %d)",
+			test_params->slave_port_ids[1]);
 
 	/* Initialize bonded device with 2 slaves in active backup mode */
 	TEST_ASSERT_SUCCESS(initialize_bonded_device_with_slaves(
@@ -4241,19 +4415,25 @@ test_tlb_verify_mac_assignment(void)
 
 	/* Verify that bonded MACs is that of first slave and that the other slave
 	 * MAC hasn't been changed */
-	rte_eth_macaddr_get(test_params->bonded_port_id, &read_mac_addr);
+	TEST_ASSERT_SUCCESS(rte_eth_macaddr_get(test_params->bonded_port_id, &read_mac_addr),
+			"Failed to get mac address (port %d)",
+			test_params->bonded_port_id);
 	TEST_ASSERT_SUCCESS(memcmp(&expected_mac_addr_0, &read_mac_addr,
 			sizeof(read_mac_addr)),
 			"bonded port (%d) mac address not set to that of primary port",
 			test_params->bonded_port_id);
 
-	rte_eth_macaddr_get(test_params->slave_port_ids[0], &read_mac_addr);
+	TEST_ASSERT_SUCCESS(rte_eth_macaddr_get(test_params->slave_port_ids[0], &read_mac_addr),
+			"Failed to get mac address (port %d)",
+			test_params->slave_port_ids[0]);
 	TEST_ASSERT_SUCCESS(memcmp(&expected_mac_addr_0, &read_mac_addr,
 			sizeof(read_mac_addr)),
 			"slave port (%d) mac address not set to that of primary port",
 			test_params->slave_port_ids[0]);
 
-	rte_eth_macaddr_get(test_params->slave_port_ids[1], &read_mac_addr);
+	TEST_ASSERT_SUCCESS(rte_eth_macaddr_get(test_params->slave_port_ids[1], &read_mac_addr),
+			"Failed to get mac address (port %d)",
+			test_params->slave_port_ids[1]);
 	TEST_ASSERT_SUCCESS(memcmp(&expected_mac_addr_1, &read_mac_addr,
 			sizeof(read_mac_addr)),
 			"slave port (%d) mac address not as expected",
@@ -4265,19 +4445,25 @@ test_tlb_verify_mac_assignment(void)
 			"Failed to set bonded port (%d) primary port to (%d)",
 			test_params->bonded_port_id, test_params->slave_port_ids[1]);
 
-	rte_eth_macaddr_get(test_params->bonded_port_id, &read_mac_addr);
+	TEST_ASSERT_SUCCESS(rte_eth_macaddr_get(test_params->bonded_port_id, &read_mac_addr),
+			"Failed to get mac address (port %d)",
+			test_params->bonded_port_id);
 	TEST_ASSERT_SUCCESS(memcmp(&expected_mac_addr_0, &read_mac_addr,
 			sizeof(read_mac_addr)),
 			"bonded port (%d) mac address not set to that of primary port",
 			test_params->bonded_port_id);
 
-	rte_eth_macaddr_get(test_params->slave_port_ids[0], &read_mac_addr);
+	TEST_ASSERT_SUCCESS(rte_eth_macaddr_get(test_params->slave_port_ids[0], &read_mac_addr),
+			"Failed to get mac address (port %d)",
+			test_params->slave_port_ids[0]);
 	TEST_ASSERT_SUCCESS(memcmp(&expected_mac_addr_0, &read_mac_addr,
 			sizeof(read_mac_addr)),
 			"slave port (%d) mac address not set to that of primary port",
 			test_params->slave_port_ids[0]);
 
-	rte_eth_macaddr_get(test_params->slave_port_ids[1], &read_mac_addr);
+	TEST_ASSERT_SUCCESS(rte_eth_macaddr_get(test_params->slave_port_ids[1], &read_mac_addr),
+			"Failed to get mac address (port %d)",
+			test_params->slave_port_ids[1]);
 	TEST_ASSERT_SUCCESS(memcmp(&expected_mac_addr_1, &read_mac_addr,
 			sizeof(read_mac_addr)),
 			"slave port (%d) mac address not as expected",
@@ -4291,19 +4477,25 @@ test_tlb_verify_mac_assignment(void)
 	TEST_ASSERT_SUCCESS(rte_eth_dev_start(test_params->bonded_port_id),
 			"Failed to start device");
 
-	rte_eth_macaddr_get(test_params->bonded_port_id, &read_mac_addr);
+	TEST_ASSERT_SUCCESS(rte_eth_macaddr_get(test_params->bonded_port_id, &read_mac_addr),
+			"Failed to get mac address (port %d)",
+			test_params->bonded_port_id);
 	TEST_ASSERT_SUCCESS(memcmp(&expected_mac_addr_1, &read_mac_addr,
 			sizeof(read_mac_addr)),
 			"bonded port (%d) mac address not set to that of primary port",
 			test_params->bonded_port_id);
 
-	rte_eth_macaddr_get(test_params->slave_port_ids[0], &read_mac_addr);
+	TEST_ASSERT_SUCCESS(rte_eth_macaddr_get(test_params->slave_port_ids[0], &read_mac_addr),
+			"Failed to get mac address (port %d)",
+			test_params->slave_port_ids[0]);
 	TEST_ASSERT_SUCCESS(memcmp(&expected_mac_addr_0, &read_mac_addr,
 			sizeof(read_mac_addr)),
 			"slave port (%d) mac address not as expected",
 			test_params->slave_port_ids[0]);
 
-	rte_eth_macaddr_get(test_params->slave_port_ids[1], &read_mac_addr);
+	TEST_ASSERT_SUCCESS(rte_eth_macaddr_get(test_params->slave_port_ids[1], &read_mac_addr),
+			"Failed to get mac address (port %d)",
+			test_params->slave_port_ids[1]);
 	TEST_ASSERT_SUCCESS(memcmp(&expected_mac_addr_1, &read_mac_addr,
 			sizeof(read_mac_addr)),
 			"slave port (%d) mac address not set to that of primary port",
@@ -4316,19 +4508,25 @@ test_tlb_verify_mac_assignment(void)
 			(struct rte_ether_addr *)bonded_mac),
 			"failed to set MAC address");
 
-	rte_eth_macaddr_get(test_params->bonded_port_id, &read_mac_addr);
+	TEST_ASSERT_SUCCESS(rte_eth_macaddr_get(test_params->bonded_port_id, &read_mac_addr),
+			"Failed to get mac address (port %d)",
+			test_params->bonded_port_id);
 	TEST_ASSERT_SUCCESS(memcmp(&bonded_mac, &read_mac_addr,
 			sizeof(read_mac_addr)),
 			"bonded port (%d) mac address not set to that of bonded port",
 			test_params->bonded_port_id);
 
-	rte_eth_macaddr_get(test_params->slave_port_ids[0], &read_mac_addr);
+	TEST_ASSERT_SUCCESS(rte_eth_macaddr_get(test_params->slave_port_ids[0], &read_mac_addr),
+			"Failed to get mac address (port %d)",
+			test_params->slave_port_ids[0]);
 	TEST_ASSERT_SUCCESS(memcmp(&expected_mac_addr_0, &read_mac_addr,
 			sizeof(read_mac_addr)),
 			"slave port (%d) mac address not as expected",
 			test_params->slave_port_ids[0]);
 
-	rte_eth_macaddr_get(test_params->slave_port_ids[1], &read_mac_addr);
+	TEST_ASSERT_SUCCESS(rte_eth_macaddr_get(test_params->slave_port_ids[1], &read_mac_addr),
+			"Failed to get mac address (port %d)",
+			test_params->slave_port_ids[1]);
 	TEST_ASSERT_SUCCESS(memcmp(&bonded_mac, &read_mac_addr,
 			sizeof(read_mac_addr)),
 			"slave port (%d) mac address not set to that of bonded port",

@@ -1230,6 +1230,12 @@ typedef uint16_t (*event_tx_adapter_enqueue)(void *port,
 				struct rte_event ev[], uint16_t nb_events);
 /**< @internal Enqueue burst of events on port of a device */
 
+typedef uint16_t (*event_tx_adapter_enqueue_same_dest)(void *port,
+		struct rte_event ev[], uint16_t nb_events);
+/**< @internal Enqueue burst of events on port of a device supporting
+ * burst having same destination Ethernet port & Tx queue.
+ */
+
 #define RTE_EVENTDEV_NAME_MAX_LEN	(64)
 /**< @internal Max length of name of event PMD */
 
@@ -1276,6 +1282,9 @@ struct rte_eventdev_data {
 
 	char name[RTE_EVENTDEV_NAME_MAX_LEN];
 	/**< Unique identifier name */
+
+	uint64_t reserved_64s[4]; /**< Reserved for future fields */
+	void *reserved_ptrs[4];   /**< Reserved for future fields */
 } __rte_cache_aligned;
 
 /** @internal The data structure associated with each event device. */
@@ -1292,6 +1301,10 @@ struct rte_eventdev {
 	/**< Pointer to PMD dequeue function. */
 	event_dequeue_burst_t dequeue_burst;
 	/**< Pointer to PMD dequeue burst function. */
+	event_tx_adapter_enqueue_same_dest txa_enqueue_same_dest;
+	/**< Pointer to PMD eth Tx adapter burst enqueue function with
+	 * events destined to same Eth port & Tx queue.
+	 */
 	event_tx_adapter_enqueue txa_enqueue;
 	/**< Pointer to PMD eth Tx adapter enqueue function. */
 	struct rte_eventdev_data *data;
@@ -1304,6 +1317,9 @@ struct rte_eventdev {
 	RTE_STD_C11
 	uint8_t attached : 1;
 	/**< Flag indicating the device is attached */
+
+	uint64_t reserved_64s[4]; /**< Reserved for future fields */
+	void *reserved_ptrs[4];   /**< Reserved for future fields */
 } __rte_cache_aligned;
 
 extern struct rte_eventdev *rte_eventdevs;

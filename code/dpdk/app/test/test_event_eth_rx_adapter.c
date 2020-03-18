@@ -45,7 +45,9 @@ port_init_common(uint16_t port, const struct rte_eth_conf *port_conf,
 
 	retval = rte_eth_dev_configure(port, 0, 0, port_conf);
 
-	rte_eth_dev_info_get(port, &dev_info);
+	retval = rte_eth_dev_info_get(port, &dev_info);
+	if (retval != 0)
+		return retval;
 
 	default_params.rx_rings = RTE_MIN(dev_info.max_rx_queues,
 					MAX_NUM_RX_QUEUE);
@@ -79,7 +81,9 @@ port_init_common(uint16_t port, const struct rte_eth_conf *port_conf,
 
 	/* Display the port MAC address. */
 	struct rte_ether_addr addr;
-	rte_eth_macaddr_get(port, &addr);
+	retval = rte_eth_macaddr_get(port, &addr);
+	if (retval < 0)
+		return retval;
 	printf("Port %u MAC: %02" PRIx8 " %02" PRIx8 " %02" PRIx8
 			   " %02" PRIx8 " %02" PRIx8 " %02" PRIx8 "\n",
 			(unsigned int)port,
@@ -88,7 +92,9 @@ port_init_common(uint16_t port, const struct rte_eth_conf *port_conf,
 			addr.addr_bytes[4], addr.addr_bytes[5]);
 
 	/* Enable RX in promiscuous mode for the Ethernet device. */
-	rte_eth_promiscuous_enable(port);
+	retval = rte_eth_promiscuous_enable(port);
+	if (retval != 0)
+		return retval;
 
 	return 0;
 }

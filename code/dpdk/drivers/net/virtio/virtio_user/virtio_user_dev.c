@@ -315,9 +315,9 @@ virtio_user_fill_intr_handle(struct virtio_user_dev *dev)
 
 static void
 virtio_user_mem_event_cb(enum rte_mem_event type __rte_unused,
-						 const void *addr __rte_unused,
-						 size_t len __rte_unused,
-						 void *arg)
+			 const void *addr,
+			 size_t len __rte_unused,
+			 void *arg)
 {
 	struct virtio_user_dev *dev = arg;
 	struct rte_memseg_list *msl;
@@ -537,7 +537,8 @@ virtio_user_dev_uninit(struct virtio_user_dev *dev)
 		close(dev->kickfds[i]);
 	}
 
-	close(dev->vhostfd);
+	if (dev->vhostfd >= 0)
+		close(dev->vhostfd);
 
 	if (dev->is_server && dev->listenfd >= 0) {
 		close(dev->listenfd);
@@ -545,8 +546,11 @@ virtio_user_dev_uninit(struct virtio_user_dev *dev)
 	}
 
 	if (dev->vhostfds) {
-		for (i = 0; i < dev->max_queue_pairs; ++i)
+		for (i = 0; i < dev->max_queue_pairs; ++i) {
 			close(dev->vhostfds[i]);
+			if (dev->tapfds[i] >= 0)
+				close(dev->tapfds[i]);
+		}
 		free(dev->vhostfds);
 		free(dev->tapfds);
 	}
@@ -613,6 +617,10 @@ virtio_user_handle_ctrl_msg(struct virtio_user_dev *dev, struct vring *vring,
 
 		queues = *(uint16_t *)(uintptr_t)vring->desc[idx_data].addr;
 		status = virtio_user_handle_mq(dev, queues);
+	} else if (hdr->class == VIRTIO_NET_CTRL_RX  ||
+		   hdr->class == VIRTIO_NET_CTRL_MAC ||
+		   hdr->class == VIRTIO_NET_CTRL_VLAN) {
+		status = 0;
 	}
 
 	/* Update status */
@@ -624,7 +632,7 @@ virtio_user_handle_ctrl_msg(struct virtio_user_dev *dev, struct vring *vring,
 static inline int
 desc_is_avail(struct vring_packed_desc *desc, bool wrap_counter)
 {
-	uint16_t flags = desc->flags;
+	uint16_t flags = __atomic_load_n(&desc->flags, __ATOMIC_ACQUIRE);
 
 	return wrap_counter == !!(flags & VRING_PACKED_DESC_F_AVAIL) &&
 		wrap_counter != !!(flags & VRING_PACKED_DESC_F_USED);
@@ -664,6 +672,10 @@ virtio_user_handle_ctrl_msg_packed(struct virtio_user_dev *dev,
 		queues = *(uint16_t *)(uintptr_t)
 				vring->desc[idx_data].addr;
 		status = virtio_user_handle_mq(dev, queues);
+	} else if (hdr->class == VIRTIO_NET_CTRL_RX  ||
+		   hdr->class == VIRTIO_NET_CTRL_MAC ||
+		   hdr->class == VIRTIO_NET_CTRL_VLAN) {
+		status = 0;
 	}
 
 	/* Update status */
@@ -684,6 +696,10 @@ virtio_user_handle_cq_packed(struct virtio_user_dev *dev, uint16_t queue_idx)
 	struct vring_packed *vring = &dev->packed_vrings[queue_idx];
 	uint16_t n_descs, flags;
 
+	/* Perform a load-acquire barrier in desc_is_avail to
+	 * enforce the ordering between desc flags and desc
+	 * content.
+	 */
 	while (desc_is_avail(&vring->desc[vq->used_idx],
 			     vq->used_wrap_counter)) {
 
@@ -694,8 +710,8 @@ virtio_user_handle_cq_packed(struct virtio_user_dev *dev, uint16_t queue_idx)
 		if (vq->used_wrap_counter)
 			flags |= VRING_PACKED_DESC_F_AVAIL_USED;
 
-		rte_smp_wmb();
-		vring->desc[vq->used_idx].flags = flags;
+		__atomic_store_n(&vring->desc[vq->used_idx].flags, flags,
+				 __ATOMIC_RELEASE);
 
 		vq->used_idx += n_descs;
 		if (vq->used_idx >= dev->queue_size) {

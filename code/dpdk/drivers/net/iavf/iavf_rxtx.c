@@ -24,9 +24,6 @@
 #include <rte_ip.h>
 #include <rte_net.h>
 
-#include "iavf_log.h"
-#include "base/iavf_prototype.h"
-#include "base/iavf_type.h"
 #include "iavf.h"
 #include "iavf_rxtx.h"
 
@@ -92,18 +89,17 @@ check_tx_thresh(uint16_t nb_desc, uint16_t tx_rs_thresh,
 	return 0;
 }
 
-#ifdef RTE_LIBRTE_IAVF_INC_VECTOR
 static inline bool
 check_rx_vec_allow(struct iavf_rx_queue *rxq)
 {
 	if (rxq->rx_free_thresh >= IAVF_VPMD_RX_MAX_BURST &&
 	    rxq->nb_rx_desc % rxq->rx_free_thresh == 0) {
 		PMD_INIT_LOG(DEBUG, "Vector Rx can be enabled on this rxq.");
-		return TRUE;
+		return true;
 	}
 
 	PMD_INIT_LOG(DEBUG, "Vector Rx cannot be enabled on this rxq.");
-	return FALSE;
+	return false;
 }
 
 static inline bool
@@ -113,30 +109,29 @@ check_tx_vec_allow(struct iavf_tx_queue *txq)
 	    txq->rs_thresh >= IAVF_VPMD_TX_MAX_BURST &&
 	    txq->rs_thresh <= IAVF_VPMD_TX_MAX_FREE_BUF) {
 		PMD_INIT_LOG(DEBUG, "Vector tx can be enabled on this txq.");
-		return TRUE;
+		return true;
 	}
 	PMD_INIT_LOG(DEBUG, "Vector Tx cannot be enabled on this txq.");
-	return FALSE;
+	return false;
 }
-#endif
 
 static inline bool
 check_rx_bulk_allow(struct iavf_rx_queue *rxq)
 {
-	int ret = TRUE;
+	int ret = true;
 
 	if (!(rxq->rx_free_thresh >= IAVF_RX_MAX_BURST)) {
 		PMD_INIT_LOG(DEBUG, "Rx Burst Bulk Alloc Preconditions: "
 			     "rxq->rx_free_thresh=%d, "
 			     "IAVF_RX_MAX_BURST=%d",
 			     rxq->rx_free_thresh, IAVF_RX_MAX_BURST);
-		ret = FALSE;
+		ret = false;
 	} else if (rxq->nb_rx_desc % rxq->rx_free_thresh != 0) {
 		PMD_INIT_LOG(DEBUG, "Rx Burst Bulk Alloc Preconditions: "
 			     "rxq->nb_rx_desc=%d, "
 			     "rxq->rx_free_thresh=%d",
 			     rxq->nb_rx_desc, rxq->rx_free_thresh);
-		ret = FALSE;
+		ret = false;
 	}
 	return ret;
 }
@@ -395,12 +390,12 @@ iavf_dev_rx_queue_setup(struct rte_eth_dev *dev, uint16_t queue_idx,
 
 	rxq->mz = mz;
 	reset_rx_queue(rxq);
-	rxq->q_set = TRUE;
+	rxq->q_set = true;
 	dev->data->rx_queues[queue_idx] = rxq;
 	rxq->qrx_tail = hw->hw_addr + IAVF_QRX_TAIL1(rxq->queue_id);
 	rxq->ops = &def_rxq_ops;
 
-	if (check_rx_bulk_allow(rxq) == TRUE) {
+	if (check_rx_bulk_allow(rxq) == true) {
 		PMD_INIT_LOG(DEBUG, "Rx Burst Bulk Alloc Preconditions are "
 			     "satisfied. Rx Burst Bulk Alloc function will be "
 			     "used on port=%d, queue=%d.",
@@ -413,10 +408,9 @@ iavf_dev_rx_queue_setup(struct rte_eth_dev *dev, uint16_t queue_idx,
 		ad->rx_bulk_alloc_allowed = false;
 	}
 
-#ifdef RTE_LIBRTE_IAVF_INC_VECTOR
-	if (check_rx_vec_allow(rxq) == FALSE)
+	if (check_rx_vec_allow(rxq) == false)
 		ad->rx_vec_allowed = false;
-#endif
+
 	return 0;
 }
 
@@ -506,18 +500,16 @@ iavf_dev_tx_queue_setup(struct rte_eth_dev *dev,
 
 	txq->mz = mz;
 	reset_tx_queue(txq);
-	txq->q_set = TRUE;
+	txq->q_set = true;
 	dev->data->tx_queues[queue_idx] = txq;
 	txq->qtx_tail = hw->hw_addr + IAVF_QTX_TAIL1(queue_idx);
 	txq->ops = &def_txq_ops;
 
-#ifdef RTE_LIBRTE_IAVF_INC_VECTOR
-	if (check_tx_vec_allow(txq) == FALSE) {
+	if (check_tx_vec_allow(txq) == false) {
 		struct iavf_adapter *ad =
 			IAVF_DEV_PRIVATE_TO_ADAPTER(dev->data->dev_private);
 		ad->tx_vec_allowed = false;
 	}
-#endif
 
 	return 0;
 }
@@ -551,7 +543,7 @@ iavf_dev_rx_queue_start(struct rte_eth_dev *dev, uint16_t rx_queue_id)
 	IAVF_WRITE_FLUSH(hw);
 
 	/* Ready to switch the queue on */
-	err = iavf_switch_queue(adapter, rx_queue_id, TRUE, TRUE);
+	err = iavf_switch_queue(adapter, rx_queue_id, true, true);
 	if (err)
 		PMD_DRV_LOG(ERR, "Failed to switch RX queue %u on",
 			    rx_queue_id);
@@ -583,7 +575,7 @@ iavf_dev_tx_queue_start(struct rte_eth_dev *dev, uint16_t tx_queue_id)
 	IAVF_WRITE_FLUSH(hw);
 
 	/* Ready to switch the queue on */
-	err = iavf_switch_queue(adapter, tx_queue_id, FALSE, TRUE);
+	err = iavf_switch_queue(adapter, tx_queue_id, false, true);
 
 	if (err)
 		PMD_DRV_LOG(ERR, "Failed to switch TX queue %u on",
@@ -608,7 +600,7 @@ iavf_dev_rx_queue_stop(struct rte_eth_dev *dev, uint16_t rx_queue_id)
 	if (rx_queue_id >= dev->data->nb_rx_queues)
 		return -EINVAL;
 
-	err = iavf_switch_queue(adapter, rx_queue_id, TRUE, FALSE);
+	err = iavf_switch_queue(adapter, rx_queue_id, true, false);
 	if (err) {
 		PMD_DRV_LOG(ERR, "Failed to switch RX queue %u off",
 			    rx_queue_id);
@@ -636,7 +628,7 @@ iavf_dev_tx_queue_stop(struct rte_eth_dev *dev, uint16_t tx_queue_id)
 	if (tx_queue_id >= dev->data->nb_tx_queues)
 		return -EINVAL;
 
-	err = iavf_switch_queue(adapter, tx_queue_id, FALSE, FALSE);
+	err = iavf_switch_queue(adapter, tx_queue_id, false, false);
 	if (err) {
 		PMD_DRV_LOG(ERR, "Failed to switch TX queue %u off",
 			    tx_queue_id);
@@ -1666,27 +1658,6 @@ end_of_tx:
 	return nb_tx;
 }
 
-static uint16_t
-iavf_xmit_pkts_vec(void *tx_queue, struct rte_mbuf **tx_pkts,
-		  uint16_t nb_pkts)
-{
-	uint16_t nb_tx = 0;
-	struct iavf_tx_queue *txq = (struct iavf_tx_queue *)tx_queue;
-
-	while (nb_pkts) {
-		uint16_t ret, num;
-
-		num = (uint16_t)RTE_MIN(nb_pkts, txq->rs_thresh);
-		ret = iavf_xmit_fixed_burst_vec(tx_queue, &tx_pkts[nb_tx], num);
-		nb_tx += ret;
-		nb_pkts -= ret;
-		if (ret < num)
-			break;
-	}
-
-	return nb_tx;
-}
-
 /* TX prep functions */
 uint16_t
 iavf_prep_pkts(__rte_unused void *tx_queue, struct rte_mbuf **tx_pkts,
@@ -1741,26 +1712,43 @@ iavf_set_rx_function(struct rte_eth_dev *dev)
 {
 	struct iavf_adapter *adapter =
 		IAVF_DEV_PRIVATE_TO_ADAPTER(dev->data->dev_private);
+#ifdef RTE_ARCH_X86
 	struct iavf_rx_queue *rxq;
 	int i;
+	bool use_avx2 = false;
 
-	if (adapter->rx_vec_allowed) {
-		if (dev->data->scattered_rx) {
-			PMD_DRV_LOG(DEBUG, "Using Vector Scattered Rx callback"
-				    " (port=%d).", dev->data->port_id);
-			dev->rx_pkt_burst = iavf_recv_scattered_pkts_vec;
-		} else {
-			PMD_DRV_LOG(DEBUG, "Using Vector Rx callback"
-				    " (port=%d).", dev->data->port_id);
-			dev->rx_pkt_burst = iavf_recv_pkts_vec;
-		}
+	if (!iavf_rx_vec_dev_check(dev)) {
 		for (i = 0; i < dev->data->nb_rx_queues; i++) {
 			rxq = dev->data->rx_queues[i];
-			if (!rxq)
-				continue;
-			iavf_rxq_vec_setup(rxq);
+			(void)iavf_rxq_vec_setup(rxq);
 		}
-	} else if (dev->data->scattered_rx) {
+
+		if (rte_cpu_get_flag_enabled(RTE_CPUFLAG_AVX2) == 1 ||
+		    rte_cpu_get_flag_enabled(RTE_CPUFLAG_AVX512F) == 1)
+			use_avx2 = true;
+
+		if (dev->data->scattered_rx) {
+			PMD_DRV_LOG(DEBUG,
+				    "Using %sVector Scattered Rx (port %d).",
+				    use_avx2 ? "avx2 " : "",
+				    dev->data->port_id);
+			dev->rx_pkt_burst = use_avx2 ?
+					    iavf_recv_scattered_pkts_vec_avx2 :
+					    iavf_recv_scattered_pkts_vec;
+		} else {
+			PMD_DRV_LOG(DEBUG, "Using %sVector Rx (port %d).",
+				    use_avx2 ? "avx2 " : "",
+				    dev->data->port_id);
+			dev->rx_pkt_burst = use_avx2 ?
+					    iavf_recv_pkts_vec_avx2 :
+					    iavf_recv_pkts_vec;
+		}
+
+		return;
+	}
+#endif
+
+	if (dev->data->scattered_rx) {
 		PMD_DRV_LOG(DEBUG, "Using a Scattered Rx callback (port=%d).",
 			    dev->data->port_id);
 		dev->rx_pkt_burst = iavf_recv_scattered_pkts;
@@ -1779,28 +1767,39 @@ iavf_set_rx_function(struct rte_eth_dev *dev)
 void
 iavf_set_tx_function(struct rte_eth_dev *dev)
 {
-	struct iavf_adapter *adapter =
-		IAVF_DEV_PRIVATE_TO_ADAPTER(dev->data->dev_private);
+#ifdef RTE_ARCH_X86
 	struct iavf_tx_queue *txq;
 	int i;
+	bool use_avx2 = false;
 
-	if (adapter->tx_vec_allowed) {
-		PMD_DRV_LOG(DEBUG, "Using Vector Tx callback (port=%d).",
-			    dev->data->port_id);
-		dev->tx_pkt_burst = iavf_xmit_pkts_vec;
-		dev->tx_pkt_prepare = NULL;
+	if (!iavf_tx_vec_dev_check(dev)) {
 		for (i = 0; i < dev->data->nb_tx_queues; i++) {
 			txq = dev->data->tx_queues[i];
 			if (!txq)
 				continue;
 			iavf_txq_vec_setup(txq);
 		}
-	} else {
-		PMD_DRV_LOG(DEBUG, "Using Basic Tx callback (port=%d).",
+
+		if (rte_cpu_get_flag_enabled(RTE_CPUFLAG_AVX2) == 1 ||
+		    rte_cpu_get_flag_enabled(RTE_CPUFLAG_AVX512F) == 1)
+			use_avx2 = true;
+
+		PMD_DRV_LOG(DEBUG, "Using %sVector Tx (port %d).",
+			    use_avx2 ? "avx2 " : "",
 			    dev->data->port_id);
-		dev->tx_pkt_burst = iavf_xmit_pkts;
-		dev->tx_pkt_prepare = iavf_prep_pkts;
+		dev->tx_pkt_burst = use_avx2 ?
+				    iavf_xmit_pkts_vec_avx2 :
+				    iavf_xmit_pkts_vec;
+		dev->tx_pkt_prepare = NULL;
+
+		return;
 	}
+#endif
+
+	PMD_DRV_LOG(DEBUG, "Using Basic Tx callback (port=%d).",
+		    dev->data->port_id);
+	dev->tx_pkt_burst = iavf_xmit_pkts;
+	dev->tx_pkt_prepare = iavf_prep_pkts;
 }
 
 void
@@ -1816,7 +1815,7 @@ iavf_dev_rxq_info_get(struct rte_eth_dev *dev, uint16_t queue_id,
 	qinfo->nb_desc = rxq->nb_rx_desc;
 
 	qinfo->conf.rx_free_thresh = rxq->rx_free_thresh;
-	qinfo->conf.rx_drop_en = TRUE;
+	qinfo->conf.rx_drop_en = true;
 	qinfo->conf.rx_deferred_start = rxq->rx_deferred_start;
 }
 
@@ -1921,40 +1920,4 @@ iavf_dev_tx_desc_status(void *tx_queue, uint16_t offset)
 		return RTE_ETH_TX_DESC_DONE;
 
 	return RTE_ETH_TX_DESC_FULL;
-}
-
-__rte_weak uint16_t
-iavf_recv_pkts_vec(__rte_unused void *rx_queue,
-		  __rte_unused struct rte_mbuf **rx_pkts,
-		  __rte_unused uint16_t nb_pkts)
-{
-	return 0;
-}
-
-__rte_weak uint16_t
-iavf_recv_scattered_pkts_vec(__rte_unused void *rx_queue,
-			    __rte_unused struct rte_mbuf **rx_pkts,
-			    __rte_unused uint16_t nb_pkts)
-{
-	return 0;
-}
-
-__rte_weak uint16_t
-iavf_xmit_fixed_burst_vec(__rte_unused void *tx_queue,
-			 __rte_unused struct rte_mbuf **tx_pkts,
-			 __rte_unused uint16_t nb_pkts)
-{
-	return 0;
-}
-
-__rte_weak int
-iavf_rxq_vec_setup(__rte_unused struct iavf_rx_queue *rxq)
-{
-	return -1;
-}
-
-__rte_weak int
-iavf_txq_vec_setup(__rte_unused struct iavf_tx_queue *txq)
-{
-	return -1;
 }

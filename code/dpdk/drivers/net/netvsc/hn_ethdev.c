@@ -42,7 +42,8 @@
 			    DEV_TX_OFFLOAD_VLAN_INSERT)
 
 #define HN_RX_OFFLOAD_CAPS (DEV_RX_OFFLOAD_CHECKSUM | \
-			    DEV_RX_OFFLOAD_VLAN_STRIP)
+			    DEV_RX_OFFLOAD_VLAN_STRIP | \
+			    DEV_RX_OFFLOAD_RSS_HASH)
 
 int hn_logtype_init;
 int hn_logtype_driver;
@@ -238,10 +239,11 @@ hn_dev_link_update(struct rte_eth_dev *dev,
 	return rte_eth_linkstatus_set(dev, &link);
 }
 
-static void hn_dev_info_get(struct rte_eth_dev *dev,
-			    struct rte_eth_dev_info *dev_info)
+static int hn_dev_info_get(struct rte_eth_dev *dev,
+			   struct rte_eth_dev_info *dev_info)
 {
 	struct hn_data *hv = dev->data->dev_private;
+	int rc;
 
 	dev_info->speed_capa = ETH_LINK_SPEED_10G;
 	dev_info->min_rx_bufsize = HN_MIN_RX_BUF_SIZE;
@@ -255,8 +257,16 @@ static void hn_dev_info_get(struct rte_eth_dev *dev,
 	dev_info->max_rx_queues = hv->max_queues;
 	dev_info->max_tx_queues = hv->max_queues;
 
-	hn_rndis_get_offload(hv, dev_info);
-	hn_vf_info_get(hv, dev_info);
+	if (rte_eal_process_type() != RTE_PROC_PRIMARY)
+		return 0;
+
+	/* fills in rx and tx offload capability */
+	rc = hn_rndis_get_offload(hv, dev_info);
+	if (rc != 0)
+		return rc;
+
+	/* merges the offload and queues of vf */
+	return hn_vf_info_get(hv, dev_info);
 }
 
 static int hn_rss_reta_update(struct rte_eth_dev *dev,
@@ -281,6 +291,13 @@ static int hn_rss_reta_update(struct rte_eth_dev *dev,
 
 		if (reta_conf[idx].mask & mask)
 			hv->rss_ind[i] = reta_conf[idx].reta[shift];
+	}
+
+	err = hn_rndis_conf_rss(hv, NDIS_RSS_FLAG_DISABLE);
+	if (err) {
+		PMD_DRV_LOG(NOTICE,
+			"rss disable failed");
+		return err;
 	}
 
 	err = hn_rndis_conf_rss(hv, 0);
@@ -408,16 +425,16 @@ static int hn_rss_hash_conf_get(struct rte_eth_dev *dev,
 	return 0;
 }
 
-static void
+static int
 hn_dev_promiscuous_enable(struct rte_eth_dev *dev)
 {
 	struct hn_data *hv = dev->data->dev_private;
 
 	hn_rndis_set_rxfilter(hv, NDIS_PACKET_TYPE_PROMISCUOUS);
-	hn_vf_promiscuous_enable(dev);
+	return hn_vf_promiscuous_enable(dev);
 }
 
-static void
+static int
 hn_dev_promiscuous_disable(struct rte_eth_dev *dev)
 {
 	struct hn_data *hv = dev->data->dev_private;
@@ -427,10 +444,10 @@ hn_dev_promiscuous_disable(struct rte_eth_dev *dev)
 	if (dev->data->all_multicast)
 		filter |= NDIS_PACKET_TYPE_ALL_MULTICAST;
 	hn_rndis_set_rxfilter(hv, filter);
-	hn_vf_promiscuous_disable(dev);
+	return hn_vf_promiscuous_disable(dev);
 }
 
-static void
+static int
 hn_dev_allmulticast_enable(struct rte_eth_dev *dev)
 {
 	struct hn_data *hv = dev->data->dev_private;
@@ -438,17 +455,17 @@ hn_dev_allmulticast_enable(struct rte_eth_dev *dev)
 	hn_rndis_set_rxfilter(hv, NDIS_PACKET_TYPE_DIRECTED |
 			      NDIS_PACKET_TYPE_ALL_MULTICAST |
 			NDIS_PACKET_TYPE_BROADCAST);
-	hn_vf_allmulticast_enable(dev);
+	return hn_vf_allmulticast_enable(dev);
 }
 
-static void
+static int
 hn_dev_allmulticast_disable(struct rte_eth_dev *dev)
 {
 	struct hn_data *hv = dev->data->dev_private;
 
 	hn_rndis_set_rxfilter(hv, NDIS_PACKET_TYPE_DIRECTED |
 			     NDIS_PACKET_TYPE_BROADCAST);
-	hn_vf_allmulticast_disable(dev);
+	return hn_vf_allmulticast_disable(dev);
 }
 
 static int
@@ -524,6 +541,9 @@ static int hn_dev_configure(struct rte_eth_dev *dev)
 
 	PMD_INIT_FUNC_TRACE();
 
+	if (dev_conf->rxmode.mq_mode & ETH_MQ_RX_RSS_FLAG)
+		dev_conf->rxmode.offloads |= DEV_RX_OFFLOAD_RSS_HASH;
+
 	unsupported = txmode->offloads & ~HN_TX_OFFLOAD_CAPS;
 	if (unsupported) {
 		PMD_DRV_LOG(NOTICE,
@@ -564,6 +584,13 @@ static int hn_dev_configure(struct rte_eth_dev *dev)
 		if (err) {
 			PMD_DRV_LOG(NOTICE,
 				    "subchannel configuration failed");
+			return err;
+		}
+
+		err = hn_rndis_conf_rss(hv, NDIS_RSS_FLAG_DISABLE);
+		if (err) {
+			PMD_DRV_LOG(NOTICE,
+				"rss disable failed");
 			return err;
 		}
 
@@ -622,7 +649,7 @@ static int hn_dev_stats_get(struct rte_eth_dev *dev,
 	return 0;
 }
 
-static void
+static int
 hn_dev_stats_reset(struct rte_eth_dev *dev)
 {
 	unsigned int i;
@@ -645,13 +672,20 @@ hn_dev_stats_reset(struct rte_eth_dev *dev)
 
 		memset(&rxq->stats, 0, sizeof(struct hn_stats));
 	}
+
+	return 0;
 }
 
-static void
+static int
 hn_dev_xstats_reset(struct rte_eth_dev *dev)
 {
-	hn_dev_stats_reset(dev);
-	hn_vf_xstats_reset(dev);
+	int ret;
+
+	ret = hn_dev_stats_reset(dev);
+	if (ret != 0)
+		return 0;
+
+	return hn_vf_xstats_reset(dev);
 }
 
 static int
@@ -789,6 +823,10 @@ hn_dev_start(struct rte_eth_dev *dev)
 	if (error)
 		hn_rndis_set_rxfilter(hv, 0);
 
+	/* Initialize Link state */
+	if (error == 0)
+		hn_dev_link_update(dev, 0);
+
 	return error;
 }
 
@@ -896,15 +934,15 @@ eth_hn_dev_init(struct rte_eth_dev *eth_dev)
 	eth_dev->tx_pkt_burst = &hn_xmit_pkts;
 	eth_dev->rx_pkt_burst = &hn_recv_pkts;
 
+	/* Since Hyper-V only supports one MAC address, just use local data */
+	eth_dev->data->mac_addrs = &hv->mac_addr;
+
 	/*
 	 * for secondary processes, we don't initialize any further as primary
 	 * has already done this work.
 	 */
 	if (rte_eal_process_type() != RTE_PROC_PRIMARY)
 		return 0;
-
-	/* Since Hyper-V only supports one MAC address, just use local data */
-	eth_dev->data->mac_addrs = &hv->mac_addr;
 
 	hv->vmbus = vmbus;
 	hv->rxbuf_res = &vmbus->resource[HV_RECV_BUF_MAP];
@@ -989,6 +1027,7 @@ static int
 eth_hn_dev_uninit(struct rte_eth_dev *eth_dev)
 {
 	struct hn_data *hv = eth_dev->data->dev_private;
+	int ret;
 
 	PMD_INIT_FUNC_TRACE();
 
@@ -1006,7 +1045,9 @@ eth_hn_dev_uninit(struct rte_eth_dev *eth_dev)
 	hn_tx_pool_uninit(eth_dev);
 	rte_vmbus_chan_close(hv->primary->chan);
 	rte_free(hv->primary);
-	rte_eth_dev_owner_delete(hv->owner.id);
+	ret = rte_eth_dev_owner_delete(hv->owner.id);
+	if (ret != 0)
+		return ret;
 
 	return 0;
 }

@@ -11,6 +11,7 @@
 #include <stdlib.h> /* NULL */
 #include <string.h> /* strerror */
 #include <unistd.h> /* readlink */
+#include <dirent.h>
 #include <sys/wait.h>
 
 #include <rte_string_fns.h> /* strlcpy */
@@ -24,9 +25,11 @@
 #endif
 
 #ifdef RTE_LIBRTE_PDUMP
+#ifdef RTE_LIBRTE_RING_PMD
 #include <pthread.h>
 extern void *send_pkts(void *empty);
 extern uint16_t flag_for_send_pkts;
+#endif
 #endif
 
 /*
@@ -40,10 +43,12 @@ process_dup(const char *const argv[], int numargs, const char *env_value)
 {
 	int num;
 	char *argv_cpy[numargs + 1];
-	int i, fd, status;
+	int i, status;
 	char path[32];
 #ifdef RTE_LIBRTE_PDUMP
+#ifdef RTE_LIBRTE_RING_PMD
 	pthread_t thread;
+#endif
 #endif
 
 	pid_t pid = fork();
@@ -56,13 +61,50 @@ process_dup(const char *const argv[], int numargs, const char *env_value)
 		argv_cpy[i] = NULL;
 		num = numargs;
 
-		/* close all open file descriptors, check /proc/self/fd to only
-		 * call close on open fds. Exclude fds 0, 1 and 2*/
-		for (fd = getdtablesize(); fd > 2; fd-- ) {
-			snprintf(path, sizeof(path), "/proc/" exe "/fd/%d", fd);
-			if (access(path, F_OK) == 0)
+#ifdef RTE_EXEC_ENV_LINUX
+		{
+			const char *procdir = "/proc/" self "/fd/";
+			struct dirent *dirent;
+			char *endptr;
+			int fd, fdir;
+			DIR *dir;
+
+			/* close all open file descriptors, check /proc/self/fd
+			 * to only call close on open fds. Exclude fds 0, 1 and
+			 * 2
+			 */
+			dir = opendir(procdir);
+			if (dir == NULL) {
+				rte_panic("Error opening %s: %s\n", procdir,
+						strerror(errno));
+			}
+
+			fdir = dirfd(dir);
+			if (fdir < 0) {
+				status = errno;
+				closedir(dir);
+				rte_panic("Error %d obtaining fd for dir %s: %s\n",
+						fdir, procdir,
+						strerror(status));
+			}
+
+			while ((dirent = readdir(dir)) != NULL) {
+				errno = 0;
+				fd = strtol(dirent->d_name, &endptr, 10);
+				if (errno != 0 || endptr[0] != '\0') {
+					printf("Error converting name fd %d %s:\n",
+						fd, dirent->d_name);
+					continue;
+				}
+
+				if (fd == fdir || fd <= 2)
+					continue;
+
 				close(fd);
+			}
+			closedir(dir);
 		}
+#endif
 		printf("Running binary with argv[]:");
 		for (i = 0; i < num; i++)
 			printf("'%s' ", argv_cpy[i]);
@@ -83,17 +125,21 @@ process_dup(const char *const argv[], int numargs, const char *env_value)
 	}
 	/* parent process does a wait */
 #ifdef RTE_LIBRTE_PDUMP
+#ifdef RTE_LIBRTE_RING_PMD
 	if ((strcmp(env_value, "run_pdump_server_tests") == 0))
 		pthread_create(&thread, NULL, &send_pkts, NULL);
+#endif
 #endif
 
 	while (wait(&status) != pid)
 		;
 #ifdef RTE_LIBRTE_PDUMP
+#ifdef RTE_LIBRTE_RING_PMD
 	if ((strcmp(env_value, "run_pdump_server_tests") == 0)) {
 		flag_for_send_pkts = 0;
 		pthread_join(thread, NULL);
 	}
+#endif
 #endif
 	return status;
 }

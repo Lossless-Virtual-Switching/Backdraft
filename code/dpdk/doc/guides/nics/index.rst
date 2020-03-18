@@ -28,10 +28,11 @@ Network Interface Controller Drivers
     enic
     fm10k
     hinic
+    hns3
     i40e
     ice
-    ifc
     igb
+    ionic
     ipn3ke
     ixgbe
     intel_vf
@@ -47,6 +48,7 @@ Network Interface Controller Drivers
     nfp
     octeontx
     octeontx2
+    pfe
     qede
     sfc_efx
     softnic

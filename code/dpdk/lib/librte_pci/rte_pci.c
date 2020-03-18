@@ -20,6 +20,7 @@
 #include <rte_eal.h>
 #include <rte_string_fns.h>
 #include <rte_common.h>
+#include <rte_debug.h>
 
 #include "rte_pci.h"
 
@@ -87,18 +88,6 @@ pci_dbdf_parse(const char *input, struct rte_pci_addr *dev_addr)
 	return 0;
 }
 
-int
-eal_parse_pci_BDF(const char *input, struct rte_pci_addr *dev_addr)
-{
-	return pci_bdf_parse(input, dev_addr);
-}
-
-int
-eal_parse_pci_DomBDF(const char *input, struct rte_pci_addr *dev_addr)
-{
-	return pci_dbdf_parse(input, dev_addr);
-}
-
 void
 rte_pci_device_name(const struct rte_pci_addr *addr,
 		char *output, size_t size)
@@ -107,13 +96,6 @@ rte_pci_device_name(const struct rte_pci_addr *addr,
 	RTE_VERIFY(snprintf(output, size, PCI_PRI_FMT,
 			    addr->domain, addr->bus,
 			    addr->devid, addr->function) >= 0);
-}
-
-int
-rte_eal_compare_pci_addr(const struct rte_pci_addr *addr,
-			 const struct rte_pci_addr *addr2)
-{
-	return rte_pci_addr_cmp(addr, addr2);
 }
 
 int

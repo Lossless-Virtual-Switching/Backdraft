@@ -86,7 +86,7 @@ sfc_fw_version_get(struct rte_eth_dev *dev, char *fw_version, size_t fw_size)
 		return 0;
 }
 
-static void
+static int
 sfc_dev_infos_get(struct rte_eth_dev *dev, struct rte_eth_dev_info *dev_info)
 {
 	const struct sfc_adapter_priv *sap = sfc_adapter_priv_by_eth_dev(dev);
@@ -184,6 +184,8 @@ sfc_dev_infos_get(struct rte_eth_dev *dev, struct rte_eth_dev_info *dev_info)
 
 	dev_info->dev_capa = RTE_ETH_DEV_CAPA_RUNTIME_RX_QUEUE_SETUP |
 			     RTE_ETH_DEV_CAPA_RUNTIME_TX_QUEUE_SETUP;
+
+	return 0;
 }
 
 static const uint32_t *
@@ -364,7 +366,7 @@ sfc_dev_close(struct rte_eth_dev *dev)
 	free(sa);
 }
 
-static void
+static int
 sfc_dev_filter_set(struct rte_eth_dev *dev, enum sfc_dev_filter_mode mode,
 		   boolean_t enabled)
 {
@@ -373,6 +375,7 @@ sfc_dev_filter_set(struct rte_eth_dev *dev, enum sfc_dev_filter_mode mode,
 	struct sfc_adapter *sa = sfc_adapter_by_eth_dev(dev);
 	boolean_t allmulti = (mode == SFC_DEV_FILTER_MODE_ALLMULTI);
 	const char *desc = (allmulti) ? "all-multi" : "promiscuous";
+	int rc = 0;
 
 	sfc_adapter_lock(sa);
 
@@ -388,7 +391,7 @@ sfc_dev_filter_set(struct rte_eth_dev *dev, enum sfc_dev_filter_mode mode,
 				     "start provided that isolated mode is "
 				     "disabled prior the next start");
 		} else if ((sa->state == SFC_ADAPTER_STARTED) &&
-			   (sfc_set_rx_mode(sa) != 0)) {
+			   ((rc = sfc_set_rx_mode(sa)) != 0)) {
 			*toggle = !(enabled);
 			sfc_warn(sa, "Failed to %s %s mode",
 				 ((enabled) ? "enable" : "disable"), desc);
@@ -396,30 +399,31 @@ sfc_dev_filter_set(struct rte_eth_dev *dev, enum sfc_dev_filter_mode mode,
 	}
 
 	sfc_adapter_unlock(sa);
+	return rc;
 }
 
-static void
+static int
 sfc_dev_promisc_enable(struct rte_eth_dev *dev)
 {
-	sfc_dev_filter_set(dev, SFC_DEV_FILTER_MODE_PROMISC, B_TRUE);
+	return sfc_dev_filter_set(dev, SFC_DEV_FILTER_MODE_PROMISC, B_TRUE);
 }
 
-static void
+static int
 sfc_dev_promisc_disable(struct rte_eth_dev *dev)
 {
-	sfc_dev_filter_set(dev, SFC_DEV_FILTER_MODE_PROMISC, B_FALSE);
+	return sfc_dev_filter_set(dev, SFC_DEV_FILTER_MODE_PROMISC, B_FALSE);
 }
 
-static void
+static int
 sfc_dev_allmulti_enable(struct rte_eth_dev *dev)
 {
-	sfc_dev_filter_set(dev, SFC_DEV_FILTER_MODE_ALLMULTI, B_TRUE);
+	return sfc_dev_filter_set(dev, SFC_DEV_FILTER_MODE_ALLMULTI, B_TRUE);
 }
 
-static void
+static int
 sfc_dev_allmulti_disable(struct rte_eth_dev *dev)
 {
-	sfc_dev_filter_set(dev, SFC_DEV_FILTER_MODE_ALLMULTI, B_FALSE);
+	return sfc_dev_filter_set(dev, SFC_DEV_FILTER_MODE_ALLMULTI, B_FALSE);
 }
 
 static int
@@ -633,7 +637,7 @@ unlock:
 	return -ret;
 }
 
-static void
+static int
 sfc_stats_reset(struct rte_eth_dev *dev)
 {
 	struct sfc_adapter *sa = sfc_adapter_by_eth_dev(dev);
@@ -646,12 +650,15 @@ sfc_stats_reset(struct rte_eth_dev *dev)
 		 * will be scheduled to be done during the next port start
 		 */
 		port->mac_stats_reset_pending = B_TRUE;
-		return;
+		return 0;
 	}
 
 	rc = sfc_port_reset_mac_stats(sa);
 	if (rc != 0)
 		sfc_err(sa, "failed to reset statistics (rc = %d)", rc);
+
+	SFC_ASSERT(rc >= 0);
+	return -rc;
 }
 
 static int
@@ -1513,7 +1520,7 @@ sfc_dev_rss_hash_update(struct rte_eth_dev *dev,
 
 	if ((rss_conf->rss_key != NULL) &&
 	    (rss_conf->rss_key_len != sizeof(rss->key))) {
-		sfc_err(sa, "RSS key size is wrong (should be %lu)",
+		sfc_err(sa, "RSS key size is wrong (should be %zu)",
 			sizeof(rss->key));
 		return -EINVAL;
 	}

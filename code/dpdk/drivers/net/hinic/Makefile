@@ -24,8 +24,6 @@ LDLIBS += -lpthread
 
 EXPORT_MAP := rte_pmd_hinic_version.map
 
-LIBABIVER := 1
-
 #
 # CFLAGS for 32-bits platforms
 #
@@ -59,6 +57,8 @@ SRCS-$(CONFIG_RTE_LIBRTE_HINIC_PMD) += hinic_pmd_mgmt.c
 SRCS-$(CONFIG_RTE_LIBRTE_HINIC_PMD) += hinic_pmd_niccfg.c
 SRCS-$(CONFIG_RTE_LIBRTE_HINIC_PMD) += hinic_pmd_nicio.c
 SRCS-$(CONFIG_RTE_LIBRTE_HINIC_PMD) += hinic_pmd_wq.c
+SRCS-$(CONFIG_RTE_LIBRTE_HINIC_PMD) += hinic_pmd_mbox.c
+SRCS-$(CONFIG_RTE_LIBRTE_HINIC_PMD) += hinic_pmd_flow.c
 
 SRCS-$(CONFIG_RTE_LIBRTE_HINIC_PMD) += hinic_pmd_ethdev.c
 SRCS-$(CONFIG_RTE_LIBRTE_HINIC_PMD) += hinic_pmd_rx.c

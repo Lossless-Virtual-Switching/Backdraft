@@ -27,7 +27,6 @@
 #define DEFAULT_RX_RING_SIZE	256
 #define DEFAULT_TX_RING_SIZE	256
 
-#define BNXT_TPA_MAX		64
 #define AGG_RING_SIZE_FACTOR	2
 #define AGG_RING_MULTIPLIER	2
 
@@ -66,7 +65,7 @@ struct bnxt_tx_ring_info;
 struct bnxt_rx_ring_info;
 struct bnxt_cp_ring_info;
 void bnxt_free_ring(struct bnxt_ring *ring);
-int bnxt_init_ring_grps(struct bnxt *bp);
+int bnxt_alloc_ring_grps(struct bnxt *bp);
 int bnxt_alloc_rings(struct bnxt *bp, uint16_t qidx,
 			    struct bnxt_tx_queue *txq,
 			    struct bnxt_rx_queue *rxq,
@@ -78,6 +77,8 @@ int bnxt_alloc_hwrm_rings(struct bnxt *bp);
 int bnxt_alloc_async_cp_ring(struct bnxt *bp);
 void bnxt_free_async_cp_ring(struct bnxt *bp);
 int bnxt_alloc_async_ring_struct(struct bnxt *bp);
+int bnxt_alloc_rxtx_nq_ring(struct bnxt *bp);
+void bnxt_free_rxtx_nq_ring(struct bnxt *bp);
 
 static inline void bnxt_db_write(struct bnxt_db_info *db, uint32_t idx)
 {

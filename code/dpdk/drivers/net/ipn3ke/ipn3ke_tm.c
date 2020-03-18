@@ -1087,7 +1087,6 @@ ipn3ke_tm_node_add_check_mount(uint32_t tm_id,
 	uint32_t node_id, uint32_t parent_node_id, uint32_t level_id,
 	struct rte_tm_error *error)
 {
-	/*struct ipn3ke_tm_internals *tm = IPN3KE_DEV_PRIVATE_TO_TM(dev);*/
 	uint32_t node_index;
 	uint32_t parent_index;
 	uint32_t parent_index1;
@@ -1505,12 +1504,6 @@ ipn3ke_tm_hierarchy_commit_check(struct rte_eth_dev *dev,
 				IPN3KE_TM_NODE_STATE_CONFIGURED_DEL) {
 			if (n->level != IPN3KE_TM_NODE_LEVEL_COS ||
 				n->n_children != 0) {
-				return -rte_tm_error_set(error,
-						EINVAL,
-						RTE_TM_ERROR_TYPE_UNSPECIFIED,
-						NULL,
-						rte_strerror(EINVAL));
-			} else {
 				return -rte_tm_error_set(error,
 						EINVAL,
 						RTE_TM_ERROR_TYPE_UNSPECIFIED,

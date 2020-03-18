@@ -75,8 +75,8 @@ enum i40evf_aq_result {
 static int i40evf_dev_configure(struct rte_eth_dev *dev);
 static int i40evf_dev_start(struct rte_eth_dev *dev);
 static void i40evf_dev_stop(struct rte_eth_dev *dev);
-static void i40evf_dev_info_get(struct rte_eth_dev *dev,
-				struct rte_eth_dev_info *dev_info);
+static int i40evf_dev_info_get(struct rte_eth_dev *dev,
+			       struct rte_eth_dev_info *dev_info);
 static int i40evf_dev_link_update(struct rte_eth_dev *dev,
 				  int wait_to_complete);
 static int i40evf_dev_stats_get(struct rte_eth_dev *dev,
@@ -86,16 +86,16 @@ static int i40evf_dev_xstats_get(struct rte_eth_dev *dev,
 static int i40evf_dev_xstats_get_names(struct rte_eth_dev *dev,
 				       struct rte_eth_xstat_name *xstats_names,
 				       unsigned limit);
-static void i40evf_dev_xstats_reset(struct rte_eth_dev *dev);
+static int i40evf_dev_xstats_reset(struct rte_eth_dev *dev);
 static int i40evf_vlan_filter_set(struct rte_eth_dev *dev,
 				  uint16_t vlan_id, int on);
 static int i40evf_vlan_offload_set(struct rte_eth_dev *dev, int mask);
 static void i40evf_dev_close(struct rte_eth_dev *dev);
 static int  i40evf_dev_reset(struct rte_eth_dev *dev);
-static void i40evf_dev_promiscuous_enable(struct rte_eth_dev *dev);
-static void i40evf_dev_promiscuous_disable(struct rte_eth_dev *dev);
-static void i40evf_dev_allmulticast_enable(struct rte_eth_dev *dev);
-static void i40evf_dev_allmulticast_disable(struct rte_eth_dev *dev);
+static int i40evf_dev_promiscuous_enable(struct rte_eth_dev *dev);
+static int i40evf_dev_promiscuous_disable(struct rte_eth_dev *dev);
+static int i40evf_dev_allmulticast_enable(struct rte_eth_dev *dev);
+static int i40evf_dev_allmulticast_disable(struct rte_eth_dev *dev);
 static int i40evf_init_vlan(struct rte_eth_dev *dev);
 static int i40evf_dev_rx_queue_start(struct rte_eth_dev *dev,
 				     uint16_t rx_queue_id);
@@ -215,6 +215,7 @@ static const struct eth_dev_ops i40evf_eth_dev_ops = {
 	.rss_hash_conf_get    = i40evf_dev_rss_hash_conf_get,
 	.mtu_set              = i40evf_dev_mtu_set,
 	.mac_addr_set         = i40evf_set_default_mac_addr,
+	.tx_done_cleanup      = i40e_tx_done_cleanup,
 };
 
 /*
@@ -650,43 +651,68 @@ i40evf_config_irq_map(struct rte_eth_dev *dev)
 {
 	struct i40e_vf *vf = I40EVF_DEV_PRIVATE_TO_VF(dev->data->dev_private);
 	struct vf_cmd_info args;
-	uint8_t cmd_buffer[sizeof(struct virtchnl_irq_map_info) + \
-		sizeof(struct virtchnl_vector_map)];
+	uint8_t *cmd_buffer = NULL;
 	struct virtchnl_irq_map_info *map_info;
 	struct rte_pci_device *pci_dev = RTE_ETH_DEV_TO_PCI(dev);
 	struct rte_intr_handle *intr_handle = &pci_dev->intr_handle;
-	uint32_t vector_id;
-	int i, err;
+	uint32_t vec, cmd_buffer_size, max_vectors, nb_msix, msix_base, i;
+	uint16_t rxq_map[vf->vf_res->max_vectors];
+	int err;
 
+	memset(rxq_map, 0, sizeof(rxq_map));
 	if (dev->data->dev_conf.intr_conf.rxq != 0 &&
-	    rte_intr_allow_others(intr_handle))
-		vector_id = I40E_RX_VEC_START;
-	else
-		vector_id = I40E_MISC_VEC_ID;
+		rte_intr_allow_others(intr_handle)) {
+		msix_base = I40E_RX_VEC_START;
+		/* For interrupt mode, available vector id is from 1. */
+		max_vectors = vf->vf_res->max_vectors - 1;
+		nb_msix = RTE_MIN(max_vectors, intr_handle->nb_efd);
+
+		vec = msix_base;
+		for (i = 0; i < dev->data->nb_rx_queues; i++) {
+			rxq_map[vec] |= 1 << i;
+			intr_handle->intr_vec[i] = vec++;
+			if (vec >= vf->vf_res->max_vectors)
+				vec = msix_base;
+		}
+	} else {
+		msix_base = I40E_MISC_VEC_ID;
+		nb_msix = 1;
+
+		for (i = 0; i < dev->data->nb_rx_queues; i++) {
+			rxq_map[msix_base] |= 1 << i;
+			if (rte_intr_dp_is_en(intr_handle))
+				intr_handle->intr_vec[i] = msix_base;
+		}
+	}
+
+	cmd_buffer_size = sizeof(struct virtchnl_irq_map_info) +
+			sizeof(struct virtchnl_vector_map) * nb_msix;
+	cmd_buffer = rte_zmalloc("i40e", cmd_buffer_size, 0);
+	if (!cmd_buffer) {
+		PMD_DRV_LOG(ERR, "Failed to allocate memory");
+		return I40E_ERR_NO_MEMORY;
+	}
 
 	map_info = (struct virtchnl_irq_map_info *)cmd_buffer;
-	map_info->num_vectors = 1;
-	map_info->vecmap[0].rxitr_idx = I40E_ITR_INDEX_DEFAULT;
-	map_info->vecmap[0].vsi_id = vf->vsi_res->vsi_id;
-	/* Alway use default dynamic MSIX interrupt */
-	map_info->vecmap[0].vector_id = vector_id;
-	/* Don't map any tx queue */
-	map_info->vecmap[0].txq_map = 0;
-	map_info->vecmap[0].rxq_map = 0;
-	for (i = 0; i < dev->data->nb_rx_queues; i++) {
-		map_info->vecmap[0].rxq_map |= 1 << i;
-		if (rte_intr_dp_is_en(intr_handle))
-			intr_handle->intr_vec[i] = vector_id;
+	map_info->num_vectors = nb_msix;
+	for (i = 0; i < nb_msix; i++) {
+		map_info->vecmap[i].rxitr_idx = I40E_ITR_INDEX_DEFAULT;
+		map_info->vecmap[i].vsi_id = vf->vsi_res->vsi_id;
+		map_info->vecmap[i].vector_id = msix_base + i;
+		map_info->vecmap[i].txq_map = 0;
+		map_info->vecmap[i].rxq_map = rxq_map[msix_base + i];
 	}
 
 	args.ops = VIRTCHNL_OP_CONFIG_IRQ_MAP;
 	args.in_args = (u8 *)cmd_buffer;
-	args.in_args_size = sizeof(cmd_buffer);
+	args.in_args_size = cmd_buffer_size;
 	args.out_buffer = vf->aq_resp;
 	args.out_size = I40E_AQ_BUF_SZ;
 	err = i40evf_execute_vf_cmd(dev, &args);
 	if (err)
 		PMD_DRV_LOG(ERR, "fail to execute command OP_ENABLE_QUEUES");
+
+	rte_free(cmd_buffer);
 
 	return err;
 }
@@ -950,7 +976,7 @@ i40evf_update_stats(struct i40e_vsi *vsi,
 	i40evf_stat_update_32(&oes->tx_discards, &nes->tx_discards);
 }
 
-static void
+static int
 i40evf_dev_xstats_reset(struct rte_eth_dev *dev)
 {
 	int ret;
@@ -963,6 +989,8 @@ i40evf_dev_xstats_reset(struct rte_eth_dev *dev)
 	/* set stats offset base on current values */
 	if (ret == 0)
 		vf->vsi.eth_stats_offset = *pstats;
+
+	return ret;
 }
 
 static int i40evf_dev_xstats_get_names(__rte_unused struct rte_eth_dev *dev,
@@ -1310,17 +1338,12 @@ err:
 static int
 i40evf_uninit_vf(struct rte_eth_dev *dev)
 {
-	struct i40e_vf *vf = I40EVF_DEV_PRIVATE_TO_VF(dev->data->dev_private);
 	struct i40e_hw *hw = I40E_DEV_PRIVATE_TO_HW(dev->data->dev_private);
 
 	PMD_INIT_FUNC_TRACE();
 
 	if (hw->adapter_closed == 0)
 		i40evf_dev_close(dev);
-	rte_free(vf->vf_res);
-	vf->vf_res = NULL;
-	rte_free(vf->aq_resp);
-	vf->aq_resp = NULL;
 
 	return 0;
 }
@@ -1411,7 +1434,7 @@ i40evf_handle_aq_msg(struct rte_eth_dev *dev)
 			}
 			break;
 		default:
-			PMD_DRV_LOG(ERR, "Request %u is not supported yet",
+			PMD_DRV_LOG(DEBUG, "Request %u is not supported yet",
 				    aq_opc);
 			break;
 		}
@@ -1498,6 +1521,11 @@ i40evf_dev_init(struct rte_eth_dev *eth_dev)
 	hw->adapter_stopped = 0;
 	hw->adapter_closed = 0;
 
+	/* Pass the information to the rte_eth_dev_close() that it should also
+	 * release the private port resources.
+	 */
+	eth_dev->data->dev_flags |= RTE_ETH_DEV_CLOSE_REMOVE;
+
 	if(i40evf_init_vf(eth_dev) != 0) {
 		PMD_INIT_LOG(ERR, "Init vf failed");
 		return -1;
@@ -1533,10 +1561,6 @@ i40evf_dev_uninit(struct rte_eth_dev *eth_dev)
 
 	if (rte_eal_process_type() != RTE_PROC_PRIMARY)
 		return -EPERM;
-
-	eth_dev->dev_ops = NULL;
-	eth_dev->rx_pkt_burst = NULL;
-	eth_dev->tx_pkt_burst = NULL;
 
 	if (i40evf_uninit_vf(eth_dev) != 0) {
 		PMD_INIT_LOG(ERR, "i40evf_uninit_vf failed");
@@ -2143,80 +2167,82 @@ i40evf_dev_link_update(struct rte_eth_dev *dev,
 		new_link.link_speed = ETH_SPEED_NUM_40G;
 		break;
 	default:
-		new_link.link_speed = ETH_SPEED_NUM_100M;
+		new_link.link_speed = ETH_SPEED_NUM_NONE;
 		break;
 	}
 	/* full duplex only */
 	new_link.link_duplex = ETH_LINK_FULL_DUPLEX;
-	new_link.link_status = vf->link_up ? ETH_LINK_UP :
-					     ETH_LINK_DOWN;
+	new_link.link_status = vf->link_up &&
+				new_link.link_speed != ETH_SPEED_NUM_NONE
+				? ETH_LINK_UP
+				: ETH_LINK_DOWN;
 	new_link.link_autoneg =
 		!(dev->data->dev_conf.link_speeds & ETH_LINK_SPEED_FIXED);
 
 	return rte_eth_linkstatus_set(dev, &new_link);
 }
 
-static void
+static int
 i40evf_dev_promiscuous_enable(struct rte_eth_dev *dev)
 {
 	struct i40e_vf *vf = I40EVF_DEV_PRIVATE_TO_VF(dev->data->dev_private);
 	int ret;
 
-	/* If enabled, just return */
-	if (vf->promisc_unicast_enabled)
-		return;
-
 	ret = i40evf_config_promisc(dev, 1, vf->promisc_multicast_enabled);
 	if (ret == 0)
 		vf->promisc_unicast_enabled = TRUE;
+	else
+		ret = -EAGAIN;
+
+	return ret;
 }
 
-static void
+static int
 i40evf_dev_promiscuous_disable(struct rte_eth_dev *dev)
 {
 	struct i40e_vf *vf = I40EVF_DEV_PRIVATE_TO_VF(dev->data->dev_private);
 	int ret;
 
-	/* If disabled, just return */
-	if (!vf->promisc_unicast_enabled)
-		return;
-
 	ret = i40evf_config_promisc(dev, 0, vf->promisc_multicast_enabled);
 	if (ret == 0)
 		vf->promisc_unicast_enabled = FALSE;
+	else
+		ret = -EAGAIN;
+
+	return ret;
 }
 
-static void
+static int
 i40evf_dev_allmulticast_enable(struct rte_eth_dev *dev)
 {
 	struct i40e_vf *vf = I40EVF_DEV_PRIVATE_TO_VF(dev->data->dev_private);
 	int ret;
 
-	/* If enabled, just return */
-	if (vf->promisc_multicast_enabled)
-		return;
-
 	ret = i40evf_config_promisc(dev, vf->promisc_unicast_enabled, 1);
 	if (ret == 0)
 		vf->promisc_multicast_enabled = TRUE;
+	else
+		ret = -EAGAIN;
+
+	return ret;
 }
 
-static void
+static int
 i40evf_dev_allmulticast_disable(struct rte_eth_dev *dev)
 {
 	struct i40e_vf *vf = I40EVF_DEV_PRIVATE_TO_VF(dev->data->dev_private);
 	int ret;
 
-	/* If enabled, just return */
-	if (!vf->promisc_multicast_enabled)
-		return;
-
 	ret = i40evf_config_promisc(dev, vf->promisc_unicast_enabled, 0);
 	if (ret == 0)
 		vf->promisc_multicast_enabled = FALSE;
+	else
+		ret = -EAGAIN;
+
+	return ret;
 }
 
-static void
+static int
 i40evf_dev_info_get(struct rte_eth_dev *dev, struct rte_eth_dev_info *dev_info)
 {
 	struct i40e_vf *vf = I40EVF_DEV_PRIVATE_TO_VF(dev->data->dev_private);
@@ -2292,6 +2318,8 @@ i40evf_dev_info_get(struct rte_eth_dev *dev, struct rte_eth_dev_info *dev_info)
 		.nb_min = I40E_MIN_RING_DESC,
 		.nb_align = I40E_ALIGN_RING_DESC,
 	};
+
+	return 0;
 }
 
 static int
@@ -2324,6 +2352,7 @@ static void
 i40evf_dev_close(struct rte_eth_dev *dev)
 {
 	struct i40e_hw *hw = I40E_DEV_PRIVATE_TO_HW(dev->data->dev_private);
+	struct i40e_vf *vf = I40EVF_DEV_PRIVATE_TO_VF(dev->data->dev_private);
 
 	i40evf_dev_stop(dev);
 	i40e_dev_free_queues(dev);
@@ -2339,6 +2368,16 @@ i40evf_dev_close(struct rte_eth_dev *dev)
 	i40evf_reset_vf(dev);
 	i40e_shutdown_adminq(hw);
 	i40evf_disable_irq0(hw);
+
+	dev->dev_ops = NULL;
+	dev->rx_pkt_burst = NULL;
+	dev->tx_pkt_burst = NULL;
+
+	rte_free(vf->vf_res);
+	vf->vf_res = NULL;
+	rte_free(vf->aq_resp);
+	vf->aq_resp = NULL;
+
 	hw->adapter_closed = 1;
 }
 
@@ -2598,7 +2637,10 @@ i40evf_config_rss(struct i40e_vf *vf)
 	struct i40e_hw *hw = I40E_VF_TO_HW(vf);
 	struct rte_eth_rss_conf rss_conf;
 	uint32_t i, j, lut = 0, nb_q = (I40E_VFQF_HLUT_MAX_INDEX + 1) * 4;
+	uint32_t rss_lut_size = (I40E_VFQF_HLUT1_MAX_INDEX + 1) * 4;
 	uint16_t num;
+	uint8_t *lut_info;
+	int ret;
 
 	if (vf->dev_data->dev_conf.rxmode.mq_mode != ETH_MQ_RX_RSS) {
 		i40evf_disable_rss(vf);
@@ -2608,12 +2650,29 @@ i40evf_config_rss(struct i40e_vf *vf)
 
 	num = RTE_MIN(vf->dev_data->nb_rx_queues, I40E_MAX_QP_NUM_PER_VF);
 	/* Fill out the look up table */
-	for (i = 0, j = 0; i < nb_q; i++, j++) {
-		if (j >= num)
-			j = 0;
-		lut = (lut << 8) | j;
-		if ((i & 3) == 3)
-			I40E_WRITE_REG(hw, I40E_VFQF_HLUT(i >> 2), lut);
+	if (!(vf->flags & I40E_FLAG_RSS_AQ_CAPABLE)) {
+		for (i = 0, j = 0; i < nb_q; i++, j++) {
+			if (j >= num)
+				j = 0;
+			lut = (lut << 8) | j;
+			if ((i & 3) == 3)
+				I40E_WRITE_REG(hw, I40E_VFQF_HLUT(i >> 2), lut);
+		}
+	} else {
+		lut_info = rte_zmalloc("i40e_rss_lut", rss_lut_size, 0);
+		if (!lut_info) {
+			PMD_DRV_LOG(ERR, "No memory can be allocated");
+			return -ENOMEM;
+		}
+
+		for (i = 0; i < rss_lut_size; i++)
+			lut_info[i] = i % vf->num_queue_pairs;
+
+		ret = i40evf_set_rss_lut(&vf->vsi, lut_info,
+					 rss_lut_size);
+		rte_free(lut_info);
+		if (ret)
+			return ret;
 	}
 
 	rss_conf = vf->dev_data->dev_conf.rx_adv_conf.rss_conf;

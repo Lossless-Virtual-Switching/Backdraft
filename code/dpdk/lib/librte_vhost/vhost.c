@@ -27,6 +27,9 @@
 
 struct virtio_net *vhost_devices[MAX_VHOST_DEVICE];
 
+int vhost_config_log_level;
+int vhost_data_log_level;
+
 /* Called with iotlb_lock read-locked */
 uint64_t
 __vhost_iova_to_vva(struct virtio_net *dev, struct vhost_virtqueue *vq,
@@ -57,7 +60,7 @@ __vhost_iova_to_vva(struct virtio_net *dev, struct vhost_virtqueue *vq,
 
 		vhost_user_iotlb_pending_insert(vq, iova, perm);
 		if (vhost_user_iotlb_miss(dev, iova, perm)) {
-			RTE_LOG(ERR, VHOST_CONFIG,
+			VHOST_LOG_CONFIG(ERR,
 				"IOTLB miss req failed for IOVA 0x%" PRIx64 "\n",
 				iova);
 			vhost_user_iotlb_pending_remove(vq, iova, 1, perm);
@@ -113,6 +116,26 @@ __vhost_log_write(struct virtio_net *dev, uint64_t addr, uint64_t len)
 		vhost_log_page((uint8_t *)(uintptr_t)dev->log_base, page);
 		page += 1;
 	}
+}
+
+void
+__vhost_log_write_iova(struct virtio_net *dev, struct vhost_virtqueue *vq,
+			     uint64_t iova, uint64_t len)
+{
+	uint64_t hva, gpa, map_len;
+	map_len = len;
+
+	hva = __vhost_iova_to_vva(dev, vq, iova, &map_len, VHOST_ACCESS_RW);
+	if (map_len != len) {
+		VHOST_LOG_DATA(ERR,
+			"Failed to write log for IOVA 0x%" PRIx64 ". No IOTLB entry found\n",
+			iova);
+		return;
+	}
+
+	gpa = hva_to_gpa(dev, hva, len);
+	if (gpa)
+		__vhost_log_write(dev, gpa, len);
 }
 
 void
@@ -200,6 +223,26 @@ __vhost_log_cache_write(struct virtio_net *dev, struct vhost_virtqueue *vq,
 	}
 }
 
+void
+__vhost_log_cache_write_iova(struct virtio_net *dev, struct vhost_virtqueue *vq,
+			     uint64_t iova, uint64_t len)
+{
+	uint64_t hva, gpa, map_len;
+	map_len = len;
+
+	hva = __vhost_iova_to_vva(dev, vq, iova, &map_len, VHOST_ACCESS_RW);
+	if (map_len != len) {
+		VHOST_LOG_DATA(ERR,
+			"Failed to write log for IOVA 0x%" PRIx64 ". No IOTLB entry found\n",
+			iova);
+		return;
+	}
+
+	gpa = hva_to_gpa(dev, hva, len);
+	if (gpa)
+		__vhost_log_cache_write(dev, vq, gpa, len);
+}
+
 void *
 vhost_alloc_copy_ind_table(struct virtio_net *dev, struct vhost_virtqueue *vq,
 		uint64_t desc_addr, uint64_t desc_len)
@@ -242,6 +285,31 @@ cleanup_vq(struct vhost_virtqueue *vq, int destroy)
 		close(vq->kickfd);
 }
 
+void
+cleanup_vq_inflight(struct virtio_net *dev, struct vhost_virtqueue *vq)
+{
+	if (!(dev->protocol_features &
+	    (1ULL << VHOST_USER_PROTOCOL_F_INFLIGHT_SHMFD)))
+		return;
+
+	if (vq_is_packed(dev)) {
+		if (vq->inflight_packed)
+			vq->inflight_packed = NULL;
+	} else {
+		if (vq->inflight_split)
+			vq->inflight_split = NULL;
+	}
+
+	if (vq->resubmit_inflight) {
+		if (vq->resubmit_inflight->resubmit_list) {
+			free(vq->resubmit_inflight->resubmit_list);
+			vq->resubmit_inflight->resubmit_list = NULL;
+		}
+		free(vq->resubmit_inflight);
+		vq->resubmit_inflight = NULL;
+	}
+}
+
 /*
  * Unmap any memory, close any file descriptors and
  * free any memory owned by a device.
@@ -253,8 +321,10 @@ cleanup_device(struct virtio_net *dev, int destroy)
 
 	vhost_backend_cleanup(dev);
 
-	for (i = 0; i < dev->nr_vring; i++)
+	for (i = 0; i < dev->nr_vring; i++) {
 		cleanup_vq(dev->virtqueue[i], destroy);
+		cleanup_vq_inflight(dev, dev->virtqueue[i]);
+	}
 }
 
 void
@@ -283,6 +353,57 @@ free_device(struct virtio_net *dev)
 	rte_free(dev);
 }
 
+static __rte_always_inline int
+log_translate(struct virtio_net *dev, struct vhost_virtqueue *vq)
+{
+	if (likely(!(vq->ring_addrs.flags & (1 << VHOST_VRING_F_LOG))))
+		return 0;
+
+	vq->log_guest_addr = translate_log_addr(dev, vq,
+						vq->ring_addrs.log_guest_addr);
+	if (vq->log_guest_addr == 0)
+		return -1;
+
+	return 0;
+}
+
+/*
+ * Converts vring log address to GPA
+ * If IOMMU is enabled, the log address is IOVA
+ * If IOMMU not enabled, the log address is already GPA
+ *
+ * Caller should have iotlb_lock read-locked
+ */
+uint64_t
+translate_log_addr(struct virtio_net *dev, struct vhost_virtqueue *vq,
+		uint64_t log_addr)
+{
+	if (dev->features & (1ULL << VIRTIO_F_IOMMU_PLATFORM)) {
+		const uint64_t exp_size = sizeof(uint64_t);
+		uint64_t hva, gpa;
+		uint64_t size = exp_size;
+
+		hva = vhost_iova_to_vva(dev, vq, log_addr,
+					&size, VHOST_ACCESS_RW);
+
+		if (size != exp_size)
+			return 0;
+
+		gpa = hva_to_gpa(dev, hva, exp_size);
+		if (!gpa) {
+			VHOST_LOG_CONFIG(ERR,
+				"VQ: Failed to find GPA for log_addr: 0x%"
+				PRIx64 " hva: 0x%" PRIx64 "\n",
+				log_addr, hva);
+			return 0;
+		}
+		return gpa;
+
+	} else
+		return log_addr;
+}
+
+/* Caller should have iotlb_lock read-locked */
 static int
 vring_translate_split(struct virtio_net *dev, struct vhost_virtqueue *vq)
 {
@@ -321,6 +442,7 @@ vring_translate_split(struct virtio_net *dev, struct vhost_virtqueue *vq)
 	return 0;
 }
 
+/* Caller should have iotlb_lock read-locked */
 static int
 vring_translate_packed(struct virtio_net *dev, struct vhost_virtqueue *vq)
 {
@@ -358,7 +480,7 @@ vring_translate(struct virtio_net *dev, struct vhost_virtqueue *vq)
 {
 
 	if (!(dev->features & (1ULL << VIRTIO_F_IOMMU_PLATFORM)))
-		goto out;
+		return -1;
 
 	if (vq_is_packed(dev)) {
 		if (vring_translate_packed(dev, vq) < 0)
@@ -367,7 +489,10 @@ vring_translate(struct virtio_net *dev, struct vhost_virtqueue *vq)
 		if (vring_translate_split(dev, vq) < 0)
 			return -1;
 	}
-out:
+
+	if (log_translate(dev, vq) < 0)
+		return -1;
+
 	vq->access_ok = 1;
 
 	return 0;
@@ -383,6 +508,7 @@ vring_invalidate(struct virtio_net *dev, struct vhost_virtqueue *vq)
 	vq->desc = NULL;
 	vq->avail = NULL;
 	vq->used = NULL;
+	vq->log_guest_addr = 0;
 
 	if (dev->features & (1ULL << VIRTIO_F_IOMMU_PLATFORM))
 		vhost_user_iotlb_wr_unlock(vq);
@@ -394,7 +520,7 @@ init_vring_queue(struct virtio_net *dev, uint32_t vring_idx)
 	struct vhost_virtqueue *vq;
 
 	if (vring_idx >= VHOST_MAX_VRING) {
-		RTE_LOG(ERR, VHOST_CONFIG,
+		VHOST_LOG_CONFIG(ERR,
 				"Failed not init vring, out of bound (%d)\n",
 				vring_idx);
 		return;
@@ -421,7 +547,7 @@ reset_vring_queue(struct virtio_net *dev, uint32_t vring_idx)
 	int callfd;
 
 	if (vring_idx >= VHOST_MAX_VRING) {
-		RTE_LOG(ERR, VHOST_CONFIG,
+		VHOST_LOG_CONFIG(ERR,
 				"Failed not init vring, out of bound (%d)\n",
 				vring_idx);
 		return;
@@ -440,7 +566,7 @@ alloc_vring_queue(struct virtio_net *dev, uint32_t vring_idx)
 
 	vq = rte_malloc(NULL, sizeof(struct vhost_virtqueue), 0);
 	if (vq == NULL) {
-		RTE_LOG(ERR, VHOST_CONFIG,
+		VHOST_LOG_CONFIG(ERR,
 			"Failed to allocate memory for vring:%u.\n", vring_idx);
 		return -1;
 	}
@@ -491,14 +617,14 @@ vhost_new_device(void)
 	}
 
 	if (i == MAX_VHOST_DEVICE) {
-		RTE_LOG(ERR, VHOST_CONFIG,
+		VHOST_LOG_CONFIG(ERR,
 			"Failed to find a free slot for new device.\n");
 		return -1;
 	}
 
 	dev = rte_zmalloc(NULL, sizeof(struct virtio_net), 0);
 	if (dev == NULL) {
-		RTE_LOG(ERR, VHOST_CONFIG,
+		VHOST_LOG_CONFIG(ERR,
 			"Failed to allocate memory for new dev.\n");
 		return -1;
 	}
@@ -606,6 +732,28 @@ vhost_set_builtin_virtio_net(int vid, bool enable)
 		dev->flags &= ~VIRTIO_DEV_BUILTIN_VIRTIO_NET;
 }
 
+void
+vhost_enable_extbuf(int vid)
+{
+	struct virtio_net *dev = get_device(vid);
+
+	if (dev == NULL)
+		return;
+
+	dev->extbuf = 1;
+}
+
+void
+vhost_enable_linearbuf(int vid)
+{
+	struct virtio_net *dev = get_device(vid);
+
+	if (dev == NULL)
+		return;
+
+	dev->linearbuf = 1;
+}
+
 int
 rte_vhost_get_mtu(int vid, uint16_t *mtu)
 {
@@ -639,7 +787,7 @@ rte_vhost_get_numa_node(int vid)
 	ret = get_mempolicy(&numa_node, NULL, 0, dev,
 			    MPOL_F_NODE | MPOL_F_ADDR);
 	if (ret < 0) {
-		RTE_LOG(ERR, VHOST_CONFIG,
+		VHOST_LOG_CONFIG(ERR,
 			"(%d) failed to query numa node: %s\n",
 			vid, rte_strerror(errno));
 		return -1;
@@ -744,14 +892,328 @@ rte_vhost_get_vhost_vring(int vid, uint16_t vring_idx,
 	if (!vq)
 		return -1;
 
-	vring->desc  = vq->desc;
-	vring->avail = vq->avail;
-	vring->used  = vq->used;
+	if (vq_is_packed(dev)) {
+		vring->desc_packed = vq->desc_packed;
+		vring->driver_event = vq->driver_event;
+		vring->device_event = vq->device_event;
+	} else {
+		vring->desc = vq->desc;
+		vring->avail = vq->avail;
+		vring->used = vq->used;
+	}
 	vring->log_guest_addr  = vq->log_guest_addr;
 
 	vring->callfd  = vq->callfd;
 	vring->kickfd  = vq->kickfd;
 	vring->size    = vq->size;
+
+	return 0;
+}
+
+int
+rte_vhost_get_vhost_ring_inflight(int vid, uint16_t vring_idx,
+				  struct rte_vhost_ring_inflight *vring)
+{
+	struct virtio_net *dev;
+	struct vhost_virtqueue *vq;
+
+	dev = get_device(vid);
+	if (unlikely(!dev))
+		return -1;
+
+	if (vring_idx >= VHOST_MAX_VRING)
+		return -1;
+
+	vq = dev->virtqueue[vring_idx];
+	if (unlikely(!vq))
+		return -1;
+
+	if (vq_is_packed(dev)) {
+		if (unlikely(!vq->inflight_packed))
+			return -1;
+
+		vring->inflight_packed = vq->inflight_packed;
+	} else {
+		if (unlikely(!vq->inflight_split))
+			return -1;
+
+		vring->inflight_split = vq->inflight_split;
+	}
+
+	vring->resubmit_inflight = vq->resubmit_inflight;
+
+	return 0;
+}
+
+int
+rte_vhost_set_inflight_desc_split(int vid, uint16_t vring_idx,
+				  uint16_t idx)
+{
+	struct vhost_virtqueue *vq;
+	struct virtio_net *dev;
+
+	dev = get_device(vid);
+	if (unlikely(!dev))
+		return -1;
+
+	if (unlikely(!(dev->protocol_features &
+	    (1ULL << VHOST_USER_PROTOCOL_F_INFLIGHT_SHMFD))))
+		return 0;
+
+	if (unlikely(vq_is_packed(dev)))
+		return -1;
+
+	if (unlikely(vring_idx >= VHOST_MAX_VRING))
+		return -1;
+
+	vq = dev->virtqueue[vring_idx];
+	if (unlikely(!vq))
+		return -1;
+
+	if (unlikely(!vq->inflight_split))
+		return -1;
+
+	if (unlikely(idx >= vq->size))
+		return -1;
+
+	vq->inflight_split->desc[idx].counter = vq->global_counter++;
+	vq->inflight_split->desc[idx].inflight = 1;
+	return 0;
+}
+
+int
+rte_vhost_set_inflight_desc_packed(int vid, uint16_t vring_idx,
+				   uint16_t head, uint16_t last,
+				   uint16_t *inflight_entry)
+{
+	struct rte_vhost_inflight_info_packed *inflight_info;
+	struct virtio_net *dev;
+	struct vhost_virtqueue *vq;
+	struct vring_packed_desc *desc;
+	uint16_t old_free_head, free_head;
+
+	dev = get_device(vid);
+	if (unlikely(!dev))
+		return -1;
+
+	if (unlikely(!(dev->protocol_features &
+	    (1ULL << VHOST_USER_PROTOCOL_F_INFLIGHT_SHMFD))))
+		return 0;
+
+	if (unlikely(!vq_is_packed(dev)))
+		return -1;
+
+	if (unlikely(vring_idx >= VHOST_MAX_VRING))
+		return -1;
+
+	vq = dev->virtqueue[vring_idx];
+	if (unlikely(!vq))
+		return -1;
+
+	inflight_info = vq->inflight_packed;
+	if (unlikely(!inflight_info))
+		return -1;
+
+	if (unlikely(head >= vq->size))
+		return -1;
+
+	desc = vq->desc_packed;
+	old_free_head = inflight_info->old_free_head;
+	if (unlikely(old_free_head >= vq->size))
+		return -1;
+
+	free_head = old_free_head;
+
+	/* init header descriptor */
+	inflight_info->desc[old_free_head].num = 0;
+	inflight_info->desc[old_free_head].counter = vq->global_counter++;
+	inflight_info->desc[old_free_head].inflight = 1;
+
+	/* save desc entry in flight entry */
+	while (head != ((last + 1) % vq->size)) {
+		inflight_info->desc[old_free_head].num++;
+		inflight_info->desc[free_head].addr = desc[head].addr;
+		inflight_info->desc[free_head].len = desc[head].len;
+		inflight_info->desc[free_head].flags = desc[head].flags;
+		inflight_info->desc[free_head].id = desc[head].id;
+
+		inflight_info->desc[old_free_head].last = free_head;
+		free_head = inflight_info->desc[free_head].next;
+		inflight_info->free_head = free_head;
+		head = (head + 1) % vq->size;
+	}
+
+	inflight_info->old_free_head = free_head;
+	*inflight_entry = old_free_head;
+
+	return 0;
+}
+
+int
+rte_vhost_clr_inflight_desc_split(int vid, uint16_t vring_idx,
+				  uint16_t last_used_idx, uint16_t idx)
+{
+	struct virtio_net *dev;
+	struct vhost_virtqueue *vq;
+
+	dev = get_device(vid);
+	if (unlikely(!dev))
+		return -1;
+
+	if (unlikely(!(dev->protocol_features &
+	    (1ULL << VHOST_USER_PROTOCOL_F_INFLIGHT_SHMFD))))
+		return 0;
+
+	if (unlikely(vq_is_packed(dev)))
+		return -1;
+
+	if (unlikely(vring_idx >= VHOST_MAX_VRING))
+		return -1;
+
+	vq = dev->virtqueue[vring_idx];
+	if (unlikely(!vq))
+		return -1;
+
+	if (unlikely(!vq->inflight_split))
+		return -1;
+
+	if (unlikely(idx >= vq->size))
+		return -1;
+
+	rte_smp_mb();
+
+	vq->inflight_split->desc[idx].inflight = 0;
+
+	rte_smp_mb();
+
+	vq->inflight_split->used_idx = last_used_idx;
+	return 0;
+}
+
+int
+rte_vhost_clr_inflight_desc_packed(int vid, uint16_t vring_idx,
+				   uint16_t head)
+{
+	struct rte_vhost_inflight_info_packed *inflight_info;
+	struct virtio_net *dev;
+	struct vhost_virtqueue *vq;
+
+	dev = get_device(vid);
+	if (unlikely(!dev))
+		return -1;
+
+	if (unlikely(!(dev->protocol_features &
+	    (1ULL << VHOST_USER_PROTOCOL_F_INFLIGHT_SHMFD))))
+		return 0;
+
+	if (unlikely(!vq_is_packed(dev)))
+		return -1;
+
+	if (unlikely(vring_idx >= VHOST_MAX_VRING))
+		return -1;
+
+	vq = dev->virtqueue[vring_idx];
+	if (unlikely(!vq))
+		return -1;
+
+	inflight_info = vq->inflight_packed;
+	if (unlikely(!inflight_info))
+		return -1;
+
+	if (unlikely(head >= vq->size))
+		return -1;
+
+	rte_smp_mb();
+
+	inflight_info->desc[head].inflight = 0;
+
+	rte_smp_mb();
+
+	inflight_info->old_free_head = inflight_info->free_head;
+	inflight_info->old_used_idx = inflight_info->used_idx;
+	inflight_info->old_used_wrap_counter = inflight_info->used_wrap_counter;
+
+	return 0;
+}
+
+int
+rte_vhost_set_last_inflight_io_split(int vid, uint16_t vring_idx,
+				     uint16_t idx)
+{
+	struct virtio_net *dev;
+	struct vhost_virtqueue *vq;
+
+	dev = get_device(vid);
+	if (unlikely(!dev))
+		return -1;
+
+	if (unlikely(!(dev->protocol_features &
+	    (1ULL << VHOST_USER_PROTOCOL_F_INFLIGHT_SHMFD))))
+		return 0;
+
+	if (unlikely(vq_is_packed(dev)))
+		return -1;
+
+	if (unlikely(vring_idx >= VHOST_MAX_VRING))
+		return -1;
+
+	vq = dev->virtqueue[vring_idx];
+	if (unlikely(!vq))
+		return -1;
+
+	if (unlikely(!vq->inflight_split))
+		return -1;
+
+	vq->inflight_split->last_inflight_io = idx;
+	return 0;
+}
+
+int
+rte_vhost_set_last_inflight_io_packed(int vid, uint16_t vring_idx,
+				      uint16_t head)
+{
+	struct rte_vhost_inflight_info_packed *inflight_info;
+	struct virtio_net *dev;
+	struct vhost_virtqueue *vq;
+	uint16_t last;
+
+	dev = get_device(vid);
+	if (unlikely(!dev))
+		return -1;
+
+	if (unlikely(!(dev->protocol_features &
+	    (1ULL << VHOST_USER_PROTOCOL_F_INFLIGHT_SHMFD))))
+		return 0;
+
+	if (unlikely(!vq_is_packed(dev)))
+		return -1;
+
+	if (unlikely(vring_idx >= VHOST_MAX_VRING))
+		return -1;
+
+	vq = dev->virtqueue[vring_idx];
+	if (unlikely(!vq))
+		return -1;
+
+	inflight_info = vq->inflight_packed;
+	if (unlikely(!inflight_info))
+		return -1;
+
+	if (unlikely(head >= vq->size))
+		return -1;
+
+	last = inflight_info->desc[head].last;
+	if (unlikely(last >= vq->size))
+		return -1;
+
+	inflight_info->desc[last].next = inflight_info->free_head;
+	inflight_info->free_head = head;
+	inflight_info->used_idx += inflight_info->desc[head].num;
+	if (inflight_info->used_idx >= inflight_info->desc_num) {
+		inflight_info->used_idx -= inflight_info->desc_num;
+		inflight_info->used_wrap_counter =
+			!inflight_info->used_wrap_counter;
+	}
 
 	return 0;
 }
@@ -786,22 +1248,33 @@ rte_vhost_avail_entries(int vid, uint16_t queue_id)
 {
 	struct virtio_net *dev;
 	struct vhost_virtqueue *vq;
+	uint16_t ret = 0;
 
 	dev = get_device(vid);
 	if (!dev)
 		return 0;
 
 	vq = dev->virtqueue[queue_id];
-	if (!vq->enabled)
-		return 0;
 
-	return *(volatile uint16_t *)&vq->avail->idx - vq->last_used_idx;
+	rte_spinlock_lock(&vq->access_lock);
+
+	if (unlikely(!vq->enabled || vq->avail == NULL))
+		goto out;
+
+	ret = *(volatile uint16_t *)&vq->avail->idx - vq->last_used_idx;
+
+out:
+	rte_spinlock_unlock(&vq->access_lock);
+	return ret;
 }
 
-static inline void
+static inline int
 vhost_enable_notify_split(struct virtio_net *dev,
 		struct vhost_virtqueue *vq, int enable)
 {
+	if (vq->used == NULL)
+		return -1;
+
 	if (!(dev->features & (1ULL << VIRTIO_RING_F_EVENT_IDX))) {
 		if (enable)
 			vq->used->flags &= ~VRING_USED_F_NO_NOTIFY;
@@ -811,17 +1284,21 @@ vhost_enable_notify_split(struct virtio_net *dev,
 		if (enable)
 			vhost_avail_event(vq) = vq->last_avail_idx;
 	}
+	return 0;
 }
 
-static inline void
+static inline int
 vhost_enable_notify_packed(struct virtio_net *dev,
 		struct vhost_virtqueue *vq, int enable)
 {
 	uint16_t flags;
 
+	if (vq->device_event == NULL)
+		return -1;
+
 	if (!enable) {
 		vq->device_event->flags = VRING_EVENT_F_DISABLE;
-		return;
+		return 0;
 	}
 
 	flags = VRING_EVENT_F_ENABLE;
@@ -834,6 +1311,7 @@ vhost_enable_notify_packed(struct virtio_net *dev,
 	rte_smp_wmb();
 
 	vq->device_event->flags = flags;
+	return 0;
 }
 
 int
@@ -841,18 +1319,23 @@ rte_vhost_enable_guest_notification(int vid, uint16_t queue_id, int enable)
 {
 	struct virtio_net *dev = get_device(vid);
 	struct vhost_virtqueue *vq;
+	int ret;
 
 	if (!dev)
 		return -1;
 
 	vq = dev->virtqueue[queue_id];
 
-	if (vq_is_packed(dev))
-		vhost_enable_notify_packed(dev, vq, enable);
-	else
-		vhost_enable_notify_split(dev, vq, enable);
+	rte_spinlock_lock(&vq->access_lock);
 
-	return 0;
+	if (vq_is_packed(dev))
+		ret = vhost_enable_notify_packed(dev, vq, enable);
+	else
+		ret = vhost_enable_notify_split(dev, vq, enable);
+
+	rte_spinlock_unlock(&vq->access_lock);
+
+	return ret;
 }
 
 void
@@ -891,13 +1374,14 @@ rte_vhost_rx_queue_count(int vid, uint16_t qid)
 {
 	struct virtio_net *dev;
 	struct vhost_virtqueue *vq;
+	uint32_t ret = 0;
 
 	dev = get_device(vid);
 	if (dev == NULL)
 		return 0;
 
 	if (unlikely(qid >= dev->nr_vring || (qid & 1) == 0)) {
-		RTE_LOG(ERR, VHOST_DATA, "(%d) %s: invalid virtqueue idx %d.\n",
+		VHOST_LOG_DATA(ERR, "(%d) %s: invalid virtqueue idx %d.\n",
 			dev->vid, __func__, qid);
 		return 0;
 	}
@@ -906,10 +1390,16 @@ rte_vhost_rx_queue_count(int vid, uint16_t qid)
 	if (vq == NULL)
 		return 0;
 
-	if (unlikely(vq->enabled == 0 || vq->avail == NULL))
-		return 0;
+	rte_spinlock_lock(&vq->access_lock);
 
-	return *((volatile uint16_t *)&vq->avail->idx) - vq->last_avail_idx;
+	if (unlikely(vq->enabled == 0 || vq->avail == NULL))
+		goto out;
+
+	ret = *((volatile uint16_t *)&vq->avail->idx) - vq->last_avail_idx;
+
+out:
+	rte_spinlock_unlock(&vq->access_lock);
+	return ret;
 }
 
 int rte_vhost_get_vdpa_device_id(int vid)
@@ -939,13 +1429,25 @@ int rte_vhost_get_log_base(int vid, uint64_t *log_base,
 int rte_vhost_get_vring_base(int vid, uint16_t queue_id,
 		uint16_t *last_avail_idx, uint16_t *last_used_idx)
 {
+	struct vhost_virtqueue *vq;
 	struct virtio_net *dev = get_device(vid);
 
 	if (dev == NULL || last_avail_idx == NULL || last_used_idx == NULL)
 		return -1;
 
-	*last_avail_idx = dev->virtqueue[queue_id]->last_avail_idx;
-	*last_used_idx = dev->virtqueue[queue_id]->last_used_idx;
+	vq = dev->virtqueue[queue_id];
+	if (!vq)
+		return -1;
+
+	if (vq_is_packed(dev)) {
+		*last_avail_idx = (vq->avail_wrap_counter << 15) |
+				  vq->last_avail_idx;
+		*last_used_idx = (vq->used_wrap_counter << 15) |
+				 vq->last_used_idx;
+	} else {
+		*last_avail_idx = vq->last_avail_idx;
+		*last_used_idx = vq->last_used_idx;
+	}
 
 	return 0;
 }
@@ -953,13 +1455,51 @@ int rte_vhost_get_vring_base(int vid, uint16_t queue_id,
 int rte_vhost_set_vring_base(int vid, uint16_t queue_id,
 		uint16_t last_avail_idx, uint16_t last_used_idx)
 {
+	struct vhost_virtqueue *vq;
 	struct virtio_net *dev = get_device(vid);
 
 	if (!dev)
 		return -1;
 
-	dev->virtqueue[queue_id]->last_avail_idx = last_avail_idx;
-	dev->virtqueue[queue_id]->last_used_idx = last_used_idx;
+	vq = dev->virtqueue[queue_id];
+	if (!vq)
+		return -1;
+
+	if (vq_is_packed(dev)) {
+		vq->last_avail_idx = last_avail_idx & 0x7fff;
+		vq->avail_wrap_counter = !!(last_avail_idx & (1 << 15));
+		vq->last_used_idx = last_used_idx & 0x7fff;
+		vq->used_wrap_counter = !!(last_used_idx & (1 << 15));
+	} else {
+		vq->last_avail_idx = last_avail_idx;
+		vq->last_used_idx = last_used_idx;
+	}
+
+	return 0;
+}
+
+int
+rte_vhost_get_vring_base_from_inflight(int vid,
+				       uint16_t queue_id,
+				       uint16_t *last_avail_idx,
+				       uint16_t *last_used_idx)
+{
+	struct rte_vhost_inflight_info_packed *inflight_info;
+	struct virtio_net *dev = get_device(vid);
+
+	if (dev == NULL || last_avail_idx == NULL || last_used_idx == NULL)
+		return -1;
+
+	if (!vq_is_packed(dev))
+		return -1;
+
+	inflight_info = dev->virtqueue[queue_id]->inflight_packed;
+	if (!inflight_info)
+		return -1;
+
+	*last_avail_idx = (inflight_info->old_used_wrap_counter << 15) |
+			  inflight_info->old_used_idx;
+	*last_used_idx = *last_avail_idx;
 
 	return 0;
 }
@@ -975,4 +1515,15 @@ int rte_vhost_extern_callback_register(int vid,
 	dev->extern_ops = *ops;
 	dev->extern_data = ctx;
 	return 0;
+}
+
+RTE_INIT(vhost_log_init)
+{
+	vhost_config_log_level = rte_log_register("lib.vhost.config");
+	if (vhost_config_log_level >= 0)
+		rte_log_set_level(vhost_config_log_level, RTE_LOG_INFO);
+
+	vhost_data_log_level = rte_log_register("lib.vhost.data");
+	if (vhost_data_log_level >= 0)
+		rte_log_set_level(vhost_data_log_level, RTE_LOG_WARNING);
 }

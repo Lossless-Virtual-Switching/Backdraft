@@ -13,6 +13,7 @@
 #include "opae_osdep.h"
 #include "opae_intel_max10.h"
 #include "opae_eth_group.h"
+#include "ifpga_defines.h"
 
 #ifndef PCI_MAX_RESOURCE
 #define PCI_MAX_RESOURCE 6
@@ -39,6 +40,7 @@ struct opae_manager {
 	struct opae_adapter *adapter;
 	struct opae_manager_ops *ops;
 	struct opae_manager_networking_ops *network_ops;
+	struct opae_sensor_list *sensor_list;
 	void *data;
 };
 
@@ -48,6 +50,11 @@ struct opae_manager_ops {
 		     u32 size, u64 *status);
 	int (*get_eth_group_region_info)(struct opae_manager *mgr,
 			struct opae_eth_group_region_info *info);
+	int (*get_sensor_value)(struct opae_manager *mgr,
+			struct opae_sensor_info *sensor,
+			unsigned int *value);
+	int (*get_board_info)(struct opae_manager *mgr,
+			struct opae_board_info **info);
 };
 
 /* networking management ops in FME */
@@ -69,6 +76,9 @@ struct opae_manager_networking_ops {
 			struct opae_retimer_status *status);
 };
 
+#define opae_mgr_for_each_sensor(mgr, sensor) \
+	TAILQ_FOREACH(sensor, mgr->sensor_list, node)
+
 /* OPAE Manager APIs */
 struct opae_manager *
 opae_manager_alloc(const char *name, struct opae_manager_ops *ops,
@@ -78,6 +88,17 @@ int opae_manager_flash(struct opae_manager *mgr, int acc_id, const char *buf,
 		       u32 size, u64 *status);
 int opae_manager_get_eth_group_region_info(struct opae_manager *mgr,
 		u8 group_id, struct opae_eth_group_region_info *info);
+struct opae_sensor_info *opae_mgr_get_sensor_by_name(struct opae_manager *mgr,
+		const char *name);
+struct opae_sensor_info *opae_mgr_get_sensor_by_id(struct opae_manager *mgr,
+		unsigned int id);
+int opae_mgr_get_sensor_value_by_name(struct opae_manager *mgr,
+		const char *name, unsigned int *value);
+int opae_mgr_get_sensor_value_by_id(struct opae_manager *mgr,
+		unsigned int id, unsigned int *value);
+int opae_mgr_get_sensor_value(struct opae_manager *mgr,
+		struct opae_sensor_info *sensor,
+		unsigned int *value);
 
 /* OPAE Bridge Data Structure */
 struct opae_bridge_ops;
@@ -222,6 +243,9 @@ struct opae_adapter_data_pci {
 	enum opae_adapter_type type;
 	u16 device_id;
 	u16 vendor_id;
+	u16 bus; /*Device bus for PCI */
+	u16 devid; /* Device ID */
+	u16 function; /* Device function */
 	struct opae_reg_region region[PCI_MAX_RESOURCE];
 	int vfio_dev_fd;  /* VFIO device file descriptor */
 };
@@ -303,4 +327,6 @@ int opae_manager_eth_group_write_reg(struct opae_manager *mgr, u8 group_id,
 		u8 type, u8 index, u16 addr, u32 data);
 int opae_manager_eth_group_read_reg(struct opae_manager *mgr, u8 group_id,
 		u8 type, u8 index, u16 addr, u32 *data);
+int opae_mgr_get_board_info(struct opae_manager *mgr,
+		struct opae_board_info **info);
 #endif /* _OPAE_HW_API_H_*/

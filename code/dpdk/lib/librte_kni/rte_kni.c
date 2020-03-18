@@ -10,6 +10,7 @@
 #include <fcntl.h>
 #include <unistd.h>
 #include <sys/ioctl.h>
+#include <linux/version.h>
 
 #include <rte_spinlock.h>
 #include <rte_string_fns.h>
@@ -97,10 +98,12 @@ static volatile int kni_fd = -1;
 int
 rte_kni_init(unsigned int max_kni_ifaces __rte_unused)
 {
+#if LINUX_VERSION_CODE < KERNEL_VERSION(4, 10, 0)
 	if (rte_eal_iova_mode() != RTE_IOVA_PA) {
 		RTE_LOG(ERR, KNI, "KNI requires IOVA as PA\n");
 		return -1;
 	}
+#endif
 
 	/* Check FD and open */
 	if (kni_fd < 0) {
@@ -142,31 +145,38 @@ kni_reserve_mz(struct rte_kni *kni)
 	char mz_name[RTE_MEMZONE_NAMESIZE];
 
 	snprintf(mz_name, RTE_MEMZONE_NAMESIZE, KNI_TX_Q_MZ_NAME_FMT, kni->name);
-	kni->m_tx_q = rte_memzone_reserve(mz_name, KNI_FIFO_SIZE, SOCKET_ID_ANY, 0);
+	kni->m_tx_q = rte_memzone_reserve(mz_name, KNI_FIFO_SIZE, SOCKET_ID_ANY,
+			RTE_MEMZONE_IOVA_CONTIG);
 	KNI_MEM_CHECK(kni->m_tx_q == NULL, tx_q_fail);
 
 	snprintf(mz_name, RTE_MEMZONE_NAMESIZE, KNI_RX_Q_MZ_NAME_FMT, kni->name);
-	kni->m_rx_q = rte_memzone_reserve(mz_name, KNI_FIFO_SIZE, SOCKET_ID_ANY, 0);
+	kni->m_rx_q = rte_memzone_reserve(mz_name, KNI_FIFO_SIZE, SOCKET_ID_ANY,
+			RTE_MEMZONE_IOVA_CONTIG);
 	KNI_MEM_CHECK(kni->m_rx_q == NULL, rx_q_fail);
 
 	snprintf(mz_name, RTE_MEMZONE_NAMESIZE, KNI_ALLOC_Q_MZ_NAME_FMT, kni->name);
-	kni->m_alloc_q = rte_memzone_reserve(mz_name, KNI_FIFO_SIZE, SOCKET_ID_ANY, 0);
+	kni->m_alloc_q = rte_memzone_reserve(mz_name, KNI_FIFO_SIZE, SOCKET_ID_ANY,
+			RTE_MEMZONE_IOVA_CONTIG);
 	KNI_MEM_CHECK(kni->m_alloc_q == NULL, alloc_q_fail);
 
 	snprintf(mz_name, RTE_MEMZONE_NAMESIZE, KNI_FREE_Q_MZ_NAME_FMT, kni->name);
-	kni->m_free_q = rte_memzone_reserve(mz_name, KNI_FIFO_SIZE, SOCKET_ID_ANY, 0);
+	kni->m_free_q = rte_memzone_reserve(mz_name, KNI_FIFO_SIZE, SOCKET_ID_ANY,
+			RTE_MEMZONE_IOVA_CONTIG);
 	KNI_MEM_CHECK(kni->m_free_q == NULL, free_q_fail);
 
 	snprintf(mz_name, RTE_MEMZONE_NAMESIZE, KNI_REQ_Q_MZ_NAME_FMT, kni->name);
-	kni->m_req_q = rte_memzone_reserve(mz_name, KNI_FIFO_SIZE, SOCKET_ID_ANY, 0);
+	kni->m_req_q = rte_memzone_reserve(mz_name, KNI_FIFO_SIZE, SOCKET_ID_ANY,
+			RTE_MEMZONE_IOVA_CONTIG);
 	KNI_MEM_CHECK(kni->m_req_q == NULL, req_q_fail);
 
 	snprintf(mz_name, RTE_MEMZONE_NAMESIZE, KNI_RESP_Q_MZ_NAME_FMT, kni->name);
-	kni->m_resp_q = rte_memzone_reserve(mz_name, KNI_FIFO_SIZE, SOCKET_ID_ANY, 0);
+	kni->m_resp_q = rte_memzone_reserve(mz_name, KNI_FIFO_SIZE, SOCKET_ID_ANY,
+			RTE_MEMZONE_IOVA_CONTIG);
 	KNI_MEM_CHECK(kni->m_resp_q == NULL, resp_q_fail);
 
 	snprintf(mz_name, RTE_MEMZONE_NAMESIZE, KNI_SYNC_ADDR_MZ_NAME_FMT, kni->name);
-	kni->m_sync_addr = rte_memzone_reserve(mz_name, KNI_FIFO_SIZE, SOCKET_ID_ANY, 0);
+	kni->m_sync_addr = rte_memzone_reserve(mz_name, KNI_FIFO_SIZE, SOCKET_ID_ANY,
+			RTE_MEMZONE_IOVA_CONTIG);
 	KNI_MEM_CHECK(kni->m_sync_addr == NULL, sync_addr_fail);
 
 	return 0;
@@ -252,6 +262,8 @@ rte_kni_alloc(struct rte_mempool *pktmbuf_pool,
 	dev_info.group_id = conf->group_id;
 	dev_info.mbuf_size = conf->mbuf_size;
 	dev_info.mtu = conf->mtu;
+	dev_info.min_mtu = conf->min_mtu;
+	dev_info.max_mtu = conf->max_mtu;
 
 	memcpy(dev_info.mac_addr, conf->mac_addr, RTE_ETHER_ADDR_LEN);
 
@@ -299,6 +311,8 @@ rte_kni_alloc(struct rte_mempool *pktmbuf_pool,
 	kni->pktmbuf_pool = pktmbuf_pool;
 	kni->group_id = conf->group_id;
 	kni->mbuf_size = conf->mbuf_size;
+
+	dev_info.iova_mode = (rte_eal_iova_mode() == RTE_IOVA_VA) ? 1 : 0;
 
 	ret = ioctl(kni_fd, RTE_KNI_IOCTL_CREATE, &dev_info);
 	if (ret < 0)
@@ -472,6 +486,8 @@ kni_config_mac_address(uint16_t port_id, uint8_t mac_addr[])
 static int
 kni_config_promiscusity(uint16_t port_id, uint8_t to_on)
 {
+	int ret;
+
 	if (!rte_eth_dev_is_valid_port(port_id)) {
 		RTE_LOG(ERR, KNI, "Invalid port id %d\n", port_id);
 		return -EINVAL;
@@ -481,9 +497,35 @@ kni_config_promiscusity(uint16_t port_id, uint8_t to_on)
 		port_id, to_on);
 
 	if (to_on)
-		rte_eth_promiscuous_enable(port_id);
+		ret = rte_eth_promiscuous_enable(port_id);
 	else
-		rte_eth_promiscuous_disable(port_id);
+		ret = rte_eth_promiscuous_disable(port_id);
+
+	if (ret != 0)
+		RTE_LOG(ERR, KNI,
+			"Failed to %s promiscuous mode for port %u: %s\n",
+			to_on ? "enable" : "disable", port_id,
+			rte_strerror(-ret));
+
+	return ret;
+}
+
+/* default callback for request of configuring allmulticast mode */
+static int
+kni_config_allmulticast(uint16_t port_id, uint8_t to_on)
+{
+	if (!rte_eth_dev_is_valid_port(port_id)) {
+		RTE_LOG(ERR, KNI, "Invalid port id %d\n", port_id);
+		return -EINVAL;
+	}
+
+	RTE_LOG(INFO, KNI, "Configure allmulticast mode of %d to %d\n",
+		port_id, to_on);
+
+	if (to_on)
+		rte_eth_allmulticast_enable(port_id);
+	else
+		rte_eth_allmulticast_disable(port_id);
 
 	return 0;
 }
@@ -534,6 +576,14 @@ rte_kni_handle_request(struct rte_kni *kni)
 		else if (kni->ops.port_id != UINT16_MAX)
 			req->result = kni_config_promiscusity(
 					kni->ops.port_id, req->promiscusity);
+		break;
+	case RTE_KNI_REQ_CHANGE_ALLMULTI: /* Change ALLMULTICAST MODE */
+		if (kni->ops.config_allmulticast)
+			req->result = kni->ops.config_allmulticast(
+					kni->ops.port_id, req->allmulti);
+		else if (kni->ops.port_id != UINT16_MAX)
+			req->result = kni_config_allmulticast(
+					kni->ops.port_id, req->allmulti);
 		break;
 	default:
 		RTE_LOG(ERR, KNI, "Unknown request id %u\n", req->req_id);
@@ -684,7 +734,8 @@ kni_check_request_register(struct rte_kni_ops *ops)
 	if (ops->change_mtu == NULL
 	    && ops->config_network_if == NULL
 	    && ops->config_mac_address == NULL
-	    && ops->config_promiscusity == NULL)
+	    && ops->config_promiscusity == NULL
+	    && ops->config_allmulticast == NULL)
 		return KNI_REQ_NO_REGISTER;
 
 	return KNI_REQ_REGISTERED;

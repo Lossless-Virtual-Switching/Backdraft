@@ -125,7 +125,7 @@ test_rcu_qsbr_writer_perf(void *arg)
 static int
 test_rcu_qsbr_perf(void)
 {
-	int sz;
+	size_t sz;
 	unsigned int i, tmp_num_cores;
 
 	writer_done = 0;
@@ -167,8 +167,10 @@ test_rcu_qsbr_perf(void)
 	/* Wait until all readers have exited */
 	rte_eal_mp_wait_lcore();
 
-	printf("Total RCU updates = %"PRIi64"\n", rte_atomic64_read(&updates));
-	printf("Cycles per %d updates: %"PRIi64"\n", RCU_SCALE_DOWN,
+	printf("Total quiescent state updates = %"PRIi64"\n",
+		rte_atomic64_read(&updates));
+	printf("Cycles per %d quiescent state updates: %"PRIi64"\n",
+		RCU_SCALE_DOWN,
 		rte_atomic64_read(&update_cycles) /
 		(rte_atomic64_read(&updates) / RCU_SCALE_DOWN));
 	printf("Total RCU checks = %"PRIi64"\n", rte_atomic64_read(&checks));
@@ -188,7 +190,7 @@ test_rcu_qsbr_perf(void)
 static int
 test_rcu_qsbr_rperf(void)
 {
-	int sz;
+	size_t sz;
 	unsigned int i, tmp_num_cores;
 
 	rte_atomic64_clear(&updates);
@@ -217,8 +219,10 @@ test_rcu_qsbr_rperf(void)
 	/* Wait until all readers have exited */
 	rte_eal_mp_wait_lcore();
 
-	printf("Total RCU updates = %"PRIi64"\n", rte_atomic64_read(&updates));
-	printf("Cycles per %d updates: %"PRIi64"\n", RCU_SCALE_DOWN,
+	printf("Total quiescent state updates = %"PRIi64"\n",
+		rte_atomic64_read(&updates));
+	printf("Cycles per %d quiescent state updates: %"PRIi64"\n",
+		RCU_SCALE_DOWN,
 		rte_atomic64_read(&update_cycles) /
 		(rte_atomic64_read(&updates) / RCU_SCALE_DOWN));
 
@@ -234,7 +238,7 @@ test_rcu_qsbr_rperf(void)
 static int
 test_rcu_qsbr_wperf(void)
 {
-	int sz;
+	size_t sz;
 	unsigned int i;
 
 	rte_atomic64_clear(&checks);
@@ -379,7 +383,7 @@ static int
 test_rcu_qsbr_sw_sv_1qs(void)
 {
 	uint64_t token, begin, cycles;
-	int sz;
+	size_t sz;
 	unsigned int i, j, tmp_num_cores;
 	int32_t pos;
 
@@ -462,7 +466,7 @@ test_rcu_qsbr_sw_sv_1qs(void)
 	rte_free(keys);
 
 	printf("Following numbers include calls to rte_hash functions\n");
-	printf("Cycles per 1 update(online/update/offline): %"PRIi64"\n",
+	printf("Cycles per 1 quiescent state update(online/update/offline): %"PRIi64"\n",
 		rte_atomic64_read(&update_cycles) /
 		rte_atomic64_read(&updates));
 
@@ -498,7 +502,8 @@ static int
 test_rcu_qsbr_sw_sv_1qs_non_blocking(void)
 {
 	uint64_t token, begin, cycles;
-	int ret, sz;
+	int ret;
+	size_t sz;
 	unsigned int i, j, tmp_num_cores;
 	int32_t pos;
 
@@ -577,7 +582,7 @@ test_rcu_qsbr_sw_sv_1qs_non_blocking(void)
 	rte_free(keys);
 
 	printf("Following numbers include calls to rte_hash functions\n");
-	printf("Cycles per 1 update(online/update/offline): %"PRIi64"\n",
+	printf("Cycles per 1 quiescent state update(online/update/offline): %"PRIi64"\n",
 		rte_atomic64_read(&update_cycles) /
 		rte_atomic64_read(&updates));
 

@@ -6,29 +6,32 @@ default_path=$PATH
 
 # Load config options:
 # - ARMV8_CRYPTO_LIB_PATH
+# - DPDK_ABI_REF_DIR
+# - DPDK_ABI_REF_VERSION
 # - DPDK_BUILD_TEST_CONFIGS (defconfig1+option1+option2 defconfig2)
+# - DPDK_BUILD_TEST_DIR
 # - DPDK_DEP_ARCHIVE
+# - DPDK_DEP_BPF (y/[n])
 # - DPDK_DEP_CFLAGS
 # - DPDK_DEP_ELF (y/[n])
+# - DPDK_DEP_FDT (y/[n])
 # - DPDK_DEP_ISAL (y/[n])
 # - DPDK_DEP_JSON (y/[n])
 # - DPDK_DEP_LDFLAGS
 # - DPDK_DEP_MLX (y/[n])
+# - DPDK_DEP_NFB (y/[n])
 # - DPDK_DEP_NUMA ([y]/n)
 # - DPDK_DEP_PCAP (y/[n])
 # - DPDK_DEP_SSL (y/[n])
 # - DPDK_DEP_IPSEC_MB (y/[n])
 # - DPDK_DEP_SZE (y/[n])
-# - DPDK_DEP_NFB (y/[n])
 # - DPDK_DEP_ZLIB (y/[n])
 # - DPDK_MAKE_JOBS (int)
 # - DPDK_NOTIFY (notify-send)
 # - FLEXRAN_SDK
 # - LIBMUSDK_PATH
-# - LIBSSO_SNOW3G_PATH
-# - LIBSSO_KASUMI_PATH
-# - LIBSSO_ZUC_PATH
-. $(dirname $(readlink -f $0))/load-devel-config
+devtools_dir=$(dirname $(readlink -f $0))
+. $devtools_dir/load-devel-config
 
 print_usage () {
 	echo "usage: $(basename $0) [-h] [-jX] [-s] [config1 [config2] ...]]"
@@ -62,9 +65,11 @@ print_help () {
 [ -z $MAKE ] && echo "Cannot find make or gmake" && exit 1
 
 J=$DPDK_MAKE_JOBS
+builds_dir=${DPDK_BUILD_TEST_DIR:-.}
 short=false
 unset verbose
-maxerr=-Wfatal-errors
+# for ABI checks, we need debuginfo
+test_cflags="-Wfatal-errors -g"
 while getopts hj:sv ARG ; do
 	case $ARG in
 		j ) J=$OPTARG ;;
@@ -94,19 +99,22 @@ trap "signal=INT ; trap - INT ; kill -INT $$" INT
 # notify result on exit
 trap on_exit EXIT
 
-cd $(dirname $(readlink -f $0))/..
+cd $devtools_dir/..
 
 reset_env ()
 {
 	export PATH=$default_path
 	unset CROSS
 	unset DPDK_DEP_ARCHIVE
+	unset DPDK_DEP_BPF
 	unset DPDK_DEP_CFLAGS
 	unset DPDK_DEP_ELF
+	unset DPDK_DEP_FDT
 	unset DPDK_DEP_ISAL
 	unset DPDK_DEP_JSON
 	unset DPDK_DEP_LDFLAGS
 	unset DPDK_DEP_MLX
+	unset DPDK_DEP_NFB
 	unset DPDK_DEP_NUMA
 	unset DPDK_DEP_PCAP
 	unset DPDK_DEP_SSL
@@ -116,9 +124,6 @@ reset_env ()
 	unset ARMV8_CRYPTO_LIB_PATH
 	unset FLEXRAN_SDK
 	unset LIBMUSDK_PATH
-	unset LIBSSO_SNOW3G_PATH
-	unset LIBSSO_KASUMI_PATH
-	unset LIBSSO_ZUC_PATH
 	unset PQOS_INSTALL_PATH
 }
 
@@ -137,6 +142,8 @@ config () # <directory> <target> <options>
 		# Built-in options (lowercase)
 		! echo $3 | grep -q '+default' || \
 		sed -ri="" 's,(RTE_MACHINE=")native,\1default,' $1/.config
+		! echo $3 | grep -q '+kmods' || \
+		sed -ri="" 's,(IGB_UIO=|KNI_KMOD=)n,\1y,' $1/.config
 		echo $3 | grep -q '+next' || \
 		sed -ri=""           's,(NEXT_ABI=)y,\1n,' $1/.config
 		! echo $3 | grep -q '+shared' || \
@@ -144,20 +151,30 @@ config () # <directory> <target> <options>
 		! echo $3 | grep -q '+debug' || ( \
 		sed -ri=""  's,(RTE_LOG_DP_LEVEL=).*,\1RTE_LOG_DEBUG,' $1/.config
 		sed -ri=""           's,(_DEBUG.*=)n,\1y,' $1/.config
-		sed -ri=""            's,(_STAT.*=)n,\1y,' $1/.config
+		sed -ri=""  's,(_STAT)([S_].*=|=)n,\1\2y,' $1/.config
 		sed -ri="" 's,(TEST_PMD_RECORD_.*=)n,\1y,' $1/.config )
 
 		# Automatic configuration
+		! echo $2 | grep -q 'arm64' || \
+		sed -ri=""        's,(ARM_USE_WFE=)n,\1y,' $1/.config
 		test "$DPDK_DEP_NUMA" != n || \
 		sed -ri=""             's,(NUMA.*=)y,\1n,' $1/.config
 		sed -ri=""    's,(LIBRTE_IEEE1588=)n,\1y,' $1/.config
 		sed -ri=""             's,(BYPASS=)n,\1y,' $1/.config
 		test "$DPDK_DEP_ARCHIVE" != y || \
 		sed -ri=""       's,(RESOURCE_TAR=)n,\1y,' $1/.config
+		test "$DPDK_DEP_BPF" != y || \
+		sed -ri=""         's,(PMD_AF_XDP=)n,\1y,' $1/.config
+		test "$DPDK_DEP_FDT" != y || \
+		sed -ri=""   's,(PMD_IFPGA_RAWDEV=)n,\1y,' $1/.config
+		test "$DPDK_DEP_FDT" != y || \
+		sed -ri=""         's,(IPN3KE_PMD=)n,\1y,' $1/.config
 		test "$DPDK_DEP_ISAL" != y || \
 		sed -ri=""           's,(PMD_ISAL=)n,\1y,' $1/.config
 		test "$DPDK_DEP_MLX" != y || \
-		sed -ri=""           's,(MLX._PMD=)n,\1y,' $1/.config
+		sed -ri=""          's,(MLX.*_PMD=)n,\1y,' $1/.config
+		test "$DPDK_DEP_NFB" != y || \
+		sed -ri=""            's,(NFB_PMD=)n,\1y,' $1/.config
 		test "$DPDK_DEP_SZE" != y || \
 		sed -ri=""       's,(PMD_SZEDATA2=)n,\1y,' $1/.config
 		test "$DPDK_DEP_ZLIB" != y || \
@@ -174,12 +191,12 @@ config () # <directory> <target> <options>
 		sed -ri=""       's,(PMD_AESNI_MB=)n,\1y,' $1/.config
 		test "$DPDK_DEP_IPSEC_MB" != y || \
 		sed -ri=""      's,(PMD_AESNI_GCM=)n,\1y,' $1/.config
-		test -z "$LIBSSO_SNOW3G_PATH" || \
-		sed -ri=""         's,(PMD_SNOW3G=)n,\1y,' $1/.config
-		test -z "$LIBSSO_KASUMI_PATH" || \
-		sed -ri=""         's,(PMD_KASUMI=)n,\1y,' $1/.config
-		test -z "$LIBSSO_ZUC_PATH" || \
+		test "$DPDK_DEP_IPSEC_MB" != y || \
 		sed -ri=""            's,(PMD_ZUC=)n,\1y,' $1/.config
+		test "$DPDK_DEP_IPSEC_MB" != y || \
+		sed -ri=""         's,(PMD_KASUMI=)n,\1y,' $1/.config
+		test "$DPDK_DEP_IPSEC_MB" != y || \
+		sed -ri=""         's,(PMD_SNOW3G=)n,\1y,' $1/.config
 		test "$DPDK_DEP_SSL" != y || \
 		sed -ri=""            's,(PMD_CCP=)n,\1y,' $1/.config
 		test "$DPDK_DEP_SSL" != y || \
@@ -224,24 +241,64 @@ for conf in $configs ; do
 	# reload config with DPDK_TARGET set
 	DPDK_TARGET=$target
 	reset_env
-	. $(dirname $(readlink -f $0))/load-devel-config
+	. $devtools_dir/load-devel-config
 
 	options=$(echo $conf | sed 's,[^~+]*,,')
-	dir=$conf
+	dir=$builds_dir/$conf
 	config $dir $target $options
 
-	echo "================== Build $dir"
-	${MAKE} -j$J EXTRA_CFLAGS="$maxerr $DPDK_DEP_CFLAGS" \
+	echo "================== Build $conf"
+	${MAKE} -j$J EXTRA_CFLAGS="$test_cflags $DPDK_DEP_CFLAGS" \
 		EXTRA_LDFLAGS="$DPDK_DEP_LDFLAGS" $verbose O=$dir
 	! $short || break
-	echo "================== Build examples for $dir"
-	export RTE_SDK=$(pwd)
-	export RTE_TARGET=$dir
+	export RTE_TARGET=$target
+	rm -rf $dir/install
+	${MAKE} install O=$dir DESTDIR=$dir/install prefix=
+	echo "================== Build examples for $conf"
+	export RTE_SDK=$(readlink -f $dir)/install/share/dpdk
+	ln -sTf $(pwd)/lib $RTE_SDK/lib # workaround for vm_power_manager
 	${MAKE} -j$J -sC examples \
 		EXTRA_LDFLAGS="$DPDK_DEP_LDFLAGS" $verbose \
 		O=$(readlink -f $dir)/examples
 	unset RTE_TARGET
-	echo "################## $dir done."
+	if [ -n "$DPDK_ABI_REF_VERSION" ]; then
+		abirefdir=${DPDK_ABI_REF_DIR:-reference}/$DPDK_ABI_REF_VERSION
+		if [ ! -d $abirefdir/$conf ]; then
+			# clone current sources
+			if [ ! -d $abirefdir/src ]; then
+				git clone --local --no-hardlinks \
+					--single-branch \
+					-b $DPDK_ABI_REF_VERSION \
+					$(pwd) $abirefdir/src
+			fi
+
+			cd $abirefdir/src
+
+			rm -rf $abirefdir/build
+			config $abirefdir/build $target $options
+
+			echo -n "================== Build $conf "
+			echo "($DPDK_ABI_REF_VERSION)"
+			${MAKE} -j$J \
+				EXTRA_CFLAGS="$test_cflags $DPDK_DEP_CFLAGS" \
+				EXTRA_LDFLAGS="$DPDK_DEP_LDFLAGS" $verbose \
+				O=$abirefdir/build
+			export RTE_TARGET=$target
+			${MAKE} install O=$abirefdir/build \
+				DESTDIR=$abirefdir/$conf \
+				prefix=
+			unset RTE_TARGET
+			$devtools_dir/gen-abi.sh $abirefdir/$conf
+
+			# back to current workdir
+			cd $devtools_dir/..
+		fi
+
+		echo "================== Check ABI $conf"
+		$devtools_dir/gen-abi.sh $dir/install
+		$devtools_dir/check-abi.sh $abirefdir/$conf $dir/install
+	fi
+	echo "################## $conf done."
 	unset dir
 done
 

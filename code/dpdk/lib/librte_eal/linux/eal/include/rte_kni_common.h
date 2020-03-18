@@ -15,10 +15,10 @@
 #include <rte_config.h>
 #endif
 
-/**
- * KNI name is part of memzone name.
+/*
+ * KNI name is part of memzone name. Must not exceed IFNAMSIZ.
  */
-#define RTE_KNI_NAMESIZE 32
+#define RTE_KNI_NAMESIZE 16
 
 #define RTE_CACHE_LINE_MIN_SIZE 64
 
@@ -31,6 +31,7 @@ enum rte_kni_req_id {
 	RTE_KNI_REQ_CFG_NETWORK_IF,
 	RTE_KNI_REQ_CHANGE_MAC_ADDR,
 	RTE_KNI_REQ_CHANGE_PROMISC,
+	RTE_KNI_REQ_CHANGE_ALLMULTI,
 	RTE_KNI_REQ_MAX,
 };
 
@@ -45,6 +46,7 @@ struct rte_kni_request {
 		uint8_t if_up;       /**< 1: interface up, 0: interface down */
 		uint8_t mac_addr[6]; /**< MAC address for interface */
 		uint8_t promiscusity;/**< 1: promisc mode enable, 0: disable */
+		uint8_t allmulti;    /**< 1: all-multicast mode enable, 0: disable */
 	};
 	int32_t result;               /**< Result for processing request */
 } __attribute__((__packed__));
@@ -120,7 +122,10 @@ struct rte_kni_device_info {
 	/* mbuf size */
 	unsigned mbuf_size;
 	unsigned int mtu;
+	unsigned int min_mtu;
+	unsigned int max_mtu;
 	uint8_t mac_addr[6];
+	uint8_t iova_mode;
 };
 
 #define KNI_DEVICE "kni"

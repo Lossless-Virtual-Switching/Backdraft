@@ -1004,12 +1004,6 @@ static inline int tx_do_packet_coalesce(struct sge_eth_txq *txq,
 	struct cpl_tx_pkt_core *cpl;
 	struct tx_sw_desc *sd;
 	unsigned int idx = q->coalesce.idx, len = mbuf->pkt_len;
-	unsigned int max_coal_pkt_num = is_pf4(adap) ? ETH_COALESCE_PKT_NUM :
-						       ETH_COALESCE_VF_PKT_NUM;
-
-#ifdef RTE_LIBRTE_CXGBE_TPUT
-	RTE_SET_USED(nb_pkts);
-#endif
 
 	if (q->coalesce.type == 0) {
 		mc = (struct ulp_txpkt *)q->coalesce.ptr;
@@ -1082,13 +1076,15 @@ static inline int tx_do_packet_coalesce(struct sge_eth_txq *txq,
 	sd->coalesce.sgl[idx & 1] = (struct ulptx_sgl *)(cpl + 1);
 	sd->coalesce.idx = (idx & 1) + 1;
 
-	/* send the coaelsced work request if max reached */
-	if (++q->coalesce.idx == max_coal_pkt_num
-#ifndef RTE_LIBRTE_CXGBE_TPUT
-	    || q->coalesce.idx >= nb_pkts
-#endif
-	    )
+	/* Send the coalesced work request, only if max reached. However,
+	 * if lower latency is preferred over throughput, then don't wait
+	 * for coalescing the next Tx burst and send the packets now.
+	 */
+	q->coalesce.idx++;
+	if (q->coalesce.idx == adap->params.max_tx_coalesce_num ||
+	    (adap->devargs.tx_mode_latency && q->coalesce.idx >= nb_pkts))
 		ship_tx_pkt_coalesce_wr(adap, txq);
+
 	return 0;
 }
 
@@ -1154,7 +1150,6 @@ out_free:
 				txq->stats.mapping_err++;
 				goto out_free;
 			}
-			rte_prefetch0((volatile void *)addr);
 			return tx_do_packet_coalesce(txq, mbuf, cflits, adap,
 						     pi, addr, nb_pkts);
 		} else {

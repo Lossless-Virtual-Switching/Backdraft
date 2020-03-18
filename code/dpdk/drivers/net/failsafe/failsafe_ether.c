@@ -126,9 +126,13 @@ fs_eth_dev_conf_apply(struct rte_eth_dev *dev,
 	if (dev->data->promiscuous != edev->data->promiscuous) {
 		DEBUG("Configuring promiscuous");
 		if (dev->data->promiscuous)
-			rte_eth_promiscuous_enable(PORT_ID(sdev));
+			ret = rte_eth_promiscuous_enable(PORT_ID(sdev));
 		else
-			rte_eth_promiscuous_disable(PORT_ID(sdev));
+			ret = rte_eth_promiscuous_disable(PORT_ID(sdev));
+		if (ret != 0) {
+			ERROR("Failed to apply promiscuous mode");
+			return ret;
+		}
 	} else {
 		DEBUG("promiscuous already set");
 	}
@@ -136,9 +140,13 @@ fs_eth_dev_conf_apply(struct rte_eth_dev *dev,
 	if (dev->data->all_multicast != edev->data->all_multicast) {
 		DEBUG("Configuring all_multicast");
 		if (dev->data->all_multicast)
-			rte_eth_allmulticast_enable(PORT_ID(sdev));
+			ret = rte_eth_allmulticast_enable(PORT_ID(sdev));
 		else
-			rte_eth_allmulticast_disable(PORT_ID(sdev));
+			ret = rte_eth_allmulticast_disable(PORT_ID(sdev));
+		if (ret != 0) {
+			ERROR("Failed to apply allmulticast mode");
+			return ret;
+		}
 	} else {
 		DEBUG("all_multicast already set");
 	}

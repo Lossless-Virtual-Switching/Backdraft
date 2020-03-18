@@ -31,4 +31,32 @@ cpt_pmd_ops_helper_get_mlen_direct_mode(void);
  */
 int
 cpt_pmd_ops_helper_get_mlen_sg_mode(void);
+
+/*
+ * Get size of meta buffer to be allocated for asymmetric crypto operations
+ *
+ * @return
+ *  - length
+ */
+int
+cpt_pmd_ops_helper_asym_get_mlen(void);
+
+/*
+ * Initialize ECC FMUL precomputed table
+ *
+ * @param
+ *  - pointer to fpm_table iova address
+ *
+ * @return
+ *  - 0 on success, negative on error
+ */
+__rte_experimental
+int cpt_fpm_init(uint64_t *fpm_table_iova);
+
+/*
+ * Clear ECC FMUL precomputed table
+ */
+__rte_experimental
+void cpt_fpm_clear(void);
+
 #endif /* _CPT_PMD_OPS_HELPER_H_ */

@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: (BSD-3-Clause OR GPL-2.0)
  *
  * Copyright 2013-2016 Freescale Semiconductor Inc.
- * Copyright 2016 NXP
+ * Copyright 2016-2019 NXP
  *
  */
 #include <fsl_mc_sys.h>
@@ -200,6 +200,7 @@ int dpni_set_pools(struct fsl_mc_io *mc_io,
 					  token);
 	cmd_params = (struct dpni_cmd_set_pools *)cmd.params;
 	cmd_params->num_dpbp = cfg->num_dpbp;
+	cmd_params->pool_options = cfg->pool_options;
 	for (i = 0; i < cmd_params->num_dpbp; i++) {
 		cmd_params->pool[i].dpbp_id =
 			cpu_to_le16(cfg->pools[i].dpbp_id);
@@ -1211,13 +1212,24 @@ int dpni_get_primary_mac_addr(struct fsl_mc_io *mc_io,
  * @cmd_flags:	Command flags; one or more of 'MC_CMD_FLAG_'
  * @token:	Token of DPNI object
  * @mac_addr:	MAC address to add
- *
+ * @flags :	0 - tc_id and flow_id will be ignored.
+ *		  Pkt with this mac_id will be passed to the next
+ *		  classification stages
+ *		DPNI_MAC_SET_QUEUE_ACTION
+ *		  Pkt with this mac will be forward directly to
+ *		  queue defined by the tc_id and flow_id
+ * @tc_id : Traffic class selection (0-7)
+ * @flow_id : Selects the specific queue out of the set allocated for the
+ *            same as tc_id. Value must be in range 0 to NUM_QUEUES - 1
  * Return:	'0' on Success; Error code otherwise.
  */
 int dpni_add_mac_addr(struct fsl_mc_io *mc_io,
 		      uint32_t cmd_flags,
 		      uint16_t token,
-		      const uint8_t mac_addr[6])
+		      const uint8_t mac_addr[6],
+			  uint8_t flags,
+			  uint8_t tc_id,
+			  uint8_t flow_id)
 {
 	struct mc_command cmd = { 0 };
 	struct dpni_cmd_add_mac_addr *cmd_params;
@@ -1228,6 +1240,10 @@ int dpni_add_mac_addr(struct fsl_mc_io *mc_io,
 					  cmd_flags,
 					  token);
 	cmd_params = (struct dpni_cmd_add_mac_addr *)cmd.params;
+	cmd_params->flags = flags;
+	cmd_params->tc_id = tc_id;
+	cmd_params->fq_id = flow_id;
+
 	for (i = 0; i < 6; i++)
 		cmd_params->mac_addr[i] = mac_addr[5 - i];
 
@@ -1371,13 +1387,26 @@ int dpni_enable_vlan_filter(struct fsl_mc_io *mc_io,
  * @cmd_flags:	Command flags; one or more of 'MC_CMD_FLAG_'
  * @token:	Token of DPNI object
  * @vlan_id:	VLAN ID to add
+ * @flags:	0 - tc_id and flow_id will be ignored.
+ *		  Pkt with this vlan_id will be passed to the next
+ *		  classification stages
+ *		DPNI_VLAN_SET_QUEUE_ACTION
+ *		  Pkt with this vlan_id will be forward directly to
+ *		  queue defined by the tc_id and flow_id
+ *
+ * @tc_id: Traffic class selection (0-7)
+ * @flow_id: Selects the specific queue out of the set allocated for the
+ *           same as tc_id. Value must be in range 0 to NUM_QUEUES - 1
  *
  * Return:	'0' on Success; Error code otherwise.
  */
 int dpni_add_vlan_id(struct fsl_mc_io *mc_io,
 		     uint32_t cmd_flags,
 		     uint16_t token,
-		     uint16_t vlan_id)
+		     uint16_t vlan_id,
+			 uint8_t flags,
+			 uint8_t tc_id,
+			 uint8_t flow_id)
 {
 	struct dpni_cmd_vlan_id *cmd_params;
 	struct mc_command cmd = { 0 };
@@ -1387,6 +1416,9 @@ int dpni_add_vlan_id(struct fsl_mc_io *mc_io,
 					  cmd_flags,
 					  token);
 	cmd_params = (struct dpni_cmd_vlan_id *)cmd.params;
+	cmd_params->flags = flags;
+	cmd_params->tc_id = tc_id;
+	cmd_params->flow_id =  flow_id;
 	cmd_params->vlan_id = cpu_to_le16(vlan_id);
 
 	/* send command to mc*/
@@ -1589,7 +1621,9 @@ int dpni_add_qos_entry(struct fsl_mc_io *mc_io,
 		       uint16_t token,
 		       const struct dpni_rule_cfg *cfg,
 		       uint8_t tc_id,
-		       uint16_t index)
+		       uint16_t index,
+			   uint8_t flags,
+			   uint8_t flow_id)
 {
 	struct dpni_cmd_add_qos_entry *cmd_params;
 	struct mc_command cmd = { 0 };
@@ -1599,6 +1633,8 @@ int dpni_add_qos_entry(struct fsl_mc_io *mc_io,
 					  cmd_flags,
 					  token);
 	cmd_params = (struct dpni_cmd_add_qos_entry *)cmd.params;
+	cmd_params->flags = flags;
+	cmd_params->flow_id = flow_id;
 	cmd_params->tc_id = tc_id;
 	cmd_params->key_size = cfg->key_size;
 	cmd_params->index = cpu_to_le16(index);
@@ -2031,7 +2067,7 @@ int dpni_get_queue(struct fsl_mc_io *mc_io,
  * @cmd_flags:	Command flags; one or more of 'MC_CMD_FLAG_'
  * @token:	Token of DPNI object
  * @page:	Selects the statistics page to retrieve, see
- *		DPNI_GET_STATISTICS output. Pages are numbered 0 to 3.
+ *		DPNI_GET_STATISTICS output. Pages are numbered 0 to 6.
  * @param:	Custom parameter for some pages used to select
  *		a certain statistic source, for example the TC.
  * @stat:	Structure containing the statistics
@@ -2483,4 +2519,121 @@ int dpni_get_custom_tpid(struct fsl_mc_io *mc_io, uint32_t cmd_flags,
 	tpid->tpid2 = le16_to_cpu(rsp_params->tpid2);
 
 	return err;
+}
+
+int dpni_load_sw_sequence(struct fsl_mc_io *mc_io,
+	      uint32_t cmd_flags,
+	      uint16_t token,
+		  struct dpni_load_ss_cfg *cfg)
+{
+	struct dpni_load_sw_sequence *cmd_params;
+	struct mc_command cmd = { 0 };
+
+	/* prepare command */
+	cmd.header = mc_encode_cmd_header(DPNI_CMDID_LOAD_SW_SEQUENCE,
+					  cmd_flags,
+					  token);
+	cmd_params = (struct dpni_load_sw_sequence *)cmd.params;
+	cmd_params->dest = cfg->dest;
+	cmd_params->ss_offset = cpu_to_le16(cfg->ss_offset);
+	cmd_params->ss_size = cpu_to_le16(cfg->ss_size);
+	cmd_params->ss_iova = cpu_to_le64(cfg->ss_iova);
+
+	/* send command to mc*/
+	return mc_send_command(mc_io, &cmd);
+}
+
+int dpni_enable_sw_sequence(struct fsl_mc_io *mc_io,
+	      uint32_t cmd_flags,
+	      uint16_t token,
+		  struct dpni_enable_ss_cfg *cfg)
+{
+	struct dpni_enable_sw_sequence *cmd_params;
+	struct mc_command cmd = { 0 };
+
+	/* prepare command */
+	cmd.header = mc_encode_cmd_header(DPNI_CMDID_ENABLE_SW_SEQUENCE,
+					  cmd_flags,
+					  token);
+	cmd_params = (struct dpni_enable_sw_sequence *)cmd.params;
+	cmd_params->dest = cfg->dest;
+	cmd_params->set_start = cfg->set_start;
+	cmd_params->hxs = cpu_to_le16(cfg->hxs);
+	cmd_params->ss_offset = cpu_to_le16(cfg->ss_offset);
+	cmd_params->param_offset = cfg->param_offset;
+	cmd_params->param_size = cfg->param_size;
+	cmd_params->param_iova = cpu_to_le64(cfg->param_iova);
+
+	/* send command to mc*/
+	return mc_send_command(mc_io, &cmd);
+}
+
+/**
+ * dpni_get_sw_sequence_layout() - Get the soft sequence layout
+ * @mc_io:	Pointer to MC portal's I/O object
+ * @cmd_flags:	Command flags; one or more of 'MC_CMD_FLAG_'
+ * @token:	Token of DPNI object
+ * @src:	Source of the layout (WRIOP Rx or Tx)
+ * @ss_layout_iova:  I/O virtual address of 264 bytes DMA-able memory
+ *
+ * warning: After calling this function, call dpni_extract_sw_sequence_layout()
+ *		to get the layout.
+ *
+ * Return:	'0' on Success; error code otherwise.
+ */
+int dpni_get_sw_sequence_layout(struct fsl_mc_io *mc_io,
+	      uint32_t cmd_flags,
+	      uint16_t token,
+		  enum dpni_soft_sequence_dest src,
+		  uint64_t ss_layout_iova)
+{
+	struct dpni_get_sw_sequence_layout *cmd_params;
+	struct mc_command cmd = { 0 };
+
+	/* prepare command */
+	cmd.header = mc_encode_cmd_header(DPNI_CMDID_GET_SW_SEQUENCE_LAYOUT,
+					  cmd_flags,
+					  token);
+
+	cmd_params = (struct dpni_get_sw_sequence_layout *)cmd.params;
+	cmd_params->src = src;
+	cmd_params->layout_iova = cpu_to_le64(ss_layout_iova);
+
+	/* send command to mc*/
+	return mc_send_command(mc_io, &cmd);
+}
+
+/**
+ * dpni_extract_sw_sequence_layout() - extract the software sequence layout
+ * @layout:		software sequence layout
+ * @sw_sequence_layout_buf:	Zeroed 264 bytes of memory before mapping it
+ *				to DMA
+ *
+ * This function has to be called after dpni_get_sw_sequence_layout
+ *
+ */
+void dpni_extract_sw_sequence_layout(struct dpni_sw_sequence_layout *layout,
+			     const uint8_t *sw_sequence_layout_buf)
+{
+	const struct dpni_sw_sequence_layout_entry *ext_params;
+	int i;
+	uint16_t ss_size, ss_offset;
+
+	ext_params = (const struct dpni_sw_sequence_layout_entry *)
+						sw_sequence_layout_buf;
+
+	for (i = 0; i < DPNI_SW_SEQUENCE_LAYOUT_SIZE; i++) {
+		ss_offset = le16_to_cpu(ext_params[i].ss_offset);
+		ss_size = le16_to_cpu(ext_params[i].ss_size);
+
+		if (ss_offset == 0 && ss_size == 0) {
+			layout->num_ss = i;
+			return;
+		}
+
+		layout->ss[i].ss_offset = ss_offset;
+		layout->ss[i].ss_size = ss_size;
+		layout->ss[i].param_offset = ext_params[i].param_offset;
+		layout->ss[i].param_size = ext_params[i].param_size;
+	}
 }

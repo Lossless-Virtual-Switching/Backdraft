@@ -188,7 +188,7 @@ nfb_eth_dev_configure(struct rte_eth_dev *dev __rte_unused)
  * @param[out] info
  *   Info structure output buffer.
  */
-static void
+static int
 nfb_eth_dev_info(struct rte_eth_dev *dev,
 	struct rte_eth_dev_info *dev_info)
 {
@@ -197,6 +197,8 @@ nfb_eth_dev_info(struct rte_eth_dev *dev,
 	dev_info->max_rx_queues = dev->data->nb_rx_queues;
 	dev_info->max_tx_queues = dev->data->nb_tx_queues;
 	dev_info->speed_capa = ETH_LINK_SPEED_100G;
+
+	return 0;
 }
 
 /**
@@ -210,11 +212,15 @@ nfb_eth_dev_info(struct rte_eth_dev *dev,
 static void
 nfb_eth_dev_close(struct rte_eth_dev *dev)
 {
+	struct pmd_internals *internals = dev->data->dev_private;
 	uint16_t i;
 	uint16_t nb_rx = dev->data->nb_rx_queues;
 	uint16_t nb_tx = dev->data->nb_tx_queues;
 
 	nfb_eth_dev_stop(dev);
+
+	nfb_nc_rxmac_deinit(internals->rxmac, internals->max_rxmac);
+	nfb_nc_txmac_deinit(internals->txmac, internals->max_txmac);
 
 	for (i = 0; i < nb_rx; i++) {
 		nfb_eth_rx_queue_release(dev->data->rx_queues[i]);
@@ -226,6 +232,9 @@ nfb_eth_dev_close(struct rte_eth_dev *dev)
 		dev->data->tx_queues[i] = NULL;
 	}
 	dev->data->nb_tx_queues = 0;
+
+	rte_free(dev->data->mac_addrs);
+	dev->data->mac_addrs = NULL;
 }
 
 /**
@@ -446,6 +455,9 @@ nfb_eth_dev_init(struct rte_eth_dev *dev)
 		rte_kvargs_free(kvlist);
 	}
 
+	/* Let rte_eth_dev_close() release the port resources */
+	dev->data->dev_flags |= RTE_ETH_DEV_CLOSE_REMOVE;
+
 	/*
 	 * Get number of available DMA RX and TX queues, which is maximum
 	 * number of queues that can be created and store it in private device
@@ -520,15 +532,10 @@ nfb_eth_dev_init(struct rte_eth_dev *dev)
 static int
 nfb_eth_dev_uninit(struct rte_eth_dev *dev)
 {
-	struct rte_eth_dev_data *data = dev->data;
-	struct pmd_internals *internals = (struct pmd_internals *)
-		data->dev_private;
-
 	struct rte_pci_device *pci_dev = RTE_ETH_DEV_TO_PCI(dev);
 	struct rte_pci_addr *pci_addr = &pci_dev->addr;
 
-	nfb_nc_rxmac_deinit(internals->rxmac, internals->max_rxmac);
-	nfb_nc_txmac_deinit(internals->txmac, internals->max_txmac);
+	nfb_eth_dev_close(dev);
 
 	RTE_LOG(INFO, PMD, "NFB device ("
 		PCI_PRI_FMT ") successfully uninitialized\n",

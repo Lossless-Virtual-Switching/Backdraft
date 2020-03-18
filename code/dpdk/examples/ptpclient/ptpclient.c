@@ -189,7 +189,14 @@ port_init(uint16_t port, struct rte_mempool *mbuf_pool)
 	if (!rte_eth_dev_is_valid_port(port))
 		return -1;
 
-	rte_eth_dev_info_get(port, &dev_info);
+	retval = rte_eth_dev_info_get(port, &dev_info);
+	if (retval != 0) {
+		printf("Error during getting device (port %u) info: %s\n",
+				port, strerror(-retval));
+
+		return retval;
+	}
+
 	if (dev_info.tx_offload_capa & DEV_TX_OFFLOAD_MBUF_FAST_FREE)
 		port_conf.txmode.offloads |=
 			DEV_TX_OFFLOAD_MBUF_FAST_FREE;
@@ -240,7 +247,12 @@ port_init(uint16_t port, struct rte_mempool *mbuf_pool)
 	}
 
 	/* Enable RX in promiscuous mode for the Ethernet device. */
-	rte_eth_promiscuous_enable(port);
+	retval = rte_eth_promiscuous_enable(port);
+	if (retval != 0) {
+		printf("Promiscuous mode enable failed: %s\n",
+			rte_strerror(-retval));
+		return retval;
+	}
 
 	return 0;
 }
@@ -366,6 +378,7 @@ static void
 parse_fup(struct ptpv2_data_slave_ordinary *ptp_data)
 {
 	struct rte_ether_hdr *eth_hdr;
+	struct rte_ether_addr eth_addr;
 	struct ptp_header *ptp_hdr;
 	struct clock_id *client_clkid;
 	struct ptp_message *ptp_msg;
@@ -375,6 +388,7 @@ parse_fup(struct ptpv2_data_slave_ordinary *ptp_data)
 	size_t pkt_size;
 	int wait_us;
 	struct rte_mbuf *m = ptp_data->m;
+	int ret;
 
 	eth_hdr = rte_pktmbuf_mtod(m, struct rte_ether_hdr *);
 	ptp_hdr = (struct ptp_header *)(rte_pktmbuf_mtod(m, char *)
@@ -395,6 +409,13 @@ parse_fup(struct ptpv2_data_slave_ordinary *ptp_data)
 		(((uint64_t)ntohs(origin_tstamp->sec_msb)) << 32);
 
 	if (ptp_data->seqID_FOLLOWUP == ptp_data->seqID_SYNC) {
+		ret = rte_eth_macaddr_get(ptp_data->portid, &eth_addr);
+		if (ret != 0) {
+			printf("\nCore %u: port %u failed to get MAC address: %s\n",
+				rte_lcore_id(), ptp_data->portid,
+				rte_strerror(-ret));
+			return;
+		}
 
 		created_pkt = rte_pktmbuf_alloc(mbuf_pool);
 		pkt_size = sizeof(struct rte_ether_hdr) +
@@ -402,7 +423,7 @@ parse_fup(struct ptpv2_data_slave_ordinary *ptp_data)
 		created_pkt->data_len = pkt_size;
 		created_pkt->pkt_len = pkt_size;
 		eth_hdr = rte_pktmbuf_mtod(created_pkt, struct rte_ether_hdr *);
-		rte_eth_macaddr_get(ptp_data->portid, &eth_hdr->s_addr);
+		rte_ether_addr_copy(&eth_addr, &eth_hdr->s_addr);
 
 		/* Set multicast address 01-1B-19-00-00-00. */
 		rte_ether_addr_copy(&eth_multicast, &eth_hdr->d_addr);

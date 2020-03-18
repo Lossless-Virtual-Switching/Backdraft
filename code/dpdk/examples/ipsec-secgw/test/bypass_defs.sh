@@ -1,4 +1,5 @@
 #! /bin/bash
+# SPDX-License-Identifier: BSD-3-Clause
 
 CRYPTO_DEV=${CRYPTO_DEV:-'--vdev="crypto_null0"'}
 
@@ -28,7 +29,7 @@ EOF
 	cat ${SGW_CFG_FILE}
 }
 
-SGW_CMD_XPRM='-w 300'
+SGW_CMD_XPRM='-w 300 -l'
 
 config_remote_xfrm()
 {

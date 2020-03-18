@@ -100,15 +100,19 @@ assert_link_status(void)
 {
 	struct rte_eth_link link;
 	uint8_t rep_cnt = MAX_REPEAT_TIMES;
+	int link_get_err = -EINVAL;
 
 	memset(&link, 0, sizeof(link));
 	do {
-		rte_eth_link_get(port_id, &link);
-		if (link.link_status == ETH_LINK_UP)
+		link_get_err = rte_eth_link_get(port_id, &link);
+		if (link_get_err == 0 && link.link_status == ETH_LINK_UP)
 			break;
 		rte_delay_ms(CHECK_INTERVAL);
 	} while (--rep_cnt);
 
+	if (link_get_err < 0)
+		rte_exit(EXIT_FAILURE, ":: error: link get is failing: %s\n",
+			 rte_strerror(-link_get_err));
 	if (link.link_status == ETH_LINK_DOWN)
 		rte_exit(EXIT_FAILURE, ":: error: link is still down\n");
 }
@@ -136,7 +140,12 @@ init_port(void)
 	struct rte_eth_rxconf rxq_conf;
 	struct rte_eth_dev_info dev_info;
 
-	rte_eth_dev_info_get(port_id, &dev_info);
+	ret = rte_eth_dev_info_get(port_id, &dev_info);
+	if (ret != 0)
+		rte_exit(EXIT_FAILURE,
+			"Error during getting device (port %u) info: %s\n",
+			port_id, strerror(-ret));
+
 	port_conf.txmode.offloads &= dev_info.tx_offload_capa;
 	printf(":: initializing port: %d\n", port_id);
 	ret = rte_eth_dev_configure(port_id,
@@ -175,7 +184,12 @@ init_port(void)
 		}
 	}
 
-	rte_eth_promiscuous_enable(port_id);
+	ret = rte_eth_promiscuous_enable(port_id);
+	if (ret != 0)
+		rte_exit(EXIT_FAILURE,
+			":: promiscuous mode enable failed: err=%s, port=%u\n",
+			rte_strerror(-ret), port_id);
+
 	ret = rte_eth_dev_start(port_id);
 	if (ret < 0) {
 		rte_exit(EXIT_FAILURE,

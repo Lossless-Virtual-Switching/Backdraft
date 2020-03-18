@@ -14,10 +14,29 @@ foreach env:supported_exec_envs
 	set_variable('is_' + env, exec_env == env)
 endforeach
 
+# MS linker requires special treatment.
+# TODO: use cc.get_linker_id() with Meson >= 0.54
+is_ms_linker = is_windows and (cc.get_id() == 'clang')
+
 # set the major version, which might be used by drivers and libraries
 # depending on the configuration options
 pver = meson.project_version().split('.')
 major_version = '@0@.@1@'.format(pver.get(0), pver.get(1))
+abi_version = run_command(find_program('cat', 'more'),
+	abi_version_file).stdout().strip()
+
+# Regular libraries have the abi_version as the filename extension
+# and have the soname be all but the final part of the abi_version.
+# Experimental libraries have soname with '0.major'
+# and the filename suffix as 0.majorminor versions,
+# e.g. v20.1 => librte_stable.so.20.1, librte_experimental.so.0.201
+#    sonames => librte_stable.so.20, librte_experimental.so.0.20
+# e.g. v20.0.1 => librte_stable.so.20.0.1, librte_experimental.so.0.2001
+#      sonames => librte_stable.so.20.0, librte_experimental.so.0.200
+abi_va = abi_version.split('.')
+stable_so_version = abi_va.length() == 2 ? abi_va[0] : abi_va[0] + '.' + abi_va[1]
+experimental_abi_version = '0.' + abi_va[0] + abi_va[1] + '.' + abi_va[2]
+experimental_so_version = experimental_abi_version
 
 # extract all version information into the build configuration
 dpdk_conf.set('RTE_VER_YEAR', pver.get(0).to_int())
@@ -37,7 +56,7 @@ endif
 
 pmd_subdir_opt = get_option('drivers_install_subdir')
 if pmd_subdir_opt.contains('<VERSION>')
-	pmd_subdir_opt = major_version.join(pmd_subdir_opt.split('<VERSION>'))
+	pmd_subdir_opt = abi_version.join(pmd_subdir_opt.split('<VERSION>'))
 endif
 driver_install_path = join_paths(get_option('libdir'), pmd_subdir_opt)
 eal_pmd_path = join_paths(get_option('prefix'), driver_install_path)
@@ -93,15 +112,18 @@ dpdk_conf.set('RTE_TOOLCHAIN_' + toolchain.to_upper(), 1)
 
 dpdk_conf.set('RTE_ARCH_64', cc.sizeof('void *') == 8)
 
-add_project_link_arguments('-Wl,--no-as-needed', language: 'c')
-dpdk_extra_ldflags += '-Wl,--no-as-needed'
+if not is_windows
+	add_project_link_arguments('-Wl,--no-as-needed', language: 'c')
+endif
 
-# use pthreads
-add_project_link_arguments('-pthread', language: 'c')
-dpdk_extra_ldflags += '-pthread'
+# use pthreads if available for the platform
+if not is_ms_linker
+	add_project_link_arguments('-pthread', language: 'c')
+	dpdk_extra_ldflags += '-pthread'
+endif
 
 # on some OS, maths functions are in a separate library
-if cc.find_library('libm', required : false).found()
+if cc.find_library('m', required : false).found()
 	# some libs depend on maths lib
 	add_project_link_arguments('-lm', language: 'c')
 	dpdk_extra_ldflags += '-lm'
@@ -138,19 +160,56 @@ if libbsd.found()
 	dpdk_conf.set('RTE_USE_LIBBSD', 1)
 endif
 
+# check for pcap
+pcap_dep = dependency('pcap', required: false)
+if pcap_dep.found()
+	# pcap got a pkg-config file only in 1.9.0 and before that meson uses
+	# an internal pcap-config finder, which is not compatible with
+	# cross-compilation, so try to fallback to find_library
+	pcap_dep = cc.find_library('pcap', required: false)
+endif
+if pcap_dep.found() and cc.has_header('pcap.h', dependencies: pcap_dep)
+	dpdk_conf.set('RTE_PORT_PCAP', 1)
+	dpdk_extra_ldflags += '-lpcap'
+endif
+
 # add -include rte_config to cflags
 add_project_arguments('-include', 'rte_config.h', language: 'c')
 
 # enable extra warnings and disable any unwanted warnings
 warning_flags = [
-	'-Wunused-parameter',
-	'-Wsign-compare',
+	# -Wall is added by meson by default, so add -Wextra only
+	'-Wextra',
+
+	# additional warnings in alphabetical order
 	'-Wcast-qual',
-	'-Wno-address-of-packed-member'
+	'-Wdeprecated',
+	'-Wformat-nonliteral',
+	'-Wformat-security',
+	'-Wmissing-declarations',
+	'-Wmissing-prototypes',
+	'-Wnested-externs',
+	'-Wold-style-definition',
+	'-Wpointer-arith',
+	'-Wsign-compare',
+	'-Wstrict-prototypes',
+	'-Wundef',
+	'-Wwrite-strings',
+
+	# globally disabled warnings
+	'-Wno-address-of-packed-member',
+	'-Wno-packed-not-aligned',
+	'-Wno-missing-field-initializers'
 ]
 if not dpdk_conf.get('RTE_ARCH_64')
 # for 32-bit, don't warn about casting a 32-bit pointer to 64-bit int - it's fine!!
 	warning_flags += '-Wno-pointer-to-int-cast'
+endif
+if cc.get_id() == 'intel'
+	warning_ids = [188, 2203, 2279, 2557, 3179, 3656]
+	foreach i:warning_ids
+		warning_flags += '-diag-disable=@0@'.format(i)
+	endforeach
 endif
 foreach arg: warning_flags
 	if cc.has_argument(arg)
@@ -163,7 +222,6 @@ dpdk_conf.set('RTE_MAX_LCORE', get_option('max_lcores'))
 dpdk_conf.set('RTE_MAX_NUMA_NODES', get_option('max_numa_nodes'))
 dpdk_conf.set('RTE_MAX_ETHPORTS', get_option('max_ethports'))
 dpdk_conf.set('RTE_LIBEAL_USE_HPET', get_option('use_hpet'))
-dpdk_conf.set('RTE_EAL_ALLOW_INV_SOCKET_ID', get_option('allow_invalid_socket_id'))
 # values which have defaults which may be overridden
 dpdk_conf.set('RTE_MAX_VFIO_GROUPS', 64)
 dpdk_conf.set('RTE_DRIVER_MEMPOOL_BUCKET_SIZE_KB', 64)
@@ -195,4 +253,27 @@ add_project_arguments('-D_GNU_SOURCE', language: 'c')
 # specify -D__BSD_VISIBLE for FreeBSD
 if is_freebsd
 	add_project_arguments('-D__BSD_VISIBLE', language: 'c')
+endif
+
+if is_windows
+	# Minimum supported API is Windows 7.
+	add_project_arguments('-D_WIN32_WINNT=0x0601', language: 'c')
+
+	# Use MinGW-w64 stdio, because DPDK assumes ANSI-compliant formatting.
+	if cc.get_id() == 'gcc'
+		add_project_arguments('-D__USE_MINGW_ANSI_STDIO', language: 'c')
+	endif
+endif
+
+if get_option('b_lto')
+	if cc.has_argument('-ffat-lto-objects')
+		add_project_arguments('-ffat-lto-objects', language: 'c')
+	else
+		error('compiler does not support fat LTO objects - please turn LTO off')
+	endif
+	# workaround for gcc bug 81440
+	if cc.get_id() == 'gcc' and cc.version().version_compare('<8.0')
+		add_project_arguments('-Wno-lto-type-mismatch', language: 'c')
+		add_project_link_arguments('-Wno-lto-type-mismatch', language: 'c')
+	endif
 endif

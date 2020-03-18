@@ -426,6 +426,23 @@ struct i40e_pf_vf {
 	/* version of the virtchnl from VF */
 	struct virtchnl_version_info version;
 	uint32_t request_caps; /* offload caps requested from VF */
+	uint64_t num_mdd_events; /* num of mdd events detected */
+
+	/*
+	 * Variables for store the arrival timestamp of VF messages.
+	 * If the timestamp of latest message stored at
+	 * `msg_timestamps[index % max]` then the timestamp of
+	 * earliest message stored at `msg_time[(index + 1) % max]`.
+	 * When a new message come, the timestamp of this message
+	 * will be stored at `msg_timestamps[(index + 1) % max]` and the
+	 * earliest message timestamp is at
+	 * `msg_timestamps[(index + 2) % max]` now...
+	 */
+	uint32_t msg_index;
+	uint64_t *msg_timestamps;
+
+	/* cycle of stop ignoring VF message */
+	uint64_t ignore_end_cycle;
 };
 
 /*
@@ -485,6 +502,29 @@ struct i40e_gtp_ipv6_flow {
 	struct rte_eth_ipv6_flow ip6;
 };
 
+/* A structure used to define the input for ESP IPV4 flow */
+struct i40e_esp_ipv4_flow {
+	struct rte_eth_ipv4_flow ipv4;
+	uint32_t spi;	/* SPI in big endian. */
+};
+
+/* A structure used to define the input for ESP IPV6 flow */
+struct i40e_esp_ipv6_flow {
+	struct rte_eth_ipv6_flow ipv6;
+	uint32_t spi;	/* SPI in big endian. */
+};
+/* A structure used to define the input for ESP IPV4 UDP flow */
+struct i40e_esp_ipv4_udp_flow {
+	struct rte_eth_udpv4_flow udp;
+	uint32_t spi;	/* SPI in big endian. */
+};
+
+/* A structure used to define the input for ESP IPV6 UDP flow */
+struct i40e_esp_ipv6_udp_flow {
+	struct rte_eth_udpv6_flow udp;
+	uint32_t spi;	/* SPI in big endian. */
+};
+
 /* A structure used to define the input for raw type flow */
 struct i40e_raw_flow {
 	uint16_t pctype;
@@ -492,24 +532,42 @@ struct i40e_raw_flow {
 	uint32_t length;
 };
 
+/* A structure used to define the input for L2TPv3 over IPv4 flow */
+struct i40e_ipv4_l2tpv3oip_flow {
+	struct rte_eth_ipv4_flow ip4;
+	uint32_t session_id; /* Session ID in big endian. */
+};
+
+/* A structure used to define the input for L2TPv3 over IPv6 flow */
+struct i40e_ipv6_l2tpv3oip_flow {
+	struct rte_eth_ipv6_flow ip6;
+	uint32_t session_id; /* Session ID in big endian. */
+};
+
 /*
  * A union contains the inputs for all types of flow
  * items in flows need to be in big endian
  */
 union i40e_fdir_flow {
-	struct rte_eth_l2_flow     l2_flow;
-	struct rte_eth_udpv4_flow  udp4_flow;
-	struct rte_eth_tcpv4_flow  tcp4_flow;
-	struct rte_eth_sctpv4_flow sctp4_flow;
-	struct rte_eth_ipv4_flow   ip4_flow;
-	struct rte_eth_udpv6_flow  udp6_flow;
-	struct rte_eth_tcpv6_flow  tcp6_flow;
-	struct rte_eth_sctpv6_flow sctp6_flow;
-	struct rte_eth_ipv6_flow   ipv6_flow;
-	struct i40e_gtp_flow       gtp_flow;
-	struct i40e_gtp_ipv4_flow  gtp_ipv4_flow;
-	struct i40e_gtp_ipv6_flow  gtp_ipv6_flow;
-	struct i40e_raw_flow       raw_flow;
+	struct rte_eth_l2_flow          l2_flow;
+	struct rte_eth_udpv4_flow       udp4_flow;
+	struct rte_eth_tcpv4_flow       tcp4_flow;
+	struct rte_eth_sctpv4_flow      sctp4_flow;
+	struct rte_eth_ipv4_flow        ip4_flow;
+	struct rte_eth_udpv6_flow       udp6_flow;
+	struct rte_eth_tcpv6_flow       tcp6_flow;
+	struct rte_eth_sctpv6_flow      sctp6_flow;
+	struct rte_eth_ipv6_flow        ipv6_flow;
+	struct i40e_gtp_flow            gtp_flow;
+	struct i40e_gtp_ipv4_flow       gtp_ipv4_flow;
+	struct i40e_gtp_ipv6_flow       gtp_ipv6_flow;
+	struct i40e_raw_flow            raw_flow;
+	struct i40e_ipv4_l2tpv3oip_flow ip4_l2tpv3oip_flow;
+	struct i40e_ipv6_l2tpv3oip_flow ip6_l2tpv3oip_flow;
+	struct i40e_esp_ipv4_flow       esp_ipv4_flow;
+	struct i40e_esp_ipv6_flow       esp_ipv6_flow;
+	struct i40e_esp_ipv4_udp_flow   esp_ipv4_udp_flow;
+	struct i40e_esp_ipv6_udp_flow   esp_ipv6_udp_flow;
 };
 
 enum i40e_fdir_ip_type {
@@ -526,8 +584,10 @@ struct i40e_fdir_flow_ext {
 	uint16_t dst_id; /* VF ID, available when is_vf is 1*/
 	bool inner_ip;   /* If there is inner ip */
 	enum i40e_fdir_ip_type iip_type; /* ip type for inner ip */
+	enum i40e_fdir_ip_type oip_type; /* ip type for outer ip */
 	bool customized_pctype; /* If customized pctype is used */
 	bool pkt_template; /* If raw packet template is used */
+	bool is_udp; /* ipv4|ipv6 udp flow */
 };
 
 /* A structure used to define the input for a flow director filter entry */
@@ -753,6 +813,8 @@ enum i40e_tunnel_type {
 	I40E_TUNNEL_TYPE_QINQ,
 	I40E_TUNNEL_TYPE_GTPC,
 	I40E_TUNNEL_TYPE_GTPU,
+	I40E_TUNNEL_TYPE_ESPoUDP,
+	I40E_TUNNEL_TYPE_ESPoIP,
 	I40E_TUNNEL_TYPE_MAX,
 };
 
@@ -881,6 +943,14 @@ enum i40e_new_pctype {
 	I40E_CUSTOMIZED_GTPU_IPV4,
 	I40E_CUSTOMIZED_GTPU_IPV6,
 	I40E_CUSTOMIZED_GTPU,
+	I40E_CUSTOMIZED_IPV4_L2TPV3,
+	I40E_CUSTOMIZED_IPV6_L2TPV3,
+	I40E_CUSTOMIZED_ESP_IPV4,
+	I40E_CUSTOMIZED_ESP_IPV6,
+	I40E_CUSTOMIZED_ESP_IPV4_UDP,
+	I40E_CUSTOMIZED_ESP_IPV6_UDP,
+	I40E_CUSTOMIZED_AH_IPV4,
+	I40E_CUSTOMIZED_AH_IPV6,
 	I40E_CUSTOMIZED_MAX,
 };
 
@@ -898,6 +968,20 @@ struct i40e_rte_flow_rss_conf {
 		     I40E_VFQF_HKEY_MAX_INDEX : I40E_PFQF_HKEY_MAX_INDEX + 1) *
 		    sizeof(uint32_t)]; /* Hash key. */
 	uint16_t queue[I40E_MAX_Q_PER_TC]; /**< Queues indices to use. */
+};
+
+struct i40e_vf_msg_cfg {
+	/* maximal VF message during a statistic period */
+	uint32_t max_msg;
+
+	/* statistic period, in second */
+	uint32_t period;
+	/*
+	 * If message statistics from a VF exceed the maximal limitation,
+	 * the PF will ignore any new message from that VF for
+	 * 'ignor_second' time.
+	 */
+	uint32_t ignore_second;
 };
 
 /*
@@ -971,10 +1055,13 @@ struct i40e_pf {
 
 	/* Dynamic Device Personalization */
 	bool gtp_support; /* 1 - support GTP-C and GTP-U */
+	bool esp_support; /* 1 - support ESP SPI */
 	/* customer customized pctype */
 	struct i40e_customized_pctype customized_pctype[I40E_CUSTOMIZED_MAX];
 	/* Switch Domain Id */
 	uint16_t switch_domain_id;
+
+	struct i40e_vf_msg_cfg vf_msg_cfg;
 };
 
 enum pending_msg {
@@ -1153,6 +1240,7 @@ const struct rte_memzone *i40e_memzone_reserve(const char *name,
 					uint32_t len,
 					int socket_id);
 int i40e_fdir_configure(struct rte_eth_dev *dev);
+void i40e_fdir_rx_proc_enable(struct rte_eth_dev *dev, bool on);
 void i40e_fdir_teardown(struct i40e_pf *pf);
 enum i40e_filter_pctype
 	i40e_flowtype_to_pctype(const struct i40e_adapter *adapter,
@@ -1177,6 +1265,10 @@ void i40e_rxq_info_get(struct rte_eth_dev *dev, uint16_t queue_id,
 	struct rte_eth_rxq_info *qinfo);
 void i40e_txq_info_get(struct rte_eth_dev *dev, uint16_t queue_id,
 	struct rte_eth_txq_info *qinfo);
+int i40e_rx_burst_mode_get(struct rte_eth_dev *dev, uint16_t queue_id,
+			   struct rte_eth_burst_mode *mode);
+int i40e_tx_burst_mode_get(struct rte_eth_dev *dev, uint16_t queue_id,
+			   struct rte_eth_burst_mode *mode);
 struct i40e_ethertype_filter *
 i40e_sw_ethertype_filter_lookup(struct i40e_ethertype_rule *ethertype_rule,
 			const struct i40e_ethertype_filter_input *input);

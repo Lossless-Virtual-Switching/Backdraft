@@ -146,9 +146,19 @@ Make your planned changes in the cloned ``dpdk`` repo. Here are some guidelines 
 
 * If you add new files or directories you should add your name to the ``MAINTAINERS`` file.
 
-* New external functions should be added to the local ``version.map`` file.
-  See the :doc:`Guidelines for ABI policy and versioning </contributing/versioning>`.
-  New external functions should also be added in alphabetical order.
+* Initial submission of new PMDs should be prepared against a corresponding repo.
+
+  * Thus, for example, initial submission of a new network PMD should be
+    prepared against dpdk-next-net repo.
+
+  * Likewise, initial submission of a new crypto or compression PMD should be
+    prepared against dpdk-next-crypto repo.
+
+  * For other PMDs and more info, refer to the ``MAINTAINERS`` file.
+
+* New external functions should be added to the local ``version.map`` file. See
+  the :doc:`ABI policy <abi_policy>` and :ref:`ABI versioning <abi_versioning>`
+  guides. New external functions should also be added in alphabetical order.
 
 * Important changes will require an addition to the release notes in ``doc/guides/rel_notes/``.
   See the :ref:`Release Notes section of the Documentation Guidelines <doc_guidelines>` for details.
@@ -397,8 +407,17 @@ This uses the Linux kernel development tool ``checkpatch.pl`` which  can be obta
 updating the Linux kernel sources.
 
 The path to the original Linux script must be set in the environment variable ``DPDK_CHECKPATCH_PATH``.
-This, and any other configuration variables required by the development tools, are loaded from the following
-files, in order of preference::
+
+Spell checking of commonly misspelled words
+can be enabled by downloading the codespell dictionary::
+
+   https://raw.githubusercontent.com/codespell-project/codespell/master/codespell_lib/data/dictionary.txt
+
+The path to the downloaded ``dictionary.txt`` must be set
+in the environment variable ``DPDK_CHECKPATCH_CODESPELL``.
+
+Environment variables required by the development tools,
+are loaded from the following files, in order of preference::
 
    .develconfig
    ~/.config/dpdk/devel.config
@@ -461,6 +480,7 @@ Examples of configs are::
 The builds can be modified via the following environmental variables:
 
 * ``DPDK_BUILD_TEST_CONFIGS`` (target1+option1+option2 target2)
+* ``DPDK_BUILD_TEST_DIR``
 * ``DPDK_DEP_CFLAGS``
 * ``DPDK_DEP_LDFLAGS``
 * ``DPDK_DEP_PCAP`` (y/[n])
@@ -485,6 +505,27 @@ Compilation of patches is to be tested with ``devtools/test-meson-builds.sh`` sc
 
 The script internally checks for dependencies, then builds for several
 combinations of compilation configuration.
+By default, each build will be put in a subfolder of the current working directory.
+However, if it is preferred to place the builds in a different location,
+the environment variable ``DPDK_BUILD_TEST_DIR`` can be set to that desired location.
+For example, setting ``DPDK_BUILD_TEST_DIR=__builds`` will put all builds
+in a single subfolder called "__builds" created in the current directory.
+Setting ``DPDK_BUILD_TEST_DIR`` to an absolute directory path e.g. ``/tmp`` is also supported.
+
+
+Checking ABI compatibility
+--------------------------
+
+By default, ABI compatibility checks are disabled.
+
+To enable them, a reference version must be selected via the environment
+variable ``DPDK_ABI_REF_VERSION``.
+
+The ``devtools/test-build.sh`` and ``devtools/test-meson-builds.sh`` scripts
+then build this reference version in a temporary directory and store the
+results in a subfolder of the current working directory.
+The environment variable ``DPDK_ABI_REF_DIR`` can be set so that the results go
+to a different location.
 
 
 Sending Patches

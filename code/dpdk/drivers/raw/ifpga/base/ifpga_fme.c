@@ -787,8 +787,22 @@ static const char *board_type_to_string(u32 type)
 	return "unknown";
 }
 
+static const char *board_major_to_string(u32 major)
+{
+	switch (major) {
+	case VISTA_CREEK:
+		return "VISTA_CREEK";
+	case RUSH_CREEK:
+		return "RUSH_CREEK";
+	case DARBY_CREEK:
+		return "DARBY_CREEK";
+	}
+
+	return "unknown";
+}
+
 static int board_type_to_info(u32 type,
-		struct ifpga_fme_board_info *info)
+		struct opae_board_info *info)
 {
 	switch (type) {
 	case VC_8_10G:
@@ -825,21 +839,47 @@ static int board_type_to_info(u32 type,
 static int fme_get_board_interface(struct ifpga_fme_hw *fme)
 {
 	struct fme_bitstream_id id;
+	struct ifpga_hw *hw;
+	u32 val;
+
+	hw = fme->parent;
+	if (!hw)
+		return -ENODEV;
 
 	if (fme_hdr_get_bitstream_id(fme, &id.id))
 		return -EINVAL;
 
+	fme->board_info.major = id.major;
+	fme->board_info.minor = id.minor;
 	fme->board_info.type = id.interface;
-	fme->board_info.build_hash = id.hash;
-	fme->board_info.debug_version = id.debug;
-	fme->board_info.major_version = id.major;
-	fme->board_info.minor_version = id.minor;
+	fme->board_info.fvl_bypass = id.fvl_bypass;
+	fme->board_info.mac_lightweight = id.mac_lightweight;
+	fme->board_info.lightweight = id.lightweiht;
+	fme->board_info.disaggregate = id.disagregate;
+	fme->board_info.seu = id.seu;
+	fme->board_info.ptp = id.ptp;
 
-	dev_info(fme, "board type: %s major_version:%u minor_version:%u build_hash:%u\n",
-			board_type_to_string(fme->board_info.type),
-			fme->board_info.major_version,
-			fme->board_info.minor_version,
-			fme->board_info.build_hash);
+	dev_info(fme, "found: PCI dev: %02x:%02x:%x board: %s type: %s\n",
+			hw->pci_data->bus,
+			hw->pci_data->devid,
+			hw->pci_data->function,
+			board_major_to_string(fme->board_info.major),
+			board_type_to_string(fme->board_info.type));
+
+	dev_info(fme, "support feature:\n"
+			"fvl_bypass:%s\n"
+			"mac_lightweight:%s\n"
+			"lightweight:%s\n"
+			"disaggregate:%s\n"
+			"seu:%s\n"
+			"ptp1588:%s\n",
+			check_support(fme->board_info.fvl_bypass),
+			check_support(fme->board_info.mac_lightweight),
+			check_support(fme->board_info.lightweight),
+			check_support(fme->board_info.disaggregate),
+			check_support(fme->board_info.seu),
+			check_support(fme->board_info.ptp));
+
 
 	if (board_type_to_info(fme->board_info.type, &fme->board_info))
 		return -EINVAL;
@@ -850,24 +890,31 @@ static int fme_get_board_interface(struct ifpga_fme_hw *fme)
 			fme->board_info.nums_of_fvl,
 			fme->board_info.ports_per_fvl);
 
+	if (max10_sys_read(fme->max10_dev, MAX10_BUILD_VER, &val))
+		return -EINVAL;
+	fme->board_info.max10_version = val & 0xffffff;
+
+	if (max10_sys_read(fme->max10_dev, NIOS2_FW_VERSION, &val))
+		return -EINVAL;
+	fme->board_info.nios_fw_version = val & 0xffffff;
+
+	dev_info(fme, "max10 version 0x%x, nios fw version 0x%x\n",
+		fme->board_info.max10_version,
+		fme->board_info.nios_fw_version);
+
 	return 0;
 }
 
-static int spi_self_checking(void)
+static int spi_self_checking(struct intel_max10_device *dev)
 {
 	u32 val;
 	int ret;
 
-	ret = max10_reg_read(0x30043c, &val);
+	ret = max10_sys_read(dev, MAX10_TEST_REG, &val);
 	if (ret)
 		return -EIO;
 
-	if (val != 0x87654321) {
-		dev_err(NULL, "Read MAX10 test register fail: 0x%x\n", val);
-		return -EIO;
-	}
-
-	dev_info(NULL, "Read MAX10 test register success, SPI self-test done\n");
+	dev_info(NULL, "Read MAX10 test register 0x%x\n", val);
 
 	return 0;
 }
@@ -898,10 +945,11 @@ static int fme_spi_init(struct ifpga_feature *feature)
 		goto spi_fail;
 	}
 
+
 	fme->max10_dev = max10;
 
 	/* SPI self test */
-	if (spi_self_checking()) {
+	if (spi_self_checking(max10)) {
 		ret = -EIO;
 		goto max10_fail;
 	}
@@ -933,9 +981,34 @@ static int nios_spi_wait_init_done(struct altera_spi_device *dev)
 	u32 val = 0;
 	unsigned long timeout = msecs_to_timer_cycles(10000);
 	unsigned long ticks;
+	int major_version;
 
+	if (spi_reg_read(dev, NIOS_VERSION, &val))
+		return -EIO;
+
+	major_version = (val >> NIOS_VERSION_MAJOR_SHIFT) &
+		NIOS_VERSION_MAJOR;
+	dev_debug(dev, "A10 NIOS FW version %d\n", major_version);
+
+	if (major_version >= 3) {
+		/* read NIOS_INIT to check if PKVL INIT done or not */
+		if (spi_reg_read(dev, NIOS_INIT, &val))
+			return -EIO;
+
+		/* check if PKVLs are initialized already */
+		if (val & NIOS_INIT_DONE || val & NIOS_INIT_START)
+			goto nios_init_done;
+
+		/* start to config the default FEC mode */
+		val = NIOS_INIT_START;
+
+		if (spi_reg_write(dev, NIOS_INIT, val))
+			return -EIO;
+	}
+
+nios_init_done:
 	do {
-		if (spi_reg_read(dev, NIOS_SPI_INIT_DONE, &val))
+		if (spi_reg_read(dev, NIOS_INIT, &val))
 			return -EIO;
 		if (val)
 			break;
@@ -953,23 +1026,20 @@ static int nios_spi_check_error(struct altera_spi_device *dev)
 {
 	u32 value = 0;
 
-	if (spi_reg_read(dev, NIOS_SPI_INIT_STS0, &value))
+	if (spi_reg_read(dev, PKVL_A_MODE_STS, &value))
 		return -EIO;
 
-	dev_debug(dev, "SPI init status0 0x%x\n", value);
+	dev_debug(dev, "PKVL A Mode Status 0x%x\n", value);
 
-	/* Error code: 0xFFF0 to 0xFFFC */
-	if (value >= 0xFFF0 && value <= 0xFFFC)
+	if (value >= 0x100)
 		return -EINVAL;
 
-	value = 0;
-	if (spi_reg_read(dev, NIOS_SPI_INIT_STS1, &value))
+	if (spi_reg_read(dev, PKVL_B_MODE_STS, &value))
 		return -EIO;
 
-	dev_debug(dev, "SPI init status1 0x%x\n", value);
+	dev_debug(dev, "PKVL B Mode Status 0x%x\n", value);
 
-	/* Error code: 0xFFF0 to 0xFFFC */
-	if (value >= 0xFFF0 && value <= 0xFFFC)
+	if (value >= 0x100)
 		return -EINVAL;
 
 	return 0;
@@ -980,7 +1050,17 @@ static int fme_nios_spi_init(struct ifpga_feature *feature)
 	struct ifpga_fme_hw *fme = (struct ifpga_fme_hw *)feature->parent;
 	struct altera_spi_device *spi_master;
 	struct intel_max10_device *max10;
+	struct ifpga_hw *hw;
+	struct opae_manager *mgr;
 	int ret = 0;
+
+	hw = fme->parent;
+	if (!hw)
+		return -ENODEV;
+
+	mgr = hw->adapter->mgr;
+	if (!mgr)
+		return -ENODEV;
 
 	dev_info(fme, "FME SPI Master (NIOS) Init.\n");
 	dev_debug(fme, "FME SPI base addr %p.\n",
@@ -1019,12 +1099,15 @@ static int fme_nios_spi_init(struct ifpga_feature *feature)
 		goto release_dev;
 	}
 
+	max10->bus = hw->pci_data->bus;
+
 	fme_get_board_interface(fme);
 
 	fme->max10_dev = max10;
+	mgr->sensor_list = &max10->opae_sensor_list;
 
 	/* SPI self test */
-	if (spi_self_checking())
+	if (spi_self_checking(max10))
 		goto spi_fail;
 
 	return ret;
@@ -1283,7 +1366,7 @@ int fme_mgr_get_retimer_status(struct ifpga_fme_hw *fme,
 	if (!dev)
 		return -ENODEV;
 
-	if (max10_reg_read(PKVL_LINK_STATUS, &val)) {
+	if (max10_sys_read(dev, PKVL_LINK_STATUS, &val)) {
 		dev_err(dev, "%s: read pkvl status fail\n", __func__);
 		return -EINVAL;
 	}
@@ -1297,6 +1380,27 @@ int fme_mgr_get_retimer_status(struct ifpga_fme_hw *fme,
 	dev_debug(dev, "get retimer status: speed:%d. line_link_bitmap:0x%x\n",
 			status->speed,
 			status->line_link_bitmap);
+
+	return 0;
+}
+
+int fme_mgr_get_sensor_value(struct ifpga_fme_hw *fme,
+		struct opae_sensor_info *sensor,
+		unsigned int *value)
+{
+	struct intel_max10_device *dev;
+
+	dev = (struct intel_max10_device *)fme->max10_dev;
+	if (!dev)
+		return -ENODEV;
+
+	if (max10_sys_read(dev, sensor->value_reg, value)) {
+		dev_err(dev, "%s: read sensor value register 0x%x fail\n",
+				__func__, sensor->value_reg);
+		return -EINVAL;
+	}
+
+	*value *= sensor->multiplier;
 
 	return 0;
 }

@@ -31,9 +31,6 @@
 
 /****** library defines ********/
 
-/* compat defines */
-#define RTE_BUILD_SHARED_LIB
-
 /* EAL defines */
 #define RTE_MAX_HEAPS 32
 #define RTE_MAX_MEMSEG_LISTS 128
@@ -97,6 +94,9 @@
 #undef RTE_SCHED_SUBPORT_TC_OV
 #define RTE_SCHED_PORT_N_GRINDERS 8
 #undef RTE_SCHED_VECTOR
+
+/* KNI defines */
+#define RTE_KNI_PREEMPT_DEFAULT 1
 
 /****** driver defines ********/
 

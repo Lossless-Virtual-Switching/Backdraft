@@ -5,10 +5,7 @@
 #ifndef _HINIC_PORT_CMD_H_
 #define _HINIC_PORT_CMD_H_
 
-enum hinic_eq_type {
-	HINIC_AEQ,
-	HINIC_CEQ
-};
+#define HINIC_AEQ	0
 
 enum hinic_resp_aeq_num {
 	HINIC_AEQ0 = 0,
@@ -24,6 +21,12 @@ enum hinic_mod_type {
 	HINIC_MOD_HILINK = 14,
 	HINIC_MOD_MAX	= 15
 };
+
+/* only used by VFD communicating with PFD to register or unregister,
+ * command mode type is HINIC_MOD_L2NIC
+ */
+#define HINIC_PORT_CMD_VF_REGISTER	0x0
+#define HINIC_PORT_CMD_VF_UNREGISTER	0x1
 
 /* cmd of mgmt CPU message for NIC module */
 enum hinic_port_cmd {
@@ -79,6 +82,8 @@ enum hinic_port_cmd {
 	HINIC_PORT_CMD_GET_JUMBO_FRAME_SIZE	= 0x4a,
 	HINIC_PORT_CMD_SET_JUMBO_FRAME_SIZE,
 
+	HINIC_PORT_CMD_GET_MGMT_VERSION		= 0x58,
+
 	HINIC_PORT_CMD_GET_PORT_TYPE		= 0x5b,
 
 	HINIC_PORT_CMD_GET_VPORT_ENABLE		= 0x5c,
@@ -113,6 +118,8 @@ enum hinic_port_cmd {
 	HINIC_PORT_CMD_SET_IPSU_MAC		= 0xcb,
 	HINIC_PORT_CMD_GET_IPSU_MAC		= 0xcc,
 
+	HINIC_PORT_CMD_SET_XSFP_STATUS		= 0xD4,
+
 	HINIC_PORT_CMD_GET_LINK_MODE		= 0xD9,
 	HINIC_PORT_CMD_SET_SPEED		= 0xDA,
 	HINIC_PORT_CMD_SET_AUTONEG		= 0xDB,
@@ -134,6 +141,9 @@ enum hinic_port_cmd {
 
 	HINIC_PORT_CMD_SET_VHD_CFG		= 0xF7,
 	HINIC_PORT_CMD_SET_LINK_FOLLOW		= 0xF8,
+	HINIC_PORT_CMD_Q_FILTER			= 0xFC,
+	HINIC_PORT_CMD_TCAM_FILTER		= 0xFE,
+	HINIC_PORT_CMD_SET_VLAN_FILTER		= 0xFF
 };
 
 /* cmd of mgmt CPU message for HW module */
@@ -416,12 +426,12 @@ enum hinic_pf_status {
 };
 
 /* total doorbell or direct wqe size is 512kB, db num: 128, dwqe: 128 */
-#define HINIC_DB_DWQE_SIZE       0x00080000
+#define HINIC_DB_DWQE_SIZE	0x00080000
 
-/* db/dwqe page size: 4K */
-#define HINIC_DB_PAGE_SIZE		0x00001000ULL
+/* db page size: 4K */
+#define HINIC_DB_PAGE_SIZE	0x00001000ULL
 
-#define HINIC_DB_MAX_AREAS         (HINIC_DB_DWQE_SIZE / HINIC_DB_PAGE_SIZE)
+#define HINIC_DB_MAX_AREAS	(HINIC_DB_DWQE_SIZE / HINIC_DB_PAGE_SIZE)
 
 #define HINIC_PCI_MSIX_ENTRY_SIZE			16
 #define HINIC_PCI_MSIX_ENTRY_VECTOR_CTRL		12

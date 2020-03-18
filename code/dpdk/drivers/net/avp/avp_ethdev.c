@@ -41,12 +41,12 @@ static int avp_dev_configure(struct rte_eth_dev *dev);
 static int avp_dev_start(struct rte_eth_dev *dev);
 static void avp_dev_stop(struct rte_eth_dev *dev);
 static void avp_dev_close(struct rte_eth_dev *dev);
-static void avp_dev_info_get(struct rte_eth_dev *dev,
-			     struct rte_eth_dev_info *dev_info);
+static int avp_dev_info_get(struct rte_eth_dev *dev,
+			    struct rte_eth_dev_info *dev_info);
 static int avp_vlan_offload_set(struct rte_eth_dev *dev, int mask);
 static int avp_dev_link_update(struct rte_eth_dev *dev, int wait_to_complete);
-static void avp_dev_promiscuous_enable(struct rte_eth_dev *dev);
-static void avp_dev_promiscuous_disable(struct rte_eth_dev *dev);
+static int avp_dev_promiscuous_enable(struct rte_eth_dev *dev);
+static int avp_dev_promiscuous_disable(struct rte_eth_dev *dev);
 
 static int avp_dev_rx_queue_setup(struct rte_eth_dev *dev,
 				  uint16_t rx_queue_id,
@@ -82,7 +82,7 @@ static void avp_dev_tx_queue_release(void *txq);
 
 static int avp_dev_stats_get(struct rte_eth_dev *dev,
 			      struct rte_eth_stats *stats);
-static void avp_dev_stats_reset(struct rte_eth_dev *dev);
+static int avp_dev_stats_reset(struct rte_eth_dev *dev);
 
 
 #define AVP_MAX_RX_BURST 64
@@ -2157,7 +2157,7 @@ avp_dev_link_update(struct rte_eth_dev *eth_dev,
 	return -1;
 }
 
-static void
+static int
 avp_dev_promiscuous_enable(struct rte_eth_dev *eth_dev)
 {
 	struct avp_dev *avp = AVP_DEV_PRIVATE_TO_HW(eth_dev->data->dev_private);
@@ -2169,9 +2169,11 @@ avp_dev_promiscuous_enable(struct rte_eth_dev *eth_dev)
 			    eth_dev->data->port_id);
 	}
 	rte_spinlock_unlock(&avp->lock);
+
+	return 0;
 }
 
-static void
+static int
 avp_dev_promiscuous_disable(struct rte_eth_dev *eth_dev)
 {
 	struct avp_dev *avp = AVP_DEV_PRIVATE_TO_HW(eth_dev->data->dev_private);
@@ -2183,9 +2185,11 @@ avp_dev_promiscuous_disable(struct rte_eth_dev *eth_dev)
 			    eth_dev->data->port_id);
 	}
 	rte_spinlock_unlock(&avp->lock);
+
+	return 0;
 }
 
-static void
+static int
 avp_dev_info_get(struct rte_eth_dev *eth_dev,
 		 struct rte_eth_dev_info *dev_info)
 {
@@ -2200,6 +2204,8 @@ avp_dev_info_get(struct rte_eth_dev *eth_dev,
 		dev_info->rx_offload_capa = DEV_RX_OFFLOAD_VLAN_STRIP;
 		dev_info->tx_offload_capa = DEV_TX_OFFLOAD_VLAN_INSERT;
 	}
+
+	return 0;
 }
 
 static int
@@ -2269,7 +2275,7 @@ avp_dev_stats_get(struct rte_eth_dev *eth_dev, struct rte_eth_stats *stats)
 	return 0;
 }
 
-static void
+static int
 avp_dev_stats_reset(struct rte_eth_dev *eth_dev)
 {
 	struct avp_dev *avp = AVP_DEV_PRIVATE_TO_HW(eth_dev->data->dev_private);
@@ -2294,6 +2300,8 @@ avp_dev_stats_reset(struct rte_eth_dev *eth_dev)
 			txq->errors = 0;
 		}
 	}
+
+	return 0;
 }
 
 RTE_PMD_REGISTER_PCI(net_avp, rte_avp_pmd);

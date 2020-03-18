@@ -7,16 +7,18 @@
 
 #include "hinic_pmd_cmd.h"
 
-#define HINIC_PAGE_SIZE_MAX	20
+#define HINIC_PAGE_SIZE_MAX		20
 
 #define HINIC_MGMT_CMD_UNSUPPORTED	0xFF
 #define HINIC_PF_SET_VF_ALREADY		0x4
 
 #define MAX_PCIE_DFX_BUF_SIZE		1024
 
+#define HINIC_DEV_BUSY_ACTIVE_FW	0xFE
+
 /* dma pool */
 struct dma_pool {
-	u32 inuse;
+	rte_atomic32_t inuse;
 	size_t elem_size;
 	size_t align;
 	size_t boundary;
@@ -436,6 +438,7 @@ struct hinic_hwdev {
 	struct hinic_hwif *hwif;
 	struct cfg_mgmt_info *cfg_mgmt;
 	struct hinic_aeqs *aeqs;
+	struct hinic_mbox_func_to_func *func_to_func;
 	struct hinic_msg_pf_to_mgmt *pf_to_mgmt;
 	struct hinic_cmdqs *cmdqs;
 	struct hinic_nic_io *nic_io;
@@ -481,5 +484,9 @@ void hinic_deactivate_hwdev_state(struct hinic_hwdev *hwdev);
 int hinic_l2nic_reset(struct hinic_hwdev *hwdev);
 
 int hinic_set_pagesize(void *hwdev, u8 page_size);
+
+void hinic_cpu_to_be32(void *data, u32 len);
+
+void hinic_be32_to_cpu(void *data, u32 len);
 
 #endif /* _HINIC_PMD_HWDEV_H_ */

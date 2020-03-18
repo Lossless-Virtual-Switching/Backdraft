@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: BSD-3-Clause
  *
  *   Copyright (c) 2016 Freescale Semiconductor, Inc. All rights reserved.
- *   Copyright 2016-2018 NXP
+ *   Copyright 2016-2019 NXP
  *
  */
 
@@ -28,6 +28,8 @@
 static inline uint32_t __attribute__((hot))
 dpaa2_dev_rx_parse_slow(struct rte_mbuf *mbuf,
 			struct dpaa2_annot_hdr *annotation);
+
+static void enable_tx_tstamp(struct qbman_fd *fd) __attribute__((unused));
 
 #define DPAA2_MBUF_TO_CONTIG_FD(_mbuf, _fd, _bpid)  do { \
 	DPAA2_SET_FD_ADDR(_fd, DPAA2_MBUF_VADDR_TO_IOVA(_mbuf)); \
@@ -130,6 +132,11 @@ dpaa2_dev_rx_parse_slow(struct rte_mbuf *mbuf,
 	DPAA2_PMD_DP_DEBUG("(slow parse)annotation(3)=0x%" PRIx64 "\t"
 			"(4)=0x%" PRIx64 "\t",
 			annotation->word3, annotation->word4);
+
+#if defined(RTE_LIBRTE_IEEE1588)
+	if (BIT_ISSET_AT_POS(annotation->word1, DPAA2_ETH_FAS_PTP))
+		mbuf->ol_flags |= PKT_RX_IEEE1588_PTP;
+#endif
 
 	if (BIT_ISSET_AT_POS(annotation->word3, L2_VLAN_1_PRESENT)) {
 		vlan_tci = rte_pktmbuf_mtod_offset(mbuf, uint16_t *,
@@ -253,7 +260,8 @@ dpaa2_dev_rx_parse(struct rte_mbuf *mbuf, void *hw_annot_addr)
 }
 
 static inline struct rte_mbuf *__attribute__((hot))
-eth_sg_fd_to_mbuf(const struct qbman_fd *fd)
+eth_sg_fd_to_mbuf(const struct qbman_fd *fd,
+		  int port_id)
 {
 	struct qbman_sge *sgt, *sge;
 	size_t sg_addr, fd_addr;
@@ -279,6 +287,7 @@ eth_sg_fd_to_mbuf(const struct qbman_fd *fd)
 	first_seg->pkt_len = DPAA2_GET_FD_LEN(fd);
 	first_seg->nb_segs = 1;
 	first_seg->next = NULL;
+	first_seg->port = port_id;
 	if (dpaa2_svr_family == SVR_LX2160A)
 		dpaa2_dev_rx_parse_new(first_seg, fd);
 	else
@@ -312,7 +321,8 @@ eth_sg_fd_to_mbuf(const struct qbman_fd *fd)
 }
 
 static inline struct rte_mbuf *__attribute__((hot))
-eth_fd_to_mbuf(const struct qbman_fd *fd)
+eth_fd_to_mbuf(const struct qbman_fd *fd,
+	       int port_id)
 {
 	struct rte_mbuf *mbuf = DPAA2_INLINE_MBUF_FROM_BUF(
 		DPAA2_IOVA_TO_VADDR(DPAA2_GET_FD_ADDR(fd)),
@@ -326,6 +336,7 @@ eth_fd_to_mbuf(const struct qbman_fd *fd)
 	mbuf->data_off = DPAA2_GET_FD_OFFSET(fd);
 	mbuf->data_len = DPAA2_GET_FD_LEN(fd);
 	mbuf->pkt_len = mbuf->data_len;
+	mbuf->port = port_id;
 	mbuf->next = NULL;
 	rte_mbuf_refcnt_set(mbuf, 1);
 
@@ -511,6 +522,9 @@ dpaa2_dev_prefetch_rx(void *queue, struct rte_mbuf **bufs, uint16_t nb_pkts)
 	struct qbman_pull_desc pulldesc;
 	struct queue_storage_info_t *q_storage = dpaa2_q->q_storage;
 	struct rte_eth_dev_data *eth_data = dpaa2_q->eth_data;
+#if defined(RTE_LIBRTE_IEEE1588)
+	struct dpaa2_dev_priv *priv = eth_data->dev_private;
+#endif
 
 	if (unlikely(!DPAA2_PER_LCORE_ETHRX_DPIO)) {
 		ret = dpaa2_affine_qbman_ethrx_swp();
@@ -611,10 +625,12 @@ dpaa2_dev_prefetch_rx(void *queue, struct rte_mbuf **bufs, uint16_t nb_pkts)
 		}
 
 		if (unlikely(DPAA2_FD_GET_FORMAT(fd) == qbman_fd_sg))
-			bufs[num_rx] = eth_sg_fd_to_mbuf(fd);
+			bufs[num_rx] = eth_sg_fd_to_mbuf(fd, eth_data->port_id);
 		else
-			bufs[num_rx] = eth_fd_to_mbuf(fd);
-		bufs[num_rx]->port = eth_data->port_id;
+			bufs[num_rx] = eth_fd_to_mbuf(fd, eth_data->port_id);
+#if defined(RTE_LIBRTE_IEEE1588)
+		priv->rx_timestamp = bufs[num_rx]->timestamp;
+#endif
 
 		if (eth_data->dev_conf.rxmode.offloads &
 				DEV_RX_OFFLOAD_VLAN_STRIP)
@@ -666,7 +682,7 @@ dpaa2_dev_process_parallel_event(struct qbman_swp *swp,
 	ev->queue_id = rxq->ev.queue_id;
 	ev->priority = rxq->ev.priority;
 
-	ev->mbuf = eth_fd_to_mbuf(fd);
+	ev->mbuf = eth_fd_to_mbuf(fd, rxq->eth_data->port_id);
 
 	qbman_swp_dqrr_consume(swp, dq);
 }
@@ -691,7 +707,7 @@ dpaa2_dev_process_atomic_event(struct qbman_swp *swp __attribute__((unused)),
 	ev->queue_id = rxq->ev.queue_id;
 	ev->priority = rxq->ev.priority;
 
-	ev->mbuf = eth_fd_to_mbuf(fd);
+	ev->mbuf = eth_fd_to_mbuf(fd, rxq->eth_data->port_id);
 
 	dqrr_index = qbman_get_dqrr_idx(dq);
 	ev->mbuf->seqn = dqrr_index + 1;
@@ -718,13 +734,256 @@ dpaa2_dev_process_ordered_event(struct qbman_swp *swp,
 	ev->queue_id = rxq->ev.queue_id;
 	ev->priority = rxq->ev.priority;
 
-	ev->mbuf = eth_fd_to_mbuf(fd);
+	ev->mbuf = eth_fd_to_mbuf(fd, rxq->eth_data->port_id);
 
 	ev->mbuf->seqn = DPAA2_ENQUEUE_FLAG_ORP;
 	ev->mbuf->seqn |= qbman_result_DQ_odpid(dq) << DPAA2_EQCR_OPRID_SHIFT;
 	ev->mbuf->seqn |= qbman_result_DQ_seqnum(dq) << DPAA2_EQCR_SEQNUM_SHIFT;
 
 	qbman_swp_dqrr_consume(swp, dq);
+}
+
+uint16_t
+dpaa2_dev_rx(void *queue, struct rte_mbuf **bufs, uint16_t nb_pkts)
+{
+	/* Function receive frames for a given device and VQ */
+	struct dpaa2_queue *dpaa2_q = (struct dpaa2_queue *)queue;
+	struct qbman_result *dq_storage;
+	uint32_t fqid = dpaa2_q->fqid;
+	int ret, num_rx = 0, next_pull = nb_pkts, num_pulled;
+	uint8_t pending, status;
+	struct qbman_swp *swp;
+	const struct qbman_fd *fd, *next_fd;
+	struct qbman_pull_desc pulldesc;
+	struct rte_eth_dev_data *eth_data = dpaa2_q->eth_data;
+
+	if (unlikely(!DPAA2_PER_LCORE_DPIO)) {
+		ret = dpaa2_affine_qbman_swp();
+		if (ret) {
+			DPAA2_PMD_ERR("Failure in affining portal\n");
+			return 0;
+		}
+	}
+	swp = DPAA2_PER_LCORE_PORTAL;
+
+	do {
+		dq_storage = dpaa2_q->q_storage->dq_storage[0];
+		qbman_pull_desc_clear(&pulldesc);
+		qbman_pull_desc_set_fq(&pulldesc, fqid);
+		qbman_pull_desc_set_storage(&pulldesc, dq_storage,
+				(size_t)(DPAA2_VADDR_TO_IOVA(dq_storage)), 1);
+
+		if (next_pull > dpaa2_dqrr_size) {
+			qbman_pull_desc_set_numframes(&pulldesc,
+				dpaa2_dqrr_size);
+			next_pull -= dpaa2_dqrr_size;
+		} else {
+			qbman_pull_desc_set_numframes(&pulldesc, next_pull);
+			next_pull = 0;
+		}
+
+		while (1) {
+			if (qbman_swp_pull(swp, &pulldesc)) {
+				DPAA2_PMD_DP_DEBUG(
+					"VDQ command is not issued.QBMAN is busy\n");
+				/* Portal was busy, try again */
+				continue;
+			}
+			break;
+		}
+
+		rte_prefetch0((void *)((size_t)(dq_storage + 1)));
+		/* Check if the previous issued command is completed. */
+		while (!qbman_check_command_complete(dq_storage))
+			;
+
+		num_pulled = 0;
+		pending = 1;
+		do {
+			/* Loop until the dq_storage is updated with
+			 * new token by QBMAN
+			 */
+			while (!qbman_check_new_result(dq_storage))
+				;
+			rte_prefetch0((void *)((size_t)(dq_storage + 2)));
+			/* Check whether Last Pull command is Expired and
+			 * setting Condition for Loop termination
+			 */
+			if (qbman_result_DQ_is_pull_complete(dq_storage)) {
+				pending = 0;
+				/* Check for valid frame. */
+				status = qbman_result_DQ_flags(dq_storage);
+				if (unlikely((status &
+					QBMAN_DQ_STAT_VALIDFRAME) == 0))
+					continue;
+			}
+			fd = qbman_result_DQ_fd(dq_storage);
+
+			next_fd = qbman_result_DQ_fd(dq_storage + 1);
+			/* Prefetch Annotation address for the parse results */
+			rte_prefetch0(
+				(void *)(size_t)(DPAA2_GET_FD_ADDR(next_fd)
+					+ DPAA2_FD_PTA_SIZE + 16));
+
+			if (unlikely(DPAA2_FD_GET_FORMAT(fd) == qbman_fd_sg))
+				bufs[num_rx] = eth_sg_fd_to_mbuf(fd,
+							eth_data->port_id);
+			else
+				bufs[num_rx] = eth_fd_to_mbuf(fd,
+							eth_data->port_id);
+
+		if (eth_data->dev_conf.rxmode.offloads &
+				DEV_RX_OFFLOAD_VLAN_STRIP) {
+			rte_vlan_strip(bufs[num_rx]);
+		}
+
+			dq_storage++;
+			num_rx++;
+			num_pulled++;
+		} while (pending);
+	/* Last VDQ provided all packets and more packets are requested */
+	} while (next_pull && num_pulled == dpaa2_dqrr_size);
+
+	dpaa2_q->rx_pkts += num_rx;
+
+	return num_rx;
+}
+
+uint16_t dpaa2_dev_tx_conf(void *queue)
+{
+	/* Function receive frames for a given device and VQ */
+	struct dpaa2_queue *dpaa2_q = (struct dpaa2_queue *)queue;
+	struct qbman_result *dq_storage;
+	uint32_t fqid = dpaa2_q->fqid;
+	int ret, num_tx_conf = 0, num_pulled;
+	uint8_t pending, status;
+	struct qbman_swp *swp;
+	const struct qbman_fd *fd, *next_fd;
+	struct qbman_pull_desc pulldesc;
+	struct qbman_release_desc releasedesc;
+	uint32_t bpid;
+	uint64_t buf;
+#if defined(RTE_LIBRTE_IEEE1588)
+	struct rte_eth_dev_data *eth_data = dpaa2_q->eth_data;
+	struct dpaa2_dev_priv *priv = eth_data->dev_private;
+	struct dpaa2_annot_hdr *annotation;
+#endif
+
+	if (unlikely(!DPAA2_PER_LCORE_DPIO)) {
+		ret = dpaa2_affine_qbman_swp();
+		if (ret) {
+			DPAA2_PMD_ERR("Failure in affining portal\n");
+			return 0;
+		}
+	}
+	swp = DPAA2_PER_LCORE_PORTAL;
+
+	do {
+		dq_storage = dpaa2_q->q_storage->dq_storage[0];
+		qbman_pull_desc_clear(&pulldesc);
+		qbman_pull_desc_set_fq(&pulldesc, fqid);
+		qbman_pull_desc_set_storage(&pulldesc, dq_storage,
+				(size_t)(DPAA2_VADDR_TO_IOVA(dq_storage)), 1);
+
+		qbman_pull_desc_set_numframes(&pulldesc, dpaa2_dqrr_size);
+
+		while (1) {
+			if (qbman_swp_pull(swp, &pulldesc)) {
+				DPAA2_PMD_DP_DEBUG("VDQ command is not issued."
+						   "QBMAN is busy\n");
+				/* Portal was busy, try again */
+				continue;
+			}
+			break;
+		}
+
+		rte_prefetch0((void *)((size_t)(dq_storage + 1)));
+		/* Check if the previous issued command is completed. */
+		while (!qbman_check_command_complete(dq_storage))
+			;
+
+		num_pulled = 0;
+		pending = 1;
+		do {
+			/* Loop until the dq_storage is updated with
+			 * new token by QBMAN
+			 */
+			while (!qbman_check_new_result(dq_storage))
+				;
+			rte_prefetch0((void *)((size_t)(dq_storage + 2)));
+			/* Check whether Last Pull command is Expired and
+			 * setting Condition for Loop termination
+			 */
+			if (qbman_result_DQ_is_pull_complete(dq_storage)) {
+				pending = 0;
+				/* Check for valid frame. */
+				status = qbman_result_DQ_flags(dq_storage);
+				if (unlikely((status &
+					QBMAN_DQ_STAT_VALIDFRAME) == 0))
+					continue;
+			}
+			fd = qbman_result_DQ_fd(dq_storage);
+
+			next_fd = qbman_result_DQ_fd(dq_storage + 1);
+			/* Prefetch Annotation address for the parse results */
+			rte_prefetch0((void *)(size_t)
+				(DPAA2_GET_FD_ADDR(next_fd) +
+				 DPAA2_FD_PTA_SIZE + 16));
+
+			bpid = DPAA2_GET_FD_BPID(fd);
+
+			/* Create a release descriptor required for releasing
+			 * buffers into QBMAN
+			 */
+			qbman_release_desc_clear(&releasedesc);
+			qbman_release_desc_set_bpid(&releasedesc, bpid);
+
+			buf = DPAA2_GET_FD_ADDR(fd);
+			/* feed them to bman */
+			do {
+				ret = qbman_swp_release(swp, &releasedesc,
+							&buf, 1);
+			} while (ret == -EBUSY);
+
+			dq_storage++;
+			num_tx_conf++;
+			num_pulled++;
+#if defined(RTE_LIBRTE_IEEE1588)
+			annotation = (struct dpaa2_annot_hdr *)((size_t)
+				DPAA2_IOVA_TO_VADDR(DPAA2_GET_FD_ADDR(fd)) +
+				DPAA2_FD_PTA_SIZE);
+			priv->tx_timestamp = annotation->word2;
+#endif
+		} while (pending);
+
+	/* Last VDQ provided all packets and more packets are requested */
+	} while (num_pulled == dpaa2_dqrr_size);
+
+	dpaa2_q->rx_pkts += num_tx_conf;
+
+	return num_tx_conf;
+}
+
+/* Configure the egress frame annotation for timestamp update */
+static void enable_tx_tstamp(struct qbman_fd *fd)
+{
+	struct dpaa2_faead *fd_faead;
+
+	/* Set frame annotation status field as valid */
+	(fd)->simple.frc |= DPAA2_FD_FRC_FASV;
+
+	/* Set frame annotation egress action descriptor as valid */
+	(fd)->simple.frc |= DPAA2_FD_FRC_FAEADV;
+
+	/* Set Annotation Length as 128B */
+	(fd)->simple.ctrl |= DPAA2_FD_CTRL_ASAL;
+
+	/* enable update of confirmation frame annotation */
+	fd_faead = (struct dpaa2_faead *)((size_t)
+			DPAA2_IOVA_TO_VADDR(DPAA2_GET_FD_ADDR(fd)) +
+			DPAA2_FD_PTA_SIZE + DPAA2_FD_HW_ANNOT_FAEAD_OFFSET);
+	fd_faead->ctrl = DPAA2_ANNOT_FAEAD_A2V | DPAA2_ANNOT_FAEAD_UPDV |
+				DPAA2_ANNOT_FAEAD_UPD;
 }
 
 /*
@@ -761,11 +1020,20 @@ dpaa2_dev_tx(void *queue, struct rte_mbuf **bufs, uint16_t nb_pkts)
 	DPAA2_PMD_DP_DEBUG("===> eth_data =%p, fqid =%d\n",
 			eth_data, dpaa2_q->fqid);
 
+#ifdef RTE_LIBRTE_IEEE1588
+	/* IEEE1588 driver need pointer to tx confirmation queue
+	 * corresponding to last packet transmitted for reading
+	 * the timestamp
+	 */
+	priv->next_tx_conf_queue = dpaa2_q->tx_conf_queue;
+	dpaa2_dev_tx_conf(dpaa2_q->tx_conf_queue);
+#endif
+
 	/*Prepare enqueue descriptor*/
 	qbman_eq_desc_clear(&eqdesc);
 	qbman_eq_desc_set_no_orp(&eqdesc, DPAA2_EQ_RESP_ERR_FQ);
-	qbman_eq_desc_set_qd(&eqdesc, priv->qdid,
-			     dpaa2_q->flow_id, dpaa2_q->tc_index);
+	qbman_eq_desc_set_fq(&eqdesc, dpaa2_q->fqid);
+
 	/*Clear the unused FD fields before sending*/
 	while (nb_pkts) {
 		/*Check if the queue is congested*/
@@ -811,6 +1079,9 @@ dpaa2_dev_tx(void *queue, struct rte_mbuf **bufs, uint16_t nb_pkts)
 					DPAA2_MBUF_TO_CONTIG_FD((*bufs),
 					&fd_arr[loop], mempool_to_bpid(mp));
 					bufs++;
+#ifdef RTE_LIBRTE_IEEE1588
+					enable_tx_tstamp(&fd_arr[loop]);
+#endif
 					continue;
 				}
 			} else {
@@ -859,17 +1130,33 @@ dpaa2_dev_tx(void *queue, struct rte_mbuf **bufs, uint16_t nb_pkts)
 						       &fd_arr[loop], bpid);
 				}
 			}
+#ifdef RTE_LIBRTE_IEEE1588
+			enable_tx_tstamp(&fd_arr[loop]);
+#endif
 			bufs++;
 		}
+
 		loop = 0;
+		retry_count = 0;
 		while (loop < frames_to_send) {
-			loop += qbman_swp_enqueue_multiple(swp, &eqdesc,
+			ret = qbman_swp_enqueue_multiple(swp, &eqdesc,
 					&fd_arr[loop], &flags[loop],
 					frames_to_send - loop);
+			if (unlikely(ret < 0)) {
+				retry_count++;
+				if (retry_count > DPAA2_MAX_TX_RETRY_COUNT) {
+					num_tx += loop;
+					nb_pkts -= loop;
+					goto send_n_return;
+				}
+			} else {
+				loop += ret;
+				retry_count = 0;
+			}
 		}
 
-		num_tx += frames_to_send;
-		nb_pkts -= frames_to_send;
+		num_tx += loop;
+		nb_pkts -= loop;
 	}
 	dpaa2_q->tx_pkts += num_tx;
 	return num_tx;
@@ -879,13 +1166,22 @@ send_n_return:
 	if (loop) {
 		unsigned int i = 0;
 
+		retry_count = 0;
 		while (i < loop) {
-			i += qbman_swp_enqueue_multiple(swp, &eqdesc,
-							&fd_arr[i],
-							&flags[loop],
-							loop - i);
+			ret = qbman_swp_enqueue_multiple(swp, &eqdesc,
+							 &fd_arr[i],
+							 &flags[i],
+							 loop - i);
+			if (unlikely(ret < 0)) {
+				retry_count++;
+				if (retry_count > DPAA2_MAX_TX_RETRY_COUNT)
+					break;
+			} else {
+				i += ret;
+				retry_count = 0;
+			}
 		}
-		num_tx += loop;
+		num_tx += i;
 	}
 skip_tx:
 	dpaa2_q->tx_pkts += num_tx;
@@ -900,7 +1196,9 @@ dpaa2_dev_free_eqresp_buf(uint16_t eqresp_ci)
 	struct rte_mbuf *m;
 
 	fd = qbman_result_eqresp_fd(&dpio_dev->eqresp[eqresp_ci]);
-	m = eth_fd_to_mbuf(fd);
+
+	/* Setting port id does not matter as we are to free the mbuf */
+	m = eth_fd_to_mbuf(fd, 0);
 	rte_pktmbuf_free(m);
 }
 
@@ -916,8 +1214,7 @@ dpaa2_set_enqueue_descriptor(struct dpaa2_queue *dpaa2_q,
 	uint16_t orpid, seqnum;
 	uint8_t dq_idx;
 
-	qbman_eq_desc_set_qd(eqdesc, priv->qdid, dpaa2_q->flow_id,
-			     dpaa2_q->tc_index);
+	qbman_eq_desc_set_fq(eqdesc, dpaa2_q->fqid);
 
 	if (m->seqn & DPAA2_ENQUEUE_FLAG_ORP) {
 		orpid = (m->seqn & DPAA2_EQCR_OPRID_MASK) >>
@@ -1023,9 +1320,8 @@ dpaa2_dev_tx_ordered(void *queue, struct rte_mbuf **bufs, uint16_t nb_pkts)
 			} else {
 				qbman_eq_desc_set_no_orp(&eqdesc[loop],
 							 DPAA2_EQ_RESP_ERR_FQ);
-				qbman_eq_desc_set_qd(&eqdesc[loop], priv->qdid,
-						     dpaa2_q->flow_id,
-						     dpaa2_q->tc_index);
+				qbman_eq_desc_set_fq(&eqdesc[loop],
+						     dpaa2_q->fqid);
 			}
 
 			if (likely(RTE_MBUF_DIRECT(*bufs))) {
@@ -1091,15 +1387,28 @@ dpaa2_dev_tx_ordered(void *queue, struct rte_mbuf **bufs, uint16_t nb_pkts)
 			}
 			bufs++;
 		}
+
 		loop = 0;
+		retry_count = 0;
 		while (loop < frames_to_send) {
-			loop += qbman_swp_enqueue_multiple_desc(swp,
+			ret = qbman_swp_enqueue_multiple_desc(swp,
 					&eqdesc[loop], &fd_arr[loop],
 					frames_to_send - loop);
+			if (unlikely(ret < 0)) {
+				retry_count++;
+				if (retry_count > DPAA2_MAX_TX_RETRY_COUNT) {
+					num_tx += loop;
+					nb_pkts -= loop;
+					goto send_n_return;
+				}
+			} else {
+				loop += ret;
+				retry_count = 0;
+			}
 		}
 
-		num_tx += frames_to_send;
-		nb_pkts -= frames_to_send;
+		num_tx += loop;
+		nb_pkts -= loop;
 	}
 	dpaa2_q->tx_pkts += num_tx;
 	return num_tx;
@@ -1109,11 +1418,20 @@ send_n_return:
 	if (loop) {
 		unsigned int i = 0;
 
+		retry_count = 0;
 		while (i < loop) {
-			i += qbman_swp_enqueue_multiple_desc(swp, &eqdesc[loop],
-							&fd_arr[i], loop - i);
+			ret = qbman_swp_enqueue_multiple_desc(swp,
+				       &eqdesc[loop], &fd_arr[i], loop - i);
+			if (unlikely(ret < 0)) {
+				retry_count++;
+				if (retry_count > DPAA2_MAX_TX_RETRY_COUNT)
+					break;
+			} else {
+				i += ret;
+				retry_count = 0;
+			}
 		}
-		num_tx += loop;
+		num_tx += i;
 	}
 skip_tx:
 	dpaa2_q->tx_pkts += num_tx;

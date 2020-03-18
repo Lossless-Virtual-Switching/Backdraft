@@ -386,6 +386,12 @@ otx_cpt_hw_init(struct cpt_vf *cptvf, void *pdev, void *reg_base, char *name)
 		return -1;
 	}
 
+	/* Gets device type */
+	if (otx_cpt_get_dev_type(cptvf)) {
+		CPT_LOG_ERR("Failed to get device type");
+		return -1;
+	}
+
 	return 0;
 }
 
@@ -406,24 +412,41 @@ otx_cpt_metabuf_mempool_create(const struct rte_cryptodev *dev,
 			       int nb_elements)
 {
 	char mempool_name[RTE_MEMPOOL_NAMESIZE];
-	int sg_mlen, lb_mlen, max_mlen, ret;
 	struct cpt_qp_meta_info *meta_info;
 	struct rte_mempool *pool;
+	int max_mlen = 0;
+	int sg_mlen = 0;
+	int lb_mlen = 0;
+	int ret;
 
-	/* Get meta len for scatter gather mode */
-	sg_mlen = cpt_pmd_ops_helper_get_mlen_sg_mode();
+	/*
+	 * Calculate metabuf length required. The 'crypto_octeontx' device
+	 * would be either SYMMETRIC or ASYMMETRIC.
+	 */
 
-	/* Extra 32B saved for future considerations */
-	sg_mlen += 4 * sizeof(uint64_t);
+	if (dev->feature_flags & RTE_CRYPTODEV_FF_SYMMETRIC_CRYPTO) {
 
-	/* Get meta len for linear buffer (direct) mode */
-	lb_mlen = cpt_pmd_ops_helper_get_mlen_direct_mode();
+		/* Get meta len for scatter gather mode */
+		sg_mlen = cpt_pmd_ops_helper_get_mlen_sg_mode();
 
-	/* Extra 32B saved for future considerations */
-	lb_mlen += 4 * sizeof(uint64_t);
+		/* Extra 32B saved for future considerations */
+		sg_mlen += 4 * sizeof(uint64_t);
 
-	/* Check max requirement for meta buffer */
-	max_mlen = RTE_MAX(lb_mlen, sg_mlen);
+		/* Get meta len for linear buffer (direct) mode */
+		lb_mlen = cpt_pmd_ops_helper_get_mlen_direct_mode();
+
+		/* Extra 32B saved for future considerations */
+		lb_mlen += 4 * sizeof(uint64_t);
+
+		/* Check max requirement for meta buffer */
+		max_mlen = RTE_MAX(lb_mlen, sg_mlen);
+	} else {
+
+		/* Asymmetric device */
+
+		/* Get meta len for asymmetric operations */
+		max_mlen = cpt_pmd_ops_helper_asym_get_mlen();
+	}
 
 	/* Allocate mempool */
 
@@ -651,12 +674,6 @@ otx_cpt_start_device(void *dev)
 		CPT_LOG_ERR("Failed to mark CPT VF device %s UP, rc = %d",
 			    cptvf->dev_name, rc);
 		return -EFAULT;
-	}
-
-	if ((cptvf->vftype != SE_TYPE) && (cptvf->vftype != AE_TYPE)) {
-		CPT_LOG_ERR("Fatal error, unexpected vf type %u, for CPT VF "
-			    "device %s", cptvf->vftype, cptvf->dev_name);
-		return -ENOENT;
 	}
 
 	return 0;

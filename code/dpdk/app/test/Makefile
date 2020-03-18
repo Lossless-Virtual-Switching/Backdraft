@@ -122,7 +122,14 @@ SRCS-$(CONFIG_RTE_LIBRTE_HASH) += test_hash_perf.c
 SRCS-$(CONFIG_RTE_LIBRTE_HASH) += test_hash_functions.c
 SRCS-$(CONFIG_RTE_LIBRTE_HASH) += test_hash_multiwriter.c
 SRCS-$(CONFIG_RTE_LIBRTE_HASH) += test_hash_readwrite.c
-SRCS-$(CONFIG_RTE_LIBRTE_HASH) += test_hash_readwrite_lf.c
+SRCS-$(CONFIG_RTE_LIBRTE_HASH) += test_hash_readwrite_lf_perf.c
+
+SRCS-$(CONFIG_RTE_LIBRTE_RIB) += test_rib.c
+SRCS-$(CONFIG_RTE_LIBRTE_RIB) += test_rib6.c
+SRCS-$(CONFIG_RTE_LIBRTE_FIB) += test_fib.c
+SRCS-$(CONFIG_RTE_LIBRTE_FIB) += test_fib6.c
+SRCS-$(CONFIG_RTE_LIBRTE_FIB) += test_fib_perf.c
+SRCS-$(CONFIG_RTE_LIBRTE_FIB) += test_fib6_perf.c
 
 SRCS-$(CONFIG_RTE_LIBRTE_LPM) += test_lpm.c
 SRCS-$(CONFIG_RTE_LIBRTE_LPM) += test_lpm_perf.c
@@ -144,8 +151,12 @@ SRCS-y += test_func_reentrancy.c
 
 SRCS-y += test_service_cores.c
 
+ifeq ($(CONFIG_RTE_LIBRTE_PMD_RING),y)
+SRCS-y += sample_packet_forward.c
 SRCS-$(CONFIG_RTE_LIBRTE_BITRATE) += test_bitratestats.c
 SRCS-$(CONFIG_RTE_LIBRTE_LATENCY_STATS) += test_latencystats.c
+SRCS-$(CONFIG_RTE_LIBRTE_PDUMP) += test_pdump.c
+endif
 
 SRCS-$(CONFIG_RTE_LIBRTE_CMDLINE) += test_cmdline.c
 SRCS-$(CONFIG_RTE_LIBRTE_CMDLINE) += test_cmdline_num.c
@@ -174,11 +185,8 @@ SRCS-$(CONFIG_RTE_LIBRTE_DISTRIBUTOR) += test_distributor_perf.c
 
 SRCS-$(CONFIG_RTE_LIBRTE_REORDER) += test_reorder.c
 
-SRCS-$(CONFIG_RTE_LIBRTE_PDUMP) += test_pdump.c
-
 SRCS-y += virtual_pmd.c
 SRCS-y += packet_burst_generator.c
-SRCS-y += sample_packet_forward.c
 SRCS-$(CONFIG_RTE_LIBRTE_ACL) += test_acl.c
 
 ifeq ($(CONFIG_RTE_LIBRTE_PMD_RING),y)
@@ -196,6 +204,7 @@ SRCS-$(CONFIG_RTE_LIBRTE_PMD_RING) += test_pmd_ring_perf.c
 SRCS-$(CONFIG_RTE_LIBRTE_CRYPTODEV) += test_cryptodev_blockcipher.c
 SRCS-$(CONFIG_RTE_LIBRTE_CRYPTODEV) += test_cryptodev.c
 SRCS-$(CONFIG_RTE_LIBRTE_CRYPTODEV) += test_cryptodev_asym.c
+SRCS-$(CONFIG_RTE_LIBRTE_SECURITY) += test_cryptodev_security_pdcp.c
 
 SRCS-$(CONFIG_RTE_LIBRTE_METRICS) += test_metrics.c
 
@@ -207,7 +216,7 @@ ifeq ($(CONFIG_RTE_LIBRTE_EVENTDEV),y)
 SRCS-y += test_eventdev.c
 SRCS-y += test_event_ring.c
 SRCS-y += test_event_eth_rx_adapter.c
-SRCS-y += test_event_eth_tx_adapter.c
+SRCS-$(CONFIG_RTE_LIBRTE_PMD_RING) += test_event_eth_tx_adapter.c
 SRCS-y += test_event_timer_adapter.c
 SRCS-y += test_event_crypto_adapter.c
 endif
@@ -223,6 +232,7 @@ SRCS-$(CONFIG_RTE_LIBRTE_BPF) += test_bpf.c
 SRCS-$(CONFIG_RTE_LIBRTE_RCU) += test_rcu_qsbr.c test_rcu_qsbr_perf.c
 
 SRCS-$(CONFIG_RTE_LIBRTE_IPSEC) += test_ipsec.c
+SRCS-$(CONFIG_RTE_LIBRTE_IPSEC) += test_ipsec_sad.c
 ifeq ($(CONFIG_RTE_LIBRTE_IPSEC),y)
 LDLIBS += -lrte_ipsec
 endif
@@ -249,20 +259,6 @@ ifeq ($(CONFIG_RTE_TOOLCHAIN_GCC),y)
 ifeq ($(shell test $(GCC_VERSION) -ge 44 && echo 1), 1)
 CFLAGS_test_memcpy.o += -fno-var-tracking-assignments
 CFLAGS_test_memcpy_perf.o += -fno-var-tracking-assignments
-# for older GCC versions, allow us to initialize an event using
-# designated initializers.
-ifeq ($(shell test $(GCC_VERSION) -le 50 && echo 1), 1)
-CFLAGS_test_eventdev_sw.o += -Wno-missing-field-initializers
-CFLAGS_test_event_timer_adapter.o += -Wno-missing-field-initializers
-CFLAGS_test_event_crypto_adapter.o += -Wno-missing-field-initializers
-endif
-endif
-endif
-
-# Link against shared libraries when needed
-ifeq ($(CONFIG_RTE_LIBRTE_PMD_BOND),y)
-ifneq ($(CONFIG_RTE_LIBRTE_PMD_RING),y)
-$(error Link bonding tests require CONFIG_RTE_LIBRTE_PMD_RING=y)
 endif
 endif
 

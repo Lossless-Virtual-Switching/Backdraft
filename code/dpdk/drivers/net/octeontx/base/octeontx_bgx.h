@@ -27,6 +27,10 @@
 #define MBOX_BGX_PORT_SET_BP            11
 #define MBOX_BGX_PORT_SET_BCAST         12
 #define MBOX_BGX_PORT_SET_MCAST         13
+#define MBOX_BGX_PORT_SET_MTU		14
+#define MBOX_BGX_PORT_ADD_MACADDR	15
+#define MBOX_BGX_PORT_DEL_MACADDR	16
+#define MBOX_BGX_PORT_GET_MACADDR_ENTRIES 17
 
 /* BGX port configuration parameters: */
 typedef struct octeontx_mbox_bgx_port_conf {
@@ -51,6 +55,8 @@ typedef struct octeontx_mbox_bgx_port_conf {
 typedef struct octeontx_mbox_bgx_port_status {
 	uint8_t link_up;
 	uint8_t bp;
+	uint8_t duplex;
+	uint32_t speed;
 } octeontx_mbox_bgx_port_status_t;
 
 /* BGX port statistics: */
@@ -106,6 +112,11 @@ typedef struct octeontx_mbox_bgx_port_stats {
 	uint64_t rx_jabber_errors;
 } octeontx_mbox_bgx_port_stats_t;
 
+struct octeontx_mbox_bgx_port_mac_filter {
+	uint8_t mac_addr[6];
+	int index;
+};
+
 int octeontx_bgx_port_open(int port, octeontx_mbox_bgx_port_conf_t *conf);
 int octeontx_bgx_port_close(int port);
 int octeontx_bgx_port_start(int port);
@@ -117,6 +128,9 @@ int octeontx_bgx_port_stats_clr(int port);
 int octeontx_bgx_port_link_status(int port);
 int octeontx_bgx_port_promisc_set(int port, int en);
 int octeontx_bgx_port_mac_set(int port, uint8_t *mac_addr);
+int octeontx_bgx_port_mac_add(int port, uint8_t *mac_addr, int index);
+int octeontx_bgx_port_mac_del(int port, uint32_t index);
+int octeontx_bgx_port_mac_entries_get(int port);
 
 #endif	/* __OCTEONTX_BGX_H__ */
 

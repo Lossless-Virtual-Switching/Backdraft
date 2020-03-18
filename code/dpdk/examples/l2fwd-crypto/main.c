@@ -1731,6 +1731,7 @@ check_all_ports_link_status(uint32_t port_mask)
 	uint16_t portid;
 	uint8_t count, all_ports_up, print_flag = 0;
 	struct rte_eth_link link;
+	int ret;
 
 	printf("\nChecking link status");
 	fflush(stdout);
@@ -1740,7 +1741,14 @@ check_all_ports_link_status(uint32_t port_mask)
 			if ((port_mask & (1 << portid)) == 0)
 				continue;
 			memset(&link, 0, sizeof(link));
-			rte_eth_link_get_nowait(portid, &link);
+			ret = rte_eth_link_get_nowait(portid, &link);
+			if (ret < 0) {
+				all_ports_up = 0;
+				if (print_flag == 1)
+					printf("Port %u link get failed: %s\n",
+						portid, rte_strerror(-ret));
+				continue;
+			}
 			/* print link status if flag set */
 			if (print_flag == 1) {
 				if (link.link_status)
@@ -2513,7 +2521,14 @@ initialize_ports(struct l2fwd_crypto_options *options)
 		/* init port */
 		printf("Initializing port %u... ", portid);
 		fflush(stdout);
-		rte_eth_dev_info_get(portid, &dev_info);
+
+		retval = rte_eth_dev_info_get(portid, &dev_info);
+		if (retval != 0) {
+			printf("Error during getting device (port %u) info: %s\n",
+					portid, strerror(-retval));
+			return retval;
+		}
+
 		if (dev_info.tx_offload_capa & DEV_TX_OFFLOAD_MBUF_FAST_FREE)
 			local_port_conf.txmode.offloads |=
 				DEV_TX_OFFLOAD_MBUF_FAST_FREE;
@@ -2567,9 +2582,20 @@ initialize_ports(struct l2fwd_crypto_options *options)
 			return -1;
 		}
 
-		rte_eth_promiscuous_enable(portid);
+		retval = rte_eth_promiscuous_enable(portid);
+		if (retval != 0) {
+			printf("rte_eth_promiscuous_enable:err=%s, port=%u\n",
+				rte_strerror(-retval), portid);
+			return -1;
+		}
 
-		rte_eth_macaddr_get(portid, &l2fwd_ports_eth_addr[portid]);
+		retval = rte_eth_macaddr_get(portid,
+					     &l2fwd_ports_eth_addr[portid]);
+		if (retval < 0) {
+			printf("rte_eth_macaddr_get :err=%d, port=%u\n",
+					retval, portid);
+			return -1;
+		}
 
 		printf("Port %u, MAC address: %02X:%02X:%02X:%02X:%02X:%02X\n\n",
 				portid,

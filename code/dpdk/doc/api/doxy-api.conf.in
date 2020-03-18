@@ -12,6 +12,7 @@ INPUT                   = @TOPDIR@/doc/api/doxy-api-index.md \
                           @TOPDIR@/drivers/net/dpaa \
                           @TOPDIR@/drivers/net/dpaa2 \
                           @TOPDIR@/drivers/net/i40e \
+                          @TOPDIR@/drivers/net/ice \
                           @TOPDIR@/drivers/net/ixgbe \
                           @TOPDIR@/drivers/net/softnic \
                           @TOPDIR@/drivers/raw/dpaa2_cmdif \
@@ -30,11 +31,13 @@ INPUT                   = @TOPDIR@/doc/api/doxy-api-index.md \
                           @TOPDIR@/lib/librte_efd \
                           @TOPDIR@/lib/librte_ethdev \
                           @TOPDIR@/lib/librte_eventdev \
+                          @TOPDIR@/lib/librte_fib \
                           @TOPDIR@/lib/librte_flow_classify \
                           @TOPDIR@/lib/librte_gro \
                           @TOPDIR@/lib/librte_gso \
                           @TOPDIR@/lib/librte_hash \
                           @TOPDIR@/lib/librte_ip_frag \
+                          @TOPDIR@/lib/librte_ipsec \
                           @TOPDIR@/lib/librte_jobstats \
                           @TOPDIR@/lib/librte_kni \
                           @TOPDIR@/lib/librte_kvargs \
@@ -54,6 +57,7 @@ INPUT                   = @TOPDIR@/doc/api/doxy-api-index.md \
                           @TOPDIR@/lib/librte_rawdev \
                           @TOPDIR@/lib/librte_rcu \
                           @TOPDIR@/lib/librte_reorder \
+                          @TOPDIR@/lib/librte_rib \
                           @TOPDIR@/lib/librte_ring \
                           @TOPDIR@/lib/librte_sched \
                           @TOPDIR@/lib/librte_security \
@@ -98,3 +102,5 @@ GENERATE_HTML           = YES
 HTML_OUTPUT             = @HTML_OUTPUT@
 GENERATE_LATEX          = NO
 GENERATE_MAN            = NO
+
+HAVE_DOT                = NO

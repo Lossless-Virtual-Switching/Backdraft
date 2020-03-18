@@ -29,6 +29,7 @@ enum {
 
 #define NPC_IH_LENGTH			8
 #define NPC_TPID_LENGTH			2
+#define NPC_HIGIG2_LENGTH		16
 #define NPC_COUNTER_NONE		(-1)
 /* 32 bytes from LDATA_CFG & 32 bytes from FLAGS_CFG */
 #define NPC_MAX_EXTRACT_DATA_LEN	(64)
@@ -190,6 +191,7 @@ struct otx2_npc_flow_info {
 	uint16_t channel; /*rx channel */
 	uint16_t flow_prealloc_size;
 	uint16_t flow_max_priority;
+	uint16_t switch_header_type;
 };
 
 struct otx2_parse_state {
@@ -380,6 +382,8 @@ int otx2_flow_parse_lc(struct otx2_parse_state *pst);
 int otx2_flow_parse_lb(struct otx2_parse_state *pst);
 
 int otx2_flow_parse_la(struct otx2_parse_state *pst);
+
+int otx2_flow_parse_higig2_hdr(struct otx2_parse_state *pst);
 
 int otx2_flow_parse_actions(struct rte_eth_dev *dev,
 			    const struct rte_flow_attr *attr,

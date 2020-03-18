@@ -156,6 +156,8 @@ eth_kni_dev_start(struct rte_eth_dev *dev)
 	}
 
 	if (internals->no_request_thread == 0) {
+		internals->stop_thread = 0;
+
 		ret = rte_ctrl_thread_create(&internals->thread,
 			"kni_handle_req", NULL,
 			kni_handle_request, internals);
@@ -177,7 +179,7 @@ eth_kni_dev_stop(struct rte_eth_dev *dev)
 	struct pmd_internals *internals = dev->data->dev_private;
 	int ret;
 
-	if (internals->no_request_thread == 0) {
+	if (internals->no_request_thread == 0 && internals->stop_thread == 0) {
 		internals->stop_thread = 1;
 
 		ret = pthread_cancel(internals->thread);
@@ -187,11 +189,27 @@ eth_kni_dev_stop(struct rte_eth_dev *dev)
 		ret = pthread_join(internals->thread, NULL);
 		if (ret)
 			PMD_LOG(ERR, "Can't join the thread");
-
-		internals->stop_thread = 0;
 	}
 
 	dev->data->dev_link.link_status = 0;
+}
+
+static void
+eth_kni_close(struct rte_eth_dev *eth_dev)
+{
+	struct pmd_internals *internals;
+	int ret;
+
+	eth_kni_dev_stop(eth_dev);
+
+	/* mac_addrs must not be freed alone because part of dev_private */
+	eth_dev->data->mac_addrs = NULL;
+
+	internals = eth_dev->data->dev_private;
+	ret = rte_kni_release(internals->kni);
+	if (ret)
+		PMD_LOG(WARNING, "Not able to release kni for %s",
+			eth_dev->data->name);
 }
 
 static int
@@ -200,7 +218,7 @@ eth_kni_dev_configure(struct rte_eth_dev *dev __rte_unused)
 	return 0;
 }
 
-static void
+static int
 eth_kni_dev_info(struct rte_eth_dev *dev __rte_unused,
 		struct rte_eth_dev_info *dev_info)
 {
@@ -209,6 +227,8 @@ eth_kni_dev_info(struct rte_eth_dev *dev __rte_unused,
 	dev_info->max_rx_queues = KNI_MAX_QUEUE_PER_PORT;
 	dev_info->max_tx_queues = KNI_MAX_QUEUE_PER_PORT;
 	dev_info->min_rx_bufsize = 0;
+
+	return 0;
 }
 
 static int
@@ -298,7 +318,7 @@ eth_kni_stats_get(struct rte_eth_dev *dev, struct rte_eth_stats *stats)
 	return 0;
 }
 
-static void
+static int
 eth_kni_stats_reset(struct rte_eth_dev *dev)
 {
 	struct rte_eth_dev_data *data = dev->data;
@@ -315,11 +335,14 @@ eth_kni_stats_reset(struct rte_eth_dev *dev)
 		q->tx.pkts = 0;
 		q->tx.bytes = 0;
 	}
+
+	return 0;
 }
 
 static const struct eth_dev_ops eth_kni_ops = {
 	.dev_start = eth_kni_dev_start,
 	.dev_stop = eth_kni_dev_stop,
+	.dev_close = eth_kni_close,
 	.dev_configure = eth_kni_dev_configure,
 	.dev_infos_get = eth_kni_dev_info,
 	.rx_queue_setup = eth_kni_rx_queue_setup,
@@ -354,6 +377,10 @@ eth_kni_create(struct rte_vdev_device *vdev,
 	data->nb_tx_queues = 1;
 	data->dev_link = pmd_link;
 	data->mac_addrs = &internals->eth_addr;
+	data->promiscuous = 1;
+	data->all_multicast = 1;
+
+	data->dev_flags |= RTE_ETH_DEV_CLOSE_REMOVE;
 
 	rte_eth_random_addr(internals->eth_addr.addr_bytes);
 
@@ -449,9 +476,7 @@ static int
 eth_kni_remove(struct rte_vdev_device *vdev)
 {
 	struct rte_eth_dev *eth_dev;
-	struct pmd_internals *internals;
 	const char *name;
-	int ret;
 
 	name = rte_vdev_device_name(vdev);
 	PMD_LOG(INFO, "Un-Initializing eth_kni for %s", name);
@@ -461,19 +486,12 @@ eth_kni_remove(struct rte_vdev_device *vdev)
 	if (eth_dev == NULL)
 		return -1;
 
-	/* mac_addrs must not be freed alone because part of dev_private */
-	eth_dev->data->mac_addrs = NULL;
-
-	if (rte_eal_process_type() != RTE_PROC_PRIMARY)
+	if (rte_eal_process_type() != RTE_PROC_PRIMARY) {
+		eth_kni_dev_stop(eth_dev);
 		return rte_eth_dev_release_port(eth_dev);
+	}
 
-	eth_kni_dev_stop(eth_dev);
-
-	internals = eth_dev->data->dev_private;
-	ret = rte_kni_release(internals->kni);
-	if (ret)
-		PMD_LOG(WARNING, "Not able to release kni for %s", name);
-
+	eth_kni_close(eth_dev);
 	rte_eth_dev_release_port(eth_dev);
 
 	is_kni_initialized--;

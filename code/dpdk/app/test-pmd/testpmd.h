@@ -58,8 +58,6 @@ typedef uint16_t portid_t;
 typedef uint16_t queueid_t;
 typedef uint16_t streamid_t;
 
-#define MAX_QUEUE_ID ((1 << (sizeof(queueid_t) * 8)) - 1)
-
 #if defined RTE_LIBRTE_PMD_SOFTNIC
 #define SOFTNIC			1
 #else
@@ -78,8 +76,10 @@ enum {
 	/**< allocate mempool natively, but populate using anonymous memory */
 	MP_ALLOC_XMEM,
 	/**< allocate and populate mempool using anonymous memory */
-	MP_ALLOC_XMEM_HUGE
+	MP_ALLOC_XMEM_HUGE,
 	/**< allocate and populate mempool using anonymous hugepage memory */
+	MP_ALLOC_XBUF
+	/**< allocate mempool natively, use rte_pktmbuf_pool_create_extbuf */
 };
 
 #ifdef RTE_TEST_PMD_RECORD_BURST_STATS
@@ -104,6 +104,13 @@ struct rss_type_info {
  * An entry with a NULL type name terminates the list.
  */
 extern const struct rss_type_info rss_type_table[];
+
+/**
+ * Dynf name array.
+ *
+ * Array that holds the name for each dynf.
+ */
+extern char dynf_names[64][RTE_MBUF_DYN_NAMESIZE];
 
 /**
  * The data structure associated with a forwarding stream between a receive
@@ -179,22 +186,25 @@ struct rte_port {
 	uint8_t                 need_reconfig_queues; /**< need reconfiguring queues or not */
 	uint8_t                 rss_flag;   /**< enable rss or not */
 	uint8_t                 dcb_flag;   /**< enable dcb */
-	uint16_t                nb_rx_desc[MAX_QUEUE_ID+1]; /**< per queue rx desc number */
-	uint16_t                nb_tx_desc[MAX_QUEUE_ID+1]; /**< per queue tx desc number */
-	struct rte_eth_rxconf   rx_conf[MAX_QUEUE_ID+1]; /**< per queue rx configuration */
-	struct rte_eth_txconf   tx_conf[MAX_QUEUE_ID+1]; /**< per queue tx configuration */
+	uint16_t                nb_rx_desc[RTE_MAX_QUEUES_PER_PORT+1]; /**< per queue rx desc number */
+	uint16_t                nb_tx_desc[RTE_MAX_QUEUES_PER_PORT+1]; /**< per queue tx desc number */
+	struct rte_eth_rxconf   rx_conf[RTE_MAX_QUEUES_PER_PORT+1]; /**< per queue rx configuration */
+	struct rte_eth_txconf   tx_conf[RTE_MAX_QUEUES_PER_PORT+1]; /**< per queue tx configuration */
 	struct rte_ether_addr   *mc_addr_pool; /**< pool of multicast addrs */
 	uint32_t                mc_addr_nb; /**< nb. of addr. in mc_addr_pool */
 	uint8_t                 slave_flag; /**< bonding slave port */
 	struct port_flow        *flow_list; /**< Associated flows. */
-	const struct rte_eth_rxtx_callback *rx_dump_cb[MAX_QUEUE_ID+1];
-	const struct rte_eth_rxtx_callback *tx_dump_cb[MAX_QUEUE_ID+1];
+	const struct rte_eth_rxtx_callback *rx_dump_cb[RTE_MAX_QUEUES_PER_PORT+1];
+	const struct rte_eth_rxtx_callback *tx_dump_cb[RTE_MAX_QUEUES_PER_PORT+1];
 #ifdef SOFTNIC
 	struct softnic_port     softport;  /**< softnic params */
 #endif
 	/**< metadata value to insert in Tx packets. */
-	rte_be32_t		tx_metadata;
-	const struct rte_eth_rxtx_callback *tx_set_md_cb[MAX_QUEUE_ID+1];
+	uint32_t		tx_metadata;
+	const struct rte_eth_rxtx_callback *tx_set_md_cb[RTE_MAX_QUEUES_PER_PORT+1];
+	/**< dynamic flags. */
+	uint64_t		mbuf_dynf;
+	const struct rte_eth_rxtx_callback *tx_set_dynf_cb[RTE_MAX_QUEUES_PER_PORT+1];
 };
 
 /**
@@ -265,6 +275,8 @@ extern struct fwd_engine ieee1588_fwd_engine;
 
 extern struct fwd_engine * fwd_engines[]; /**< NULL terminated array. */
 extern cmdline_parse_inst_t cmd_set_raw;
+extern cmdline_parse_inst_t cmd_show_set_raw;
+extern cmdline_parse_inst_t cmd_show_set_raw_all;
 
 extern uint16_t mempool_flags;
 
@@ -332,6 +344,7 @@ extern uint32_t event_print_mask;
 extern bool setup_on_probe_event; /**< disabled by port setup-on iterator */
 extern uint8_t hot_plug; /**< enable by "--hot-plug" parameter */
 extern int do_mlockall; /**< set by "--mlockall" or "--no-mlockall" parameter */
+extern uint8_t clear_ptypes; /**< disabled by set ptype cmd */
 
 #ifdef RTE_LIBRTE_IXGBE_BYPASS
 extern uint32_t bypass_timeout; /**< Store the NIC bypass watchdog timeout */
@@ -383,6 +396,7 @@ extern struct rte_eth_txmode tx_mode;
 
 extern uint64_t rss_hf;
 
+extern queueid_t nb_hairpinq;
 extern queueid_t nb_rxq;
 extern queueid_t nb_txq;
 
@@ -507,7 +521,8 @@ struct vxlan_encap_conf {
 	uint8_t eth_src[RTE_ETHER_ADDR_LEN];
 	uint8_t eth_dst[RTE_ETHER_ADDR_LEN];
 };
-struct vxlan_encap_conf vxlan_encap_conf;
+
+extern struct vxlan_encap_conf vxlan_encap_conf;
 
 /* NVGRE encap/decap parameters. */
 struct nvgre_encap_conf {
@@ -522,7 +537,8 @@ struct nvgre_encap_conf {
 	uint8_t eth_src[RTE_ETHER_ADDR_LEN];
 	uint8_t eth_dst[RTE_ETHER_ADDR_LEN];
 };
-struct nvgre_encap_conf nvgre_encap_conf;
+
+extern struct nvgre_encap_conf nvgre_encap_conf;
 
 /* L2 encap parameters. */
 struct l2_encap_conf {
@@ -532,13 +548,13 @@ struct l2_encap_conf {
 	uint8_t eth_src[RTE_ETHER_ADDR_LEN];
 	uint8_t eth_dst[RTE_ETHER_ADDR_LEN];
 };
-struct l2_encap_conf l2_encap_conf;
+extern struct l2_encap_conf l2_encap_conf;
 
 /* L2 decap parameters. */
 struct l2_decap_conf {
 	uint32_t select_vlan:1;
 };
-struct l2_decap_conf l2_decap_conf;
+extern struct l2_decap_conf l2_decap_conf;
 
 /* MPLSoGRE encap parameters. */
 struct mplsogre_encap_conf {
@@ -553,14 +569,14 @@ struct mplsogre_encap_conf {
 	uint8_t eth_src[RTE_ETHER_ADDR_LEN];
 	uint8_t eth_dst[RTE_ETHER_ADDR_LEN];
 };
-struct mplsogre_encap_conf mplsogre_encap_conf;
+extern struct mplsogre_encap_conf mplsogre_encap_conf;
 
 /* MPLSoGRE decap parameters. */
 struct mplsogre_decap_conf {
 	uint32_t select_ipv4:1;
 	uint32_t select_vlan:1;
 };
-struct mplsogre_decap_conf mplsogre_decap_conf;
+extern struct mplsogre_decap_conf mplsogre_decap_conf;
 
 /* MPLSoUDP encap parameters. */
 struct mplsoudp_encap_conf {
@@ -577,14 +593,14 @@ struct mplsoudp_encap_conf {
 	uint8_t eth_src[RTE_ETHER_ADDR_LEN];
 	uint8_t eth_dst[RTE_ETHER_ADDR_LEN];
 };
-struct mplsoudp_encap_conf mplsoudp_encap_conf;
+extern struct mplsoudp_encap_conf mplsoudp_encap_conf;
 
 /* MPLSoUDP decap parameters. */
 struct mplsoudp_decap_conf {
 	uint32_t select_ipv4:1;
 	uint32_t select_vlan:1;
 };
-struct mplsoudp_decap_conf mplsoudp_decap_conf;
+extern struct mplsoudp_decap_conf mplsoudp_decap_conf;
 
 static inline unsigned int
 lcore_num(void)
@@ -597,6 +613,9 @@ lcore_num(void)
 
 	rte_panic("lcore_id of current thread not found in fwd_lcores_cpuids\n");
 }
+
+void
+parse_fwd_portlist(const char *port);
 
 static inline struct fwd_lcore *
 current_fwd_lcore(void)
@@ -730,6 +749,7 @@ int port_flow_create(portid_t port_id,
 		     const struct rte_flow_action *actions);
 int port_flow_destroy(portid_t port_id, uint32_t n, const uint32_t *rule);
 int port_flow_flush(portid_t port_id);
+int port_flow_dump(portid_t port_id, const char *file_name);
 int port_flow_query(portid_t port_id, uint32_t rule,
 		    const struct rte_flow_action *action);
 void port_flow_list(portid_t port_id, uint32_t n, const uint32_t *group);
@@ -752,6 +772,7 @@ void rx_vlan_strip_set_on_queue(portid_t port_id, uint16_t queue_id, int on);
 
 void rx_vlan_filter_set(portid_t port_id, int on);
 void rx_vlan_all_filter_set(portid_t port_id, int on);
+void rx_vlan_qinq_strip_set(portid_t port_id, int on);
 int rx_vft_set(portid_t port_id, uint16_t vlan_id, int on);
 void vlan_extend_set(portid_t port_id, int on);
 void vlan_tpid_set(portid_t port_id, enum rte_vlan_type vlan_type,
@@ -792,7 +813,7 @@ void stop_port(portid_t pid);
 void close_port(portid_t pid);
 void reset_port(portid_t pid);
 void attach_port(char *identifier);
-void detach_device(char *identifier);
+void detach_devargs(char *identifier);
 void detach_port_device(portid_t port_id);
 int all_ports_stopped(void);
 int port_is_stopped(portid_t port_id);
@@ -822,6 +843,17 @@ void setup_gro(const char *onoff, portid_t port_id);
 void setup_gro_flush_cycles(uint8_t cycles);
 void show_gro(portid_t port_id);
 void setup_gso(const char *mode, portid_t port_id);
+int eth_dev_info_get_print_err(uint16_t port_id,
+			struct rte_eth_dev_info *dev_info);
+void eth_set_promisc_mode(uint16_t port_id, int enable);
+void eth_set_allmulticast_mode(uint16_t port, int enable);
+int eth_link_get_nowait_print_err(uint16_t port_id, struct rte_eth_link *link);
+int eth_macaddr_get_print_err(uint16_t port_id,
+			struct rte_ether_addr *mac_addr);
+
+/* Functions to display the set of MAC addresses added to a port*/
+void show_macs(portid_t port_id);
+void show_mcast_macs(portid_t port_id);
 
 /* Functions to manage the set of filtered Multicast MAC addresses */
 void mcast_addr_add(portid_t port_id, struct rte_ether_addr *mc_addr);
@@ -846,6 +878,8 @@ queueid_t get_allowed_max_nb_rxq(portid_t *pid);
 int check_nb_rxq(queueid_t rxq);
 queueid_t get_allowed_max_nb_txq(portid_t *pid);
 int check_nb_txq(queueid_t txq);
+queueid_t get_allowed_max_nb_hairpinq(portid_t *pid);
+int check_nb_hairpinq(queueid_t hairpinq);
 
 uint16_t dump_rx_pkts(uint16_t port_id, uint16_t queue, struct rte_mbuf *pkts[],
 		      uint16_t nb_pkts, __rte_unused uint16_t max_pkts,
@@ -865,6 +899,12 @@ uint16_t tx_pkt_set_md(uint16_t port_id, __rte_unused uint16_t queue,
 		       __rte_unused void *user_param);
 void add_tx_md_callback(portid_t portid);
 void remove_tx_md_callback(portid_t portid);
+
+uint16_t tx_pkt_set_dynf(uint16_t port_id, __rte_unused uint16_t queue,
+			 struct rte_mbuf *pkts[], uint16_t nb_pkts,
+			 __rte_unused void *user_param);
+void add_tx_dynf_callback(portid_t portid);
+void remove_tx_dynf_callback(portid_t portid);
 
 /*
  * Work-around of a compilation error with ICC on invocations of the

@@ -160,6 +160,7 @@ static int qat_asym_qp_setup(struct rte_cryptodev *dev, uint16_t qp_id,
 							= *qp_addr;
 
 	qp = (struct qat_qp *)*qp_addr;
+	qp->min_enq_burst_threshold = qat_private->min_enq_burst_threshold;
 
 	for (i = 0; i < qp->nb_descriptors; i++) {
 		int j;
@@ -235,8 +236,10 @@ static const struct rte_driver cryptodev_qat_asym_driver = {
 };
 
 int
-qat_asym_dev_create(struct qat_pci_device *qat_pci_dev)
+qat_asym_dev_create(struct qat_pci_device *qat_pci_dev,
+		struct qat_dev_cmd_param *qat_dev_cmd_param)
 {
+	int i = 0;
 	struct rte_cryptodev_pmd_init_params init_params = {
 			.name = "",
 			.socket_id = qat_pci_dev->pci_dev->device.numa_node,
@@ -270,13 +273,25 @@ qat_asym_dev_create(struct qat_pci_device *qat_pci_dev)
 	cryptodev->dequeue_burst = qat_asym_pmd_dequeue_op_burst;
 
 	cryptodev->feature_flags = RTE_CRYPTODEV_FF_ASYMMETRIC_CRYPTO |
-			RTE_CRYPTODEV_FF_HW_ACCELERATED;
+			RTE_CRYPTODEV_FF_HW_ACCELERATED |
+			RTE_CRYPTODEV_FF_ASYM_SESSIONLESS |
+			RTE_CRYPTODEV_FF_RSA_PRIV_OP_KEY_EXP |
+			RTE_CRYPTODEV_FF_RSA_PRIV_OP_KEY_QT;
 	internals = cryptodev->data->dev_private;
 	internals->qat_dev = qat_pci_dev;
 	qat_pci_dev->asym_dev = internals;
 
 	internals->asym_dev_id = cryptodev->data->dev_id;
 	internals->qat_dev_capabilities = qat_gen1_asym_capabilities;
+
+	while (1) {
+		if (qat_dev_cmd_param[i].name == NULL)
+			break;
+		if (!strcmp(qat_dev_cmd_param[i].name, ASYM_ENQ_THRESHOLD_NAME))
+			internals->min_enq_burst_threshold =
+					qat_dev_cmd_param[i].val;
+		i++;
+	}
 
 	QAT_LOG(DEBUG, "Created QAT ASYM device %s as cryptodev instance %d",
 			cryptodev->data->name, internals->asym_dev_id);

@@ -10,6 +10,7 @@
 
 #include <otx2_common.h>
 #include "otx2_evdev.h"
+#include "otx2_ethdev_sec_tx.h"
 
 /* SSO Operations */
 
@@ -226,10 +227,34 @@ otx2_ssogws_swtag_wait(struct otx2_ssogws *ws)
 }
 
 static __rte_always_inline void
-otx2_ssogws_head_wait(struct otx2_ssogws *ws, const uint8_t wait_flag)
+otx2_ssogws_head_wait(struct otx2_ssogws *ws)
 {
-	while (wait_flag && !(otx2_read64(ws->tag_op) & BIT_ULL(35)))
+#ifdef RTE_ARCH_ARM64
+	uint64_t tag;
+
+	asm volatile (
+			"	ldr %[tag], [%[tag_op]]		\n"
+			"	tbnz %[tag], 35, done%=		\n"
+			"	sevl				\n"
+			"rty%=:	wfe				\n"
+			"	ldr %[tag], [%[tag_op]]		\n"
+			"	tbz %[tag], 35, rty%=		\n"
+			"done%=:				\n"
+			: [tag] "=&r" (tag)
+			: [tag_op] "r" (ws->tag_op)
+			);
+#else
+	/* Wait for the HEAD to be set */
+	while (!(otx2_read64(ws->tag_op) & BIT_ULL(35)))
 		;
+#endif
+}
+
+static __rte_always_inline void
+otx2_ssogws_order(struct otx2_ssogws *ws, const uint8_t wait_flag)
+{
+	if (wait_flag)
+		otx2_ssogws_head_wait(ws);
 
 	rte_cio_wmb();
 }
@@ -256,7 +281,15 @@ otx2_ssogws_event_tx(struct otx2_ssogws *ws, struct rte_event ev[],
 	struct rte_mbuf *m = ev[0].mbuf;
 	const struct otx2_eth_txq *txq = otx2_ssogws_xtract_meta(m);
 
-	otx2_ssogws_head_wait(ws, !ev->sched_type);
+	rte_prefetch_non_temporal(txq);
+
+	if ((flags & NIX_TX_OFFLOAD_SECURITY_F) &&
+	    (m->ol_flags & PKT_TX_SEC_OFFLOAD))
+		return otx2_sec_event_tx(ws, ev, m, txq, flags);
+
+	/* Perform header writes before barrier for TSO */
+	otx2_nix_xmit_prepare_tso(m, flags);
+	otx2_ssogws_order(ws, !ev->sched_type);
 	otx2_ssogws_prepare_pkt(txq, m, cmd, flags);
 
 	if (flags & NIX_TX_MULTI_SEG_F) {

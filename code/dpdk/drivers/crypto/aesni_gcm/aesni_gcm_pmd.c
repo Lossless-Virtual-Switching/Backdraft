@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: BSD-3-Clause
- * Copyright(c) 2016-2017 Intel Corporation
+ * Copyright(c) 2016-2020 Intel Corporation
  */
 
 #include <rte_common.h>
@@ -14,6 +14,31 @@
 #include "aesni_gcm_pmd_private.h"
 
 static uint8_t cryptodev_driver_id;
+
+/* setup session handlers */
+static void
+set_func_ops(struct aesni_gcm_session *s, const struct aesni_gcm_ops *gcm_ops)
+{
+	s->ops.pre = gcm_ops->pre;
+	s->ops.init = gcm_ops->init;
+
+	switch (s->op) {
+	case AESNI_GCM_OP_AUTHENTICATED_ENCRYPTION:
+		s->ops.cipher = gcm_ops->enc;
+		s->ops.update = gcm_ops->update_enc;
+		s->ops.finalize = gcm_ops->finalize_enc;
+		break;
+	case AESNI_GCM_OP_AUTHENTICATED_DECRYPTION:
+		s->ops.cipher = gcm_ops->dec;
+		s->ops.update = gcm_ops->update_dec;
+		s->ops.finalize = gcm_ops->finalize_dec;
+		break;
+	case AESNI_GMAC_OP_GENERATE:
+	case AESNI_GMAC_OP_VERIFY:
+		s->ops.finalize = gcm_ops->finalize_enc;
+		break;
+	}
+}
 
 /** Parse crypto xform chain and set private session parameters */
 int
@@ -65,6 +90,7 @@ aesni_gcm_set_session_parameters(const struct aesni_gcm_ops *gcm_ops,
 		/* Select Crypto operation */
 		if (aead_xform->aead.op == RTE_CRYPTO_AEAD_OP_ENCRYPT)
 			sess->op = AESNI_GCM_OP_AUTHENTICATED_ENCRYPTION;
+		/* op == RTE_CRYPTO_AEAD_OP_DECRYPT */
 		else
 			sess->op = AESNI_GCM_OP_AUTHENTICATED_DECRYPTION;
 
@@ -77,7 +103,6 @@ aesni_gcm_set_session_parameters(const struct aesni_gcm_ops *gcm_ops,
 		AESNI_GCM_LOG(ERR, "Wrong xform type, has to be AEAD or authentication");
 		return -ENOTSUP;
 	}
-
 
 	/* IV check */
 	if (sess->iv.length != 16 && sess->iv.length != 12 &&
@@ -102,6 +127,10 @@ aesni_gcm_set_session_parameters(const struct aesni_gcm_ops *gcm_ops,
 		return -EINVAL;
 	}
 
+	/* setup session handlers */
+	set_func_ops(sess, &gcm_ops[sess->key]);
+
+	/* pre-generate key */
 	gcm_ops[sess->key].pre(key, &sess->gdata_key);
 
 	/* Digest check */
@@ -196,6 +225,7 @@ process_gcm_crypto_op(struct aesni_gcm_qp *qp, struct rte_crypto_op *op,
 	uint32_t offset, data_offset, data_length;
 	uint32_t part_len, total_len, data_len;
 	uint8_t *tag;
+	unsigned int oop = 0;
 
 	if (session->op == AESNI_GCM_OP_AUTHENTICATED_ENCRYPTION ||
 			session->op == AESNI_GCM_OP_AUTHENTICATED_DECRYPTION) {
@@ -217,27 +247,28 @@ process_gcm_crypto_op(struct aesni_gcm_qp *qp, struct rte_crypto_op *op,
 		RTE_ASSERT(m_src != NULL);
 	}
 
+	src = rte_pktmbuf_mtod_offset(m_src, uint8_t *, offset);
+
 	data_len = m_src->data_len - offset;
 	part_len = (data_len < data_length) ? data_len :
 			data_length;
 
-	/* Destination buffer is required when segmented source buffer */
-	RTE_ASSERT((part_len == data_length) ||
-			((part_len != data_length) &&
-					(sym_op->m_dst != NULL)));
-	/* Segmented destination buffer is not supported */
 	RTE_ASSERT((sym_op->m_dst == NULL) ||
 			((sym_op->m_dst != NULL) &&
 					rte_pktmbuf_is_contiguous(sym_op->m_dst)));
 
-
-	dst = sym_op->m_dst ?
-			rte_pktmbuf_mtod_offset(sym_op->m_dst, uint8_t *,
-					data_offset) :
-			rte_pktmbuf_mtod_offset(sym_op->m_src, uint8_t *,
+	/* In-place */
+	if (sym_op->m_dst == NULL || (sym_op->m_dst == sym_op->m_src))
+		dst = src;
+	/* Out-of-place */
+	else {
+		oop = 1;
+		/* Segmented destination buffer is not supported if operation is
+		 * Out-of-place */
+		RTE_ASSERT(rte_pktmbuf_is_contiguous(sym_op->m_dst));
+		dst = rte_pktmbuf_mtod_offset(sym_op->m_dst, uint8_t *,
 					data_offset);
-
-	src = rte_pktmbuf_mtod_offset(m_src, uint8_t *, offset);
+	}
 
 	iv_ptr = rte_crypto_op_ctod_offset(op, uint8_t *,
 				session->iv.offset);
@@ -255,12 +286,15 @@ process_gcm_crypto_op(struct aesni_gcm_qp *qp, struct rte_crypto_op *op,
 		total_len = data_length - part_len;
 
 		while (total_len) {
-			dst += part_len;
 			m_src = m_src->next;
 
 			RTE_ASSERT(m_src != NULL);
 
 			src = rte_pktmbuf_mtod(m_src, uint8_t *);
+			if (oop)
+				dst += part_len;
+			else
+				dst = src;
 			part_len = (m_src->data_len < total_len) ?
 					m_src->data_len : total_len;
 
@@ -292,12 +326,15 @@ process_gcm_crypto_op(struct aesni_gcm_qp *qp, struct rte_crypto_op *op,
 		total_len = data_length - part_len;
 
 		while (total_len) {
-			dst += part_len;
 			m_src = m_src->next;
 
 			RTE_ASSERT(m_src != NULL);
 
 			src = rte_pktmbuf_mtod(m_src, uint8_t *);
+			if (oop)
+				dst += part_len;
+			else
+				dst = src;
 			part_len = (m_src->data_len < total_len) ?
 					m_src->data_len : total_len;
 
@@ -346,6 +383,191 @@ process_gcm_crypto_op(struct aesni_gcm_qp *qp, struct rte_crypto_op *op,
 	}
 
 	return 0;
+}
+
+static inline void
+aesni_gcm_fill_error_code(struct rte_crypto_sym_vec *vec, int32_t errnum)
+{
+	uint32_t i;
+
+	for (i = 0; i < vec->num; i++)
+		vec->status[i] = errnum;
+}
+
+
+static inline int32_t
+aesni_gcm_sgl_op_finalize_encryption(const struct aesni_gcm_session *s,
+	struct gcm_context_data *gdata_ctx, uint8_t *digest)
+{
+	if (s->req_digest_length != s->gen_digest_length) {
+		uint8_t tmpdigest[s->gen_digest_length];
+
+		s->ops.finalize(&s->gdata_key, gdata_ctx, tmpdigest,
+			s->gen_digest_length);
+		memcpy(digest, tmpdigest, s->req_digest_length);
+	} else {
+		s->ops.finalize(&s->gdata_key, gdata_ctx, digest,
+			s->gen_digest_length);
+	}
+
+	return 0;
+}
+
+static inline int32_t
+aesni_gcm_sgl_op_finalize_decryption(const struct aesni_gcm_session *s,
+	struct gcm_context_data *gdata_ctx, uint8_t *digest)
+{
+	uint8_t tmpdigest[s->gen_digest_length];
+
+	s->ops.finalize(&s->gdata_key, gdata_ctx, tmpdigest,
+		s->gen_digest_length);
+
+	return memcmp(digest, tmpdigest, s->req_digest_length) == 0 ? 0 :
+		EBADMSG;
+}
+
+static inline void
+aesni_gcm_process_gcm_sgl_op(const struct aesni_gcm_session *s,
+	struct gcm_context_data *gdata_ctx, struct rte_crypto_sgl *sgl,
+	void *iv, void *aad)
+{
+	uint32_t i;
+
+	/* init crypto operation */
+	s->ops.init(&s->gdata_key, gdata_ctx, iv, aad,
+		(uint64_t)s->aad_length);
+
+	/* update with sgl data */
+	for (i = 0; i < sgl->num; i++) {
+		struct rte_crypto_vec *vec = &sgl->vec[i];
+
+		s->ops.update(&s->gdata_key, gdata_ctx, vec->base, vec->base,
+			vec->len);
+	}
+}
+
+static inline void
+aesni_gcm_process_gmac_sgl_op(const struct aesni_gcm_session *s,
+	struct gcm_context_data *gdata_ctx, struct rte_crypto_sgl *sgl,
+	void *iv)
+{
+	s->ops.init(&s->gdata_key, gdata_ctx, iv, sgl->vec[0].base,
+		sgl->vec[0].len);
+}
+
+static inline uint32_t
+aesni_gcm_sgl_encrypt(struct aesni_gcm_session *s,
+	struct gcm_context_data *gdata_ctx, struct rte_crypto_sym_vec *vec)
+{
+	uint32_t i, processed;
+
+	processed = 0;
+	for (i = 0; i < vec->num; ++i) {
+		aesni_gcm_process_gcm_sgl_op(s, gdata_ctx,
+			&vec->sgl[i], vec->iv[i], vec->aad[i]);
+		vec->status[i] = aesni_gcm_sgl_op_finalize_encryption(s,
+			gdata_ctx, vec->digest[i]);
+		processed += (vec->status[i] == 0);
+	}
+
+	return processed;
+}
+
+static inline uint32_t
+aesni_gcm_sgl_decrypt(struct aesni_gcm_session *s,
+	struct gcm_context_data *gdata_ctx, struct rte_crypto_sym_vec *vec)
+{
+	uint32_t i, processed;
+
+	processed = 0;
+	for (i = 0; i < vec->num; ++i) {
+		aesni_gcm_process_gcm_sgl_op(s, gdata_ctx,
+			&vec->sgl[i], vec->iv[i], vec->aad[i]);
+		 vec->status[i] = aesni_gcm_sgl_op_finalize_decryption(s,
+			gdata_ctx, vec->digest[i]);
+		processed += (vec->status[i] == 0);
+	}
+
+	return processed;
+}
+
+static inline uint32_t
+aesni_gmac_sgl_generate(struct aesni_gcm_session *s,
+	struct gcm_context_data *gdata_ctx, struct rte_crypto_sym_vec *vec)
+{
+	uint32_t i, processed;
+
+	processed = 0;
+	for (i = 0; i < vec->num; ++i) {
+		if (vec->sgl[i].num != 1) {
+			vec->status[i] = ENOTSUP;
+			continue;
+		}
+
+		aesni_gcm_process_gmac_sgl_op(s, gdata_ctx,
+			&vec->sgl[i], vec->iv[i]);
+		vec->status[i] = aesni_gcm_sgl_op_finalize_encryption(s,
+			gdata_ctx, vec->digest[i]);
+		processed += (vec->status[i] == 0);
+	}
+
+	return processed;
+}
+
+static inline uint32_t
+aesni_gmac_sgl_verify(struct aesni_gcm_session *s,
+	struct gcm_context_data *gdata_ctx, struct rte_crypto_sym_vec *vec)
+{
+	uint32_t i, processed;
+
+	processed = 0;
+	for (i = 0; i < vec->num; ++i) {
+		if (vec->sgl[i].num != 1) {
+			vec->status[i] = ENOTSUP;
+			continue;
+		}
+
+		aesni_gcm_process_gmac_sgl_op(s, gdata_ctx,
+			&vec->sgl[i], vec->iv[i]);
+		vec->status[i] = aesni_gcm_sgl_op_finalize_decryption(s,
+			gdata_ctx, vec->digest[i]);
+		processed += (vec->status[i] == 0);
+	}
+
+	return processed;
+}
+
+/** Process CPU crypto bulk operations */
+uint32_t
+aesni_gcm_pmd_cpu_crypto_process(struct rte_cryptodev *dev,
+	struct rte_cryptodev_sym_session *sess,
+	__rte_unused union rte_crypto_sym_ofs ofs,
+	struct rte_crypto_sym_vec *vec)
+{
+	void *sess_priv;
+	struct aesni_gcm_session *s;
+	struct gcm_context_data gdata_ctx;
+
+	sess_priv = get_sym_session_private_data(sess, dev->driver_id);
+	if (unlikely(sess_priv == NULL)) {
+		aesni_gcm_fill_error_code(vec, EINVAL);
+		return 0;
+	}
+
+	s = sess_priv;
+	switch (s->op) {
+	case AESNI_GCM_OP_AUTHENTICATED_ENCRYPTION:
+		return aesni_gcm_sgl_encrypt(s, &gdata_ctx, vec);
+	case AESNI_GCM_OP_AUTHENTICATED_DECRYPTION:
+		return aesni_gcm_sgl_decrypt(s, &gdata_ctx, vec);
+	case AESNI_GMAC_OP_GENERATE:
+		return aesni_gmac_sgl_generate(s, &gdata_ctx, vec);
+	case AESNI_GMAC_OP_VERIFY:
+		return aesni_gmac_sgl_verify(s, &gdata_ctx, vec);
+	default:
+		aesni_gcm_fill_error_code(vec, EINVAL);
+		return 0;
+	}
 }
 
 /**
@@ -491,11 +713,6 @@ aesni_gcm_create(const char *name,
 	enum aesni_gcm_vector_mode vector_mode;
 	MB_MGR *mb_mgr;
 
-	/* Check CPU for support for AES instruction set */
-	if (!rte_cpu_get_flag_enabled(RTE_CPUFLAG_AES)) {
-		AESNI_GCM_LOG(ERR, "AES instructions not supported by CPU");
-		return -EFAULT;
-	}
 	dev = rte_cryptodev_pmd_create(name, &vdev->device, init_params);
 	if (dev == NULL) {
 		AESNI_GCM_LOG(ERR, "driver %s: create failed",
@@ -522,9 +739,16 @@ aesni_gcm_create(const char *name,
 
 	dev->feature_flags = RTE_CRYPTODEV_FF_SYMMETRIC_CRYPTO |
 			RTE_CRYPTODEV_FF_SYM_OPERATION_CHAINING |
-			RTE_CRYPTODEV_FF_CPU_AESNI |
+			RTE_CRYPTODEV_FF_IN_PLACE_SGL |
 			RTE_CRYPTODEV_FF_OOP_SGL_IN_LB_OUT |
-			RTE_CRYPTODEV_FF_OOP_LB_IN_LB_OUT;
+			RTE_CRYPTODEV_FF_OOP_LB_IN_LB_OUT |
+			RTE_CRYPTODEV_FF_SYM_CPU_CRYPTO;
+
+	/* Check CPU for support for AES instruction set */
+	if (rte_cpu_get_flag_enabled(RTE_CPUFLAG_AES))
+		dev->feature_flags |= RTE_CRYPTODEV_FF_CPU_AESNI;
+	else
+		AESNI_GCM_LOG(WARNING, "AES instructions not supported by CPU");
 
 	mb_mgr = alloc_mb_mgr(0);
 	if (mb_mgr == NULL)
@@ -662,7 +886,6 @@ RTE_PMD_REGISTER_PARAM_STRING(CRYPTODEV_NAME_AESNI_GCM_PMD,
 	"socket_id=<int>");
 RTE_PMD_REGISTER_CRYPTO_DRIVER(aesni_gcm_crypto_drv, aesni_gcm_pmd_drv.driver,
 		cryptodev_driver_id);
-
 
 RTE_INIT(aesni_gcm_init_log)
 {

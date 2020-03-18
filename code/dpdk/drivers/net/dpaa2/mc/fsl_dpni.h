@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: (BSD-3-Clause OR GPL-2.0)
  *
  * Copyright 2013-2016 Freescale Semiconductor Inc.
- * Copyright 2016-2017 NXP
+ * Copyright 2016-2019 NXP
  *
  */
 #ifndef __FSL_DPNI_H
@@ -95,6 +95,12 @@ struct fsl_mc_io;
  * Define a custom number of congestion groups
  */
 #define DPNI_OPT_CUSTOM_CG				0x000200
+
+
+/**
+ * Software sequence maximum layout size
+ */
+#define DPNI_SW_SEQUENCE_LAYOUT_SIZE 33
 
 int dpni_open(struct fsl_mc_io *mc_io,
 	      uint32_t cmd_flags,
@@ -193,6 +199,8 @@ int dpni_destroy(struct fsl_mc_io *mc_io,
 /**
  * struct dpni_pools_cfg - Structure representing buffer pools configuration
  * @num_dpbp:	Number of DPBPs
+ * @pool_options: Buffer assignment options
+ *                This field is a combination of DPNI_POOL_ASSOC_flags
  * @pools:	Array of buffer pools parameters; The number of valid entries
  *		must match 'num_dpbp' value
  * @pools.dpbp_id:     DPBP object ID
@@ -201,8 +209,13 @@ int dpni_destroy(struct fsl_mc_io *mc_io,
  * @pools.buffer_size: Buffer size
  * @pools.backup_pool: Backup pool
  */
+
+#define DPNI_POOL_ASSOC_QPRI	0
+#define DPNI_POOL_ASSOC_QDBIN	1
+
 struct dpni_pools_cfg {
 	uint8_t num_dpbp;
+	uint8_t pool_options;
 	struct {
 		int		dpbp_id;
 		uint8_t		priority_mask;
@@ -575,6 +588,7 @@ int dpni_get_tx_data_offset(struct fsl_mc_io *mc_io,
  * @page_5.policer_cnt_green: number of green colored frames
  * @page_5.policer_cnt_re_red: number of recolored red frames
  * @page_5.policer_cnt_re_yellow: number of recolored yellow frames
+ * @page_6.tx_pending_frames_cnt: total number of frames pending in Tx queues
  * @raw: raw statistics structure, used to index counters
  */
 union dpni_statistics {
@@ -618,6 +632,9 @@ union dpni_statistics {
 		uint64_t policer_cnt_re_red;
 		uint64_t policer_cnt_re_yellow;
 	} page_5;
+	struct {
+		uint64_t tx_pending_frames_cnt;
+	} page_6;
 	struct {
 		uint64_t counter[DPNI_STATISTICS_CNT];
 	} raw;
@@ -767,7 +784,10 @@ int dpni_get_primary_mac_addr(struct fsl_mc_io *mc_io,
 int dpni_add_mac_addr(struct fsl_mc_io *mc_io,
 		      uint32_t cmd_flags,
 		      uint16_t token,
-		      const uint8_t mac_addr[6]);
+		      const uint8_t mac_addr[6],
+			  uint8_t flags,
+			  uint8_t tc_id,
+			  uint8_t flow_id);
 
 int dpni_remove_mac_addr(struct fsl_mc_io *mc_io,
 			 uint32_t cmd_flags,
@@ -790,10 +810,18 @@ int dpni_enable_vlan_filter(struct fsl_mc_io *mc_io,
 			    uint16_t token,
 			    int en);
 
+/**
+ * Set vlan filter queue action
+ */
+#define DPNI_VLAN_SET_QUEUE_ACTION 1
+
 int dpni_add_vlan_id(struct fsl_mc_io *mc_io,
 		     uint32_t cmd_flags,
 		     uint16_t token,
-		     uint16_t vlan_id);
+		     uint16_t vlan_id,
+			 uint8_t flags,
+			 uint8_t tc_id,
+			 uint8_t flow_id);
 
 int dpni_remove_vlan_id(struct fsl_mc_io *mc_io,
 			uint32_t cmd_flags,
@@ -1175,7 +1203,9 @@ int dpni_add_qos_entry(struct fsl_mc_io *mc_io,
 		       uint16_t token,
 		       const struct dpni_rule_cfg *cfg,
 		       uint8_t tc_id,
-		       uint16_t index);
+		       uint16_t index,
+			   uint8_t flags,
+			   uint8_t flow_id);
 
 int dpni_remove_qos_entry(struct fsl_mc_io *mc_io,
 			  uint32_t cmd_flags,
@@ -1423,5 +1453,132 @@ struct dpni_custom_tpid_cfg {
 
 int dpni_get_custom_tpid(struct fsl_mc_io *mc_io, uint32_t cmd_flags,
 		uint16_t token, struct dpni_custom_tpid_cfg *tpid);
+
+/**
+ * enum dpni_soft_sequence_dest - Enumeration of WRIOP software sequence
+ *				destinations
+ * @DPNI_SS_INGRESS: Ingress parser
+ * @DPNI_SS_EGRESS: Egress parser
+ */
+enum dpni_soft_sequence_dest {
+	DPNI_SS_INGRESS = 0,
+	DPNI_SS_EGRESS = 1,
+};
+
+/**
+ * struct dpni_load_ss_cfg - Structure for Software Sequence load configuration
+ * @dest:	Destination of the Software Sequence: ingress or egress parser
+ * @ss_size: Size of the Software Sequence
+ * @ss_offset:	The offset where to load the Software Sequence (0x20-0x7FD)
+ * @ss_iova: I/O virtual address of the Software Sequence
+ */
+struct dpni_load_ss_cfg {
+	enum dpni_soft_sequence_dest dest;
+	uint16_t ss_size;
+	uint16_t ss_offset;
+	uint64_t ss_iova;
+};
+
+/**
+ * struct dpni_enable_ss_cfg - Structure for software sequence enable
+ *				configuration
+ * @dest:	Destination of the Software Sequence: ingress or egress parser
+ * @hxs: HXS to attach the software sequence to
+ * @set_start: If the Software Sequence or HDR it is attached to is set as
+ *		parser start
+ *		If hxs=DUMMY_LAST_HXS the ss_offset is set directly as parser
+ *			start else the hdr index code is set as parser start
+ * @ss_offset: The offset of the Software Sequence to enable or set as parse
+ *		start
+ * @param_size: Size of the software sequence parameters
+ * @param_offset: Offset in the parameter zone for the software sequence
+ *			parameters
+ * @param_iova: I/O virtual address of the parameters
+ */
+struct dpni_enable_ss_cfg {
+	enum dpni_soft_sequence_dest dest;
+	uint16_t hxs;
+	uint8_t set_start;
+	uint16_t ss_offset;
+	uint8_t param_size;
+	uint8_t param_offset;
+	uint64_t param_iova;
+};
+
+/**
+ * dpni_load_sw_sequence() - Loads a software sequence in parser memory.
+ * @mc_io:	Pointer to MC portal's I/O object
+ * @cmd_flags:	Command flags; one or more of 'MC_CMD_FLAG_'
+ * @token:	Token of DPNI object
+ * @cfg:	Software sequence load configuration
+ * Return:	'0' on Success; Error code otherwise.
+ */
+int dpni_load_sw_sequence(struct fsl_mc_io *mc_io,
+	      uint32_t cmd_flags,
+	      uint16_t token,
+		  struct dpni_load_ss_cfg *cfg);
+
+/**
+ * dpni_eanble_sw_sequence() - Enables a software sequence in the parser
+ *				profile
+ * corresponding to the ingress or egress of the DPNI.
+ * @mc_io:	Pointer to MC portal's I/O object
+ * @cmd_flags:	Command flags; one or more of 'MC_CMD_FLAG_'
+ * @token:	Token of DPNI object
+ * @cfg:	Software sequence enable configuration
+ * Return:	'0' on Success; Error code otherwise.
+ */
+int dpni_enable_sw_sequence(struct fsl_mc_io *mc_io,
+			    uint32_t cmd_flags,
+			    uint16_t token,
+			    struct dpni_enable_ss_cfg *cfg);
+
+/**
+ * struct dpni_sw_sequence_layout - Structure for software sequence enable
+ *				configuration
+ * @num_ss:	Number of software sequences returned
+ * @ss: Array of software sequence entries. The number of valid entries
+ *			must match 'num_ss' value
+ */
+struct dpni_sw_sequence_layout {
+	uint8_t num_ss;
+	struct {
+		uint16_t ss_offset;
+		uint16_t ss_size;
+		uint8_t param_offset;
+		uint8_t param_size;
+	} ss[DPNI_SW_SEQUENCE_LAYOUT_SIZE];
+};
+
+/**
+ * dpni_get_sw_sequence_layout() - Get the soft sequence layout
+ * @mc_io:	Pointer to MC portal's I/O object
+ * @cmd_flags:	Command flags; one or more of 'MC_CMD_FLAG_'
+ * @token:	Token of DPNI object
+ * @src:	Source of the layout (WRIOP Rx or Tx)
+ * @ss_layout_iova:  I/O virtual address of 264 bytes DMA-able memory
+ *
+ * warning: After calling this function, call dpni_extract_sw_sequence_layout()
+ *		to get the layout
+ *
+ * Return:	'0' on Success; error code otherwise.
+ */
+int dpni_get_sw_sequence_layout(struct fsl_mc_io *mc_io,
+				uint32_t cmd_flags,
+				uint16_t token,
+				enum dpni_soft_sequence_dest src,
+				uint64_t ss_layout_iova);
+
+/**
+ * dpni_extract_sw_sequence_layout() - extract the software sequence layout
+ * @layout:		software sequence layout
+ * @sw_sequence_layout_buf:	Zeroed 264 bytes of memory before mapping it
+ *				to DMA
+ *
+ * This function has to be called after dpni_get_sw_sequence_layout
+ *
+ */
+void dpni_extract_sw_sequence_layout(struct dpni_sw_sequence_layout *layout,
+				     const uint8_t *sw_sequence_layout_buf);
 
 #endif /* __FSL_DPNI_H */

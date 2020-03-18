@@ -8,7 +8,6 @@
  * Miscellaneous control operations for mlx4 driver.
  */
 
-#include <assert.h>
 #include <dirent.h>
 #include <errno.h>
 #include <linux/ethtool.h>
@@ -341,13 +340,17 @@ enum rxmode_toggle {
  *   Pointer to Ethernet device structure.
  * @param toggle
  *   Toggle to set.
+ *
+ * @return
+ *   0 on success, a negative errno value otherwise and rte_errno is set.
  */
-static void
+static int
 mlx4_rxmode_toggle(struct rte_eth_dev *dev, enum rxmode_toggle toggle)
 {
 	struct mlx4_priv *priv = dev->data->dev_private;
 	const char *mode;
 	struct rte_flow_error error;
+	int ret;
 
 	switch (toggle) {
 	case RXMODE_TOGGLE_PROMISC_OFF:
@@ -363,12 +366,16 @@ mlx4_rxmode_toggle(struct rte_eth_dev *dev, enum rxmode_toggle toggle)
 	default:
 		mode = "undefined";
 	}
-	if (!mlx4_flow_sync(priv, &error))
-		return;
+
+	ret = mlx4_flow_sync(priv, &error);
+	if (!ret)
+		return 0;
+
 	ERROR("cannot toggle %s mode (code %d, \"%s\"),"
 	      " flow error type %d, cause %p, message: %s",
 	      mode, rte_errno, strerror(rte_errno), error.type, error.cause,
 	      error.message ? error.message : "(unspecified)");
+	return ret;
 }
 
 /**
@@ -376,11 +383,14 @@ mlx4_rxmode_toggle(struct rte_eth_dev *dev, enum rxmode_toggle toggle)
  *
  * @param dev
  *   Pointer to Ethernet device structure.
+ *
+ * @return
+ *   0 on success, a negative errno value otherwise and rte_errno is set.
  */
-void
+int
 mlx4_promiscuous_enable(struct rte_eth_dev *dev)
 {
-	mlx4_rxmode_toggle(dev, RXMODE_TOGGLE_PROMISC_ON);
+	return mlx4_rxmode_toggle(dev, RXMODE_TOGGLE_PROMISC_ON);
 }
 
 /**
@@ -388,11 +398,14 @@ mlx4_promiscuous_enable(struct rte_eth_dev *dev)
  *
  * @param dev
  *   Pointer to Ethernet device structure.
+ *
+ * @return
+ *   0 on success, a negative errno value otherwise and rte_errno is set.
  */
-void
+int
 mlx4_promiscuous_disable(struct rte_eth_dev *dev)
 {
-	mlx4_rxmode_toggle(dev, RXMODE_TOGGLE_PROMISC_OFF);
+	return mlx4_rxmode_toggle(dev, RXMODE_TOGGLE_PROMISC_OFF);
 }
 
 /**
@@ -400,11 +413,14 @@ mlx4_promiscuous_disable(struct rte_eth_dev *dev)
  *
  * @param dev
  *   Pointer to Ethernet device structure.
+ *
+ * @return
+ *   0 on success, a negative errno value otherwise and rte_errno is set.
  */
-void
+int
 mlx4_allmulticast_enable(struct rte_eth_dev *dev)
 {
-	mlx4_rxmode_toggle(dev, RXMODE_TOGGLE_ALLMULTI_ON);
+	return mlx4_rxmode_toggle(dev, RXMODE_TOGGLE_ALLMULTI_ON);
 }
 
 /**
@@ -412,11 +428,14 @@ mlx4_allmulticast_enable(struct rte_eth_dev *dev)
  *
  * @param dev
  *   Pointer to Ethernet device structure.
+ *
+ * @return
+ *   0 on success, a negative errno value otherwise and rte_errno is set.
  */
-void
+int
 mlx4_allmulticast_disable(struct rte_eth_dev *dev)
 {
-	mlx4_rxmode_toggle(dev, RXMODE_TOGGLE_ALLMULTI_OFF);
+	return mlx4_rxmode_toggle(dev, RXMODE_TOGGLE_ALLMULTI_OFF);
 }
 
 /**
@@ -611,7 +630,7 @@ mlx4_mac_addr_set(struct rte_eth_dev *dev, struct rte_ether_addr *mac_addr)
  * @param[out] info
  *   Info structure output buffer.
  */
-void
+int
 mlx4_dev_infos_get(struct rte_eth_dev *dev, struct rte_eth_dev_info *info)
 {
 	struct mlx4_priv *priv = dev->data->dev_private;
@@ -626,9 +645,8 @@ mlx4_dev_infos_get(struct rte_eth_dev *dev, struct rte_eth_dev_info *info)
 	 */
 	max = ((priv->device_attr.max_cq > priv->device_attr.max_qp) ?
 	       priv->device_attr.max_qp : priv->device_attr.max_cq);
-	/* If max >= 65535 then max = 0, max_rx_queues is uint16_t. */
-	if (max >= 65535)
-		max = 65535;
+	/* max_rx_queues is uint16_t. */
+	max = RTE_MIN(max, (unsigned int)UINT16_MAX);
 	info->max_rx_queues = max;
 	info->max_tx_queues = max;
 	info->max_mac_addrs = RTE_DIM(priv->mac);
@@ -645,6 +663,8 @@ mlx4_dev_infos_get(struct rte_eth_dev *dev, struct rte_eth_dev_info *info)
 			ETH_LINK_SPEED_40G |
 			ETH_LINK_SPEED_56G;
 	info->flow_type_rss_offloads = mlx4_conv_rss_types(priv, 0, 1);
+
+	return 0;
 }
 
 /**
@@ -730,8 +750,11 @@ mlx4_stats_get(struct rte_eth_dev *dev, struct rte_eth_stats *stats)
  *
  * @param dev
  *   Pointer to Ethernet device structure.
+ *
+ * @return
+ *   alwasy 0 on success
  */
-void
+int
 mlx4_stats_reset(struct rte_eth_dev *dev)
 {
 	unsigned int i;
@@ -752,6 +775,8 @@ mlx4_stats_reset(struct rte_eth_dev *dev)
 				.idx = txq->stats.idx,
 			};
 	}
+
+	return 0;
 }
 
 /**
@@ -847,7 +872,7 @@ mlx4_flow_ctrl_get(struct rte_eth_dev *dev, struct rte_eth_fc_conf *fc_conf)
 		fc_conf->mode = RTE_FC_NONE;
 	ret = 0;
 out:
-	assert(ret >= 0);
+	MLX4_ASSERT(ret >= 0);
 	return -ret;
 }
 
@@ -893,7 +918,7 @@ mlx4_flow_ctrl_set(struct rte_eth_dev *dev, struct rte_eth_fc_conf *fc_conf)
 	}
 	ret = 0;
 out:
-	assert(ret >= 0);
+	MLX4_ASSERT(ret >= 0);
 	return -ret;
 }
 

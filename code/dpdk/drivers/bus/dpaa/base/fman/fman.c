@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: (BSD-3-Clause OR GPL-2.0)
  *
  * Copyright 2010-2016 Freescale Semiconductor Inc.
- * Copyright 2017 NXP
+ * Copyright 2017-2019 NXP
  *
  */
 
@@ -11,7 +11,7 @@
 
 /* This header declares the driver interface we implement */
 #include <fman.h>
-#include <of.h>
+#include <dpaa_of.h>
 #include <rte_malloc.h>
 #include <rte_dpaa_logs.h>
 #include <rte_string_fns.h>

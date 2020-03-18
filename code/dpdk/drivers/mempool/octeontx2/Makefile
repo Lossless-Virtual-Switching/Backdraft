@@ -23,9 +23,9 @@ CFLAGS += -diag-disable 2259
 endif
 endif
 
-EXPORT_MAP := rte_mempool_octeontx2_version.map
+CFLAGS += -DALLOW_EXPERIMENTAL_API
 
-LIBABIVER := 1
+EXPORT_MAP := rte_mempool_octeontx2_version.map
 
 #
 # all source are stored in SRCS-y

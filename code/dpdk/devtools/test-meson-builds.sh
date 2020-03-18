@@ -12,8 +12,11 @@ PIPEFAIL=""
 set -o | grep -q pipefail && set -o pipefail && PIPEFAIL=1
 
 srcdir=$(dirname $(readlink -f $0))/..
+. $srcdir/devtools/load-devel-config
+
 MESON=${MESON:-meson}
 use_shared="--default-library=shared"
+builds_dir=${DPDK_BUILD_TEST_DIR:-.}
 
 if command -v gmake >/dev/null 2>&1 ; then
 	MAKE=gmake
@@ -28,30 +31,118 @@ else
 	echo "ERROR: ninja is not found" >&2
 	exit 1
 fi
+if command -v ccache >/dev/null 2>&1 ; then
+	CCACHE=ccache
+else
+	CCACHE=
+fi
 
-build () # <directory> <meson options>
+default_path=$PATH
+default_pkgpath=$PKG_CONFIG_PATH
+default_cppflags=$CPPFLAGS
+default_cflags=$CFLAGS
+default_ldflags=$LDFLAGS
+
+load_env () # <target compiler>
 {
+	targetcc=$1
+	export PATH=$default_path
+	export PKG_CONFIG_PATH=$default_pkgpath
+	export CPPFLAGS=$default_cppflags
+	export CFLAGS=$default_cflags
+	export LDFLAGS=$default_ldflags
+	unset DPDK_MESON_OPTIONS
+	command -v $targetcc >/dev/null 2>&1 || return 1
+	DPDK_TARGET=$($targetcc -v 2>&1 | sed -n 's,^Target: ,,p')
+	. $srcdir/devtools/load-devel-config
+}
+
+config () # <dir> <builddir> <meson options>
+{
+	dir=$1
+	shift
 	builddir=$1
 	shift
-	if command -v $CC >/dev/null 2>&1 ; then
-		if [ ! -f "$builddir/build.ninja" ] ; then
-			options="--werror -Dexamples=all $*"
-			echo "$MESON $options $srcdir $builddir"
-			$MESON $options $srcdir $builddir
-			unset CC
+	if [ -f "$builddir/build.ninja" ] ; then
+		# for existing environments, switch to debugoptimized if unset
+		# so that ABI checks can run
+		if ! $MESON configure $builddir |
+				awk '$1=="buildtype" {print $2}' |
+				grep -qw debugoptimized; then
+			$MESON configure --buildtype=debugoptimized $builddir
 		fi
-		if [ -n "$TEST_MESON_BUILD_VERY_VERBOSE" ] ; then
-			# for full output from ninja use "-v"
-			echo "$ninja_cmd -v -C $builddir"
-			$ninja_cmd -v -C $builddir
-		elif [ -n "$TEST_MESON_BUILD_VERBOSE" ] ; then
-			# for keeping the history of short cmds, pipe through cat
-			echo "$ninja_cmd -C $builddir | cat"
-			$ninja_cmd -C $builddir | cat
-		else
-			echo "$ninja_cmd -C $builddir"
-			$ninja_cmd -C $builddir
+		return
+	fi
+	options=
+	options="$options --werror -Dexamples=all"
+	options="$options --buildtype=debugoptimized"
+	for option in $DPDK_MESON_OPTIONS ; do
+		options="$options -D$option"
+	done
+	options="$options $*"
+	echo "$MESON $options $dir $builddir"
+	$MESON $options $dir $builddir
+}
+
+compile () # <builddir>
+{
+	builddir=$1
+	if [ -n "$TEST_MESON_BUILD_VERY_VERBOSE" ] ; then
+		# for full output from ninja use "-v"
+		echo "$ninja_cmd -v -C $builddir"
+		$ninja_cmd -v -C $builddir
+	elif [ -n "$TEST_MESON_BUILD_VERBOSE" ] ; then
+		# for keeping the history of short cmds, pipe through cat
+		echo "$ninja_cmd -C $builddir | cat"
+		$ninja_cmd -C $builddir | cat
+	else
+		echo "$ninja_cmd -C $builddir"
+		$ninja_cmd -C $builddir
+	fi
+}
+
+install_target () # <builddir> <installdir>
+{
+	rm -rf $2
+	echo "DESTDIR=$2 $ninja_cmd -C $1 install"
+	DESTDIR=$2 $ninja_cmd -C $1 install
+}
+
+build () # <directory> <target compiler> <meson options>
+{
+	targetdir=$1
+	shift
+	targetcc=$1
+	shift
+	# skip build if compiler not available
+	command -v ${CC##* } >/dev/null 2>&1 || return 0
+	load_env $targetcc || return 0
+	config $srcdir $builds_dir/$targetdir $*
+	compile $builds_dir/$targetdir
+	if [ -n "$DPDK_ABI_REF_VERSION" ]; then
+		abirefdir=${DPDK_ABI_REF_DIR:-reference}/$DPDK_ABI_REF_VERSION
+		if [ ! -d $abirefdir/$targetdir ]; then
+			# clone current sources
+			if [ ! -d $abirefdir/src ]; then
+				git clone --local --no-hardlinks \
+					--single-branch \
+					-b $DPDK_ABI_REF_VERSION \
+					$srcdir $abirefdir/src
+			fi
+
+			rm -rf $abirefdir/build
+			config $abirefdir/src $abirefdir/build $*
+			compile $abirefdir/build
+			install_target $abirefdir/build $abirefdir/$targetdir
+			$srcdir/devtools/gen-abi.sh $abirefdir/$targetdir
 		fi
+
+		install_target $builds_dir/$targetdir \
+			$(readlink -f $builds_dir/$targetdir/install)
+		$srcdir/devtools/gen-abi.sh \
+			$(readlink -f $builds_dir/$targetdir/install)
+		$srcdir/devtools/check-abi.sh $abirefdir/$targetdir \
+			$(readlink -f $builds_dir/$targetdir/install)
 	fi
 }
 
@@ -70,8 +161,9 @@ fi
 for c in gcc clang ; do
 	command -v $c >/dev/null 2>&1 || continue
 	for s in static shared ; do
-		export CC="ccache $c"
-		build build-$c-$s --default-library=$s
+		export CC="$CCACHE $c"
+		build build-$c-$s $c --default-library=$s
+		unset CC
 	done
 done
 
@@ -83,33 +175,40 @@ ok=$(cc -march=$default_machine -E - < /dev/null > /dev/null 2>&1 || echo false)
 if [ "$ok" = "false" ] ; then
 	default_machine='corei7'
 fi
-build build-x86-default -Dlibdir=lib -Dmachine=$default_machine $use_shared
+build build-x86-default cc -Dlibdir=lib -Dmachine=$default_machine $use_shared
 
-# enable cross compilation if gcc cross-compiler is found
 c=aarch64-linux-gnu-gcc
-if command -v $c >/dev/null 2>&1 ; then
-	# compile the general v8a also for clang to increase coverage
-	export CC="clang"
-	build build-arm64-host-clang $use_shared \
-		--cross-file $srcdir/config/arm/arm64_armv8_linux_gcc
-
-	for f in $srcdir/config/arm/arm*gcc ; do
-		export CC="ccache gcc"
-		build build-$(basename $f | tr '_' '-' | cut -d'-' -f-2) \
-			$use_shared --cross-file $f
-	done
-fi
+# generic armv8a with clang as host compiler
+export CC="clang"
+build build-arm64-host-clang $c $use_shared \
+	--cross-file $srcdir/config/arm/arm64_armv8_linux_gcc
+unset CC
+# all gcc/arm configurations
+for f in $srcdir/config/arm/arm64_[bdo]*gcc ; do
+	export CC="$CCACHE gcc"
+	build build-$(basename $f | tr '_' '-' | cut -d'-' -f-2) $c \
+		$use_shared --cross-file $f
+	unset CC
+done
 
 # Test installation of the x86-default target, to be used for checking
 # the sample apps build using the pkg-config file for cflags and libs
-build_path=build-x86-default
-export DESTDIR=$(pwd)/$build_path/install-root
-$ninja_cmd -C $build_path install
+build_path=$(readlink -f $builds_dir/build-x86-default)
+export DESTDIR=$build_path/install
+# No need to reinstall if ABI checks are enabled
+if [ -z "$DPDK_ABI_REF_VERSION" ]; then
+	install_target $build_path $DESTDIR
+fi
 
+load_env cc
 pc_file=$(find $DESTDIR -name libdpdk.pc)
 export PKG_CONFIG_PATH=$(dirname $pc_file):$PKG_CONFIG_PATH
 
-for example in cmdline helloworld l2fwd l3fwd skeleton timer; do
-	echo "## Building $example"
-	$MAKE -C $DESTDIR/usr/local/share/dpdk/examples/$example clean all
-done
+# if pkg-config defines the necessary flags, test building some examples
+if pkg-config --define-prefix libdpdk >/dev/null 2>&1; then
+	export PKGCONF="pkg-config --define-prefix"
+	for example in cmdline helloworld l2fwd l3fwd skeleton timer; do
+		echo "## Building $example"
+		$MAKE -C $DESTDIR/usr/local/share/dpdk/examples/$example clean all
+	done
+fi
