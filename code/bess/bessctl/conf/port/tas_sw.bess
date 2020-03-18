@@ -67,7 +67,7 @@ sock_p2 = 'net_vhost1,iface=/users/alireza/my_vhost1.sock,queues='
 
 #config_path = sys.argv[1]
 config = load_exp_conf("/proj/uic-dcs-PG0/post-loom/exp/config/tas/config.json")
-#config = load_exp_conf("/home/alireza/Documents/post-loom/exp/config/mtcp/test_backpressure.json")
+
 #config = load_exp_conf(config_path)
 config = VhostConf(config).bess
 config = VhostConf(config)
@@ -93,22 +93,32 @@ else:
 
 
 #print("This file involves the NIC")
-nic_port = PMDPort(port_id=0, num_inc_q=config.send_dev['rx'], num_out_q=config.send_dev['tx'])
-
-
-#Some Plumbing
+nic_port = PMDPort(port_id=0, num_inc_q=config.send_dev['rx'], \
+  num_out_q=config.send_dev['tx'])
 
 #forward
 for i in range(config.send_dev['rx']):
   input1 = QueueInc(port=my_vhost0.name, qid=i)
   output1 = QueueOut(port=nic_port.name, qid=i)
-  input1 -> output1
+  if(config.backpressure):
+    input1 -> Queue(backpressure=config.backpressure) -> output1
+    print("backpressure activated forward")
+  else:
+    print("lossy network forward")
+    input1 -> output1
+
 
 #backward
 for i in range(config.send_dev['rx']):
   input1 = QueueInc(port=nic_port.name, qid=i)
   output1 = QueueOut(port=my_vhost0.name, qid=i)
-  input1 -> output1
+  if(config.backpressure):
+    input1 -> Queue(backpressure=config.backpressure) -> output1
+    print("backpressure activated backward")
+  else:
+    print("lossy network backward")
+    input1 -> output1
 
-print("Two Vhost port are connected to each other.")
+
+print("Backpressure: {}".format(config.backpressure))
 

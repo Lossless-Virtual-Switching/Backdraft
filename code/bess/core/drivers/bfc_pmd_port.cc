@@ -479,16 +479,16 @@ llring *BFCPMDPort::InitllringQueue(uint32_t slots, int *err) {
   return queue;
 }
 
-int BFCPMDPort::UpdateConf(const Conf &conf) {
+CommandResponse BFCPMDPort::UpdateConf(const Conf &conf) {
   rte_eth_dev_stop(dpdk_port_id_);
+  CommandResponse res;
 
   if (conf_.mtu != conf.mtu && conf.mtu != 0) {
     int ret = rte_eth_dev_set_mtu(dpdk_port_id_, conf.mtu);
     if (ret == 0) {
       conf_.mtu = conf_.mtu;
     } else {
-      LOG(WARNING) << "rte_eth_dev_set_mtu() failed: " << rte_strerror(-ret);
-      return ret;
+        return CommandFailure(-ret, "rte_eth_dev_set_mtu() failed");
     }
   }
 
@@ -500,9 +500,7 @@ int BFCPMDPort::UpdateConf(const Conf &conf) {
     if (ret == 0) {
       conf_.mac_addr = conf.mac_addr;
     } else {
-      LOG(WARNING) << "rte_eth_dev_default_mac_addr_set() failed: "
-                   << rte_strerror(-ret);
-      return ret;
+      return CommandFailure(-ret, "rte_eth_dev_default_mac_addr_set() failed: ");
     }
   }
 
@@ -511,12 +509,11 @@ int BFCPMDPort::UpdateConf(const Conf &conf) {
     if (ret == 0) {
       conf_.admin_up = true;
     } else {
-      LOG(WARNING) << "rte_eth_dev_start() failed: " << rte_strerror(-ret);
-      return ret;
+          return CommandFailure(-ret, "rte_eth_dev_start() failed");
     }
   }
 
-  return 0;
+  return CommandSuccess();
 }
 
 void BFCPMDPort::DeInit() {
