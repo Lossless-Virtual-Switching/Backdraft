@@ -35,7 +35,7 @@
  * @ingroup tas
  * @{ */
 
-#define FLEXNIC_HUGE_PREFIX "/dev/hugepages"
+#define FLEXNIC_HUGE_PREFIX "/mnt/huge_2MB"
 
 /** Name for the info shared memory region. */
 #define FLEXNIC_NAME_INFO "tas_info"

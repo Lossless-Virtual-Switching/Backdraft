@@ -50,7 +50,7 @@
 uint8_t net_port_id = 0;
 static struct rte_eth_conf port_conf = {
     .rxmode = {
-      .mq_mode = ETH_MQ_RX_RSS,
+      .mq_mode = ETH_MQ_RX_NONE,
       .offloads = 0,
 #if RTE_VER_YEAR < 18
       .ignore_offload_bitfield = 1,
