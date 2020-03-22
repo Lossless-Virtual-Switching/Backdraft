@@ -233,6 +233,12 @@ def run_alpha(config, cpu_limit):
     if(general_config.sysbench):
         kill_sysbench()
 
+    if(general_config.tas):
+        pass
+
+    if(general_config.tas_benchmakr):
+        pass
+
 
 def start_experiment(path):
     config = VhostConf(load_exp_conf(path))
@@ -244,10 +250,12 @@ def start_experiment(path):
         for i in range(5, 101, 5):
             run_alpha(config, i)
 
-parser = argparse.ArgumentParser(description='Software Switch Experiments')
-parser.add_argument('--path', type=str, default='config/backdraft/test_backpressure.json', help='Absolute/relative path to the config file')
-args = parser.parse_args()
 
-#run("config/mtcp/test_backpressure.json")
-run_beta(args.path)
-#start_experiment(args.path)
+
+if __name == "__main__":
+    parser = argparse.ArgumentParser(description='Software Switch Experiments')
+    parser.add_argument('--path', type=str, default='config/tas/config.json', help='Absolute/relative path to the config file')
+    args = parser.parse_args()
+    run_beta(args.path)
+
+
