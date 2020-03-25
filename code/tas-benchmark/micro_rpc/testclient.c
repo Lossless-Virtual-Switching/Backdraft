@@ -87,6 +87,7 @@ static uint32_t openall_delay = 0;
 static struct sockaddr_in *addrs;
 static size_t addrs_num;
 static volatile int start_running = 0;
+static FILE *file = NULL;
 
 struct connection {
     enum conn_state state;
@@ -136,6 +137,11 @@ struct core {
 
 static void open_all(struct core *c);
 
+void handle_sigint(int sig)
+{
+    fclose(file);
+    printf("Caught signal %d\n", sig);
+}
 
 static inline uint64_t get_nanos(void)
 {
@@ -752,7 +758,7 @@ int main(int argc, char *argv[])
     setlocale(LC_NUMERIC, "");
 
     if (argc < 5 || argc > 11) {
-        fprintf(stderr, "Usage: ./testclient IP PORT CORES CONFIG "
+        fprintf(stderr, "Usage: ./testclient IP PORT CORES CONFIG RESULT_PATH"
             "[MESSAGE-SIZE] [MAX-PENDING] [TOTAL-CONNS] "
             "[OPENALL-DELAY] [MAX-MSGS-CONN] [MAX-PEND-CONNS]\n");
         return EXIT_FAILURE;
@@ -771,28 +777,33 @@ int main(int argc, char *argv[])
     }
 #endif
 
-    if (argc >= 6) {
-        message_size = atoi(argv[5]);
+    if(argc >= 6) {
+	    file = fopen(argv[5], "w");
+	    // signal(SIGINT, handle_sigint); 
     }
 
     if (argc >= 7) {
-        max_pending = atoi(argv[6]);
+        message_size = atoi(argv[6]);
     }
 
     if (argc >= 8) {
-        num_conns = atoi(argv[7]);
+        max_pending = atoi(argv[7]);
     }
 
     if (argc >= 9) {
-        openall_delay = atoi(argv[8]);
+        num_conns = atoi(argv[8]);
     }
 
     if (argc >= 10) {
-        num_msgs = atoi(argv[9]);
+        openall_delay = atoi(argv[9]);
     }
 
     if (argc >= 11) {
-        max_conn_pending = atoi(argv[10]);
+        num_msgs = atoi(argv[10]);
+    }
+
+    if (argc >= 12) {
+        max_conn_pending = atoi(argv[11]);
     }
 
     assert(sizeof(*cs) % 64 == 0);
@@ -855,6 +866,16 @@ int main(int argc, char *argv[])
                 hist_value(fracs_pos[2]), hist_value(fracs_pos[3]),
                 hist_value(fracs_pos[4]), hist_value(fracs_pos[5]),
                 open_total);
+        if(file) {
+		fprintf(file, "TP: total=%'.2Lf mbps  50p=%d us  90p=%d us  95p=%d us  "
+                "99p=%d us  99.9p=%d us  99.99p=%d us  flows=%lu\n",
+                tp_total * message_size * 8 / 1000000.,
+                hist_value(fracs_pos[0]), hist_value(fracs_pos[1]),
+                hist_value(fracs_pos[2]), hist_value(fracs_pos[3]),
+                hist_value(fracs_pos[4]), hist_value(fracs_pos[5]),
+                open_total);
+		fflush(file);
+	}
 
 #ifdef PRINT_PERCORE
         for (i = 0; i < num_threads; i++) {
@@ -897,6 +918,7 @@ int main(int argc, char *argv[])
 
         t_prev = t_cur;
     }
+    fclose(file);
 
 #ifdef USE_MTCP
     mtcp_destroy();
