@@ -2,9 +2,7 @@
 # Copyright (c) 2016-2017, Nefeli Networks, Inc.
 # All rights reserved.
 #
-# Redistribution and use in source and binary forms, with or without
-# modification, are permitted provided that the following conditions are met:
-#
+# Redistribution and use in source and binary forms, with or without # modification, are permitted provided that the following conditions are met: #
 # * Redistributions of source code must retain the above copyright notice, this
 # list of conditions and the following disclaimer.
 #
@@ -56,17 +54,17 @@ def load_exp_conf(config_path):
 #bess.resume_all()
 #bess.pause_all()
 
-cmd = 'sudo rm /users/alireza/my_vhost*'
+cmd = 'sudo rm /home/mango/my_vhost*'
 #cmd = 'sudo rm /home/alireza/my_vhost*'
 subprocess.call(cmd, shell=True)
 
-sock_p1 = 'net_vhost0,iface=/users/alireza/my_vhost0.sock,queues='
-#sock_p1 = 'net_vhost0,iface=/home/alireza/my_vhost0.sock,queues='
-sock_p2 = 'net_vhost1,iface=/users/alireza/my_vhost1.sock,queues='
-#sock_p2 = 'net_vhost1,iface=/home/alireza/my_vhost1.sock,queues='
+#sock_p1 = 'net_vhost0,iface=/users/alireza/my_vhost0.sock,queues='
+sock_p1 = 'net_vhost0,iface=/home/mango/my_vhost0.sock,queues='
+#sock_p2 = 'net_vhost1,iface=/users/alireza/my_vhost1.sock,queues='
+sock_p2 = 'net_vhost1,iface=/home/mango/my_vhost1.sock,queues='
 
 #config_path = sys.argv[1]
-config = load_exp_conf("/proj/uic-dcs-PG0/post-loom/exp/config/tas/config.json")
+config = load_exp_conf("/home/mango/workplace/post-loom/exp/config/tas/config.json")
 
 #config = load_exp_conf(config_path)
 config = VhostConf(config).bess

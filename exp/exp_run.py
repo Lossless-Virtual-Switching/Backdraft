@@ -31,7 +31,7 @@ class VhostConf(object):
 
 def bess(config):
     config = VhostConf(config)
-    cmd = 'sudo bessctl/bessctl -- daemon start -- run file {config_file}'.format(config_file=os.path.join(config.bess_home, "bessctl/conf/port", config.bess_config), config_path="/home/alireza/Documents/post-loom/exp/config/backdraft/test_backpressure.json") # I don't know how to do this, but will do something about it.
+    cmd = 'sudo bessctl/bessctl -- daemon start -- run file {config_file}'.format(config_file=config.bess_config) # I don't know how to do this, but will do something about it.
     print(cmd)
     subprocess.check_call(cmd, cwd=config.bess_home, shell=True)
 
@@ -252,7 +252,7 @@ def start_experiment(path):
 
 
 
-if __name == "__main__":
+if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='Software Switch Experiments')
     parser.add_argument('--path', type=str, default='config/tas/config.json', help='Absolute/relative path to the config file')
     args = parser.parse_args()

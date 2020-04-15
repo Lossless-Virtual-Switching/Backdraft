@@ -1,0 +1,15 @@
+import os
+import subprocess
+import scapy.all as scapy
+import time
+import json
+import sys
+
+cnt_queues = 8
+my_vhost0 = PMDPort(name='my_vhost0', vdev='net_vhost0,iface=/home/banana/my_vhost0.sock,queues={}'.format(cnt_queues),
+										num_inc_q=cnt_queues, num_out_q=cnt_queues, size_inc_q=64, size_out_q=64)
+my_vhost1 = PMDPort(name='my_vhost1', vdev='net_vhost1,iface=/home/banana/my_vhost1.sock,queues={}'.format(cnt_queues),
+										num_inc_q=cnt_queues, num_out_q=cnt_queues, size_inc_q=64, size_out_q=64)
+
+BKDRFTQueueInc(port=my_vhost0.name, qid=0) -> QueueOut(port=my_vhost1.name, qid=0)
+

@@ -53,7 +53,7 @@
         "backdraft": false,
 	"bfc": false,
         "bess_config": "tas_sw.bess",
-        "bess_home": "/proj/uic-dcs-PG0/post-loom/code/bess",
+        "bess_home": "/home/mango/workplace/post-loom/code/bess",
 	"backpressure": true 
     },
 

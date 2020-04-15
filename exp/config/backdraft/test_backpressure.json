@@ -1,76 +1,76 @@
 {
-    "general": {
-        "sysbench": 0,
-        "moongen": 0,
-        "bess": 1,
-	"mtcp": 0
-    },
-
-    "moongen": {
-        "exp_duration": 60,
-        "script": "backdraft_workload_generator.lua",
-        "moongen_home": "/home/alireza/Documents/moongen",
-	"results_dir": "/home/alireza/Documents/post-loom/exp/results",
-	"server": {
-		"dev": 0,
-		"count": 1,
-        	"tqueue": 1,
-        	"rqueue": 1,
-        	"SleepTime": 0,
-		"dumper": 0,
-		"requests": 1000000000,
-        	"dpdk_config": "dpdk_configs/dpdk-conf-backdraft-local-server.lua"
+	"general": {
+		"sysbench": 0,
+			"moongen": 0,
+			"bess": 1,
+			"mtcp": 0
 	},
 
-	"client": {
-		"dev": 0,
-		"count": 1,
-        	"rqueue": 1,
-        	"tqueue": 1,
-        	"dpdk_config": "dpdk_configs/dpdk-conf-backdraft-local-client.lua",
-        	"concurrency": 256,
-        	"SleepTime": 0,
-        	"rate": 4,
-        	"drop": 1,
-		"requests": 1000000000
-    	}
-    },
+		"moongen": {
+			"exp_duration": 60,
+			"script": "backdraft_workload_generator.lua",
+			"moongen_home": "/home/banana/workplace/moongen",
+			"results_dir": "/home/banana/workplace/post-loom/exp/results",
+			"server": {
+				"dev": 0,
+				"count": 1,
+				"tqueue": 1,
+				"rqueue": 1,
+				"SleepTime": 0,
+				"dumper": 0,
+				"requests": 1000000000,
+				"dpdk_config": "dpdk_configs/dpdk-conf-backdraft-local-server.lua"
+			},
 
-    "mtcp": {
-        "mtcp_home": "/proj/uic-dcs-PG0/post-loom/mtcp"
-    },
+			"client": {
+				"dev": 0,
+				"count": 1,
+				"rqueue": 1,
+				"tqueue": 1,
+				"dpdk_config": "dpdk_configs/dpdk-conf-backdraft-local-client.lua",
+				"concurrency": 256,
+				"SleepTime": 0,
+				"rate": 4,
+				"drop": 1,
+				"requests": 1000000000
+			}
+		},
 
-    "bess": {
-        "send_dev": {
-            "tx": 1,
-            "rx": 1
-        },
-        "recv_dev": {
-            "tx": 1,
-            "rx": 1
-        },
-        "send_q": 1,
-        "recv_q": 1,
-        "queue_size_inc": 64,
-        "queue_size_out": 64,
-        "backdraft": false,
-	"bfc": false,
-        "bess_config": "mtcp_sw.bess",
-        "bess_home": "/proj/uic-dcs-PG0/post-loom/code/bess"
-    },
+		"mtcp": {
+			"mtcp_home": "/proj/uic-dcs-PG0/post-loom/mtcp"
+		},
 
-    "sysbench": {
-        "thread_number": 4
-    },
+		"bess": {
+			"send_dev": {
+				"tx": 3,
+				"rx": 3
+			},
+			"recv_dev": {
+				"tx": 3,
+				"rx": 3
+			},
+			"send_q": 3,
+			"recv_q": 3,
+			"queue_size_inc": 64,
+			"queue_size_out": 64,
+			"backdraft": false,
+			"bfc": false,
+			"bess_config": "/home/banana/workplace/post-loom/code/bess/bessctl/conf/port/backdraft_sw_sep_q.bess",
+			"bess_home": "/home/banana/workplace/post-loom/code/bess-v1"
+		},
 
-    "plot": {
-        "plot_dir": "/proj/uic-dcs-PG0/post-loom/exp/analysis/plot",
-        "drawer": "draw.py",
-        "latency_0": "latency_0.txt",
-        "latency_1": "latency_1.txt",
-        "drop_0": "drop_0.txt",
-        "drop_1": "drop_1.txt",
-        "background_rate": "background_rate.txt",
-        "venv_path": "some_random_path"
-    }
+		"sysbench": {
+			"thread_number": 4
+		},
+
+		"plot": {
+			"plot_dir": "/proj/uic-dcs-PG0/post-loom/exp/analysis/plot",
+			"drawer": "draw.py",
+			"latency_0": "latency_0.txt",
+			"latency_1": "latency_1.txt",
+			"drop_0": "drop_0.txt",
+			"drop_1": "drop_1.txt",
+			"background_rate": "background_rate.txt",
+			"venv_path": "some_random_path"
+		}
 }

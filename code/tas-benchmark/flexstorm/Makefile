@@ -16,11 +16,11 @@ endif
 
 CFLAGS = -std=gnu99 -g -Wall -Werror -I. -D$(TOPOLOGY) $(OPTFLAGS)
 LDFLAGS = -pthread
-LDLIBS = -lrt /home/simon/flextcp/sockets/flextcp_sockets.so
+LDLIBS = -lrt # /home/simon/flextcp/sockets/flextcp_sockets.so
 OBJS = worker.o libcollections.a
 TASKS = spout.o count.o print.o rank.o
 
-RTE_SDK = $(HOME)/dpdk/x86_64-native-linuxapp-gcc
+RTE_SDK = $(HOME)/workplace/post-loom/code/dpdk/x86_64-native-linuxapp-gcc
 
 ifeq ($(findstring DPDK,$(TOPOLOGY)),DPDK)
 CFLAGS+= -I$(RTE_SDK)/include -DUSE_DPDK
@@ -117,7 +117,7 @@ LIBS_MTCP += -Wl,-ldl
 LIBS_MTCP += -Wl,--end-group
 endif
 
-all: worker flexnic worker_mtcp
+all: worker flexnic # worker_mtcp
 
 startall: all
 	./startall.sh

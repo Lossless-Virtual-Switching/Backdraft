@@ -62,9 +62,11 @@ CommandResponse BKDRFTQueueInc::Init(const bess::pb::BKDRFTQueueIncArg &arg) {
     prefetch_ = 1;
   }
   node_constraints_ = port_->GetNodePlacementConstraint();
-  tid = RegisterTask((void *)(uintptr_t)qid_);
-  if (tid == INVALID_TASK_ID)
-    return CommandFailure(ENOMEM, "Context creation failed");
+  if (qid_ == 0) {
+	  tid = RegisterTask((void *)(uintptr_t)qid_);
+	  if (tid == INVALID_TASK_ID)
+	    return CommandFailure(ENOMEM, "Context creation failed");
+  }
 
   int ret = port_->AcquireQueues(reinterpret_cast<const module *>(this),
                                  PACKET_DIR_INC, &qid_, 1);
@@ -114,6 +116,33 @@ struct task_result BKDRFTQueueInc::RunTask(Context *ctx,
   const int burst = ACCESS_ONCE(burst_);
   const int pkt_overhead = 24;
 
+  batch->set_cnt(p->RecvPackets(qid, batch->pkts(), burst));
+  uint32_t cnt = batch->cnt();
+  p->queue_stats[PACKET_DIR_INC][qid].requested_hist[burst]++;
+  p->queue_stats[PACKET_DIR_INC][qid].actual_hist[cnt]++;
+  p->queue_stats[PACKET_DIR_INC][qid].diff_hist[burst - cnt]++;
+  if (cnt == 0) {
+    return {.block = true, .packets = 0, .bits = 0};
+  }
+
+  // NOTE: we cannot skip this step since it might be used by scheduler.
+  if (prefetch_) {
+    for (uint32_t i = 0; i < cnt; i++) {
+      received_bytes += batch->pkts()[i]->total_len();
+      rte_prefetch0(batch->pkts()[i]->head_data());
+    }
+  } else {
+    for (uint32_t i = 0; i < cnt; i++) {
+      received_bytes += batch->pkts()[i]->total_len();
+    }
+  }
+
+  if (!(p->GetFlags() & DRIVER_FLAG_SELF_INC_STATS)) {
+    p->queue_stats[PACKET_DIR_INC][qid].packets += cnt;
+    p->queue_stats[PACKET_DIR_INC][qid].bytes += received_bytes;
+  }
+
+  qid = 1;
   batch->set_cnt(p->RecvPackets(qid, batch->pkts(), burst));
   uint32_t cnt = batch->cnt();
   p->queue_stats[PACKET_DIR_INC][qid].requested_hist[burst]++;

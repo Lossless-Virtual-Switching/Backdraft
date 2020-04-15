@@ -1,2 +1,7 @@
 exp/results/*
 exp/analysis/stats*
+*.pyc
+*.swp
+*.o
+*.a
+code/apps/dpdk_netperf/build/*

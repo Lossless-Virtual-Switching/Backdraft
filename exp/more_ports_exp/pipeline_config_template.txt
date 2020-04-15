@@ -1,0 +1,36 @@
+import os
+
+
+TX_QUEUE_COUNT = 1
+RX_QUEUE_COUNT = 1
+NO_PKT=True  # no packet through excess ports
+
+
+my_vhost1 = PMDPort(name='my_vhost1', vdev='eth_vhost1,iface=/tmp/my_vhost1.sock,queues=1', 
+	num_inc_q=TX_QUEUE_COUNT,
+	num_out_q=RX_QUEUE_COUNT)
+my_vhost2 = PMDPort(name='my_vhost2', vdev='eth_vhost2,iface=/tmp/my_vhost2.sock,queues=1', 
+	num_inc_q=TX_QUEUE_COUNT,
+	num_out_q=RX_QUEUE_COUNT)
+
+PortInc(port=my_vhost1.name) -> PortOut(port=my_vhost2.name)
+PortInc(port=my_vhost2.name) -> PortOut(port=my_vhost1.name)
+
+if NO_PKT:
+	for i in range(EXCESS):
+		host = PMDPort(name='ex_vhost%d' % i,
+				vdev='eth_vhost%d,iface=/tmp/ex_vhost%d.sock,queues=1' % (i+3,i))
+		PortInc(port=host.name) -> PortOut(port=host.name)
+else:
+	pass
+	# for i in range(0, EXCESS, 2):
+	# 	j = i + 1
+	# 	host1 = PMDPort(name='ex_vhost%d' % i,
+	# 			vdev='eth_vhost%d,iface=/tmp/ex_vhost%d.sock,queues=1' % (i+3,i))
+	# 	host2 = PMDPort(name='ex_vhost%d' % j,
+	# 			vdev='eth_vhost%d,iface=/tmp/ex_vhost%d.sock,queues=1' % (j+3,j))
+	# 	# Source() -> PortOut(port=host1.name)
+	# 	PortInc(port=host1.name) -> PortOut(port=host2.name)
+	# 	PortInc(port=host2.name) -> PortOut(port=host1.name)
+	# 	# PortInc(port=host2.name) -> Sink()
+

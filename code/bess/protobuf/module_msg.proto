@@ -311,6 +311,15 @@ message QueueIncCommandSetBurstArg {
 }
 
 /**
+ * The module BDRFTQueueInc has a function `set_burst(...)` that allows you to specify
+ * the maximum number of packets to be stored in a single PacketBatch released
+ * by the module.
+ */
+message BDRFTQueueIncCommandSetBurstArg {
+  uint64 burst = 1; /// The maximum "burst" of packets (ie, the maximum batch size)
+}
+
+/**
  * The module Queue has a function `set_burst(...)` that allows you to specify
  * the maximum number of packets to be stored in a single PacketBatch released
  * by the module.
@@ -779,6 +788,13 @@ message PortOutArg {
  * __Output Gates__: 1
  */
 message QueueIncArg {
+  string port = 1; /// The portname to connect to (read from).
+  uint64 qid = 2; /// The queue on that port to read from. qid starts from 0.
+  bool prefetch = 3; /// When prefetch is enabled, the module will perform CPU prefetch on the first 64B of each packet onto CPU L1 cache. Default value is false.
+}
+
+
+message BDRFTQueueIncArg {
   string port = 1; /// The portname to connect to (read from).
   uint64 qid = 2; /// The queue on that port to read from. qid starts from 0.
   bool prefetch = 3; /// When prefetch is enabled, the module will perform CPU prefetch on the first 64B of each packet onto CPU L1 cache. Default value is false.
