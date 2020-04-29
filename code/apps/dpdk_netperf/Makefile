@@ -44,6 +44,7 @@ APP = dpdk_netperf
 # all source are stored in SRCS-y
 SRCS-y := dpdk_netperf.c
 SRCS-y += utils/bkdrft.c
+SRCS-y += utils/zipf.c
 SRCS-y += utils/percentile.c
 SRCS-y += data_structure/f_linklist.c
 

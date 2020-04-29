@@ -14,6 +14,7 @@
 
 #include <time.h>
 #include "utils/bkdrft.h"
+#include "utils/zipf.h"
 #include "utils/percentile.h"
 #include "data_structure/f_linklist.h"
 
@@ -74,6 +75,7 @@ static unsigned int dpdk_port = 0;
 static uint8_t mode;
 struct rte_mempool *rx_mbuf_pool;
 struct rte_mempool *tx_mbuf_pool;
+struct rte_mempool *ctrl_mbuf_pool;
 static struct rte_ether_addr my_eth;
 static uint32_t my_ip;
 static uint32_t server_ip;
@@ -81,7 +83,7 @@ static int seconds;
 static size_t payload_len;
 static unsigned int client_port;
 static unsigned int server_port;
-static unsigned int num_queues = 3;
+static unsigned int num_queues = 8;
 struct rte_ether_addr zero_mac = {
 		.addr_bytes = {0x0, 0x0, 0x0, 0x0, 0x0, 0x0}
 };
@@ -89,6 +91,7 @@ struct rte_ether_addr broadcast_mac = {
 		.addr_bytes = {0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF}
 };
 uint16_t next_port = 50000;
+bool bkdrft;
 
 /* dpdk_netperf.c: simple implementation of netperf on DPDK */
 
@@ -198,7 +201,7 @@ static void send_arp(uint16_t op, struct rte_ether_addr dst_eth, uint32_t dst_ip
 	char *buf_ptr;
 	struct rte_ether_hdr *eth_hdr;
 	struct rte_arp_hdr *a_hdr;
-	int nb_tx;
+	int nb_tx = 0;
 
 	buf = rte_pktmbuf_alloc(tx_mbuf_pool);
 	if (buf == NULL)
@@ -292,7 +295,7 @@ static void do_client(uint8_t port)
 	uint64_t send_failure = 0;
 	struct rte_mbuf *bufs[BURST_SIZE];
 	struct rte_mbuf *buf;
-// 	struct rte_mbuf *batch[BURST_SIZE];
+	struct rte_mbuf *batch[BURST_SIZE * 4];
 	struct rte_ether_hdr *ptr_mac_hdr;
 	struct rte_arp_hdr *a_hdr;
 	char *buf_ptr;
@@ -304,19 +307,16 @@ static void do_client(uint8_t port)
 	struct rte_ether_addr server_eth = {{0x52, 0x54, 0x00, 0x12, 0x00, 0x00}};
 	struct nbench_req *control_req;
 	bool setup_port = false;
-	bool ctrlQ = false;
+	uint8_t burst = 32; // BURST_SIZE;
 	/* used for testing things */
-// 	uint8_t burst = 1;
 // 	int count_pkts_to_send = 65024;
-// 	struct timespec delay = {
-// 		.tv_sec = 0,
-// 		.tv_nsec = 10
-// 	};
+	// struct timespec delay = {
+	// 	.tv_sec = 0,
+	// 	.tv_nsec = 100
+	// };
 	/* changing ports */
-	int current_queue = 1;
-	int change_after_pkts = 1000000; // 1 Mpkt
-	fList *next_queue;
-	uint64_t next_check_point = change_after_pkts;
+	int current_queue = 2;
+	struct zipfgen *zipf;
 	/* 99.9 latency calculation variables */
 #ifdef nnper
 	uint64_t pkt_start_t, pkt_end_t;
@@ -326,9 +326,7 @@ static void do_client(uint8_t port)
 	hist = new_p_hist(60);
 #endif
 
-	next_queue = new_flist(32); 
-	for (i = 1; i < 8; i++)
-		append_flist(next_queue, (float)1);
+	zipf = new_zipfgen(num_queues - 1, 1);
 	
 	/*
 	 * Check that the port is on the same NUMA node as the polling thread
@@ -381,6 +379,7 @@ static void do_client(uint8_t port)
 got_mac:
 	/* run for specified amount of time */
 	start_time = rte_get_timer_cycles();
+	// tmp_ctr = 0;
 	while (rte_get_timer_cycles() <
 			start_time + seconds * rte_get_timer_hz()) {
 		/* t1 */
@@ -388,76 +387,73 @@ got_mac:
 		pkt_start_t = rte_get_timer_cycles();
 #endif
 
-		buf = rte_pktmbuf_alloc(tx_mbuf_pool);
-		if (buf == NULL) {
-			//printf("error allocating batch tx mbuf\n");
+		if(rte_pktmbuf_alloc_bulk(tx_mbuf_pool, batch, burst)) {
 			continue;
 		}
 
-		/* ethernet header */
-		buf_ptr = rte_pktmbuf_append(buf, RTE_ETHER_HDR_LEN);
-		eth_hdr = (struct rte_ether_hdr *) buf_ptr;
+		for (i = 0; i < burst; i++) {
+			buf = batch[i];
+			/* ethernet header */
+			buf_ptr = rte_pktmbuf_append(buf, RTE_ETHER_HDR_LEN);
+			eth_hdr = (struct rte_ether_hdr *) buf_ptr;
 
-		rte_ether_addr_copy(&my_eth, &eth_hdr->s_addr);
-		rte_ether_addr_copy(&server_eth, &eth_hdr->d_addr);
-		eth_hdr->ether_type = rte_cpu_to_be_16(RTE_ETHER_TYPE_IPV4);
+			rte_ether_addr_copy(&my_eth, &eth_hdr->s_addr);
+			rte_ether_addr_copy(&server_eth, &eth_hdr->d_addr);
+			eth_hdr->ether_type = rte_cpu_to_be_16(RTE_ETHER_TYPE_IPV4);
 
-		/* IPv4 header */
-		buf_ptr = rte_pktmbuf_append(buf, sizeof(struct rte_ipv4_hdr));
-		ipv4_hdr = (struct rte_ipv4_hdr *) buf_ptr;
-		ipv4_hdr->version_ihl = 0x45;
-		ipv4_hdr->type_of_service = 0;
-		ipv4_hdr->total_length = rte_cpu_to_be_16(sizeof(struct rte_ipv4_hdr) +
-										sizeof(struct rte_udp_hdr) + payload_len);
-		ipv4_hdr->packet_id = 0;
-		ipv4_hdr->fragment_offset = 0;
-		ipv4_hdr->time_to_live = 64;
-		ipv4_hdr->next_proto_id = IPPROTO_UDP;
-		ipv4_hdr->hdr_checksum = 0;
-		ipv4_hdr->src_addr = rte_cpu_to_be_32(my_ip);
-		ipv4_hdr->dst_addr = rte_cpu_to_be_32(server_ip);
+			/* IPv4 header */
+			buf_ptr = rte_pktmbuf_append(buf, sizeof(struct rte_ipv4_hdr));
+			ipv4_hdr = (struct rte_ipv4_hdr *) buf_ptr;
+			ipv4_hdr->version_ihl = 0x45;
+			ipv4_hdr->type_of_service = 0;
+			ipv4_hdr->total_length = rte_cpu_to_be_16(sizeof(struct rte_ipv4_hdr) +
+											sizeof(struct rte_udp_hdr) + payload_len);
+			ipv4_hdr->packet_id = 0;
+			ipv4_hdr->fragment_offset = 0;
+			ipv4_hdr->time_to_live = 64;
+			ipv4_hdr->next_proto_id = IPPROTO_UDP;
+			ipv4_hdr->hdr_checksum = 0;
+			ipv4_hdr->src_addr = rte_cpu_to_be_32(my_ip);
+			ipv4_hdr->dst_addr = rte_cpu_to_be_32(server_ip);
 
-		/* UDP header + data */
-		buf_ptr = rte_pktmbuf_append(buf,
-										sizeof(struct rte_udp_hdr) + payload_len);
-		udp_hdr = (struct rte_udp_hdr *) buf_ptr;
-		udp_hdr->src_port = rte_cpu_to_be_16(client_port);
-		udp_hdr->dst_port = rte_cpu_to_be_16(server_port);
-		udp_hdr->dgram_len = rte_cpu_to_be_16(sizeof(struct rte_udp_hdr)
-										+ payload_len);
-		udp_hdr->dgram_cksum = 0;
-		memset(buf_ptr + sizeof(struct rte_udp_hdr), 0xAB, payload_len);
+			/* UDP header + data */
+			buf_ptr = rte_pktmbuf_append(buf,
+											sizeof(struct rte_udp_hdr) + payload_len);
+			udp_hdr = (struct rte_udp_hdr *) buf_ptr;
+			udp_hdr->src_port = rte_cpu_to_be_16(client_port);
+			udp_hdr->dst_port = rte_cpu_to_be_16(server_port);
+			udp_hdr->dgram_len = rte_cpu_to_be_16(sizeof(struct rte_udp_hdr)
+											+ payload_len);
+			udp_hdr->dgram_cksum = 0;
+			memset(buf_ptr + sizeof(struct rte_udp_hdr), 0xAB, payload_len);
 
-		/* control data in case our server is running netbench_udp */
-		control_req = (struct nbench_req *) (buf_ptr + sizeof(struct rte_udp_hdr));
-		// control_req->magic = kMagic;
-		control_req->nports = 1;
+			/* control data in case our server is running netbench_udp */
+			control_req = (struct nbench_req *) (buf_ptr + sizeof(struct rte_udp_hdr));
+			// control_req->magic = kMagic;
+			control_req->nports = 1;
 
-		buf->l2_len = RTE_ETHER_HDR_LEN;
-		buf->l3_len = sizeof(struct rte_ipv4_hdr);
-		buf->ol_flags = PKT_TX_IP_CKSUM | PKT_TX_IPV4;
+			buf->l2_len = RTE_ETHER_HDR_LEN;
+			buf->l3_len = sizeof(struct rte_ipv4_hdr);
+			buf->ol_flags = PKT_TX_IP_CKSUM | PKT_TX_IPV4;
+		}
 
 		/* send packet */
-		nb_tx = send_pkt(port, current_queue, &buf, 1, !ctrlQ, tx_mbuf_pool);
-// 		nb_tx = rte_eth_tx_burst(port, 2, &buf, 1);
-// 		nanosleep(&delay, NULL);
-
-		ctrlQ = true;
-		if (nb_tx == 0)
-			send_failure++;
-
+		if (bkdrft) {
+			current_queue = zipf->gen(zipf);
+			// printf("q: %d\r", current_queue);
+			// fflush(stdout);
+			nb_tx = send_pkt(port, current_queue, batch, burst, true, ctrl_mbuf_pool);
+		} else {
+			nb_tx = send_pkt(port, 0, batch, burst, false, ctrl_mbuf_pool);
+		}
 		reqs += nb_tx;
-// 		if (reqs >= next_check_point) {
-// 			current_queue = remove_flist(next_queue, 0);
-// 			append_flist(next_queue, current_queue);
-// 			ctrlQ = false;
-// 		}
+		send_failure += burst - nb_tx;
+		for (i = nb_tx; i < burst; i++) {
+			// free failed pkts
+			rte_pktmbuf_free(batch[i]);
+		}
+
 		/* t2 */
-// 		printf("%ld\r", reqs);
-// 		fflush(stdout);
-//		if (reqs == count_pkts_to_send) {
-//			break;
-//		}
 #ifdef nnper
 		pkt_end_t = rte_get_timer_cycles();
 		pkt_latency = ((float)(pkt_end_t - pkt_start_t) * 1000 * 1000) / (float)rte_get_timer_hz();
@@ -468,6 +464,8 @@ got_mac:
 	end_time = rte_get_timer_cycles();
 	if (setup_port)
 		reqs--;
+	
+	free_zipfgen(zipf);
 
 	printf("ran for %f seconds, sent %"PRIu64" packets\n",
 			(float) (end_time - start_time) / rte_get_timer_hz(), reqs);
@@ -500,7 +498,6 @@ do_server(void *arg)
 	struct rte_mbuf *rx_bufs[BURST_SIZE];
 	struct rte_mbuf *buf;
 	uint16_t nb_rx, i, q;
-	struct rte_ether_hdr *ptr_mac_hdr;
 
 	printf("on server core with lcore_id: %d, queue: %d", rte_lcore_id(),
 			queue);
@@ -517,7 +514,6 @@ do_server(void *arg)
 	printf("\nCore %u running in server mode. [Ctrl+C to quit]\n",
 			rte_lcore_id());
 
-	// sleep(10); // wait before starting
 	/* Run until the application is quit or killed. */
 	for (;;) {
 		for (q = 0; q < num_queues; q++) {
@@ -566,6 +562,13 @@ static int dpdk_init(int argc, char *argv[])
 
 	if (tx_mbuf_pool == NULL)
 		rte_exit(EXIT_FAILURE, "Cannot create tx mbuf pool\n");
+	
+	/* Create a new mempool in memory to hold the mbufs. */
+	ctrl_mbuf_pool = rte_pktmbuf_pool_create("MBUF_CTRL_POOL", NUM_MBUFS,
+		MBUF_CACHE_SIZE, 0, RTE_MBUF_DEFAULT_BUF_SIZE, rte_socket_id());
+	
+	if (ctrl_mbuf_pool == NULL)
+		rte_exit(EXIT_FAILURE, "Cannot crate ctrl mbuf pool\n");
 
 	return args_parsed;
 }
@@ -581,11 +584,12 @@ static int parse_netperf_args(int argc, char *argv[])
 	}
 
 	str_to_ip(argv[2], &my_ip);
+	printf("===\n");
 
 	if (!strcmp(argv[1], "UDP_CLIENT")) {
 		mode = MODE_UDP_CLIENT;
 		argc -= 3;
-		if (argc < 5) {
+		if (argc < 7) {
 			printf("not enough arguments left: %d\n", argc);
 			return -EINVAL;
 		}
@@ -598,6 +602,14 @@ static int parse_netperf_args(int argc, char *argv[])
 		seconds = tmp;
 		str_to_long(argv[7], &tmp);
 		payload_len = tmp;
+		if (argc > 5 && !strcmp(argv[8], "bkdrft")) {
+			bkdrft = true;
+		} else {
+			bkdrft = false;
+		}
+		if (sscanf(argv[9], "%u", &num_queues) != 1)
+			return -EINVAL;
+		printf("Client BKDRFT mode: %d\n", bkdrft);
 	} else if (!strcmp(argv[1], "UDP_SERVER")) {
 		mode = MODE_UDP_SERVER;
 		argc -= 3;

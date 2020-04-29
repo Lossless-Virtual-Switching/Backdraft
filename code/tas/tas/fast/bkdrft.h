@@ -7,8 +7,6 @@
 
 /* Control Packet */
 struct ctrl_pkt {
-	uint32_t bytes;
-	uint16_t nb_pkts;
 	uint8_t q;
 };
 

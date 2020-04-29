@@ -1,7 +1,7 @@
 TARGETS = echoserver_linux testclient_linux echoserver_ll \
 	  echoserver_mtcp testclient_mtcp
 
-TAS_CODE?=${HOME}/tas/code
+TAS_CODE?=${HOME}/workplace/post-loom/code/tas
 
 CFLAGS = -std=gnu99 -g -Wall -O3 -march=native \
 	-I$(TAS_CODE)/include -I$(TAS_CODE)/lib/tas/include

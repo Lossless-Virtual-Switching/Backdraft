@@ -148,6 +148,7 @@ float remove_flist(fList *list, long long int index)
 	return val;
 }
 
+__attribute__((unused))
 static int _insertion_sort_flist(fList *list)
 {
 	struct node *ptr, *prev;
@@ -249,6 +250,7 @@ static int _qsort_flist(fList *list)
 	_qsort_rec(list->head, list->tail, &head, &tail);
 	list->head = head;
 	list->tail = tail;	
+	return 0;
 }
 
 /*

@@ -31,9 +31,43 @@
 #ifndef BESS_MODULES_BKDRFTQUEUEOUT_H_
 #define BESS_MODULES_BKDRFTQUEUEOUT_H_
 
+#include <rte_hash_crc.h>
+
 #include "../module.h"
 #include "../pb/module_msg.pb.h"
 #include "../port.h"
+
+#include "../utils/cuckoo_map.h"
+
+// TODO: alignas(8)
+// TODO: random field
+struct BKDRFTFlow {
+	uint32_t ipsrc;
+	uint32_t ipdsts;
+	uint16_t portsrc;
+	uint16_t portdst;
+	uint32_t rnd;
+
+	struct Hash {
+		std::size_t operator()(const BKDRFTFlow &f) const {
+			// TODO: In nat example it is more complecated
+			return rte_hash_crc(&f, sizeof(uint64_t), 0);
+		}
+	};
+
+	struct EqualTo {
+		bool operator()(const BKDRFTFlow &lhs, const BKDRFTFlow &rhs) const {
+			const union {
+        BKDRFTFlow endpoint;
+        uint64_t u64;
+      } &left = {.endpoint = lhs}, &right = {.endpoint = rhs};
+
+      return left.u64 == right.u64;
+		}
+	};
+};
+
+// static_assert(sizeof(BKDRFTFlow) == 16, "Size of bkdrtf flow not good");
 
 class BKDRFTQueueOut final : public Module {
  public:
@@ -50,8 +84,11 @@ class BKDRFTQueueOut final : public Module {
   std::string GetDesc() const override;
 
  private:
+	using HashTable = bess::utils::CuckooMap<BKDRFTFlow, uint16_t, 
+															BKDRFTFlow::Hash, BKDRFTFlow::EqualTo>;
   Port *port_;
   queue_t qid_;
+	HashTable map_;
 };
 
 #endif  // BESS_MODULES_BKDRFTQUEUEOUT_H_

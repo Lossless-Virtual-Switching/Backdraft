@@ -32,6 +32,7 @@
 
 #include "../port.h"
 #include "../utils/format.h"
+#include "../utils/bkdrft.h"
 
 CommandResponse BKDRFTQueueOut::Init(const bess::pb::BKDRFTQueueOutArg &arg) {
   const char *port_name;
@@ -76,10 +77,14 @@ std::string BKDRFTQueueOut::GetDesc() const {
 void BKDRFTQueueOut::ProcessBatch(Context *, bess::PacketBatch *batch) {
   Port *p = port_;
 
-  const queue_t qid = qid_;
+//   const queue_t qid = _qid;
+  const queue_t qid = 1; // TODO: decide which queue to put data on
 
   uint64_t sent_bytes = 0;
   int sent_pkts = 0;
+
+	bess::Packet *ctrlpkt;
+	struct ctrl_pkt *buf_ptr;
 
   if (p->conf().admin_up) {
     sent_pkts = p->SendPackets(qid, batch->pkts(), batch->cnt());
@@ -100,6 +105,36 @@ void BKDRFTQueueOut::ProcessBatch(Context *, bess::PacketBatch *batch) {
   if (sent_pkts < batch->cnt()) {
     bess::Packet::Free(batch->pkts() + sent_pkts, batch->cnt() - sent_pkts);
   }
+
+	if (sent_pkts > 0) {
+		// if some data pkts was sent
+		ctrlpkt = current_worker.packet_pool()->Alloc();
+		if (ctrlpkt != nullptr) {
+			// ctrl_pkt was successfully allocated
+			buf_ptr = (struct ctrl_pkt *)ctrlpkt->append(sizeof(struct ctrl_pkt));
+			buf_ptr->q = qid;
+			buf_ptr->nb_pkts = sent_pkts;
+			buf_ptr->bytes = sent_bytes;
+
+			// send a ctrl pkt
+			sent_pkts = p->SendPackets(BKDRFT_CTRL_QUEUE, &ctrlpkt, 1);
+			
+			if (!(p->GetFlags() & DRIVER_FLAG_SELF_OUT_STATS)) {
+				const packet_dir_t dir = PACKET_DIR_OUT;
+
+				p->queue_stats[dir][BKDRFT_CTRL_QUEUE].packets += sent_pkts;
+				p->queue_stats[dir][BKDRFT_CTRL_QUEUE].dropped += 1 - sent_pkts;
+				p->queue_stats[dir][BKDRFT_CTRL_QUEUE].bytes += ctrlpkt->total_len();
+			}
+
+			if (sent_pkts == 0) {
+				// TODO: what should happen if ctrl_pkt fails
+				bess::Packet::Free(&ctrlpkt, 1);
+			}
+		} else {
+			// TODO: What should happend if ctrl_pkt fails
+		}
+	}
 }
 
 ADD_MODULE(BKDRFTQueueOut, "bkdrft_queue_out",

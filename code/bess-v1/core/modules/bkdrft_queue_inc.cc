@@ -31,6 +31,7 @@
 #include "bkdrft_queue_inc.h"
 
 #include "../port.h"
+#include "../utils/bkdrft.h"
 #include "../utils/format.h"
 
 const Commands BKDRFTQueueInc::cmds = {{"set_burst", "BKDRFTQueueIncCommandSetBurstArg",
@@ -59,7 +60,7 @@ CommandResponse BKDRFTQueueInc::Init(const bess::pb::BKDRFTQueueIncArg &arg) {
 		prefetch_ = 1;
 	}
 	node_constraints_ = port_->GetNodePlacementConstraint();
-	if (qid_ == 0) {
+	if (qid_ == BKDRFT_CTRL_QUEUE) {
 		tid = RegisterTask((void *)(uintptr_t)qid_);
 		if (tid == INVALID_TASK_ID)
 			return CommandFailure(ENOMEM, "Context creation failed");
@@ -88,85 +89,73 @@ std::string BKDRFTQueueInc::GetDesc() const {
 
 struct task_result BKDRFTQueueInc::RunTask(Context *ctx, bess::PacketBatch *batch,
 		void *arg) {
-	/*
-	* Pool both ctrl queue and data queue (queue 1 for example).
-	* if ctrl packet found update the pooling queue to the what
-	* queue mentioned in the packet and pool the data queue until
-	* it is empty. afterward pool the data queue and control queue.
-	*/
 
 	Port *p = port_;
-	static bool ctrlQ = false;
 
 	if (!p->conf().admin_up) {
 		return {.block = true, .packets = 0, .bits = 0};
 	}
 
-	// TODO: qid was declared const, I changed it
-	queue_t qid = (queue_t)(uintptr_t)arg;
-	static queue_t dqid = 1;
+	const queue_t qid = (queue_t)(uintptr_t)arg;
+	queue_t dqid = 1;
+	uint32_t cnt2;
+	bess::Packet * ctrlpkt;
+	struct ctrl_pkt *ptr;
+	uint32_t nb_pkts;
 
 	uint64_t received_bytes = 0;
 
 	const int burst = ACCESS_ONCE(burst_);
 	const int pkt_overhead = 24;
 
-	if(ctrlQ == false) {
-		batch->set_cnt(p->RecvPackets(qid, batch->pkts(), 1));
-		uint32_t cnt = batch->cnt();
-		p->queue_stats[PACKET_DIR_INC][qid].requested_hist[1]++;
-		p->queue_stats[PACKET_DIR_INC][qid].actual_hist[cnt]++;
-		p->queue_stats[PACKET_DIR_INC][qid].diff_hist[1 - cnt]++;
+	const int cnt = p->RecvPackets(qid, &ctrlpkt, 1);
+	p->queue_stats[PACKET_DIR_INC][qid].requested_hist[1]++;
+	p->queue_stats[PACKET_DIR_INC][qid].actual_hist[cnt]++;
+	p->queue_stats[PACKET_DIR_INC][qid].diff_hist[1 - cnt]++;
 
-		//     if (cnt == 0) {
-		//       return {.block = true, .packets = 0, .bits = 0};
-		//     }
-
-		// NOTE: we cannot skip this step since it might be used by scheduler.
-		if (prefetch_) {
-			for (uint32_t i = 0; i < cnt; i++) {
-				received_bytes += batch->pkts()[i]->total_len();
-				rte_prefetch0(batch->pkts()[i]->head_data());
-			}
-		} else {
-			for (uint32_t i = 0; i < cnt; i++) {
-				received_bytes += batch->pkts()[i]->total_len();
-			}
-		}
-
-		if (!(p->GetFlags() & DRIVER_FLAG_SELF_INC_STATS)) {
-			p->queue_stats[PACKET_DIR_INC][qid].packets += cnt;
-			p->queue_stats[PACKET_DIR_INC][qid].bytes += received_bytes;
-		}
-
-		if (cnt >= 1) {
-			// bess:Packet ~ rte_mbuf
-			uint8_t val = *(uint8_t *)(batch->pkts()[0]->head_data()) ;
-			dqid = val;
-			//LOG(INFO) << "BKDRFTQueueInc: " << (int)cnt << " should read queue " << ((unsigned int)dqid) << "\n";
-			//LOG(INFO) << "BKDRFTQueueInc: " << "packet length: " << (int)batch->pkts()[0]->total_len() << "\n";
-			bess::Packet::Free(batch->pkts()[0]); // free ctrl pkt
-		}
-
-		ctrlQ = true;
+	if (cnt == 0) {
+		// There is no ctrl pkt
+		return {.block = true, .packets = 0, .bits = 0};
 	}
+
+	// NOTE: we cannot skip this step since it might be used by scheduler.
+	if (prefetch_) {
+			received_bytes += ctrlpkt->total_len();
+			rte_prefetch0(ctrlpkt->head_data());
+	} else {
+			received_bytes += ctrlpkt->total_len();
+	}
+
+	if (!(p->GetFlags() & DRIVER_FLAG_SELF_INC_STATS)) {
+		p->queue_stats[PACKET_DIR_INC][qid].packets += cnt;
+		p->queue_stats[PACKET_DIR_INC][qid].bytes += received_bytes;
+	}
+
+	// bess:Packet ~ rte_mbuf
+	ptr = (struct ctrl_pkt *)(ctrlpkt->head_data());
+	dqid = ptr->q;
+	nb_pkts = ptr->nb_pkts;
+	// LOG(INFO) << "BKDRFTQueueInc: " << (int)cnt << " should read queue " << ((unsigned int)dqid) << "\n";
+	// LOG(INFO) << "BKDRFTQueueInc: " << "packet length: " << (int)ctrlpkt->total_len() << "\n";
+	bess::Packet::Free(ctrlpkt); // free ctrl pkt
 
 	/// Data queue section
 	received_bytes = 0;
-	qid = dqid;
-	batch->set_cnt(p->RecvPackets(qid, batch->pkts(), burst));
-	uint32_t cnt2 = batch->cnt();
-//	LOG(INFO) << "BKDRFTQueueInc: fetched: " << cnt2 << " from q: " << (int) qid << "\n";
-	p->queue_stats[PACKET_DIR_INC][qid].requested_hist[burst]++;
-	p->queue_stats[PACKET_DIR_INC][qid].actual_hist[cnt2]++;
-	p->queue_stats[PACKET_DIR_INC][qid].diff_hist[burst - cnt2]++;
-	// TODO: should revisit the case (cnt == 0)
-	if (cnt2== 0) {
-		ctrlQ = false;
-		return {.block = true, .packets = 0, .bits = 0};
-	} else {
-		ctrlQ = true;
-  }
+	/*
+	*	We are here because we know there is (nb_pkts) of 
+	* data waiting in the queue so try to get them
+	* (Do not ignore ctrl pkts)
+	*/
+	batch->set_cnt(p->RecvPackets(dqid, batch->pkts(), burst));
+	cnt2 = batch->cnt();
+	// LOG(INFO) << "BKDRFTQueueInc: fetched: " << cnt2 << " from q: " << (int) dqid << "\n";
+	p->queue_stats[PACKET_DIR_INC][dqid].requested_hist[burst]++;
+	p->queue_stats[PACKET_DIR_INC][dqid].actual_hist[cnt2]++;
+	p->queue_stats[PACKET_DIR_INC][dqid].diff_hist[burst - cnt2]++;
+	if (cnt2 != nb_pkts) {
+		// TODO: what happens if some of the batch is not received?
+		LOG(INFO) << "BKDRFTQueueInc (Warning): sent pkts (from app): " << nb_pkts << " received: " << cnt2 << "\n";
+	}
 
 	// NOTE: we cannot skip this step since it might be used by scheduler.
 	if (prefetch_) {
@@ -181,8 +170,8 @@ struct task_result BKDRFTQueueInc::RunTask(Context *ctx, bess::PacketBatch *batc
 	}
 
 	if (!(p->GetFlags() & DRIVER_FLAG_SELF_INC_STATS)) {
-		p->queue_stats[PACKET_DIR_INC][qid].packets += cnt2;
-		p->queue_stats[PACKET_DIR_INC][qid].bytes += received_bytes;
+		p->queue_stats[PACKET_DIR_INC][dqid].packets += cnt2;
+		p->queue_stats[PACKET_DIR_INC][dqid].bytes += received_bytes;
 	}
 
 	RunNextModule(ctx, batch);

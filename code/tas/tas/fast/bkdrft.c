@@ -15,23 +15,24 @@ extern inline int send_pkt(int port, uint8_t qid,
 	uint16_t nb_tx, ctrl_nb_tx;
 	struct rte_mbuf *ctrl_pkt;
 	char *buf_ptr;
-	uint16_t i;
-	uint32_t bytes = 0;
 
 	/* send data packet */
 	nb_tx = rte_eth_tx_burst(port, qid, tx_pkts, nb_pkts);
+	if (nb_tx != nb_pkts) {
+//  		printf("GODZILA: failed to send packet: %d\n", nb_pkts - nb_tx);
+	} else {
+//		printf("GODZILA: send data\n");
+	}
 
-	if (nb_tx == 0)
+	if (nb_tx != nb_pkts) {
 		return nb_tx;
-
-	for (i = 0; i < nb_tx; i++)
-		bytes += tx_pkts[i]->pkt_len;
+	}
 
 	if (send_ctrl_pkt) {
 		/* send control packet */
 		ctrl_pkt = rte_pktmbuf_alloc(tx_mbuf_pool);
 		if (ctrl_pkt == NULL) {
-			printf("(bkdrft) send_pkt: Failed to allocate mbuf for ctrl pkt\n");
+			printf("(bkdrft) send_pkt: Failed to allocate mbuf for cntrl pkt\n");
 		} else {
 			buf_ptr = rte_pktmbuf_append(ctrl_pkt, sizeof(struct ctrl_pkt));
 			if (buf_ptr == NULL) {
@@ -39,8 +40,6 @@ extern inline int send_pkt(int port, uint8_t qid,
 			} else {
 				struct ctrl_pkt *cpkt = (struct ctrl_pkt *)buf_ptr;
 				cpkt->q = qid;
-				cpkt->nb_pkts = nb_tx;
-				cpkt->bytes = bytes;
 				ctrl_nb_tx = rte_eth_tx_burst(port, BKDRFT_CTRL_QUEUE, &ctrl_pkt, 1);
 				// printf("sent ctrl pkt qid: %d\n", cpkt->q);
 				if (ctrl_nb_tx != 1) {
