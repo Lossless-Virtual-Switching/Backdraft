@@ -198,8 +198,13 @@ static int uxsocket_init(void)
   saun.sun_family = AF_UNIX;
   memcpy(saun.sun_path, KERNEL_SOCKET_PATH, sizeof(KERNEL_SOCKET_PATH));
   if (bind(fd, (struct sockaddr *) &saun, sizeof(saun))) {
-    perror("uxsocket_init: bind failed");
-    goto error_close;
+		printf("===\nGo for the second socket file address:\n");
+		char name[] = "\0flexnic_os_1";
+		memcpy(saun.sun_path, name, sizeof(name));
+		if (bind(fd, (struct sockaddr *) &saun, sizeof(saun))) { 
+			perror("uxsocket_init: bind failed");
+			goto error_close;
+		}
   }
 
   if (listen(fd, 5)) {
