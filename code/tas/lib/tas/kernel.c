@@ -41,12 +41,12 @@ static int kernel_evfd = 0;
 
 void flextcp_kernel_kick(void)
 {
-  static uint32_t __thread last_ts = 0;
-  uint32_t now = util_timeout_time_us();
+  static uint64_t __thread last_ts = 0;
+  uint64_t now = util_rdtsc();
 
   /* fprintf(stderr, "kicking kernel?\n"); */
 
-  if(now - last_ts > POLL_CYCLE) {
+  if(now - last_ts > flexnic_info->poll_cycle_tas) {
     // Kick kernel
     /* fprintf(stderr, "kicking kernel\n"); */
     assert(kernel_evfd != 0);
@@ -72,7 +72,7 @@ int flextcp_kernel_connect(void)
   saun.sun_family = AF_UNIX;
   memcpy(saun.sun_path, KERNEL_SOCKET_PATH, sizeof(KERNEL_SOCKET_PATH));
 
-  if ((fd = socket(AF_UNIX, SOCK_STREAM, 0)) == -1) {
+  if ((fd = socket(AF_UNIX, SOCK_STREAM | SOCK_CLOEXEC, 0)) == -1) {
     perror("flextcp_kernel_connect: socket failed");
     return -1;
   }

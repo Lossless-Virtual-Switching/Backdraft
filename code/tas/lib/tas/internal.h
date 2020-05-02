@@ -32,6 +32,17 @@
 #define OPAQUE_PTR(x) ((void *) (uintptr_t) (x))
 #define OPAQUE(x) ((uintptr_t) (x))
 
+/* ctx->flags of internal state: */
+/** Set whenever context_poll is called */
+#define CTX_FLAG_POLL_CALLED 1
+/** Set whenever context_poll finds events in queue */
+#define CTX_FLAG_POLL_EVENTS 2
+/** Indicates that the grace period for blocking is currently running with a
+ * caller waiting for permission to block. */
+#define CTX_FLAG_WANTWAIT 4
+/** Grace period is over, after polling once more, blocking will be allowed. */
+#define CTX_FLAG_LASTWAIT 8
+
 #define CONN_FLAG_TXEOS 1
 #define CONN_FLAG_TXEOS_ALLOC 2
 #define CONN_FLAG_TXEOS_ACK 4
@@ -46,6 +57,7 @@ enum conn_state {
 };
 
 extern void *flexnic_mem;
+extern struct flexnic_info *flexnic_info;
 extern int flexnic_evfd[FLEXTCP_MAX_FTCPCORES];
 
 int flextcp_kernel_connect(void);

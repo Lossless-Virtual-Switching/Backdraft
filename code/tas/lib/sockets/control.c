@@ -61,10 +61,13 @@ int tas_socket(int domain, int type, int protocol)
 {
   struct socket *s;
   int fd;
-  int nonblock = 0;
+  int nonblock = 0, cloexec = 0;
 
   if ((type & SOCK_NONBLOCK) == SOCK_NONBLOCK) {
     nonblock = 1;
+  }
+  if ((type & SOCK_CLOEXEC) == SOCK_CLOEXEC) {
+    cloexec = 1;
   }
 
   type &= ~(SOCK_NONBLOCK | SOCK_CLOEXEC);
@@ -82,10 +85,13 @@ int tas_socket(int domain, int type, int protocol)
   flextcp_epoll_sockinit(s);
 
   if (nonblock) {
-    fprintf(stderr, "socket set to nonblock\n");
     s->flags |= SOF_NONBLOCK;
   }
+  if (cloexec) {
+    s->flags |= SOF_CLOEXEC;
+  }
 
+  flextcp_fd_srelease(fd, s);
   return fd;
 }
 
@@ -93,30 +99,25 @@ int tas_close(int sockfd)
 {
   struct socket *s;
   struct epoll *ep;
-  struct flextcp_context *ctx;
 
   if (flextcp_fd_slookup(sockfd, &s) == 0) {
     flextcp_fd_close(sockfd);
 
     /* there is another fd associated with this socket */
-    if (s->refcnt != 0)
+    if (s->refcnt != 0) {
+      flextcp_fd_srelease(sockfd, s);
       return 0;
-
-    /* remove from epoll */
-    flextcp_epoll_sockclose(s);
-
-    ctx = flextcp_sockctx_get();
-    if (s->type == SOCK_CONNECTION) {
-      conn_close(ctx, s);
-    } else {
-      fprintf(stderr, "TODO: close for non-connections. (leak)\n");
     }
+
+    tas_sock_close(s);
   } else if (flextcp_fd_elookup(sockfd, &ep) == 0) {
     flextcp_fd_close(sockfd);
 
     /* there is another fd associated with this epoll */
-    if (ep->refcnt != 0)
+    if (ep->refcnt != 0) {
+      flextcp_fd_erelease(sockfd, ep);
       return 0;
+    }
 
     /* destroy epoll */
     flextcp_epoll_destroy(ep);
@@ -128,6 +129,28 @@ int tas_close(int sockfd)
   return 0;
 }
 
+int tas_sock_close(struct socket *s)
+{
+  struct flextcp_context *ctx;
+
+  assert(s->refcnt == 0);
+
+  /* remove from epoll */
+  flextcp_epoll_sockclose(s);
+
+  ctx = flextcp_sockctx_get();
+  if (s->type == SOCK_CONNECTION) {
+    conn_close(ctx, s);
+  } else if (s->type == SOCK_SOCKET) {
+    free(s);
+  } else {
+    fprintf(stderr, "TODO: close for non-connections. (leak)\n");
+  }
+
+  return 0;
+}
+
+/* called with lock on s held, takes over ownership of s struct */
 static void conn_close(struct flextcp_context *ctx, struct socket *s)
 {
   s->data.connection.status = SOC_CLOSED;
@@ -150,6 +173,7 @@ static void conn_close(struct flextcp_context *ctx, struct socket *s)
      *
      * TODO: send reset if data arrives after this */
   }
+  socket_unlock(s);
 }
 
 void flextcp_sockclose_finish(struct flextcp_context *ctx, struct socket *s)
@@ -168,44 +192,53 @@ int tas_shutdown(int sockfd, int how)
 {
   struct socket *s;
   struct flextcp_context *ctx;
+  int ret = 0;
 
   if (flextcp_fd_slookup(sockfd, &s) != 0) {
     errno = EBADF;
     return -1;
   }
 
+  tas_sock_move(s);
+
   if (s->type != SOCK_CONNECTION) {
     /* TODO: probably the wrong thing for listeners */
     errno = ENOTSOCK;
-    return -1;
+    ret = -1;
+    goto out;
   }
 
   if (s->data.connection.status != SOC_CONNECTED) {
     errno = ENOTCONN;
-    return -1;
+    ret = -1;
+    goto out;
   }
 
   if (how != SHUT_WR) {
     fprintf(stderr, "flextcp shutdown: TODO how != SHUT_WR\n");
     errno = EINVAL;
-    return -1;
+    ret = -1;
+    goto out;
   }
 
   /* already closed for tx -> NOP */
   if ((s->data.connection.st_flags & CSTF_TXCLOSED) == CSTF_TXCLOSED) {
-    return 0;
+    goto out;
   }
 
   ctx = flextcp_sockctx_get();
   if (flextcp_connection_tx_close(ctx, &s->data.connection.c) != 0) {
     /* a bit fishy.... */
     errno = ENOBUFS;
-    return -1;
+    ret = -1;
+    goto out;
   }
 
   s->data.connection.st_flags |= CSTF_TXCLOSED;
 
-  return 0;
+out:
+  flextcp_fd_srelease(sockfd, s);
+  return ret;
 }
 
 int tas_bind(int sockfd, const struct sockaddr *addr, socklen_t addrlen)
@@ -228,14 +261,14 @@ int tas_bind(int sockfd, const struct sockaddr *addr, socklen_t addrlen)
   s->flags |= SOF_BOUND;
 
 out:
-  flextcp_fd_release(sockfd);
+  flextcp_fd_srelease(sockfd, s);
   return ret;
 }
 
 int tas_connect(int sockfd, const struct sockaddr *addr, socklen_t addrlen)
 {
   struct socket *s;
-  int ret = 0;
+  int ret = 0, block;
   struct sockaddr_in *sin = (struct sockaddr_in *) addr;
   struct flextcp_context *ctx;
 
@@ -294,8 +327,14 @@ int tas_connect(int sockfd, const struct sockaddr *addr, socklen_t addrlen)
     goto out;
   } else {
     /* if this is blocking, wait for connection to complete */
+    block = 0;
     do {
+      socket_unlock(s);
+      if (block)
+        flextcp_context_wait(ctx, -1);
+      block = 1;
       flextcp_sockctx_poll(ctx);
+      socket_lock(s);
     } while (s->data.connection.status == SOC_CONNECTING);
   }
 
@@ -307,7 +346,7 @@ int tas_connect(int sockfd, const struct sockaddr *addr, socklen_t addrlen)
   }
 
 out:
-  flextcp_fd_release(sockfd);
+  flextcp_fd_srelease(sockfd, s);
   return ret;
 }
 
@@ -315,7 +354,7 @@ int tas_listen(int sockfd, int backlog)
 {
   struct socket *s;
   struct flextcp_context *ctx;
-  int ret = 0;
+  int ret = 0, block;
   uint32_t flags = 0;
 
   if (flextcp_fd_slookup(sockfd, &s) != 0) {
@@ -365,8 +404,14 @@ int tas_listen(int sockfd, int backlog)
   s->data.listener.pending = NULL;
 
   /* wait for listen to complete */
+  block = 0;
   do {
+    socket_unlock(s);
+    if (block)
+      flextcp_context_wait(ctx, -1);
+    block = 1;
     flextcp_sockctx_poll(ctx);
+    socket_lock(s);
   } while (s->data.listener.status == SOL_OPENING);
 
   /* check whether listen failed */
@@ -378,7 +423,7 @@ int tas_listen(int sockfd, int backlog)
   }
 
 out:
-  flextcp_fd_release(sockfd);
+  flextcp_fd_srelease(sockfd, s);
   return ret;
 }
 
@@ -388,7 +433,7 @@ int tas_accept4(int sockfd, struct sockaddr *addr, socklen_t *addrlen,
   struct socket *s, *ns;
   struct flextcp_context *ctx;
   struct socket_pending *sp, *spp;
-  int ret = 0, nonblock = 0, newfd;
+  int ret = 0, nonblock = 0, cloexec = 0, newfd, block;
 
   if (flextcp_fd_slookup(sockfd, &s) != 0) {
     errno = EBADF;
@@ -398,6 +443,9 @@ int tas_accept4(int sockfd, struct sockaddr *addr, socklen_t *addrlen,
   /* validate flags */
   if ((flags & SOCK_NONBLOCK) == SOCK_NONBLOCK) {
     nonblock = 1;
+  }
+  if ((flags & SOCK_CLOEXEC) == SOCK_CLOEXEC) {
+    cloexec = 1;
   }
 
   flags &= ~(SOCK_NONBLOCK | SOCK_CLOEXEC);
@@ -439,7 +487,7 @@ int tas_accept4(int sockfd, struct sockaddr *addr, socklen_t *addrlen,
     }
 
     ns->type = SOCK_CONNECTION;
-    ns->flags = (nonblock ? SOF_NONBLOCK : 0);
+    ns->flags = (nonblock ? SOF_NONBLOCK : 0) | (cloexec ? SOF_CLOEXEC : 0);
     ns->data.connection.status = SOC_CONNECTING;
     ns->data.connection.listener = s;
     ns->data.connection.rx_len_1 = 0;
@@ -486,11 +534,20 @@ int tas_accept4(int sockfd, struct sockaddr *addr, socklen_t *addrlen,
       /* if non-blocking, just return */
       errno = EAGAIN;
       ret = -1;
+      flextcp_fd_srelease(newfd, ns);
       goto out;
     } else {
       /* if this is blocking, wait for connection to complete */
+      block = 0;
       do {
+        socket_unlock(ns);
+        socket_unlock(s);
+        if (block)
+          flextcp_context_wait(ctx, -1);
         flextcp_sockctx_poll(ctx);
+        block = 1;
+        socket_lock(s);
+        socket_lock(ns);
       } while (ns->data.connection.status == SOC_CONNECTING);
     }
   }
@@ -511,7 +568,7 @@ int tas_accept4(int sockfd, struct sockaddr *addr, socklen_t *addrlen,
     spp->next = sp->next;
   }
   free(sp);
-  flextcp_fd_release(newfd);
+  flextcp_fd_srelease(newfd, ns);
 
   // fill in addr if given
   if(addr != NULL) {
@@ -521,7 +578,7 @@ int tas_accept4(int sockfd, struct sockaddr *addr, socklen_t *addrlen,
 
   ret = newfd;
 out:
-  flextcp_fd_release(sockfd);
+  flextcp_fd_srelease(sockfd, s);
   return ret;
 }
 
@@ -542,6 +599,8 @@ int tas_fcntl(int sockfd, int cmd, ...)
     errno = EBADF;
     return -1;
   }
+
+  tas_sock_move(s);
 
   switch (cmd) {
     case F_GETFL:
@@ -575,6 +634,32 @@ int tas_fcntl(int sockfd, int cmd, ...)
       }
       break;
 
+    case F_GETFD:
+      if ((s->flags & SOF_CLOEXEC) == SOF_CLOEXEC) {
+        ret |= FD_CLOEXEC;
+      }
+      break;
+
+    case F_SETFD:
+      /* set/clear cloexec flag */
+      va_start(arg, cmd);
+      iarg = va_arg(arg, int);
+      va_end(arg);
+
+      if ((iarg & ~FD_CLOEXEC) != 0) {
+        fprintf(stderr, "flextcp fcntl: setfd unsupported flag (%x)\n",
+            iarg);
+        errno = EINVAL;
+        ret = -1;
+        goto out;
+      }
+
+      if ((iarg & FD_CLOEXEC) == FD_CLOEXEC)
+        s->flags |= SOF_CLOEXEC;
+      else
+        s->flags &= ~SOF_CLOEXEC;
+      break;
+
     default:
       fprintf(stderr, "flextcp fcntl: unsupported cmd\n");
       errno = EINVAL;
@@ -583,7 +668,7 @@ int tas_fcntl(int sockfd, int cmd, ...)
   }
 
 out:
-  flextcp_fd_release(sockfd);
+  flextcp_fd_srelease(sockfd, s);
   return ret;
 }
 
@@ -597,6 +682,8 @@ int tas_getsockopt(int sockfd, int level, int optname, void *optval,
     errno = EBADF;
     return -1;
   }
+
+  tas_sock_move(s);
 
   if(level == IPPROTO_TCP && optname == TCP_NODELAY) {
     /* check nodelay flag: always set */
@@ -614,8 +701,11 @@ int tas_getsockopt(int sockfd, int level, int optname, void *optval,
     } else if (s->type == SOCK_CONNECTION) {
       /* if connection is opening, make sure to poll context to make busy loops
        * work */
-      if (s->data.connection.status == SOC_CONNECTING)
+      if (s->data.connection.status == SOC_CONNECTING) {
+        socket_unlock(s);
         flextcp_sockctx_poll(flextcp_sockctx_get());
+        socket_lock(s);
+      }
 
       if (s->data.connection.status == SOC_CONNECTED) {
         res = 0;
@@ -660,7 +750,7 @@ int tas_getsockopt(int sockfd, int level, int optname, void *optval,
   *optlen = res;
 
 out:
-  flextcp_fd_release(sockfd);
+  flextcp_fd_srelease(sockfd, s);
   return ret;
 }
 
@@ -674,6 +764,8 @@ int tas_setsockopt(int sockfd, int level, int optname, const void *optval,
     errno = EBADF;
     return -1;
   }
+
+  tas_sock_move(s);
 
   if(level == IPPROTO_TCP && optname == TCP_NODELAY) {
     /* do nothing */
@@ -694,7 +786,7 @@ int tas_setsockopt(int sockfd, int level, int optname, const void *optval,
     /* we allow "resizing" up to 1MB */
     res = * ((int *) optval);
     if (res <= 1024 * 1024) {
-      return 0;
+      ret = 0;
     } else {
       errno = ENOMEM;
       ret = -1;
@@ -716,6 +808,8 @@ int tas_setsockopt(int sockfd, int level, int optname, const void *optval,
     /* ignore silently */
   } else if (level == SOL_SOCKET && optname == SO_KEEPALIVE) {
     /* ignore silently */
+  } else if (level == SOL_SOCKET && optname == SO_PRIORITY) {
+    /* ignore silently */
   } else if (level == IPPROTO_TCP && (optname == TCP_KEEPIDLE ||
        optname == TCP_KEEPINTVL || optname == TCP_KEEPCNT)) {
     /* ignore silently */
@@ -734,7 +828,7 @@ int tas_setsockopt(int sockfd, int level, int optname, const void *optval,
   }
 
 out:
-  flextcp_fd_release(sockfd);
+  flextcp_fd_srelease(sockfd, s);
   return ret;
 }
 
@@ -749,6 +843,8 @@ int tas_getsockname(int sockfd, struct sockaddr *addr, socklen_t *addrlen)
     errno = EBADF;
     return -1;
   }
+
+  tas_sock_move(s);
 
   if ((s->flags & SOF_BOUND) == SOF_BOUND) {
     sin = s->addr;
@@ -771,7 +867,7 @@ int tas_getsockname(int sockfd, struct sockaddr *addr, socklen_t *addrlen)
   memcpy(addr, &sin, len);
 
 out:
-  flextcp_fd_release(sockfd);
+  flextcp_fd_srelease(sockfd, s);
   return ret;
 }
 
@@ -786,6 +882,8 @@ int tas_getpeername(int sockfd, struct sockaddr *addr, socklen_t *addrlen)
     errno = EBADF;
     return -1;
   }
+
+  tas_sock_move(s);
 
   /* if not connection or not currently connected then there is no peername */
   if (s->type != SOCK_CONNECTION ||
@@ -807,7 +905,7 @@ int tas_getpeername(int sockfd, struct sockaddr *addr, socklen_t *addrlen)
   memcpy(addr, &sin,  len);
 
 out:
-  flextcp_fd_release(sockfd);
+  flextcp_fd_srelease(sockfd, s);
   return ret;
 }
 
@@ -815,46 +913,57 @@ int tas_move_conn(int sockfd)
 {
   struct socket *s;
   int ret = 0;
-  struct flextcp_context *ctx;
 
   if (flextcp_fd_slookup(sockfd, &s) != 0) {
     errno = EBADF;
     return -1;
   }
 
+  ret = tas_sock_move(s);
+
+  flextcp_fd_srelease(sockfd, s);
+  return ret;
+}
+
+int tas_sock_move(struct socket *s)
+{
+  int ret, block;
+  struct flextcp_context *ctx;
+
   /* if not connection or not currently connected then there is no peername */
   if (s->type != SOCK_CONNECTION ||
       s->data.connection.status != SOC_CONNECTED)
   {
     errno = ENOTCONN;
-    ret = -1;
-    goto out;
+    return -1;
   }
 
+  /* no-op if already on the right core */
   ctx = flextcp_sockctx_get();
   if (s->data.connection.ctx == ctx) {
-    errno = EISCONN;
-    ret = -1;
-    goto out;
+    return 0;
   }
 
   s->data.connection.move_status = INT_MIN;
   if (flextcp_connection_move(ctx, &s->data.connection.c) != 0) {
     /* TODO */
     errno = EINVAL;
-    ret = -1;
-    goto out;
+    return -1;
   }
 
+  block = 0;
   do {
+    socket_unlock(s);
+    if (block)
+      flextcp_context_wait(ctx, -1);
+    block = 1;
     flextcp_sockctx_poll(ctx);
+    socket_lock(s);
   } while (s->data.connection.move_status == INT_MIN);
   ret = s->data.connection.move_status;
   if (ret == 0) {
     s->data.connection.ctx = ctx;
   }
 
-out:
-  flextcp_fd_release(sockfd);
   return ret;
 }

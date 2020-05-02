@@ -26,7 +26,7 @@
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
-#include <sys/epoll.h>
+#include <poll.h>
 #include <sys/eventfd.h>
 #include <unistd.h>
 #include <signal.h>
@@ -55,7 +55,7 @@ static inline void event_kappin_st_conn_closed(
     struct kernel_appin_status *inev, struct flextcp_event *outev);
 
 static inline int event_arx_connupdate(struct flextcp_context *ctx,
-    struct flextcp_pl_arx_connupdate *inev,
+    volatile struct flextcp_pl_arx_connupdate *inev,
     struct flextcp_event *outevs, int outn, uint16_t fn_core);
 
 static int kernel_poll(struct flextcp_context *ctx, int num,
@@ -69,35 +69,8 @@ static void conns_bump(struct flextcp_context *ctx) __attribute__((noinline));
 static void txq_probe(struct flextcp_context *ctx, unsigned n) __attribute__((noinline));
 
 void *flexnic_mem = NULL;
-static struct flexnic_info *flexnic_info = NULL;
+struct flexnic_info *flexnic_info = NULL;
 int flexnic_evfd[FLEXTCP_MAX_FTCPCORES];
-
-void flextcp_block(struct flextcp_context *ctx, int timeout_ms)
-{
-  assert(ctx->evfd != 0);
-  /* fprintf(stderr, "[%d] idle - timeout %d ms\n", ctx->ctx_id, timeout_ms); */
-  struct epoll_event event[1];
-  int n;
-again:
-  n = epoll_wait(ctx->epfd, event, 1, timeout_ms);
-  if(n == -1) {
-    if(errno == EINTR) {
-      // XXX: To support attaching GDB
-      goto again;
-    }
-    fprintf(stderr, "[%d] errno = %d\n", ctx->ctx_id, errno);
-  }
-  assert(n != -1);
-  /* fprintf(stderr, "[%d] busy - %u events, kout head = %u\n", ctx->ctx_id, n, ctx->kout_head); */
-  for(int i = 0; i < n; i++) {
-    assert(event[i].data.fd == ctx->evfd);
-
-    uint64_t val;
-    /* fprintf(stderr, "[%d] - woken up by event FD = %d\n", ctx->ctx_id, event[i].data.fd); */
-    int r = read(ctx->evfd, &val, sizeof(uint64_t));
-    assert(r == sizeof(uint64_t));
-  }
-}
 
 int flextcp_init(void)
 {
@@ -127,19 +100,11 @@ int flextcp_context_create(struct flextcp_context *ctx)
     return -1;
   }
 
-  ctx->evfd = eventfd(0, 0);
-  assert(ctx->evfd != -1);
-
-  struct epoll_event ev = {
-    .events = EPOLLIN,
-    .data.fd = ctx->evfd,
-  };
-
-  ctx->epfd = epoll_create1(0);
-  assert(ctx->epfd != -1);
-
-  int r = epoll_ctl(ctx->epfd, EPOLL_CTL_ADD, ctx->evfd, &ev);
-  assert(r == 0);
+  ctx->evfd = eventfd(0, EFD_NONBLOCK | EFD_CLOEXEC);
+  if (ctx->evfd < 0) {
+    perror("flextcp_context_create: eventfd for waiting fd failed");
+    return -1;
+  }
 
   return flextcp_kernel_newctx(ctx);
 }
@@ -186,6 +151,7 @@ static int kernel_poll(struct flextcp_context *ctx, int num,
           type, pos, ctx->kout_len);
       abort();
     }
+    ctx->flags |= CTX_FLAG_POLL_EVENTS;
 
     if (j == -1) {
       break;
@@ -211,7 +177,7 @@ static int fastpath_poll(struct flextcp_context *ctx, int num,
     struct flextcp_event *events, int *used)
 {
   int i, j, ran_out;
-  struct flextcp_pl_arx *arx_q, *arx;
+  volatile struct flextcp_pl_arx *arx_q, *arx;
   uint32_t head;
   uint16_t k;
 
@@ -219,7 +185,8 @@ static int fastpath_poll(struct flextcp_context *ctx, int num,
   for (k = 0; k < ctx->num_queues && i < num; k++) {
     ran_out = 0;
 
-    arx_q = (struct flextcp_pl_arx *) ctx->queues[ctx->next_queue].rxq_base;
+    arx_q = (volatile struct flextcp_pl_arx *)
+      ctx->queues[ctx->next_queue].rxq_base;
     head = ctx->queues[ctx->next_queue].rxq_head;
     for (; i < num;) {
       j = 0;
@@ -231,6 +198,7 @@ static int fastpath_poll(struct flextcp_context *ctx, int num,
       } else {
         fprintf(stderr, "flextcp_context_poll: kout type=%u head=%x\n", arx->type, head);
       }
+      ctx->flags |= CTX_FLAG_POLL_EVENTS;
 
       if (j == -1) {
         ran_out = 1;
@@ -353,15 +321,15 @@ static inline void fetch_4ts(struct flextcp_context *ctx, uint32_t *heads,
 static int fastpath_poll_vec(struct flextcp_context *ctx, int num,
     struct flextcp_event *events, int *used)
 {
-  int i, j, ran_out, found;
-  struct flextcp_pl_arx *arx;
+  int i, j, ran_out, found, found_inner;
+  volatile struct flextcp_pl_arx *arx;
   uint32_t head;
   uint16_t l, k, q;
   uint8_t t;
   uint8_t types[ctx->num_queues];
   uint32_t qheads[ctx->num_queues];
 
-  struct flextcp_pl_arx *arxs[num];
+  volatile struct flextcp_pl_arx *arxs[num];
   uint8_t arx_qs[num];
 
   for (q = 0; q < ctx->num_queues; q++) {
@@ -373,8 +341,8 @@ static int fastpath_poll_vec(struct flextcp_context *ctx, int num,
   q = ctx->next_queue;
   while (i < num && !ran_out) {
     l = 0;
-    for (found = 1; found && i + l < num; ) {
-      found = 0;
+    for (found_inner = 1; found_inner && i + l < num; ) {
+      found_inner = 0;
 
       /* fetch types from all n queues */
       uint16_t qs = ctx->num_queues;
@@ -395,7 +363,8 @@ static int fastpath_poll_vec(struct flextcp_context *ctx, int num,
         qs -= 4;
       }
       while (qs > 0) {
-        arx = (struct flextcp_pl_arx *) (ctx->queues[q].rxq_base + qheads[q]);
+        arx = (volatile struct flextcp_pl_arx *)
+          (ctx->queues[q].rxq_base + qheads[q]);
         q = (q + 1 < ctx->num_queues ? q + 1 : 0);
         types[k] = arx->type;
         k++;
@@ -405,15 +374,15 @@ static int fastpath_poll_vec(struct flextcp_context *ctx, int num,
       /* prefetch connection state for all entries */
       for (k = 0, q = ctx->next_queue; k < ctx->num_queues && i + l < num; k++) {
         if (types[k] == FLEXTCP_PL_ARX_CONNUPDATE) {
-          arx = (struct flextcp_pl_arx *) (ctx->queues[q].rxq_base +
-              qheads[q]);
+          arx = (volatile struct flextcp_pl_arx *)
+            (ctx->queues[q].rxq_base + qheads[q]);
           util_prefetch0(OPAQUE_PTR(arx->msg.connupdate.opaque) + 64);
           util_prefetch0(OPAQUE_PTR(arx->msg.connupdate.opaque));
 
           arxs[l] = arx;
           arx_qs[l] = q;
           l++;
-          found = 1;
+          found_inner = 1;
 
           qheads[q] = qheads[q] + sizeof(*arx);
           if (qheads[q] >= ctx->rxq_len) {
@@ -444,6 +413,8 @@ static int fastpath_poll_vec(struct flextcp_context *ctx, int num,
             arx->type, head);
       }
 
+      found = 1;
+
       if (j == -1) {
         ran_out = 1;
         break;
@@ -458,7 +429,6 @@ static int fastpath_poll_vec(struct flextcp_context *ctx, int num,
         head -= ctx->rxq_len;
       }
       ctx->queues[q].rxq_head = head;
-      found = 1;
     }
     q = (q + 1 < ctx->num_queues ? q + 1 : 0);
   }
@@ -472,6 +442,8 @@ static int fastpath_poll_vec(struct flextcp_context *ctx, int num,
       util_prefetch0(arx);
       q = (q + 1 < ctx->num_queues ? q + 1 : 0);
     }
+
+    ctx->flags |= CTX_FLAG_POLL_EVENTS;
   }
 
   *used = i;
@@ -485,6 +457,8 @@ int flextcp_context_poll(struct flextcp_context *ctx, int num,
   int i, j;
 
   i = 0;
+
+  ctx->flags |= CTX_FLAG_POLL_CALLED;
 
   /* prefetch queues */
   uint32_t k, q;
@@ -524,9 +498,14 @@ int flextcp_context_tx_alloc(struct flextcp_context *ctx,
 
 static void flextcp_flexnic_kick(struct flextcp_context *ctx, int core)
 {
-  uint32_t now = util_timeout_time_us();
+  uint64_t now = util_rdtsc();
 
-  if(now - ctx->queues[core].last_ts > POLL_CYCLE) {
+  if (flexnic_info->poll_cycle_tas == UINT64_MAX) {
+    /* blocking for TAS disabled */
+    return;
+  }
+
+  if(now - ctx->queues[core].last_ts > flexnic_info->poll_cycle_tas) {
     // Kick
     uint64_t val = 1;
     int r = write(flexnic_evfd[core], &val, sizeof(uint64_t));
@@ -719,8 +698,8 @@ static inline void event_kappin_st_conn_closed(
 }
 
 static inline int event_arx_connupdate(struct flextcp_context *ctx,
-    struct flextcp_pl_arx_connupdate *inev, struct flextcp_event *outevs,
-    int outn, uint16_t fn_core)
+    volatile struct flextcp_pl_arx_connupdate *inev,
+    struct flextcp_event *outevs, int outn, uint16_t fn_core)
 {
   struct flextcp_connection *conn;
   uint32_t rx_bump, rx_len, tx_bump, tx_sent;
@@ -941,4 +920,96 @@ static void conns_bump(struct flextcp_context *ctx)
     }
     ctx->bump_pending_first = c->bump_next;
   }
+}
+
+int flextcp_context_waitfd(struct flextcp_context *ctx)
+{
+  return ctx->evfd;
+}
+
+int flextcp_context_canwait(struct flextcp_context *ctx)
+{
+  /* At a high level this code implements a state machine that ensures that at
+   * least POLL_CYCLE time has elapsed between two unsuccessfull poll calls.
+   * This is a bit messier because we don't want to move any of the timestamp
+   * code into the poll call and make it more expensive for apps that don't
+   * block. Instead we use the timing of calls to canwait along with flags that
+   * the poll call sets when it's called and when it finds events.
+   */
+
+  /* if blocking is disabled, we can never wait */
+  if (flexnic_info->poll_cycle_app == UINT64_MAX) {
+    return -1;
+  }
+
+  /* if there were events found in the last poll, it's back to square one. */
+  if ((ctx->flags & CTX_FLAG_POLL_EVENTS) != 0) {
+    ctx->flags &= ~(CTX_FLAG_POLL_EVENTS | CTX_FLAG_WANTWAIT |
+        CTX_FLAG_LASTWAIT);
+
+    return -1;
+  }
+
+  /* from here on we know that there are no events */
+
+  if ((ctx->flags & CTX_FLAG_WANTWAIT) != 0) {
+    /* in want wait state: just wait for grace period to be over */
+    if ((util_rdtsc() - ctx->last_inev_ts) > flexnic_info->poll_cycle_app) {
+      /* past grace period, move on to lastwait. clear polled flag, to make sure
+       * it gets polled again before we clear lastwait. */
+      ctx->flags &= ~(CTX_FLAG_POLL_CALLED | CTX_FLAG_WANTWAIT);
+      ctx->flags |= CTX_FLAG_LASTWAIT;
+    }
+  } else if ((ctx->flags & CTX_FLAG_LASTWAIT) != 0) {
+    /* in last wait state */
+    if ((ctx->flags & CTX_FLAG_POLL_CALLED) != 0) {
+      /* if we have polled once more after the grace period, we're good to go to
+       * sleep */
+      return 0;
+    }
+  } else if ((ctx->flags & CTX_FLAG_POLL_CALLED) != 0) {
+    /* not currently getting ready to wait, so start */
+    ctx->last_inev_ts = util_rdtsc();
+    ctx->flags |= CTX_FLAG_WANTWAIT;
+  }
+
+  return -1;
+}
+
+void flextcp_context_waitclear(struct flextcp_context *ctx)
+{
+  ssize_t ret;
+  uint64_t val;
+
+  ret = read(ctx->evfd, &val, sizeof(uint64_t));
+  if ((ret >= 0 && ret != sizeof(uint64_t)) ||
+      (ret < 0 && errno != EAGAIN && errno != EWOULDBLOCK))
+  {
+    perror("flextcp_context_waitclear: read failed");
+    abort();
+  }
+
+  ctx->flags &= ~(CTX_FLAG_WANTWAIT | CTX_FLAG_LASTWAIT | CTX_FLAG_POLL_CALLED);
+}
+
+int flextcp_context_wait(struct flextcp_context *ctx, int timeout_ms)
+{
+  struct pollfd pfd;
+  int ret;
+
+  if (flextcp_context_canwait(ctx) != 0) {
+    return -1;
+  }
+
+  pfd.fd = ctx->evfd;
+  pfd.events = POLLIN;
+  pfd.revents = 0;
+  ret = poll(&pfd, 1, timeout_ms);
+  if (ret < 0) {
+    perror("flextcp_context_wait: poll returned error");
+    return -1;
+  }
+
+  flextcp_context_waitclear(ctx);
+  return 0;
 }
