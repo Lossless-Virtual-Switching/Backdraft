@@ -34,8 +34,6 @@
 
 #include <fastpath.h>
 
-#include "bkdrft.h"
-
 struct network_buf_handle;
 
 extern uint8_t net_port_id;
@@ -123,8 +121,7 @@ static inline int network_send(struct network_thread *t, unsigned num,
   }
 #endif
 
-  // return rte_eth_tx_burst(net_port_id, t->queue_id, mbs, num);
-	return send_pkt(net_port_id, t->queue_id, mbs, num, true, t->pool);
+  return rte_eth_tx_burst(net_port_id, t->queue_id, mbs, num);
 }
 
 
