@@ -54,7 +54,9 @@
 #endif
 
 
-static unsigned poll_rx(struct dataplane_context *ctx, uint32_t ts) __attribute__((noinline));
+static void dataplane_block(struct dataplane_context *ctx, uint32_t ts);
+static unsigned poll_rx(struct dataplane_context *ctx, uint32_t ts,
+    uint64_t tsc) __attribute__((noinline));
 static unsigned poll_queues(struct dataplane_context *ctx, uint32_t ts)  __attribute__((noinline));
 static unsigned poll_kernel(struct dataplane_context *ctx, uint32_t ts) __attribute__((noinline));
 static unsigned poll_qman(struct dataplane_context *ctx, uint32_t ts) __attribute__((noinline));
@@ -71,7 +73,7 @@ static inline void tx_flush(struct dataplane_context *ctx);
 static inline void tx_send(struct dataplane_context *ctx,
     struct network_buf_handle *nbh, uint16_t off, uint16_t len);
 
-static void arx_cache_flush(struct dataplane_context *ctx, uint32_t ts) __attribute__((noinline));
+static void arx_cache_flush(struct dataplane_context *ctx, uint64_t tsc) __attribute__((noinline));
 
 int dataplane_init(void)
 {
@@ -123,7 +125,7 @@ int dataplane_context_init(struct dataplane_context *ctx)
 
   ctx->poll_next_ctx = ctx->id;
 
-  ctx->evfd = eventfd(0, 0);
+  ctx->evfd = eventfd(0, EFD_NONBLOCK);
   assert(ctx->evfd != -1);
   ctx->ev.epdata.event = EPOLLIN;
   int r = rte_epoll_ctl(RTE_EPOLL_PER_THREAD, EPOLL_CTL_ADD, ctx->evfd, &ctx->ev);
@@ -139,10 +141,12 @@ void dataplane_context_destroy(struct dataplane_context *ctx)
 
 void dataplane_loop(struct dataplane_context *ctx)
 {
-  uint32_t ts, startwait = 0;
+  struct notify_blockstate nbs;
+  uint32_t ts;
   uint64_t cyc, prev_cyc;
   int was_idle = 1;
 
+  notify_canblock_reset(&nbs);
   while (!exited) {
     unsigned n = 0;
 
@@ -156,7 +160,7 @@ void dataplane_loop(struct dataplane_context *ctx)
     ts = qman_timestamp(cyc);
 
     STATS_TS(start);
-    n += poll_rx(ctx, ts);
+    n += poll_rx(ctx, ts, cyc);
     STATS_TS(rx);
     tx_flush(ctx);
 
@@ -177,48 +181,46 @@ void dataplane_loop(struct dataplane_context *ctx)
     if (ctx->id == 0)
       poll_scale(ctx);
 
-    if(UNLIKELY(n == 0)) {
-      was_idle = 1;
-
-      if(startwait == 0) {
-	startwait = ts;
-      } else if (config.fp_interrupts && ts - startwait >= POLL_CYCLE) {
-	// Idle -- wait for interrupt or data from apps/kernel
-	int r = network_rx_interrupt_ctl(&ctx->net, 1);
-
-	// Only if device running
-	if(r == 0) {
-	  uint32_t timeout_us = qman_next_ts(&ctx->qman, ts);
-	  /* fprintf(stderr, "[%u] fastemu idle - timeout %d ms\n", ctx->core, */
-	  /* 	  timeout_us == (uint32_t)-1 ? -1 : timeout_us / 1000); */
-	  struct rte_epoll_event event[2];
-	  int n = rte_epoll_wait(RTE_EPOLL_PER_THREAD, event, 2,
-				 timeout_us == (uint32_t)-1 ? -1 : timeout_us / 1000);
-	  assert(n != -1);
-	  /* fprintf(stderr, "[%u] fastemu busy - %u events\n", ctx->core, n); */
-	  for(int i = 0; i < n; i++) {
-	    if(event[i].fd == ctx->evfd) {
-	      /* fprintf(stderr, "[%u] fastemu - woken up by event FD = %d\n", */
-	      /* 	      ctx->core, event[i].fd); */
-	      uint64_t val;
-	      int r = read(ctx->evfd, &val, sizeof(uint64_t));
-	      assert(r == sizeof(uint64_t));
-	    /* } else { */
-	    /*   fprintf(stderr, "[%u] fastemu - woken up by RX interrupt FD = %d\n", */
-	    /* 	      ctx->core, event[i].fd); */
-	    }
-	  }
-
-          /*fprintf(stderr, "dataplane_loop: woke up %u n=%u fd=%d evfd=%d\n", ctx->id, n, event[0].fd, ctx->evfd);*/
-	   network_rx_interrupt_ctl(&ctx->net, 0);
-	}
-      startwait = 0;
-      }
-    } else {
-      was_idle = 0;
-      startwait = 0;
+    was_idle = (n == 0);
+    if (config.fp_interrupts && notify_canblock(&nbs, !was_idle, cyc)) {
+      dataplane_block(ctx, ts);
+      notify_canblock_reset(&nbs);
     }
   }
+}
+
+static void dataplane_block(struct dataplane_context *ctx, uint32_t ts)
+{
+  uint32_t max_timeout;
+  uint64_t val;
+  int ret, i;
+  struct rte_epoll_event event[2];
+
+  if (network_rx_interrupt_ctl(&ctx->net, 1) != 0) {
+    return;
+  }
+
+  max_timeout = qman_next_ts(&ctx->qman, ts);
+
+  ret = rte_epoll_wait(RTE_EPOLL_PER_THREAD, event, 2,
+      max_timeout == (uint32_t) -1 ? -1 : max_timeout / 1000);
+  if (ret < 0) {
+    perror("dataplane_block: rte_epoll_wait failed");
+    abort();
+  }
+
+  for(i = 0; i < ret; i++) {
+    if(event[i].fd == ctx->evfd) {
+      ret = read(ctx->evfd, &val, sizeof(uint64_t));
+      if ((ret > 0 && ret != sizeof(uint64_t)) ||
+          (ret < 0 && errno != EAGAIN && errno != EWOULDBLOCK))
+      {
+        perror("dataplane_block: read failed");
+        abort();
+      }
+    }
+  }
+  network_rx_interrupt_ctl(&ctx->net, 0);
 }
 
 #ifdef DATAPLANE_STATS
@@ -251,7 +253,8 @@ void dataplane_dump_stats(void)
 }
 #endif
 
-static unsigned poll_rx(struct dataplane_context *ctx, uint32_t ts)
+static unsigned poll_rx(struct dataplane_context *ctx, uint32_t ts,
+    uint64_t tsc)
 {
   int ret;
   unsigned i, n;
@@ -306,7 +309,7 @@ static unsigned poll_rx(struct dataplane_context *ctx, uint32_t ts)
     }
   }
 
-  arx_cache_flush(ctx, ts);
+  arx_cache_flush(ctx, tsc);
 
   /* free received buffers */
   for (i = 0; i < n; i++) {
@@ -588,7 +591,7 @@ static void poll_scale(struct dataplane_context *ctx)
   fp_scale_to = 0;
 }
 
-static void arx_cache_flush(struct dataplane_context *ctx, uint32_t ts)
+static void arx_cache_flush(struct dataplane_context *ctx, uint64_t tsc)
 {
   uint16_t i;
   struct flextcp_pl_appctx *actx;
@@ -613,7 +616,7 @@ static void arx_cache_flush(struct dataplane_context *ctx, uint32_t ts)
 
   for (i = 0; i < ctx->arx_num; i++) {
     actx = &fp_state->appctx[ctx->id][ctx->arx_ctx[i]];
-    actx_kick(actx, ts);
+    notify_appctx(actx, tsc);
   }
 
   ctx->arx_num = 0;

@@ -25,6 +25,7 @@
 #ifndef TAS_H_
 #define TAS_H_
 
+#include <tas_memif.h>
 #include <config.h>
 #include <packet_defs.h>
 
@@ -57,6 +58,19 @@ void network_cleanup(void);
 
 /* used by trace and shm */
 void *util_create_shmsiszed(const char *name, size_t size, void *addr);
+
+struct notify_blockstate {
+  uint64_t last_active_ts;
+  int can_block;
+  int second_bar;
+};
+
+void notify_fastpath_core(unsigned core);
+void notify_appctx(struct flextcp_pl_appctx *ctx, uint64_t tsc);
+void notify_app_core(int appfd, uint64_t *last_tsc);
+void notify_slowpath_core(void);
+int notify_canblock(struct notify_blockstate *nbs, int had_data, uint64_t tsc);
+void notify_canblock_reset(struct notify_blockstate *nbs);
 
 /* should become config options */
 #define FLEXNIC_INTERNAL_MEM_SIZE (1024 * 1024 * 32)
