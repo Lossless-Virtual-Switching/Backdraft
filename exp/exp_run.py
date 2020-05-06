@@ -31,7 +31,7 @@ class VhostConf(object):
 
 def bess(config):
     config = VhostConf(config)
-    cmd = 'sudo bessctl/bessctl -- daemon start -- run file {config_file}'.format(config_file=config.bess_config) # I don't know how to do this, but will do something about it.
+    cmd = 'sudo bessctl/bessctl -- daemon reset -- run file {config_file}'.format(config_file=config.bess_config) # I don't know how to do this, but will do something about it.
     print(cmd)
     subprocess.check_call(cmd, cwd=config.bess_home, shell=True)
 
@@ -165,6 +165,22 @@ def redraw_latency_drop_plot():
     config = VhostConf(load_exp_conf("config/exp_config.json"))
     draw_latency_drop_plots(config.plot)
 
+def tas_rpc_client(config):
+    # just for the sake of documenting commands
+    cmd = "sudo sudo LD_PRELOAD=/proj/uic-dcs-PG0/post-loom/code/tas/lib/libtas_interpose.so ./testclient_linux 10.0.0.1 1234 1 foo  /users/alireza/log.txt 1000 64 1"
+    subprocess.call(cmd, cwd=config.tas_benchmark_home, shell=True)
+
+def tas_rpc_server(config):
+    # Just for the sake of documenting commands
+    cmd = "sudo LD_PRELOAD=/proj/uic-dcs-PG0/post-loom/code/tas/lib/libtas_interpose.so ./echoserver_linux 1234 1 foo 10 2000"
+    subprocess.call(cmd, cwd=config.tas_benchmark_home, shell=True)
+
+def tas_engine(config):
+    # NUMA Topology matters!
+    # Just for the sake of documenting commands
+    cmd = "sudo taskset -c 5,7 ./tas/tas --ip-addr=10.0.0.1/24 --fp-cores-max=1 --fp-no-xsumoffload --fp-no-ints --fp-no-autoscale --dpdk-extra=--no-pci --dpdk-extra=--vdev --dpdk-extra=virtio_user0,path=/users/alireza/my_vhost0.sock,queues=1"
+    subprocess.call(cmd, cwd=config.tas_home, shell=True)
+
 def sysbench(config):
     cmd = "taskset --cpu-list 16 sysbench --test=cpu --cpu-max-prime=200000000 --num-threads=%s run &" % config[
         "thread_number"]
@@ -236,7 +252,7 @@ def run_alpha(config, cpu_limit):
     if(general_config.tas):
         pass
 
-    if(general_config.tas_benchmakr):
+    if(general_config.tas_benchmark):
         pass
 
 
