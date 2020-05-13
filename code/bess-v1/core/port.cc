@@ -278,3 +278,20 @@ void Port::ReleaseQueues(const struct module *m, packet_dir_t dir,
       users[dir][qid] = nullptr;
   }
 }
+
+void Port::RecordRate(packet_dir_t dir, queue_t qid, uint64_t total_bytes) {
+  uint64_t now = tsc_to_ns(rdtsc());
+
+  rate_.bytes[dir][qid] += total_bytes;
+
+  if (now - rate_.timestamp > 1000000000) { // one second
+    rate_.bps[dir][qid] = rate_.bytes[dir][qid];
+    rate_.bytes[dir][qid] = 0;
+    rate_.timestamp = now;
+    // if(dir == PACKET_DIR_OUT)
+    //   LOG(INFO) << rate_.bps[dir][qid] << " TX Rate\n";
+    // else
+    //   LOG(INFO) << rate_.bps[dir][qid] << " RX Rate\n";
+  }
+
+}

@@ -10,8 +10,7 @@
 //
 // * Redistributions in binary form must reproduce the above copyright notice,
 // this list of conditions and the following disclaimer in the documentation
-// and/or other materials provided with the distribution.
-//
+// and/or other materials provided with the distribution.  
 // * Neither the names of the copyright holders nor the names of their
 // contributors may be used to endorse or promote products derived from this
 // software without specific prior written permission.
@@ -237,6 +236,7 @@ CommandResponse PMDPort::Init(const bess::pb::PMDPortArg &arg) {
   int i;
 
   int numa_node = -1;
+
 
   CommandResponse err;
   switch (arg.port_case()) {
@@ -480,10 +480,22 @@ void PMDPort::CollectStats(bool reset) {
 }
 
 int PMDPort::RecvPackets(queue_t qid, bess::Packet **pkts, int cnt) {
-  return rte_eth_rx_burst(dpdk_port_id_, qid, (struct rte_mbuf **)pkts, cnt);
+  uint32_t total_bytes = 0;
+  int recv = 0;
+
+  recv = rte_eth_rx_burst(dpdk_port_id_, qid, (struct rte_mbuf **)pkts, cnt);
+
+  for (int pkt = 0; pkt < recv; pkt++) {
+    total_bytes += pkts[pkt]->total_len();
+  }
+
+  RecordRate(PACKET_DIR_INC, qid, total_bytes);
+
+  return recv;
 }
 
 int PMDPort::SendPackets(queue_t qid, bess::Packet **pkts, int cnt) {
+  uint32_t total_bytes = 0;
   int sent = rte_eth_tx_burst(dpdk_port_id_, qid,
                               reinterpret_cast<struct rte_mbuf **>(pkts), cnt);
   int dropped = cnt - sent;
@@ -491,6 +503,13 @@ int PMDPort::SendPackets(queue_t qid, bess::Packet **pkts, int cnt) {
   queue_stats[PACKET_DIR_OUT][qid].requested_hist[cnt]++;
   queue_stats[PACKET_DIR_OUT][qid].actual_hist[sent]++;
   queue_stats[PACKET_DIR_OUT][qid].diff_hist[dropped]++;
+
+  for (int pkt = 0; pkt < sent; pkt++) {
+    total_bytes += pkts[pkt]->total_len();
+  }
+
+  RecordRate(PACKET_DIR_OUT, qid, total_bytes);
+
   return sent;
 }
 
