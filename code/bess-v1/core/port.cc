@@ -293,5 +293,19 @@ void Port::RecordRate(packet_dir_t dir, queue_t qid, uint64_t total_bytes) {
     // else
     //   LOG(INFO) << rate_.bps[dir][qid] << " RX Rate\n";
   }
+}
 
+bool Port::RateLimit(packet_dir_t dir, queue_t qid) {
+  uint64_t now = tsc_to_ns(rdtsc());
+
+  if (limiter_.limit[dir][qid] - limiter_.token[dir][qid] > 0) {
+    // not limiting
+    return true;
+  }
+  // if no tokens, then limiting!
+  if (now - limiter_.timestamp > 1000000000) {
+    limiter_.timestamp = now;
+    limiter_.token[dir][qid] = 0;
+  }
+  return false;
 }

@@ -201,6 +201,12 @@ struct Rates {
 	  uint64_t timestamp;
 };
 
+struct RateLimiter {
+	int limit[PACKET_DIRS][MAX_QUEUES_PER_DIR]; //pps
+	int token[PACKET_DIRS][MAX_QUEUES_PER_DIR]; 
+	uint64_t timestamp;
+};
+
 class Port {
  public:
   struct LinkStatus {
@@ -214,6 +220,7 @@ class Port {
     bess::utils::Ethernet::Address mac_addr;
     uint32_t mtu;
     bool admin_up;
+    bool rate_limiting;
   };
 
   struct PortStats {
@@ -222,6 +229,7 @@ class Port {
   };
 
   struct Rates rate_;
+  struct RateLimiter limiter_; 
 
   // overide this section to create a new driver -----------------------------
   Port()
@@ -237,12 +245,19 @@ class Port {
     conf_.mac_addr.Randomize();
     conf_.mtu = kDefaultMtu;
     conf_.admin_up = true;
+    conf_.rate_limiting = false;
 
-    // Init rates per queue
+    // Init rates and limiters per queue
     for (queue_t q = 0; q < MAX_QUEUES_PER_DIR; q++) {
       rate_.bytes[PACKET_DIR_OUT][q] = 0;
       rate_.bps[PACKET_DIR_INC][q] = 0;
       rate_.timestamp = tsc_to_ns(rdtsc());
+
+      limiter_.timestamp = tsc_to_ns(rdtsc());
+      limiter_.limit[PACKET_DIR_OUT][q] = 5 * 1000000;
+      limiter_.limit[PACKET_DIR_INC][q] = 5 * 1000000;
+      limiter_.token[PACKET_DIR_OUT][q] = 0;
+      limiter_.token[PACKET_DIR_INC][q] = 0;
     }
   }
 
@@ -309,6 +324,8 @@ class Port {
   const PortBuilder *port_builder() const { return port_builder_; }
 
   void RecordRate(packet_dir_t dir, queue_t qid, uint64_t total_bytes);
+
+  bool RateLimit(packet_dir_t dir, queue_t qid);
 
   protected:
     friend class PortBuilder;

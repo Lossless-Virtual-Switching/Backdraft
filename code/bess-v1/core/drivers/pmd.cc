@@ -483,6 +483,9 @@ int PMDPort::RecvPackets(queue_t qid, bess::Packet **pkts, int cnt) {
   uint32_t total_bytes = 0;
   int recv = 0;
 
+  if(!RateLimit(PACKET_DIR_INC, qid) && conf_.rate_limiting)
+    return 0;
+
   recv = rte_eth_rx_burst(dpdk_port_id_, qid, (struct rte_mbuf **)pkts, cnt);
 
   for (int pkt = 0; pkt < recv; pkt++) {
@@ -490,6 +493,10 @@ int PMDPort::RecvPackets(queue_t qid, bess::Packet **pkts, int cnt) {
   }
 
   RecordRate(PACKET_DIR_INC, qid, total_bytes);
+  
+  // This has to be here! I'd like to put it in the Ratelimit function,
+  // but I'm unable to since I need spend token only on sent packets.
+  limiter_.token[PACKET_DIR_INC][qid] += recv;
 
   return recv;
 }

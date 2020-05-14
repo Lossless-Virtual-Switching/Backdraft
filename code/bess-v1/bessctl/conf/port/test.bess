@@ -17,7 +17,9 @@ payload = ('hello' + '0123456789' * 200)[:pkt_size-len(eth/ip/tcp)]
 pkt = eth/ip/tcp/payload
 pkt_data = str(pkt)
 
-fg::FlowGen(template=pkt_data, pps=1000, flow_rate = 10, flow_duration = 5.0, 
+
+fg::FlowGen(template=pkt_data, pps=7e6, flow_duration = 5.0, 
+#fg::FlowGen(template=pkt_data, pps=8e6, flow_rate = 10, flow_duration = 5.0, 
 arrival='uniform', duration='uniform', quick_rampup=True, ip_src_range=100000)
 
 
@@ -32,5 +34,5 @@ my_vhost1 = PMDPort(name='my_vhost1',
 
 # for i in range(count_ports):
 fg -> QueueOut(port=my_vhost1.name, qid=0)
-QueueInc(port=my_vhost0.name, qid=0) -> Sink() 
+qi::QueueInc(port=my_vhost0.name, qid=0) -> Sink() 
 
