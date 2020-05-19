@@ -196,15 +196,16 @@ struct QueueStats {
 };
 
 struct Rates {
-	  uint64_t bytes[PACKET_DIRS][MAX_QUEUES_PER_DIR];
-	  double bps[PACKET_DIRS][MAX_QUEUES_PER_DIR];
-	  uint64_t timestamp;
+  double bps[PACKET_DIRS][MAX_QUEUES_PER_DIR];
+  uint64_t bytes[PACKET_DIRS][MAX_QUEUES_PER_DIR];
+  uint64_t timestamp;
 };
 
 struct RateLimiter {
-	int limit[PACKET_DIRS][MAX_QUEUES_PER_DIR]; //pps
-	int token[PACKET_DIRS][MAX_QUEUES_PER_DIR]; 
-	uint64_t timestamp;
+  uint32_t limit[PACKET_DIRS][MAX_QUEUES_PER_DIR]; //bps
+  uint32_t token[PACKET_DIRS][MAX_QUEUES_PER_DIR]; 
+  uint64_t timestamp;
+  uint64_t latest_timestamp;
 };
 
 class Port {
@@ -254,8 +255,9 @@ class Port {
       rate_.timestamp = tsc_to_ns(rdtsc());
 
       limiter_.timestamp = tsc_to_ns(rdtsc());
-      limiter_.limit[PACKET_DIR_OUT][q] = 5 * 1000000;
-      limiter_.limit[PACKET_DIR_INC][q] = 5 * 1000000;
+      limiter_.latest_timestamp = tsc_to_ns(rdtsc());
+      limiter_.limit[PACKET_DIR_OUT][q] = 0;
+      limiter_.limit[PACKET_DIR_INC][q] = 0;
       limiter_.token[PACKET_DIR_OUT][q] = 0;
       limiter_.token[PACKET_DIR_INC][q] = 0;
     }
@@ -325,7 +327,7 @@ class Port {
 
   void RecordRate(packet_dir_t dir, queue_t qid, uint64_t total_bytes);
 
-  bool RateLimit(packet_dir_t dir, queue_t qid);
+  uint32_t RateLimit(packet_dir_t dir, queue_t qid);
 
   protected:
     friend class PortBuilder;

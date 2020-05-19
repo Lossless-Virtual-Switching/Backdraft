@@ -295,17 +295,31 @@ void Port::RecordRate(packet_dir_t dir, queue_t qid, uint64_t total_bytes) {
   }
 }
 
-bool Port::RateLimit(packet_dir_t dir, queue_t qid) {
+uint32_t Port::RateLimit(packet_dir_t dir, queue_t qid) {
+  uint32_t token;
+  uint32_t limit;
+  uint32_t allowed_to_send = 0;
+  uint64_t window = 0;
   uint64_t now = tsc_to_ns(rdtsc());
 
-  if (limiter_.limit[dir][qid] - limiter_.token[dir][qid] > 0) {
-    // not limiting
-    return true;
+  limit = limiter_.limit[dir][qid]; 
+  token = limiter_.token[dir][qid];
+
+  window = now - limiter_.latest_timestamp; 
+  allowed_to_send = window * limit / 1000000000;
+
+  limiter_.latest_timestamp = now;
+
+  if (allowed_to_send + token > limit) {
+    // Throttling
+    allowed_to_send = limit - token;
   }
-  // if no tokens, then limiting!
+
+  // if recharing tokens!
   if (now - limiter_.timestamp > 1000000000) {
     limiter_.timestamp = now;
     limiter_.token[dir][qid] = 0;
   }
-  return false;
+
+  return allowed_to_send;
 }

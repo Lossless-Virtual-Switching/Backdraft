@@ -47,6 +47,8 @@ message PMDPortArg {
   bool vlan_offload_rx_strip = 5;
   bool vlan_offload_rx_filter = 6;
   bool vlan_offload_rx_qinq = 7;
+  bool rate_limiting = 8;
+  uint32 rate = 9;
 }
 
 message UnixSocketPortArg {

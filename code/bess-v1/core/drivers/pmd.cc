@@ -104,6 +104,7 @@ void PMDPort::InitDriver() {
               << " TXQ " << dev_info.max_tx_queues << "  " << lladdr.ToString()
               << "  " << pci_info << " numa_node " << numa_node;
   }
+
 }
 
 // Find a port attached to DPDK by its integral id.
@@ -263,6 +264,22 @@ CommandResponse PMDPort::Init(const bess::pb::PMDPortArg &arg) {
   if (ret_port_id == DPDK_PORT_UNKNOWN) {
     return CommandFailure(ENOENT, "Port not found");
   }
+
+  if (arg.rate_limiting()) {
+    conf_.rate_limiting = true;
+    uint32_t rate = arg.rate() * 1000000;
+
+    if(!rate)
+      return CommandFailure(ENOENT, "rate not found");
+
+    for(queue_t qid = 0; qid < MAX_QUEUES_PER_DIR; qid++) {
+      limiter_.limit[PACKET_DIR_OUT][qid] = rate;
+      limiter_.limit[PACKET_DIR_INC][qid] = rate;
+    }
+
+    LOG(INFO) << "Rate limiting on " << rate << "\n";
+  }
+	  
 
   /* Use defaut rx/tx configuration as provided by PMD drivers,
    * with minor tweaks */
@@ -482,27 +499,40 @@ void PMDPort::CollectStats(bool reset) {
 int PMDPort::RecvPackets(queue_t qid, bess::Packet **pkts, int cnt) {
   uint32_t total_bytes = 0;
   int recv = 0;
+  uint32_t allowed_packets = 0;
 
-  if(!RateLimit(PACKET_DIR_INC, qid) && conf_.rate_limiting)
-    return 0;
+  if (conf_.rate_limiting) {
+    allowed_packets = RateLimit(PACKET_DIR_INC, qid);
+    if (allowed_packets == 0) {
+      // shouldn't read any packets; we affect the rate so update the rate;
+      RecordRate(PACKET_DIR_INC, qid, total_bytes);
+      return 0;
+    }
+   
+    if (allowed_packets < (uint32_t)cnt) {
+      cnt = allowed_packets;
+    }
 
-  recv = rte_eth_rx_burst(dpdk_port_id_, qid, (struct rte_mbuf **)pkts, cnt);
+    recv = rte_eth_rx_burst(dpdk_port_id_, qid, (struct rte_mbuf **)pkts, cnt);
+
+    limiter_.token[PACKET_DIR_INC][qid] += recv;
+
+  } else {
+    recv = rte_eth_rx_burst(dpdk_port_id_, qid, (struct rte_mbuf **)pkts, cnt);
+  }
 
   for (int pkt = 0; pkt < recv; pkt++) {
-    total_bytes += pkts[pkt]->total_len();
+      total_bytes += pkts[pkt]->total_len();
   }
 
   RecordRate(PACKET_DIR_INC, qid, total_bytes);
-  
-  // This has to be here! I'd like to put it in the Ratelimit function,
-  // but I'm unable to since I need spend token only on sent packets.
-  limiter_.token[PACKET_DIR_INC][qid] += recv;
 
   return recv;
 }
 
 int PMDPort::SendPackets(queue_t qid, bess::Packet **pkts, int cnt) {
   uint32_t total_bytes = 0;
+
   int sent = rte_eth_tx_burst(dpdk_port_id_, qid,
                               reinterpret_cast<struct rte_mbuf **>(pkts), cnt);
   int dropped = cnt - sent;
