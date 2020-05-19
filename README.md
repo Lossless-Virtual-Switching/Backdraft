@@ -19,6 +19,7 @@ corresponding directory in `/mnt/huge_2MB`.
 
 #### TestPMD Command
 `sudo ./build/app/testpmd –l 0-1 –n 4 --vdev="virtio_user0,path=/users/alireza/my_vhost0.sock,queues=1" --log-level=8 --socket-mem 1024,1024 --no-pci -- -i --disable-hw-vlan --total-num-mbufs=1025` 
+This command is useful when I'm building rate limiters: `sudo ./testpmd -l 3-4 -n 4 --vdev="virtio_user0,path=/home/alireza/my_vhost0.sock,queues=1" --vdev="virtio_user1,path=/home/alireza/my_vhost1.sock,queues=1" --log-level=8 --socket-mem 128 -- --portmask=0x3 --nb-cores=1 --forward-mode=io` 
 
 #### Tas Command
 `sudo ./tas/tas --ip-addr=10.0.0.1/24 --fp-cores-max=1 --fp-no-xsumoffload --fp-no-ints --fp-no-autoscale --dpdk-extra=--no-pci --dpdk-extra=--vdev --dpdk-extra=virtio_user0,path=/users/alireza/my_vhost0.sock,queues=1`
