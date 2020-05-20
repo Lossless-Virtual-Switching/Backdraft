@@ -1,0 +1,13 @@
+
+cnt_queues = 8
+my_vhost0 = PMDPort(
+	name='my_vhost0',
+	vdev='eth_vhost0,iface=/tmp/my_vhost0.sock,queues={}'.format(cnt_queues),
+	num_inc_q=cnt_queues, 
+	num_out_q=cnt_queues,
+	size_inc_q=64,
+	size_out_q=64
+	)
+
+Source(pkt_size=100) -> BKDRFTQueueOut(port=my_vhost0.name, qid=0, backpressure=False, log=True)
+# Source(pkt_size=100) -> QueueOut(port=my_vhost0.name, qid=0)

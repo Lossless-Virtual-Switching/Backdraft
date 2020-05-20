@@ -62,6 +62,14 @@ Packet *Packet::copy(const Packet *src) {
   return dst;
 }
 
+Packet *Packet::alloc(const Packet *src) {
+  Packet *dst = reinterpret_cast<Packet *>(rte_pktmbuf_alloc(src->pool_));
+  if (!dst) {
+    return nullptr;
+  }
+  return dst;
+}
+
 // basically rte_hexdump() from eal_common_hexdump.c
 static std::string HexDump(const void *buffer, size_t len) {
   std::ostringstream dump;

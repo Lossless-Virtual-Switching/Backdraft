@@ -1,0 +1,30 @@
+import scapy.all as scapy
+
+
+cnt_queues = 8
+host0 = PMDPort(
+	name='ex_vhost0',
+	vdev='eth_vhost0,iface=/tmp/ex_vhost0.sock,queues={}'.format(cnt_queues),
+	num_inc_q=cnt_queues, 
+	num_out_q=cnt_queues,
+	size_inc_q=64,
+	size_out_q=64
+	)
+
+
+pkt_size = int($SN_PKT_SIZE!'60')
+assert(60 <= pkt_size <= 1522)
+
+#use scapy to build a packet template
+eth = scapy.Ether(src='02:1e:67:9f:4d:ae', dst='06:16:3e:1b:72:32')
+ip = scapy.IP(src='10.0.0.1', dst='10.0.0.2')   # dst IP is overwritten
+tcp = scapy.TCP(sport=10001, dport=10002)
+payload = ('hello' + '0123456789' * 200)[:pkt_size-len(eth/ip/tcp)]
+pkt = eth/ip/tcp/payload
+pkt_data = str(pkt)
+
+FlowGen(template=pkt_data, pps=1000, flow_rate = 10,
+	flow_duration = 5.0, arrival='uniform',
+	duration='uniform', quick_rampup=True,
+	ip_src_range=100000) -> BKDRFTQueueOut(port=host0.name, qid=0,
+					backpressure=0, log=0)

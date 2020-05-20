@@ -180,6 +180,10 @@ class alignas(64) Packet {
   // Returns nullptr if memory allocation failed
   static Packet *copy(const Packet *src);
 
+  // Allocate a new Packet object from the same PacketPool as src.
+  // Return nullptr if memort allocation failed.
+  static Packet *alloc(const Packet *src);
+
   phys_addr_t dma_addr() { return buf_physaddr_ + data_off_; }
 
   std::string Dump();

@@ -1,38 +1,15 @@
-// Copyright (c) 2014-2016, The Regents of the University of California.
-// Copyright (c) 2016-2017, Nefeli Networks, Inc.
-// All rights reserved.
-//
-// Redistribution and use in source and binary forms, with or without
-// modification, are permitted provided that the following conditions are met:
-//
-// * Redistributions of source code must retain the above copyright notice, this
-// list of conditions and the following disclaimer.
-//
-// * Redistributions in binary form must reproduce the above copyright notice,
-// this list of conditions and the following disclaimer in the documentation
-// and/or other materials provided with the distribution.
-//
-// * Neither the names of the copyright holders nor the names of their
-// contributors may be used to endorse or promote products derived from this
-// software without specific prior written permission.
-//
-// THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
-// AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
-// IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
-// ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE
-// LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
-// CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
-// SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
-// INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
-// CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
-// ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
-// POSSIBILITY OF SUCH DAMAGE.
-
 #include "bkdrft_queue_inc.h"
 
 #include "../port.h"
-#include "../utils/bkdrft.h"
+#include "../utils/time.h"
 #include "../utils/format.h"
+#include "../utils/endian.h"
+#include "../utils/bkdrft.h"
+#include "../utils/bkdrft_sw_drop_control.h"
+
+using bess::utils::be32_t;
+using bess::utils::be16_t;
+using namespace bess::bkdrft;
 
 const Commands BKDRFTQueueInc::cmds = {{"set_burst", "BKDRFTQueueIncCommandSetBurstArg",
 	MODULE_CMD_FUNC(&BKDRFTQueueInc::CommandSetBurst),
@@ -67,10 +44,30 @@ CommandResponse BKDRFTQueueInc::Init(const bess::pb::BKDRFTQueueIncArg &arg) {
 	}
 
 	int ret = port_->AcquireQueues(reinterpret_cast<const module *>(this),
-			PACKET_DIR_INC, &qid_, 1);
+			PACKET_DIR_INC, nullptr, 0);
 	if (ret < 0) {
 		return CommandFailure(-ret);
 	}
+
+	// check if module backpressure is active
+	if (arg.backpressure()) {
+		backpressure_ = 1;
+	} else {
+		backpressure_ = 0;	
+	}
+
+	// initialize q_status
+	for (int i = 0; i < MAX_NUMBER_OF_QUEUE; i++)
+		q_status_[i] = (queue_pause_status) {
+			.until = 0,
+			.flow = {
+				.addr_src = (be32_t)0,
+				.addr_dst = (be32_t)0,
+				.port_src = (be16_t)0,
+				.port_dst = (be16_t)0,
+				.protocol = 0,
+			},
+		};
 
 	return CommandSuccess();
 }
@@ -89,7 +86,6 @@ std::string BKDRFTQueueInc::GetDesc() const {
 
 struct task_result BKDRFTQueueInc::RunTask(Context *ctx, bess::PacketBatch *batch,
 		void *arg) {
-
 	Port *p = port_;
 
 	if (!p->conf().admin_up) {
@@ -100,9 +96,9 @@ struct task_result BKDRFTQueueInc::RunTask(Context *ctx, bess::PacketBatch *batc
 	queue_t dqid = 1;
 	uint32_t cnt2;
 	bess::Packet * ctrlpkt;
-	struct ctrl_pkt *ptr;
+	ctrl_pkt *ptr;
 	uint32_t nb_pkts;
-
+	uint64_t wait_until;
 	uint64_t received_bytes = 0;
 
 	const int burst = ACCESS_ONCE(burst_);
@@ -120,10 +116,10 @@ struct task_result BKDRFTQueueInc::RunTask(Context *ctx, bess::PacketBatch *batc
 
 	// NOTE: we cannot skip this step since it might be used by scheduler.
 	if (prefetch_) {
-			received_bytes += ctrlpkt->total_len();
-			rte_prefetch0(ctrlpkt->head_data());
+		received_bytes += ctrlpkt->total_len();
+		rte_prefetch0(ctrlpkt->head_data());
 	} else {
-			received_bytes += ctrlpkt->total_len();
+		received_bytes += ctrlpkt->total_len();
 	}
 
 	if (!(p->GetFlags() & DRIVER_FLAG_SELF_INC_STATS)) {
@@ -132,32 +128,47 @@ struct task_result BKDRFTQueueInc::RunTask(Context *ctx, bess::PacketBatch *batc
 	}
 
 	// bess:Packet ~ rte_mbuf
-	ptr = (struct ctrl_pkt *)(ctrlpkt->head_data());
+	ptr = static_cast<ctrl_pkt *>(ctrlpkt->head_data());
 	dqid = ptr->q;
 	nb_pkts = ptr->nb_pkts;
-	// LOG(INFO) << "BKDRFTQueueInc: " << (int)cnt << " should read queue " << ((unsigned int)dqid) << "\n";
-	// LOG(INFO) << "BKDRFTQueueInc: " << "packet length: " << (int)ctrlpkt->total_len() << "\n";
 	bess::Packet::Free(ctrlpkt); // free ctrl pkt
 
 	/// Data queue section
-	received_bytes = 0;
+	
+	if (backpressure_) {
+		// check if data queue is paused
+		uint64_t now;
+		now = rdtsc();
+		now  = tsc_to_ns(now);  // nano seconds
+
+		if (q_status_[dqid].until > now) {
+			LOG(INFO) << "Queue " << dqid << " is paused (" << q_status_[dqid].until << " < " << now << ").\n";
+			// this queue is paused
+			return {.block = true, .packets = 0, .bits = 0};
+		}
+		// TODO: we can directly check BKDRFTSwDpCtrl (we have flow detail in q_status)
+		// Is this good?
+		LOG(INFO) << "Outside the if\n";
+	}
+
 	/*
-	*	We are here because we know there is (nb_pkts) of 
-	* data waiting in the queue so try to get them
-	* (Do not ignore ctrl pkts)
-	*/
+	 * We are here because we know there is (nb_pkts) of 
+	 * data waiting in the queue so try to get them
+	 * (Do not ignore ctrl pkts)
+	 */
+
 	batch->set_cnt(p->RecvPackets(dqid, batch->pkts(), burst));
 	cnt2 = batch->cnt();
-	// LOG(INFO) << "BKDRFTQueueInc: fetched: " << cnt2 << " from q: " << (int) dqid << "\n";
 	p->queue_stats[PACKET_DIR_INC][dqid].requested_hist[burst]++;
 	p->queue_stats[PACKET_DIR_INC][dqid].actual_hist[cnt2]++;
 	p->queue_stats[PACKET_DIR_INC][dqid].diff_hist[burst - cnt2]++;
-	if (cnt2 != nb_pkts) {
-		// TODO: what happens if some of the batch is not received?
-		LOG(INFO) << "BKDRFTQueueInc (Warning): sent pkts (from app): " << nb_pkts << " received: " << cnt2 << "\n";
+
+	if (cnt2 < nb_pkts) {
+		// TODO: what to do?
 	}
 
 	// NOTE: we cannot skip this step since it might be used by scheduler.
+	received_bytes = 0;
 	if (prefetch_) {
 		for (uint32_t i = 0; i < cnt2; i++) {
 			received_bytes += batch->pkts()[i]->total_len();
@@ -174,11 +185,34 @@ struct task_result BKDRFTQueueInc::RunTask(Context *ctx, bess::PacketBatch *batc
 		p->queue_stats[PACKET_DIR_INC][dqid].bytes += received_bytes;
 	}
 
-	RunNextModule(ctx, batch);
+	if (cnt2 > 0) {
+		if (backpressure_) {
+			// assume all the batch belongs to the same flow
+			bess::bkdrft::Flow flow = PacketToFlow(*(batch->pkts()[0]));
 
-	return {.block = false,
-		.packets = cnt2,
-		.bits = (received_bytes + cnt2 * pkt_overhead) * 8};
+			// check if the data queue is paused
+			// TODO: move this in class attributes
+			BKDRFTSwDpCtrl &dropMan =
+				bess::bkdrft::BKDRFTSwDpCtrl::GetInstance();
+			wait_until = dropMan.GetFlowStatus(flow);
+			q_status_[dqid].until = wait_until;
+			q_status_[dqid].flow = flow;
+
+			// Note: We have fetched the packets so we send it down the
+			// path. but if it is paused we remeber not to fetch this
+			// queue for a while.
+		}
+
+		RunNextModule(ctx, batch);
+
+		return {.block = false,
+			.packets = cnt2,
+			.bits = (received_bytes + cnt2 * pkt_overhead) * 8};
+	} else {
+		// There is no  data pkts
+		LOG(INFO) << "No data in recv queue " << (int)dqid << "\n";
+		return {.block = true, .packets = 0, .bits = 0};
+	}
 }
 
 CommandResponse BKDRFTQueueInc::CommandSetBurst(

@@ -1,3 +1,4 @@
-export RTE_SDK=/home/banana/workplace/post-loom/code/dpdk
+curdir=$(dirname $0)
+export RTE_SDK=$(realpath $curdir/../../dpdk)
 rm -r build/
 make

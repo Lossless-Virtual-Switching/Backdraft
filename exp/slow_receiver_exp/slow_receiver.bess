@@ -1,0 +1,123 @@
+"""
+BKDRFT Slow Receiver Experiment
+"""
+
+# == parameters:
+
+BESS = 0
+BKDRFT = 1
+
+# AGENT = BESS
+
+# == Insert here ==
+AGENT = BESS
+# ==     End     ==
+
+CNT_Q = 3
+TX_QUEUE_COUNT = CNT_Q
+RX_QUEUE_COUNT = CNT_Q 
+Q_SIZE = 64
+Q = max(TX_QUEUE_COUNT, RX_QUEUE_COUNT)
+# ======================================
+
+# bess.add_worker(0, 0)
+
+# Server 1 
+#eth_vhost0
+host0 = PMDPort(
+	name='ex_vhost0',
+	vdev='eth_vhost0,iface=/tmp/ex_vhost0.sock,queues={}'.format(Q), 
+		num_inc_q=TX_QUEUE_COUNT,
+		num_out_q=RX_QUEUE_COUNT,
+		size_inc_q=Q_SIZE,
+		size_out_q=Q_SIZE)
+
+# Client
+host1 = PMDPort(
+	name='ex_vhost1',
+	vdev='eth_vhost1,iface=/tmp/ex_vhost1.sock,queues={}'.format(Q), 
+		num_inc_q=TX_QUEUE_COUNT,
+		num_out_q=RX_QUEUE_COUNT,
+		size_inc_q=Q_SIZE,
+		size_out_q=Q_SIZE)
+
+# Server 2
+host2 = PMDPort(
+	name='ex_vhost2',
+	vdev='eth_vhost2,iface=/tmp/ex_vhost2.sock,queues={}'.format(Q), 
+		num_inc_q=TX_QUEUE_COUNT,
+		num_out_q=RX_QUEUE_COUNT,
+		size_inc_q=Q_SIZE,
+		size_out_q=Q_SIZE)
+
+
+# tmp0 = PMDPort(
+# 	name='tmp_vhost0',
+# 	vdev='eth_vhost3,iface=/tmp/tmp_vhost0.sock,queues={}'.format(Q), 
+# 		num_inc_q=TX_QUEUE_COUNT,
+# 		num_out_q=RX_QUEUE_COUNT,
+# 		size_inc_q=Q_SIZE,
+# 		size_out_q=Q_SIZE)
+# 
+# tmp1 = PMDPort(
+# 	name='tmp_vhost1',
+# 	vdev='eth_vhost4,iface=/tmp/tmp_vhost1.sock,queues={}'.format(Q), 
+# 		num_inc_q=TX_QUEUE_COUNT,
+# 		num_out_q=RX_QUEUE_COUNT,
+# 		size_inc_q=Q_SIZE,
+# 		size_out_q=Q_SIZE)
+# 
+
+if AGENT == BESS:
+	# client_qin -> iplookup -> server1_qout(/2)
+	router::IPLookup()
+	client_qin::QueueInc(port=host1.name, qid=0)
+	server1_qout::QueueOut(port=host0.name, qid=0)
+	server2_qout::QueueOut(port=host2.name, qid=0)
+
+	server1_qin::QueueInc(port=host0.name, qid=0)
+	server2_qin::QueueInc(port=host2.name, qid=0)
+	client_out::QueueOut(port=host1.name, qid=0)
+
+
+	router.add(prefix='192.0.0.0', prefix_len=8, gate=0)
+	router.add(prefix='10.0.0.0', prefix_len=8, gate=1)
+
+	client_qin -> router
+	router:0 -> server1_qout
+	router:1 -> server2_qout
+	server1_qin -> client_out
+	server2_qin -> client_out
+
+elif AGENT == BKDRFT:
+	# client_qin -> iplookup -> server1_qout(/2)
+	router::IPLookup()
+	client_qin::BKDRFTQueueInc(port=host1.name, qid=0, backpressure=False)
+	server1_qout::BKDRFTQueueOut(port=host0.name, qid=0, backpressure=False)
+	server2_qout::BKDRFTQueueOut(port=host2.name, qid=0, backpressure=False)
+
+	server1_qin::BKDRFTQueueInc(port=host0.name, qid=0, backpressure=False)
+	server2_qin::BKDRFTQueueInc(port=host2.name, qid=0, backpressure=False)
+	client_out::BKDRFTQueueOut(port=host1.name, qid=2, backpressure=False, log=False)
+
+
+	router.add(prefix='192.0.0.0', prefix_len=8, gate=0)
+	router.add(prefix='10.0.0.0', prefix_len=8, gate=1)
+
+	client_qin -> router
+	router:0 -> server1_qout
+	router:1 -> server2_qout
+	server1_qin -> client_out
+	server2_qin -> client_out
+
+
+	# QueueInc(port=tmp0.name, qid=0) -> QueueOut(port=tmp1.name, qid=0)
+	# QueueInc(port=tmp1.name, qid=0) -> QueueOut(port=tmp0.name, qid=0)
+else:
+	print("AGENT misconfigured")
+	raise Exception()
+	
+# Attach to worker
+# client_qin.attach_task(wid=0)
+# server1_qin.attach_task(wid=0)
+# server2_qin.attach_task(wid=0)
