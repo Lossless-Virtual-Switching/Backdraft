@@ -196,16 +196,17 @@ struct QueueStats {
 };
 
 struct Rates {
-  double bps[PACKET_DIRS][MAX_QUEUES_PER_DIR];
-  uint64_t bytes[PACKET_DIRS][MAX_QUEUES_PER_DIR];
-  uint64_t timestamp;
+  uint64_t pps[PACKET_DIRS][MAX_QUEUES_PER_DIR];
+  uint64_t packets[PACKET_DIRS][MAX_QUEUES_PER_DIR];
+  uint64_t timestamp[PACKET_DIRS][MAX_QUEUES_PER_DIR];
+  uint64_t latest_timestamp[PACKET_DIRS][MAX_QUEUES_PER_DIR];
 };
 
 struct RateLimiter {
   uint32_t limit[PACKET_DIRS][MAX_QUEUES_PER_DIR]; //bps
   uint32_t token[PACKET_DIRS][MAX_QUEUES_PER_DIR]; 
-  uint64_t timestamp;
-  uint64_t latest_timestamp;
+  uint64_t timestamp[PACKET_DIRS][MAX_QUEUES_PER_DIR];
+  uint64_t latest_timestamp[PACKET_DIRS][MAX_QUEUES_PER_DIR];
 };
 
 class Port {
@@ -249,13 +250,22 @@ class Port {
     conf_.rate_limiting = false;
 
     // Init rates and limiters per queue
+    // This is a shitty long for loop, there should be some easy way of 
+    // initialization;
     for (queue_t q = 0; q < MAX_QUEUES_PER_DIR; q++) {
-      rate_.bytes[PACKET_DIR_OUT][q] = 0;
-      rate_.bps[PACKET_DIR_INC][q] = 0;
-      rate_.timestamp = tsc_to_ns(rdtsc());
+      rate_.packets[PACKET_DIR_INC][q] = 0;
+      rate_.packets[PACKET_DIR_OUT][q] = 0;
+      rate_.pps[PACKET_DIR_INC][q] = 0;
+      rate_.pps[PACKET_DIR_OUT][q] = 0;
+      rate_.timestamp[PACKET_DIR_OUT][q] = tsc_to_ns(rdtsc());
+      rate_.timestamp[PACKET_DIR_INC][q] = tsc_to_ns(rdtsc());
+      rate_.latest_timestamp[PACKET_DIR_OUT][q] = tsc_to_ns(rdtsc());
+      rate_.latest_timestamp[PACKET_DIR_INC][q] = tsc_to_ns(rdtsc());
 
-      limiter_.timestamp = tsc_to_ns(rdtsc());
-      limiter_.latest_timestamp = tsc_to_ns(rdtsc());
+      limiter_.timestamp[PACKET_DIR_OUT][q] = tsc_to_ns(rdtsc());
+      limiter_.timestamp[PACKET_DIR_INC][q] = tsc_to_ns(rdtsc());
+      limiter_.latest_timestamp[PACKET_DIR_OUT][q] = tsc_to_ns(rdtsc());
+      limiter_.latest_timestamp[PACKET_DIR_INC][q] = tsc_to_ns(rdtsc());
       limiter_.limit[PACKET_DIR_OUT][q] = 0;
       limiter_.limit[PACKET_DIR_INC][q] = 0;
       limiter_.token[PACKET_DIR_OUT][q] = 0;
@@ -325,9 +335,10 @@ class Port {
 
   const PortBuilder *port_builder() const { return port_builder_; }
 
-  void RecordRate(packet_dir_t dir, queue_t qid, uint64_t total_bytes);
+  void RecordRate(packet_dir_t dir, queue_t qid, int packets);
 
   uint32_t RateLimit(packet_dir_t dir, queue_t qid);
+  void UpdateTokens(packet_dir_t dir, queue_t qid, int recv);
 
   protected:
     friend class PortBuilder;

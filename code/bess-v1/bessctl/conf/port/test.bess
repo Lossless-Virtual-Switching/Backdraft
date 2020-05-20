@@ -28,7 +28,7 @@ count_ports = 1
 my_vhost0 = PMDPort(name='my_vhost0',
 vdev='net_vhost0,iface=/home/alireza/my_vhost0.sock,queues={}'.format(count_ports),
 num_inc_q=count_ports, num_out_q=count_ports, size_inc_q=64, size_out_q=64,
-rate_limiting = True, rate = 2)
+rate_limiting = False, rate = 2)
 
 my_vhost1 = PMDPort(name='my_vhost1',
 vdev='net_vhost1,iface=/home/alireza/my_vhost1.sock,queues={}'.format(count_ports),

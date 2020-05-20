@@ -497,7 +497,7 @@ void PMDPort::CollectStats(bool reset) {
 }
 
 int PMDPort::RecvPackets(queue_t qid, bess::Packet **pkts, int cnt) {
-  uint32_t total_bytes = 0;
+  // uint64_t total_bytes = 0;
   int recv = 0;
   uint32_t allowed_packets = 0;
 
@@ -505,7 +505,7 @@ int PMDPort::RecvPackets(queue_t qid, bess::Packet **pkts, int cnt) {
     allowed_packets = RateLimit(PACKET_DIR_INC, qid);
     if (allowed_packets == 0) {
       // shouldn't read any packets; we affect the rate so update the rate;
-      RecordRate(PACKET_DIR_INC, qid, total_bytes);
+      RecordRate(PACKET_DIR_INC, qid, 0);
       return 0;
     }
    
@@ -515,23 +515,23 @@ int PMDPort::RecvPackets(queue_t qid, bess::Packet **pkts, int cnt) {
 
     recv = rte_eth_rx_burst(dpdk_port_id_, qid, (struct rte_mbuf **)pkts, cnt);
 
-    limiter_.token[PACKET_DIR_INC][qid] += recv;
+    UpdateTokens(PACKET_DIR_INC, qid, recv);
 
   } else {
     recv = rte_eth_rx_burst(dpdk_port_id_, qid, (struct rte_mbuf **)pkts, cnt);
   }
 
-  for (int pkt = 0; pkt < recv; pkt++) {
-      total_bytes += pkts[pkt]->total_len();
-  }
+  // for (int pkt = 0; pkt < recv; pkt++) {
+  //     total_bytes += pkts[pkt]->total_len();
+  // }
 
-  RecordRate(PACKET_DIR_INC, qid, total_bytes);
+  RecordRate(PACKET_DIR_INC, qid, recv);
 
   return recv;
 }
 
 int PMDPort::SendPackets(queue_t qid, bess::Packet **pkts, int cnt) {
-  uint32_t total_bytes = 0;
+  // uint32_t total_bytes = 0;
 
   int sent = rte_eth_tx_burst(dpdk_port_id_, qid,
                               reinterpret_cast<struct rte_mbuf **>(pkts), cnt);
@@ -541,11 +541,11 @@ int PMDPort::SendPackets(queue_t qid, bess::Packet **pkts, int cnt) {
   queue_stats[PACKET_DIR_OUT][qid].actual_hist[sent]++;
   queue_stats[PACKET_DIR_OUT][qid].diff_hist[dropped]++;
 
-  for (int pkt = 0; pkt < sent; pkt++) {
-    total_bytes += pkts[pkt]->total_len();
-  }
+  // for (int pkt = 0; pkt < sent; pkt++) {
+  //   total_bytes += pkts[pkt]->total_len();
+  // }
 
-  RecordRate(PACKET_DIR_OUT, qid, total_bytes);
+  RecordRate(PACKET_DIR_OUT, qid, sent);
 
   return sent;
 }

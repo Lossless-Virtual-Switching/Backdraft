@@ -43,6 +43,8 @@
 
 #include "message.h"
 
+#define second_ns 1000000000
+
 std::map<std::string, Port *> PortBuilder::all_ports_;
 
 Port *PortBuilder::CreatePort(const std::string &name) const {
@@ -279,19 +281,29 @@ void Port::ReleaseQueues(const struct module *m, packet_dir_t dir,
   }
 }
 
-void Port::RecordRate(packet_dir_t dir, queue_t qid, uint64_t total_bytes) {
+void Port::RecordRate(packet_dir_t dir, queue_t qid, int packets) {
   uint64_t now = tsc_to_ns(rdtsc());
+  // uint64_t window = 0;
 
-  rate_.bytes[dir][qid] += total_bytes;
+  /* 
+  window = now - rate_.latest_timestamp[dir][qid];
 
-  if (now - rate_.timestamp > 1000000000) { // one second
-    rate_.bps[dir][qid] = rate_.bytes[dir][qid];
-    rate_.bytes[dir][qid] = 0;
-    rate_.timestamp = now;
+  rate_.pps[dir][qid] = 0.6*rate_.pps[dir][qid] +
+  0.4*(packets*8)*second_ns/window;
+
+  rate_.latest_timestamp[dir][qid]= now;
+  */
+  rate_.packets[dir][qid] += packets;
+
+  if (now - rate_.timestamp[dir][qid] > second_ns) { 
+    rate_.pps[dir][qid] = rate_.packets[dir][qid]; 
+    rate_.packets[dir][qid] = 0;
+    rate_.timestamp[dir][qid] = now;
+    
     // if(dir == PACKET_DIR_OUT)
-    //   LOG(INFO) << rate_.bps[dir][qid] << " TX Rate\n";
+    //   LOG(INFO) << (float)rate_.pps[dir][qid] / 1000000 << " TX Rate Mpps\n";
     // else
-    //   LOG(INFO) << rate_.bps[dir][qid] << " RX Rate\n";
+    //   LOG(INFO) << (float)rate_.pps[dir][qid] / 1000000 << " RX Rate Mpps\n";
   }
 }
 
@@ -305,10 +317,10 @@ uint32_t Port::RateLimit(packet_dir_t dir, queue_t qid) {
   limit = limiter_.limit[dir][qid]; 
   token = limiter_.token[dir][qid];
 
-  window = now - limiter_.latest_timestamp; 
-  allowed_to_send = window * limit / 1000000000;
+  window = now - limiter_.latest_timestamp[dir][qid]; 
+  allowed_to_send = window * limit / second_ns;
 
-  limiter_.latest_timestamp = now;
+  limiter_.latest_timestamp[dir][qid] = now;
 
   if (allowed_to_send + token > limit) {
     // Throttling
@@ -316,10 +328,14 @@ uint32_t Port::RateLimit(packet_dir_t dir, queue_t qid) {
   }
 
   // if recharing tokens!
-  if (now - limiter_.timestamp > 1000000000) {
-    limiter_.timestamp = now;
+  if (now - limiter_.timestamp[dir][qid] > second_ns) {
+    limiter_.timestamp[dir][qid] = now;
     limiter_.token[dir][qid] = 0;
   }
 
   return allowed_to_send;
+}
+
+void Port::UpdateTokens(packet_dir_t dir, queue_t qid, int recv) {
+  limiter_.token[dir][qid] += recv;
 }
