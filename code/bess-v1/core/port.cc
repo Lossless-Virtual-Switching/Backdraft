@@ -43,7 +43,7 @@
 
 #include "message.h"
 
-#define second_ns 1000000000
+#define second_ns 1e9
 
 std::map<std::string, Port *> PortBuilder::all_ports_;
 
