@@ -1,0 +1,110 @@
+"""
+TCP Slow Receiver Pipeline
+This file is used for generating the experiments pipeline configuration.
+Some variables will be add to the specified section.
+
+[client] --> [Bypass] --> [Demultiplex] --|--> [server1 (fast)]
+                                          |--> [server2 (slow)]
+
+"""
+
+Q = 8
+
+bp = 0
+cdq = 0
+pfq = 0
+lossless = 0
+delay_per_packet = 0
+
+# == Insert here ==
+# =================
+
+RX_QUEUE_COUNT = Q
+TX_QUEUE_COUNT = Q
+Q_SIZE = 64
+
+
+# Add worker to bess
+bess.add_worker(0, 0)
+
+# Define PMDPorts
+host0 = PMDPort(
+  name='tas_server_1',
+  vdev='eth_vhost0,iface=tmp_vhost/tas_server_1.sock,queues={}'.format(Q),
+  num_inc_q=TX_QUEUE_COUNT,
+  num_out_q=RX_QUEUE_COUNT,
+  size_inc_q=Q_SIZE,
+  size_out_q=Q_SIZE)
+
+host1 = PMDPort(
+  name='tas_server_2',
+  vdev='eth_vhost1,iface=tmp_vhost/tas_server_2.sock,queues={}'.format(Q),
+  num_inc_q=TX_QUEUE_COUNT,
+  num_out_q=RX_QUEUE_COUNT,
+  size_inc_q=Q_SIZE,
+  size_out_q=Q_SIZE)
+
+host2 = PMDPort(
+  name='client',
+  vdev='eth_vhost2,iface=tmp_vhost/tas_client.sock,queues={}'.format(Q),
+  num_inc_q=TX_QUEUE_COUNT,
+  num_out_q=RX_QUEUE_COUNT,
+  size_inc_q=Q_SIZE,
+  size_out_q=Q_SIZE)
+
+
+# plumbing the bidirectional path
+server_1_out = BKDRFTQueueOut(port=host0, qid=0, count_queues=Q,
+  backpressure=bp, lossless=lossless, cdq=cdq, per_flow_buffering=pfq,
+  mname='server1', overlay=False)
+
+# server_1_out = QueueOut(port=host0, qid=0)
+
+server_2_out = BKDRFTQueueOut(port=host1, qid=0, count_queues=Q,
+  backpressure=bp, lossless=lossless, cdq=cdq, per_flow_buffering=pfq,
+  mname='server2', overlay=False)
+
+# server_2_out = QueueOut(port=host1, qid=0)
+
+client_out = BKDRFTQueueOut(port=host2, qid=0, count_queues=Q,
+  backpressure=bp, lossless=lossless, cdq=cdq, per_flow_buffering=pfq,
+  mname='client', overlay=False)
+
+# client_out = QueueOut(port=host2, qid=0)
+
+x = Demultiplex(ranges=[
+  {'start': 1000, 'end': 2000, 'gate': 1},
+  {'start': 5000, 'end': 6000, 'gate': 2},
+])
+
+
+
+if not cdq:
+  print('no cdq')
+  for i in range(Q):
+    # client
+    BKDRFTQueueInc(port=host2, qid=i, backpressure=bp, cdq=cdq) -> x
+    # BKDRFTQueueInc(port=host2, qid=i, backpressure=bp, cdq=cdq) -> \
+    # Bypass(cycles_per_packet=delay_per_packet) -> server_1_out
+
+    # server2
+    # BKDRFTQueueInc(port=host1, qid=i, backpressure=bp, cdq=cdq) -> client_out
+
+    # server1
+    BKDRFTQueueInc(port=host0, qid=i, backpressure=bp, cdq=cdq) -> client_out
+else:
+  # client
+  # BKDRFTQueueInc(port=host2, qid=0, backpressure=bp, cdq=cdq) -> x
+  BKDRFTQueueInc(port=host2, qid=0, backpressure=bp, cdq=cdq) -> \
+  Bypass(cycles_per_packet=delay_per_packet) -> x
+
+  # server2
+  BKDRFTQueueInc(port=host1, qid=0, backpressure=bp, cdq=cdq) -> client_out
+
+  # server1
+  BKDRFTQueueInc(port=host0, qid=0, backpressure=bp, cdq=cdq) -> client_out
+
+
+x:1 -> server_1_out
+# x:2 -> server_2_out
+

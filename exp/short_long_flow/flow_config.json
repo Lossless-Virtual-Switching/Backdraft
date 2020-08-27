@@ -1,0 +1,15 @@
+{
+  "default_client": {
+    "message_per_sec": -1,
+    "flow_duration": 0,
+    "message_size": 2048,
+    "flow_num_msg": 0,
+    "flow_per_destination": 4,
+    "count_thread": 1
+  },
+  "default_server": {
+    "message_size": 10000,
+    "max_flow": 8192,
+    "count_thread": 1
+  }
+}

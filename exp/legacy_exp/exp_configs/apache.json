@@ -1,0 +1,23 @@
+[
+  {
+    "name": "httpd",
+    "image": "legacy_exp_httpd",
+    "args": "",
+    "ip": "10.1.1.1",
+    "mac": "98:f2:b3:c1:e1:91"
+  },
+  {
+    "name": "ab",
+    "image": "legacy_exp_ab",
+    "args": "-B 10.1.1.2 -n 200000 -c 10 http://10.1.1.1:80/index.html",
+    "ip": "10.1.1.2",
+    "mac": "98:f2:b3:c2:e2:92"
+  },
+  {
+    "name": "httpd",
+    "image": "legacy_exp_httpd",
+    "args": "",
+    "ip": "192.168.16.1",
+    "mac": "98:f2:b3:c3:e3:93"
+  }
+]

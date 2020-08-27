@@ -33,7 +33,8 @@ extern inline int send_pkt(int port, uint8_t qid,
 		if (ctrl_pkt == NULL) {
 			printf("(bkdrft) send_pkt: Failed to allocate mbuf for ctrl pkt\n");
 		} else {
-			buf_ptr = rte_pktmbuf_append(ctrl_pkt, sizeof(struct ctrl_pkt));
+			buf_ptr = rte_pktmbuf_append(ctrl_pkt, 64); // sizeof(struct ctrl_pkt)
+			// buf_ptr = rte_pktmbuf_append(ctrl_pkt, 128);
 			if (buf_ptr == NULL) {
 				printf("(bkdrft) send_pkt: There is not enough tail romm\n");
 			} else {
@@ -46,11 +47,47 @@ extern inline int send_pkt(int port, uint8_t qid,
 				if (ctrl_nb_tx != 1) {
 					// sending ctrl pkt failed
 					rte_pktmbuf_free(ctrl_pkt);
-					printf("failed to send ctrl_pkt\n");
+					printf("(bkdrft) failed to send ctrl_pkt\n");
 				}
 			}
 		}
-  }
+	}
 
 	return nb_tx;
+}
+
+extern inline int poll_ctrl_queue(const int port, const int ctrl_qid, const uint16_t burst,
+	struct rte_mbuf **recv_bufs, bool blocking)
+{
+	uint16_t nb_ctrl_rx;
+	uint16_t nb_data_rx;
+	struct rte_mbuf *ctrl_rx_bufs[1];
+	struct rte_mbuf *buf;
+	struct ctrl_pkt *ctrlpkt;
+	uint8_t dqid;
+	for(;;) {
+		// read a ctrl packet
+		nb_ctrl_rx = rte_eth_rx_burst(port, ctrl_qid, ctrl_rx_bufs, 1);
+		if (nb_ctrl_rx == 0) {
+			if (blocking) {
+				continue;
+			} else {
+				return 0;
+			}
+		}
+
+		buf = ctrl_rx_bufs[0];
+		ctrlpkt = rte_pktmbuf_mtod(buf, struct ctrl_pkt *);
+		dqid = ctrlpkt->q;
+		rte_pktmbuf_free(buf); // free ctrl_pkt
+
+		// read data queue
+		nb_data_rx = rte_eth_rx_burst(port, dqid, recv_bufs, burst);
+		// nb_data_rx = rte_eth_rx_burst(port, 1, recv_bufs, burst);
+		if (nb_data_rx == 0) {
+			// printf("Read data queue %d but no data\n", 1);
+			continue;
+		}
+		return nb_data_rx; // result is in recv_bufs
+	}
 }

@@ -1,0 +1,14 @@
+{
+  "short": {
+    "message_per_sec": 500,
+    "flow_duration": 0,
+    "message_size": 64,
+    "flow_num_msg": 1000
+  },
+  "long": {
+    "message_per_sec": 1000000,
+    "flow_duration": 0,
+    "message_size": 700,
+    "flow_num_msg": 0
+  }
+}

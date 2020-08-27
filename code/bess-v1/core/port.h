@@ -70,6 +70,11 @@ typedef enum {
   PACKET_DIRS
 } packet_dir_t;
 
+typedef enum {
+  NIC = 0,
+  VHOST = 1,
+} port_type_t;
+
 class Port;
 class PortTest;
 
@@ -196,15 +201,17 @@ struct QueueStats {
 };
 
 struct Rates {
-  uint64_t pps[PACKET_DIRS][MAX_QUEUES_PER_DIR];
+  double pps[PACKET_DIRS][MAX_QUEUES_PER_DIR];
+  double bps[PACKET_DIRS][MAX_QUEUES_PER_DIR];
+  uint64_t bytes[PACKET_DIRS][MAX_QUEUES_PER_DIR];
   uint64_t packets[PACKET_DIRS][MAX_QUEUES_PER_DIR];
   uint64_t timestamp[PACKET_DIRS][MAX_QUEUES_PER_DIR];
   uint64_t latest_timestamp[PACKET_DIRS][MAX_QUEUES_PER_DIR];
 };
 
 struct RateLimiter {
-  uint32_t limit[PACKET_DIRS][MAX_QUEUES_PER_DIR]; //bps
-  uint32_t token[PACKET_DIRS][MAX_QUEUES_PER_DIR]; 
+  uint32_t limit[PACKET_DIRS][MAX_QUEUES_PER_DIR];  // bps
+  uint32_t token[PACKET_DIRS][MAX_QUEUES_PER_DIR];
   uint64_t timestamp[PACKET_DIRS][MAX_QUEUES_PER_DIR];
   uint64_t latest_timestamp[PACKET_DIRS][MAX_QUEUES_PER_DIR];
 };
@@ -223,6 +230,7 @@ class Port {
     uint32_t mtu;
     bool admin_up;
     bool rate_limiting;
+    bool dcb;
   };
 
   struct PortStats {
@@ -231,12 +239,13 @@ class Port {
   };
 
   struct Rates rate_;
-  struct RateLimiter limiter_; 
+  struct RateLimiter limiter_;
 
   // overide this section to create a new driver -----------------------------
   Port()
       : port_stats_(),
         conf_(),
+        ptype_(),
         name_(),
         driver_arg_(),
         port_builder_(),
@@ -248,15 +257,20 @@ class Port {
     conf_.mtu = kDefaultMtu;
     conf_.admin_up = true;
     conf_.rate_limiting = false;
+    conf_.dcb = false;
 
     // Init rates and limiters per queue
-    // This is a shitty long for loop, there should be some easy way of 
+    // This is a shitty long for loop, there should be some easy way of
     // initialization;
     for (queue_t q = 0; q < MAX_QUEUES_PER_DIR; q++) {
       rate_.packets[PACKET_DIR_INC][q] = 0;
       rate_.packets[PACKET_DIR_OUT][q] = 0;
+      rate_.bytes[PACKET_DIR_INC][q] = 0;
+      rate_.bytes[PACKET_DIR_OUT][q] = 0;
       rate_.pps[PACKET_DIR_INC][q] = 0;
       rate_.pps[PACKET_DIR_OUT][q] = 0;
+      rate_.bps[PACKET_DIR_INC][q] = 0;
+      rate_.bps[PACKET_DIR_OUT][q] = 0;
       rate_.timestamp[PACKET_DIR_OUT][q] = tsc_to_ns(rdtsc());
       rate_.timestamp[PACKET_DIR_INC][q] = tsc_to_ns(rdtsc());
       rate_.latest_timestamp[PACKET_DIR_OUT][q] = tsc_to_ns(rdtsc());
@@ -335,50 +349,56 @@ class Port {
 
   const PortBuilder *port_builder() const { return port_builder_; }
 
-  void RecordRate(packet_dir_t dir, queue_t qid, int packets);
+  void RecordRate(packet_dir_t dir, queue_t qid, bess::Packet **pkts, int recv);
 
   uint32_t RateLimit(packet_dir_t dir, queue_t qid);
   void UpdateTokens(packet_dir_t dir, queue_t qid, int recv);
 
-  protected:
-    friend class PortBuilder;
+  port_type_t getConnectedPortType() { return ptype_; }
 
-    /* for stats that do NOT belong to any queues */
-    PortStats port_stats_;
+  bool isRateLimitingEnabled() { return conf_.rate_limiting; }
 
-    // Current configuration
-    Conf conf_;
+ protected:
+  friend class PortBuilder;
 
-  private:
-    static const size_t kDefaultIncQueueSize = 256;
-    static const size_t kDefaultOutQueueSize = 256;
+  /* for stats that do NOT belong to any queues */
+  PortStats port_stats_;
 
-    static const uint32_t kDefaultMtu = 1500;
+  // Current configuration
+  Conf conf_;
 
-    // Private methods, for use by PortBuilder.
-    void set_name(const std::string &name) { name_ = name; }
-    void set_port_builder(const PortBuilder *port_builder) {
-      port_builder_ = port_builder;
-    }
+  port_type_t ptype_;
 
-    std::string name_;                 // The name of this port instance.
-    google::protobuf::Any driver_arg_; // Driver specific configuration.
+ private:
+  static const size_t kDefaultIncQueueSize = 256;
+  static const size_t kDefaultOutQueueSize = 256;
 
-    // Class-wide spec of this type of port.  Non-owning.
-    const PortBuilder *port_builder_;
+  static const uint32_t kDefaultMtu = 1500;
 
-    DISALLOW_COPY_AND_ASSIGN(Port);
+  // Private methods, for use by PortBuilder.
+  void set_name(const std::string &name) { name_ = name; }
+  void set_port_builder(const PortBuilder *port_builder) {
+    port_builder_ = port_builder;
+  }
 
-    // FIXME: porting in progress ----------------------------
-  public:
-    queue_t num_queues[PACKET_DIRS];
-    size_t queue_size[PACKET_DIRS];
+  std::string name_;                  // The name of this port instance.
+  google::protobuf::Any driver_arg_;  // Driver specific configuration.
 
-    /* which modules are using this port?
-     * TODO: more robust gate keeping */
-    const struct module *users[PACKET_DIRS][MAX_QUEUES_PER_DIR];
+  // Class-wide spec of this type of port.  Non-owning.
+  const PortBuilder *port_builder_;
 
-    struct QueueStats queue_stats[PACKET_DIRS][MAX_QUEUES_PER_DIR];
+  DISALLOW_COPY_AND_ASSIGN(Port);
+
+  // FIXME: porting in progress ----------------------------
+ public:
+  queue_t num_queues[PACKET_DIRS];
+  size_t queue_size[PACKET_DIRS];
+
+  /* which modules are using this port?
+   * TODO: more robust gate keeping */
+  const struct module *users[PACKET_DIRS][MAX_QUEUES_PER_DIR];
+
+  struct QueueStats queue_stats[PACKET_DIRS][MAX_QUEUES_PER_DIR];
 };
 
 #define ADD_DRIVER(_DRIVER, _NAME_TEMPLATE, _HELP)                       \

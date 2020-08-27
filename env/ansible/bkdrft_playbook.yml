@@ -1,0 +1,87 @@
+---
+
+
+- name: "Backdraft environment setup playbook"
+  hosts: all
+  become: true
+  tasks:
+    # python
+    - name: "install python2 and python3"
+      apt:
+        update_cache: yes
+        name: ['python', 'python-pip', 'python3', 'python3-pip']
+    - name: "update python2 pip"
+      command: "python2 -m pip install --upgrade pip"
+    - name: "update python3 pip"
+      command: "python3 -m pip install --upgrade pip"
+    - name: "install python3 deps"
+      command: "python3 -m pip install pyyaml"
+    # docker
+    - name: "install docker daemon and docker-compose"
+      apt: # assume cache has been updated in previous steps
+        name: ['docker', 'docker-compose']
+    # TODO: install perf, linux-tools-generic $kernel version?
+    # - name: "install perf tool"
+    #   apt:
+    #     nmae: ['linux-tools']
+    # protobuf
+    - name: "install protobuf c++ dependency"
+      apt:
+        name: ['autoconf', 'automake', 'libtool', 'curl', 'make', 'g++', 'unzip']
+    - name: "cloneing protobuf"
+      git:
+        repo: "https://github.com/google/protobuf.git"
+        dest: "/opt/protobuf"
+        clone: yes
+    - name: "building protobuf"
+      shell: |
+        ./autogen.sh
+        ./configure
+        make -j
+        sudo make install
+        sudo ldconfig
+        # make check
+      args:
+        chdir: /opt/protobuf
+    - name: "cloneing protobuf-c"
+      git:
+        repo: "https://github.com/protobuf-c/protobuf-c"
+        dest: "/opt/protobuf-c"
+        clone: yes
+    - name: "building protobuf-c"
+      shell: ./autogen.sh && ./configure && make && sudo make install
+      args:
+        chdir: /opt/protobuf-c
+    # GRUB
+    - name: "change default grub file for reserving 1GB hugepages"
+      shell: 'echo GRUB_CMDLINE_LINUX_DEFAULT=\"default_hugepagesz=1G hugepagesz=1G hugepages=30\" | sudo tee -a /etc/default/grub'
+    - name: "update grub"
+      shell: "update-grub"
+    # TODO: check if using mellanox NICs then install required files.
+    # TODO: compile BESS (huge pages should be setup first)
+
+
+# setup BESS env
+- import_playbook: bess-build-dep.yml
+- import_playbook: bess-runtime.yml
+
+
+# some dependencies are installed in bess playbooks
+# build apps
+- name: "Backdraft make apps used in experiments"
+  hosts: all
+  become: false
+  tasks:
+    # tas container image
+    # - name: "build `tas_container` docker image file"
+    #   command: "../../code/apps/tas_container/build.sh"
+    # build used applications
+    - name: "building applications (dpdk_netperf)"
+      shell: ./make.sh
+      args:
+        chdir: ../../code/apps/dpdk_netperf/
+    - name: "building applications (udp_client_server)"
+      shell: ./make.sh
+      args:
+        chdir: ../../code/apps/udp_client_server/
+

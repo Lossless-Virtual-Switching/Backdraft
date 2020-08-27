@@ -1,0 +1,41 @@
+import scapy.all as scapy
+import os
+
+
+def aton(ip):
+  return socket.inet_aton(ip)
+
+
+# Craft a packet with the specified IP addresses
+def gen_packet(proto, src_ip, dst_ip):
+  eth = scapy.Ether(src='98:f2:b3:cc:02:f1', dst='98:f2:b3:ca:d0:c1')
+  ip = scapy.IP(src=src_ip, dst=dst_ip)
+  transport = proto(sport=10001, dport=10003)
+  payload = 'helloworld'
+  pkt = eth/ip/transport/payload
+  return str(pkt)
+
+
+packets = [gen_packet(scapy.TCP, '10.0.0.1', '10.0.0.3')]
+
+q = 1
+vdev = []
+for i in range(2):
+  sock = '/tmp/tmp_vhost{0}.sock'.format(i)
+  if os.path.exists(sock):
+    subprocess.call('sudo rm {0}'.format(sock), shell=True)
+    print('a socket was removed')
+  add = 'eth_vhost{0},iface={1},queues={2}'.format(i, sock, q)
+  vdev.append(add)
+
+# port1 = PMDPort(name='port1', vdev=vdev[0])
+port2 = PMDPort(name='port2', vdev=vdev[1])
+
+
+Source() -> \
+Rewrite(templates=packets) -> \
+Bypass(cycles_per_packet=2000) -> \
+TestQueueOut(port=port2.name, qid=0)
+
+TestQueueInc(port=port2.name, qid=0) -> Sink()
+

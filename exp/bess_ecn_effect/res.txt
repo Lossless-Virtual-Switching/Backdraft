@@ -1,0 +1,285 @@
+tas_server
+tas_server
+b679f68c6e6def7db164de51121779493265dedd115a697bc61550c4e3cbc051
+dd81cde76141d98bafc02b4848e31abc90f71313385e0201da04d9e99959b986
+tas_server
+tas_client
+ecn threshold:  1
+start BESS daemon
+==============================
+     TCP Performance Test
+==============================
+===== avg results =====
+TP: 2921.4986885245894
+@50: 22.0
+@90: 25.0
+@95: 26.0
+@99: 28.0
+@99.9: 32.0
+@99.99: 282.0
+=======================
+server1
+   tas_server_1 Driver PMDPort    HWaddr 56:48:4f:53:54:00  MTU 1500  
+               Speed 10,000Mbps  Link UP    Duplex FULL  Autoneg OFF  
+       Inc/RX  packets: 109,155,557         bytes: 51,780,528,834      
+               dropped: 0                   
+       Out/TX  packets: 109,154,873         bytes: 51,795,187,382      
+               dropped: 1,918               
+
+client
+   tas_client_1 Driver PMDPort    HWaddr 56:48:4f:53:54:01  MTU 1500  
+               Speed 10,000Mbps  Link UP    Duplex FULL  Autoneg OFF  
+       Inc/RX  packets: 109,432,540         bytes: 51,929,786,764      
+               dropped: 0                   
+       Out/TX  packets: 109,431,020         bytes: 51,912,026,924      
+               dropped: 285                 
+
+=== pause call per sec ===
+=== pause call per sec ===
+==============
+tas_server
+tas_server
+tas_client
+tas_client
+50329e738dc098ac5fdfc8d9b4b4c576529515f38319684dc1277f64d708bda2
+31d1941ed9505687017973a5702f335f6e18ef91cf55e4b133d683a8a8caf2b5
+tas_server
+tas_client
+ecn threshold:  2
+start BESS daemon
+==============================
+     TCP Performance Test
+==============================
+===== avg results =====
+TP: 2953.1095081967223
+@50: 22.0
+@90: 25.0
+@95: 26.0
+@99: 28.0
+@99.9: 32.0
+@99.99: 48.0
+=======================
+server1
+   tas_server_1 Driver PMDPort    HWaddr 56:48:4f:53:54:00  MTU 1500  
+               Speed 10,000Mbps  Link UP    Duplex FULL  Autoneg OFF  
+       Inc/RX  packets: 110,688,682         bytes: 52,571,857,056      
+               dropped: 0                   
+       Out/TX  packets: 110,688,073         bytes: 52,571,050,450      
+               dropped: 163                 
+
+client
+   tas_client_1 Driver PMDPort    HWaddr 56:48:4f:53:54:01  MTU 1500  
+               Speed 10,000Mbps  Link UP    Duplex FULL  Autoneg OFF  
+       Inc/RX  packets: 110,981,628         bytes: 52,708,576,424      
+               dropped: 0                   
+       Out/TX  packets: 110,981,978         bytes: 52,709,019,348      
+               dropped: 102                 
+
+=== pause call per sec ===
+=== pause call per sec ===
+==============
+tas_server
+tas_server
+tas_client
+tas_client
+ffdb38345c31c89764386786f57ccf74dd9bf4feb3147b46700338ada0f53140
+dcece518c3a1ffd95056b31c1894f3421f819ccb858ec15ef5967b6db0ff8cdd
+tas_server
+tas_client
+ecn threshold:  4
+start BESS daemon
+==============================
+     TCP Performance Test
+==============================
+===== avg results =====
+TP: 2946.191393442624
+@50: 21.0
+@90: 25.0
+@95: 26.0
+@99: 28.0
+@99.9: 31.0
+@99.99: 80.0
+=======================
+server1
+   tas_server_1 Driver PMDPort    HWaddr 56:48:4f:53:54:00  MTU 1500  
+               Speed 10,000Mbps  Link UP    Duplex FULL  Autoneg OFF  
+       Inc/RX  packets: 110,705,467         bytes: 52,472,812,518      
+               dropped: 0                   
+       Out/TX  packets: 110,704,633         bytes: 52,469,763,842      
+               dropped: 399                 
+
+client
+   tas_client_1 Driver PMDPort    HWaddr 56:48:4f:53:54:01  MTU 1500  
+               Speed 10,000Mbps  Link UP    Duplex FULL  Autoneg OFF  
+       Inc/RX  packets: 111,000,074         bytes: 52,610,338,568      
+               dropped: 0                   
+       Out/TX  packets: 111,000,426         bytes: 52,612,723,740      
+               dropped: 75                  
+
+=== pause call per sec ===
+=== pause call per sec ===
+==============
+tas_server
+tas_server
+tas_client
+tas_client
+e62faec156cf24bbc75afb531be709d1eab828e9e50cc559a1869ec3ab35fffa
+0b23d6538a736a13e2d3c9f4030d970ac429e5ddc05ff9eb99b595db4953f1b2
+tas_server
+tas_client
+ecn threshold:  8
+start BESS daemon
+==============================
+     TCP Performance Test
+==============================
+===== avg results =====
+TP: 2945.79475409836
+@50: 22.0
+@90: 25.0
+@95: 26.0
+@99: 28.0
+@99.9: 32.0
+@99.99: 90.0
+=======================
+server1
+   tas_server_1 Driver PMDPort    HWaddr 56:48:4f:53:54:00  MTU 1500  
+               Speed 10,000Mbps  Link UP    Duplex FULL  Autoneg OFF  
+       Inc/RX  packets: 110,381,700         bytes: 52,445,872,076      
+               dropped: 0                   
+       Out/TX  packets: 110,380,918         bytes: 52,441,335,548      
+               dropped: 240                 
+
+client
+   tas_client_1 Driver PMDPort    HWaddr 56:48:4f:53:54:01  MTU 1500  
+               Speed 10,000Mbps  Link UP    Duplex FULL  Autoneg OFF  
+       Inc/RX  packets: 110,673,405         bytes: 52,580,895,382      
+               dropped: 0                   
+       Out/TX  packets: 110,673,753         bytes: 52,584,822,062      
+               dropped: 207                 
+
+=== pause call per sec ===
+=== pause call per sec ===
+==============
+tas_server
+tas_server
+tas_client
+tas_client
+e011fde0c09b2abf8e8e7262c73eb2510fc77e04cdd80da6120882363f6cf77e
+057271251cc699e930a09481c370c10ecf2522c570b7a2bf145ae016358e845e
+tas_server
+tas_client
+ecn threshold:  16
+start BESS daemon
+==============================
+     TCP Performance Test
+==============================
+===== avg results =====
+TP: 2949.4784426229508
+@50: 22.0
+@90: 25.0
+@95: 26.0
+@99: 28.0
+@99.9: 32.0
+@99.99: 78.0
+=======================
+server1
+   tas_server_1 Driver PMDPort    HWaddr 56:48:4f:53:54:00  MTU 1500  
+               Speed 10,000Mbps  Link UP    Duplex FULL  Autoneg OFF  
+       Inc/RX  packets: 110,637,479         bytes: 52,509,994,442      
+               dropped: 0                   
+       Out/TX  packets: 110,636,621         bytes: 52,508,496,834      
+               dropped: 0                   
+
+client
+   tas_client_1 Driver PMDPort    HWaddr 56:48:4f:53:54:01  MTU 1500  
+               Speed 10,000Mbps  Link UP    Duplex FULL  Autoneg OFF  
+       Inc/RX  packets: 110,942,539         bytes: 52,653,717,722      
+               dropped: 0                   
+       Out/TX  packets: 110,943,348         bytes: 52,655,147,088      
+               dropped: 56                  
+
+=== pause call per sec ===
+=== pause call per sec ===
+==============
+tas_server
+tas_server
+tas_client
+tas_client
+117b2a88a7ad7c306e2636feb5ce6d293213c235b268c8a1bac6983348110180
+3cc38d155631ab36602210e5753e7605eff066300f0287ffbfcbe9c8dccfcd07
+tas_server
+tas_client
+ecn threshold:  32
+start BESS daemon
+==============================
+     TCP Performance Test
+==============================
+===== avg results =====
+TP: 2920.5970491803278
+@50: 22.0
+@90: 25.0
+@95: 26.0
+@99: 28.0
+@99.9: 32.0
+@99.99: 137.0
+=======================
+server1
+   tas_server_1 Driver PMDPort    HWaddr 56:48:4f:53:54:00  MTU 1500  
+               Speed 10,000Mbps  Link UP    Duplex FULL  Autoneg OFF  
+       Inc/RX  packets: 109,802,716         bytes: 52,017,170,044      
+               dropped: 0                   
+       Out/TX  packets: 109,801,415         bytes: 52,009,245,082      
+               dropped: 85                  
+
+client
+   tas_client_1 Driver PMDPort    HWaddr 56:48:4f:53:54:01  MTU 1500  
+               Speed 10,000Mbps  Link UP    Duplex FULL  Autoneg OFF  
+       Inc/RX  packets: 110,103,879         bytes: 52,148,883,942      
+               dropped: 0                   
+       Out/TX  packets: 110,104,768         bytes: 52,156,242,572      
+               dropped: 335                 
+
+=== pause call per sec ===
+=== pause call per sec ===
+==============
+tas_server
+tas_server
+tas_client
+tas_client
+7b076da7d129ec8b3af83f93c7f598391d4d594e39af3c3fadc481f43ef1c523
+f0f36d1660b205df12ab646c125687d310d530bb286f38bd47a3c9f1a16b1a3e
+tas_server
+tas_client
+ecn threshold:  33
+start BESS daemon
+==============================
+     TCP Performance Test
+==============================
+===== avg results =====
+TP: 2947.5074590163936
+@50: 22.0
+@90: 25.0
+@95: 26.0
+@99: 29.0
+@99.9: 32.0
+@99.99: 61.0
+=======================
+server1
+   tas_server_1 Driver PMDPort    HWaddr 56:48:4f:53:54:00  MTU 1500  
+               Speed 10,000Mbps  Link UP    Duplex FULL  Autoneg OFF  
+       Inc/RX  packets: 110,310,554         bytes: 52,464,646,448      
+               dropped: 0                   
+       Out/TX  packets: 110,309,891         bytes: 52,459,081,602      
+               dropped: 162                 
+
+client
+   tas_client_1 Driver PMDPort    HWaddr 56:48:4f:53:54:01  MTU 1500  
+               Speed 10,000Mbps  Link UP    Duplex FULL  Autoneg OFF  
+       Inc/RX  packets: 110,601,064         bytes: 52,597,773,920      
+               dropped: 0                   
+       Out/TX  packets: 110,601,351         bytes: 52,602,798,198      
+               dropped: 230                 
+
+=== pause call per sec ===
+=== pause call per sec ===
+==============

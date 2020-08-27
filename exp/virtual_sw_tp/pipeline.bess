@@ -1,0 +1,53 @@
+import os
+import json
+import subprocess
+
+config = json.load(open('.pipeline_config.json'))
+
+count_cores = config['count_core']
+count_queue = config['count_queue']
+
+
+# ports = []
+cpu_id = 0
+for i in range(0, 2 * count_cores, 2):
+  # cpu 0-count_cores are for BESS
+  bess.add_worker(cpu_id, cpu_id)
+
+  name = 'port_{}'.format(i)
+  socket = '/tmp/vhost_{}.sock'.format(i)
+  vdev = 'eth_vhost{},iface={},queues={}'.format(i, socket, count_queue)
+
+  if os.path.exists(socket):
+    subprocess.call('sudo rm {}'.format(socket), shell=True)
+  
+  port = PMDPort(name=name, vdev=vdev, num_inc_q=count_queue, num_out_q=count_queue, rate_limiting=0)
+
+
+  # port2
+  j = i + 1
+  name = 'port_{}'.format(j)
+  socket = '/tmp/vhost_{}.sock'.format(j)
+  vdev = 'eth_vhost{},iface={},queues={}'.format(j, socket, count_queue)
+
+  if os.path.exists(socket):
+    subprocess.call('sudo rm {}'.format(socket), shell=True)
+
+  port2 = PMDPort(name=name, vdev=vdev, num_inc_q=count_queue, num_out_q=count_queue, rate_limiting=0)
+
+  # ports.append(port)
+
+  # qin1 = QueueInc(port=port, qid=0)
+  qout1 = QueueOut(port=port, qid=0)
+
+  qin2 = QueueInc(port=port2, qid=0)
+  # qout2 = QueueOut(port=port2, qid=0)
+
+  # qin1 -> qout2
+  # qin2 -> qout1
+  qin2 -> Sink()
+
+  # qin1.attach_task(wid=cpu_id)
+  qin2.attach_task(wid=cpu_id)
+  cpu_id += 1
+

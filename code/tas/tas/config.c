@@ -81,6 +81,9 @@ enum cfg_params {
   CP_READY_FD,
   CP_DPDK_EXTRA,
   CP_QUIET,
+  CP_FP_FILE_PREFIX,
+  CP_FP_COMMAND_DATA_QUEUE,
+  CP_FP_PERFLOW_QUEUE,
 };
 
 static struct option opts[] = {
@@ -222,6 +225,15 @@ static struct option opts[] = {
     { .name = "quiet",
       .has_arg = no_argument,
       .val = CP_QUIET },
+    { .name = "fp-file-prefix",
+      .has_arg = required_argument,
+      .val = CP_FP_FILE_PREFIX },
+    { .name = "fp-command-data-queue",
+      .has_arg = no_argument,
+      .val = CP_FP_COMMAND_DATA_QUEUE },
+    { .name = "fp-perflow-queueing",
+      .has_arg = no_argument,
+      .val = CP_FP_PERFLOW_QUEUE },
     { .name = NULL },
   };
 
@@ -487,6 +499,12 @@ int config_parse(struct configuration *c, int argc, char *argv[])
       case CP_FP_VLAN_STRIP:
         c->fp_vlan_strip = 1;
         break;
+      case CP_FP_COMMAND_DATA_QUEUE:
+	c->fp_command_data_queue = 1;
+	break;
+      case CP_FP_PERFLOW_QUEUE:
+	c->fp_perflow_queueing = 1;
+	break;
       case CP_FP_POLL_INTERVAL_TAS:
         if (parse_int32(optarg, &c->fp_poll_interval_tas) != 0) {
           fprintf(stderr, "fp tas poll interval parsing failed\n");
@@ -514,6 +532,14 @@ int config_parse(struct configuration *c, int argc, char *argv[])
         }
         c->ready_fd = i;
         break;
+	
+      case CP_FP_FILE_PREFIX:
+	if (!(c->fp_file_prefix = strdup(optarg))) {
+          fprintf(stderr, "fp file_prefix name failed\n");
+          goto failed;
+        }
+	break;
+
       case CP_DPDK_EXTRA:
         if (parse_arg_append(optarg, c) != 0) {
           goto failed;
@@ -593,8 +619,11 @@ static int config_defaults(struct configuration *c, char *progname)
   c->fp_poll_interval_tas = 10000;
   c->fp_poll_interval_app = 10000;
   c->kni_name = NULL;
+  c->fp_file_prefix = NULL;
   c->ready_fd = -1;
   c->quiet = 0;
+  c->fp_command_data_queue = 0;
+  c->fp_perflow_queueing = 0;
 
   c->dpdk_argc = 1;
   if ((c->dpdk_argv = calloc(2, sizeof(*c->dpdk_argv))) == NULL) {
@@ -692,6 +721,12 @@ static void print_usage(struct configuration *c, char *progname)
           "[default: enabled]\n"
       "  --fp-no-hugepages           Disable hugepages for SHM "
           "[default: enabled]\n"
+      "  --fp-file-prefix-hugepages  Prefix path for all hugepages "
+          "[default: NULL]\n"
+      "  --fp-command-data-queue     Command and data queue mechanism enabled "
+          "[default: disabled]\n"
+      "  --fp-perflow_queueing       Use perflow queueing "
+          "[default: disabled]\n"
       "  --fp-poll-interval-tas      TAS polling interval before blocking "
           "in us [default: %"PRIu32"]\n"
       "  --fp-poll-interval-app      App polling interval before blocking "

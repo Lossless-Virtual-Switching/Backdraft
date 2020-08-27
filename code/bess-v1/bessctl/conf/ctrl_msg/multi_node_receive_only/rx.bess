@@ -1,0 +1,37 @@
+import os
+import subprocess
+
+count_queue = 8
+pci = '7:00.1'
+
+socket="/tmp/tmp_vhost.sock"
+vdev="eth_vhost0,iface={},queues={}".format(socket, count_queue)
+
+if os.path.exists(socket):
+  subprocess.call('sudo rm {}'.format(socket), shell=True)
+
+server = PMDPort(name="tmp_vhost",
+  vdev=vdev,
+  num_inc_q = count_queue,
+  num_out_q=count_queue)
+
+nic = PMDPort(pci=pci,
+  num_inc_q=count_queue,
+  num_out_q=count_queue,
+  command_queue=True,
+  data_mapping=True)
+
+BKDRFTQueueInc(port=nic,
+  qid=0,
+  cdq=1,
+  backpressure=0) -> \
+BKDRFTQueueOut(port=server,
+  count_queues=count_queue,
+  qid=0,
+  backpressure=0,
+  log=0,
+  cdq=1,
+  per_flow_buffering=0,
+  ecn_threshold=100000,
+  mname="test")
+

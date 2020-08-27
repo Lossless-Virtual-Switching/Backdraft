@@ -1,0 +1,11 @@
+version: '3'
+services:
+  client:
+    image: iperf3_container
+    command: "client"
+    depends_on:
+      - server
+  server:
+    image: iperf3_container
+    command: "server"
+

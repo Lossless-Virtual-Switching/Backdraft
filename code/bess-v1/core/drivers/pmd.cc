@@ -1,16 +1,14 @@
 // Copyright (c) 2014-2016, The Regents of the University of California.
 // Copyright (c) 2016-2017, Nefeli Networks, Inc.
 // All rights reserved.
-//
 // Redistribution and use in source and binary forms, with or without
 // modification, are permitted provided that the following conditions are met:
-//
 // * Redistributions of source code must retain the above copyright notice, this
 // list of conditions and the following disclaimer.
 //
 // * Redistributions in binary form must reproduce the above copyright notice,
 // this list of conditions and the following disclaimer in the documentation
-// and/or other materials provided with the distribution.  
+// and/or other materials provided with the distribution.
 // * Neither the names of the copyright holders nor the names of their
 // contributors may be used to endorse or promote products derived from this
 // software without specific prior written permission.
@@ -28,10 +26,14 @@
 // POSSIBILITY OF SUCH DAMAGE.
 
 #include "pmd.h"
+#include "../utils/bkdrft.h"
 
-#include <rte_ethdev.h>
 #include <rte_bus_pci.h>
+#include <rte_ethdev.h>
+#include <rte_flow.h>
 
+#include "../utils/bkdrft.h"
+#include "../utils/bkdrft_flow_rules.h"
 #include "../utils/ether.h"
 #include "../utils/format.h"
 
@@ -42,7 +44,135 @@
 #define SN_HW_RXCSUM 0
 #define SN_HW_TXCSUM 0
 
-static const struct rte_eth_conf default_eth_conf(struct rte_eth_dev_info dev_info, int num_rxq) {
+#define MAX_PATTERN_IN_FLOW 3
+#define MAX_ACTIONS_IN_FLOW 2
+#define MAX_PATTERN_NUM (MAX_PATTERN_IN_FLOW)
+#define MAX_ACTION_NUM (MAX_ACTIONS_IN_FLOW)
+
+#define SRC_IP ((0 << 24) + (0 << 16) + (0 << 8) + 0) /* src ip = 0.0.0.0 */
+#define DEST_IP \
+  ((192 << 24) + (168 << 16) + (1 << 8) + 1) /* dest ip = 192.168.1.1 */
+#define FULL_MASK 0xffffffff                 /* full mask */
+#define EMPTY_MASK 0x0                       /* empty mask */
+
+struct rte_flow *generate_ipv4_flow(uint16_t port_id, uint16_t rx_q,
+                                    uint32_t src_ip, uint32_t src_mask,
+                                    uint32_t dest_ip, uint32_t dest_mask,
+                                    struct rte_flow_error *error) {
+  struct rte_flow_attr attr;
+  struct rte_flow_item pattern[MAX_PATTERN_NUM];
+  struct rte_flow_action action[MAX_ACTION_NUM];
+  struct rte_flow *flow = NULL;
+  struct rte_flow_action_queue queue = {.index = rx_q};
+  struct rte_flow_item_ipv4 ip_spec;
+  struct rte_flow_item_ipv4 ip_mask;
+  int res;
+  memset(pattern, 0, sizeof(pattern));
+  memset(action, 0, sizeof(action));
+  /*
+   * set the rule attribute.
+   * in this case only ingress packets will be checked.
+   */
+  memset(&attr, 0, sizeof(struct rte_flow_attr));
+  attr.ingress = 1;
+  /*
+   * create the action sequence.
+   * one action only,  move packet to queue
+   */
+  action[0].type = RTE_FLOW_ACTION_TYPE_QUEUE;
+  action[0].conf = &queue;
+  action[1].type = RTE_FLOW_ACTION_TYPE_END;
+  /*
+   * set the first level of the pattern (ETH).
+   * since in this example we just want to get the
+   * ipv4 we set this level to allow all.
+   */
+  pattern[0].type = RTE_FLOW_ITEM_TYPE_ETH;
+  /*
+   * setting the second level of the pattern (IP).
+   * in this example this is the level we care about
+   * so we set it according to the parameters.
+   */
+  memset(&ip_spec, 0, sizeof(struct rte_flow_item_ipv4));
+  memset(&ip_mask, 0, sizeof(struct rte_flow_item_ipv4));
+  ip_spec.hdr.dst_addr = htonl(dest_ip);
+  ip_mask.hdr.dst_addr = dest_mask;
+  ip_spec.hdr.src_addr = htonl(src_ip);
+  ip_mask.hdr.src_addr = src_mask;
+  pattern[1].type = RTE_FLOW_ITEM_TYPE_IPV4;
+  pattern[1].spec = &ip_spec;
+  pattern[1].mask = &ip_mask;
+  /* the final level must be always type end */
+  pattern[2].type = RTE_FLOW_ITEM_TYPE_END;
+  res = rte_flow_validate(port_id, &attr, pattern, action, error);
+  if (!res)
+    flow = rte_flow_create(port_id, &attr, pattern, action, error);
+  return flow;
+}
+
+__attribute__((unused)) static struct rte_flow *generate_vlan_flow(uint16_t port_id, uint16_t prio,
+                                           uint16_t vlan_id, uint16_t rx_q,
+                                           struct rte_flow_error *error) {
+  assert (prio < 1 << 3);
+  assert (vlan_id < 1 << 12);
+
+  struct rte_flow_attr attr;
+  struct rte_flow_item pattern[MAX_PATTERN_NUM];
+  struct rte_flow_action action[MAX_ACTION_NUM];
+  struct rte_flow *flow = NULL;
+  struct rte_flow_action_queue queue = {.index = rx_q};
+  struct rte_flow_item_vlan vlan;
+  struct rte_flow_item_vlan vlan_mask;
+
+  int res;
+  memset(pattern, 0, sizeof(pattern));
+  memset(action, 0, sizeof(action));
+  /*
+   * set the rule attribute.
+   * in this case only ingress packets will be checked.
+   */
+  memset(&attr, 0, sizeof(struct rte_flow_attr));
+  attr.ingress = 1;
+  /*
+   * create the action sequence.
+   * one action only,  move packet to queue
+   */
+  action[0].type = RTE_FLOW_ACTION_TYPE_QUEUE;
+  action[0].conf = &queue;
+  action[1].type = RTE_FLOW_ACTION_TYPE_END;
+  /*
+   * set the first level of the pattern (ETH).
+   * since in this example we just want to get the
+   * ipv4 we set this level to allow all.
+   */
+  pattern[0].type = RTE_FLOW_ITEM_TYPE_ETH;
+  /*
+   * setting the second level of the pattern (IP).
+   * in this example this is the level we care about
+   * so we set it according to the parameters.
+   */
+  memset(&vlan, 0, sizeof(struct rte_flow_item_vlan));
+  memset(&vlan_mask, 0, sizeof(struct rte_flow_item_vlan));
+
+  /* set the vlan to pas all packets */
+  // vlan.tci = RTE_BE16(0x2064);
+  vlan.tci = RTE_BE16(prio << 13 | 0 << 12 | vlan_id);
+  vlan_mask.tci = RTE_BE16(0xEFFF);  // priority and vlan id are important
+  vlan_mask.inner_type = RTE_BE16(0x0000);  // iner type is not important
+  pattern[1].type = RTE_FLOW_ITEM_TYPE_VLAN;
+  pattern[1].spec = &vlan;
+  pattern[1].mask = &vlan_mask;
+
+  /* the final level must be always type end */
+  pattern[2].type = RTE_FLOW_ITEM_TYPE_END;
+  res = rte_flow_validate(port_id, &attr, pattern, action, error);
+  if (!res)
+    flow = rte_flow_create(port_id, &attr, pattern, action, error);
+  return flow;
+}
+
+static const struct rte_eth_conf default_eth_conf(
+    struct rte_eth_dev_info dev_info, int num_rxq) {
   struct rte_eth_conf ret = rte_eth_conf();
   uint64_t rss_hf = ETH_RSS_IP | ETH_RSS_UDP | ETH_RSS_TCP | ETH_RSS_SCTP;
 
@@ -55,8 +185,8 @@ static const struct rte_eth_conf default_eth_conf(struct rte_eth_dev_info dev_in
   }
 
   ret.link_speeds = ETH_LINK_SPEED_AUTONEG;
-
   ret.rxmode.mq_mode = ETH_MQ_RX_RSS;
+
   ret.rxmode.offloads |= (SN_HW_RXCSUM ? DEV_RX_OFFLOAD_CHECKSUM : 0x0);
 
   ret.rx_adv_conf.rss_conf = {
@@ -66,6 +196,101 @@ static const struct rte_eth_conf default_eth_conf(struct rte_eth_dev_info dev_in
   };
 
   return ret;
+}
+
+__attribute__((unused)) static const struct rte_eth_conf custom_eth_conf(
+    struct rte_eth_dev_info dev_info, int num_rxq) {
+  struct rte_eth_conf ret = rte_eth_conf();
+  struct rte_eth_dcb_rx_conf *rx_conf = &ret.rx_adv_conf.dcb_rx_conf;
+  uint64_t rss_hf = ETH_RSS_IP | ETH_RSS_UDP | ETH_RSS_TCP | ETH_RSS_SCTP;
+  enum rte_eth_nb_tcs num_tcs = ETH_8_TCS;
+
+  if (num_rxq <= 1) {
+    rss_hf = 0x0;
+  } else if (dev_info.flow_type_rss_offloads) {
+    rss_hf = dev_info.flow_type_rss_offloads;
+  } else {
+    rss_hf = 0x0;
+  }
+
+  ret.link_speeds = ETH_LINK_SPEED_AUTONEG;
+  ret.rxmode.mq_mode = ETH_MQ_RX_DCB;
+
+  rx_conf->nb_tcs = num_tcs;
+
+  for (int i = 0; i < ETH_DCB_NUM_USER_PRIORITIES; i++) {
+    rx_conf->dcb_tc[i] = i % num_tcs;
+  }
+
+  ret.dcb_capability_en = ETH_DCB_PG_SUPPORT;
+
+  ret.rxmode.offloads |= (SN_HW_RXCSUM ? DEV_RX_OFFLOAD_CHECKSUM : 0x0);
+
+  ret.rx_adv_conf.rss_conf = {
+      .rss_key = nullptr,
+      .rss_key_len = 40,
+      .rss_hf = rss_hf,
+  };
+
+  return ret;
+}
+
+static int overlay_rule_setup(dpdk_port_t id) {
+  int ret;
+  struct rte_flow *flow;
+  struct rte_flow_error error;
+
+  // flow = generate_vlan_flow(id, BKDRFT_OVERLAY_PRIO, BKDRFT_OVERLAY_VLAN_ID,
+  //                           BKDRFT_CTRL_QUEUE, &error);
+  flow = bkdrft::filter_by_ip_proto(id, BKDRFT_PROTO_TYPE, BKDRFT_CTRL_QUEUE, &error);
+
+  if (flow) {
+    ret = 0;
+  } else {
+    LOG(INFO) << "Command queue rule error message: " << error.message << " \n";
+    ret = 1;
+  }
+
+  return ret;
+}
+
+int data_mapping_rule_setup(dpdk_port_t port_id, uint16_t count_queue) {
+  struct rte_flow *flow;
+  struct rte_flow_error error;
+  const uint8_t tos_mask = 0xfc; // does not care about the bottom two fields
+
+  for (int i = 1; i < count_queue; i++) {
+    // map prio(i) -> queue(i) for i in [1,8)
+    // flow = generate_vlan_flow(port_id, i, BKDRFT_OVERLAY_VLAN_ID, i, &error);
+    
+    // flow = bkdrft::filter_by_ipv4_bkdrft_opt(port_id, i, i, &error);
+    
+    // map i * 4 -> queue(i) for i in [1, 8)
+    uint8_t tos = i << 2;
+    flow = bkdrft::filter_by_ip_tos(port_id, tos, tos_mask, i, &error);
+
+    if (!flow) {
+      LOG(INFO) << "Data mapping error message: " << error.message << " \n";
+      return -1;  // failed
+    }
+
+    // prio: 3, vlan_id: 100
+    flow = bkdrft::filter_by_ip_tos_with_vlan(port_id, tos,
+          tos_mask, 4, 100, 0xefff, i, &error);
+
+    if (!flow) {
+      LOG(INFO) << "Data mapping error message: " << error.message << " \n";
+      return -1;  // failed
+    }
+  }
+  // flow = bkdrft::filter_by_ether_type(port_id, rte_cpu_to_be_16(RTE_ETHER_TYPE_ARP), 2, &error);
+
+  // if (!flow) {
+  //   LOG(INFO) << "ARP mapping error message: " << error.message << " \n";
+  //   return -1;  // failed
+  // }
+  
+  return 0;
 }
 
 void PMDPort::InitDriver() {
@@ -92,10 +317,9 @@ void PMDPort::InitDriver() {
       if (bus && !strcmp(bus->name, "pci")) {
         pci_dev = RTE_DEV_TO_PCI(dev_info.device);
         pci_info = bess::utils::Format(
-          "%08x:%02hhx:%02hhx.%02hhx %04hx:%04hx  ",
-          pci_dev->addr.domain, pci_dev->addr.bus,
-          pci_dev->addr.devid, pci_dev->addr.function,
-          pci_dev->id.vendor_id, pci_dev->id.device_id);
+            "%08x:%02hhx:%02hhx.%02hhx %04hx:%04hx  ", pci_dev->addr.domain,
+            pci_dev->addr.bus, pci_dev->addr.devid, pci_dev->addr.function,
+            pci_dev->id.vendor_id, pci_dev->id.device_id);
       }
     }
 
@@ -104,7 +328,6 @@ void PMDPort::InitDriver() {
               << " TXQ " << dev_info.max_tx_queues << "  " << lladdr.ToString()
               << "  " << pci_info << " numa_node " << numa_node;
   }
-
 }
 
 // Find a port attached to DPDK by its integral id.
@@ -180,8 +403,9 @@ static CommandResponse find_dpdk_port_by_pci_addr(const std::string &pci,
       return CommandFailure(ENODEV, "Cannot attach PCI device %s", name);
     }
     ret = rte_eth_dev_get_port_by_name(name, &port_id);
-    if (ret< 0) {
-      return CommandFailure(ENODEV, "Cannot find port id for PCI device %s", name);
+    if (ret < 0) {
+      return CommandFailure(ENODEV, "Cannot find port id for PCI device %s",
+                            name);
     }
     *ret_hot_plugged = true;
   }
@@ -238,19 +462,21 @@ CommandResponse PMDPort::Init(const bess::pb::PMDPortArg &arg) {
 
   int numa_node = -1;
 
-
   CommandResponse err;
   switch (arg.port_case()) {
     case bess::pb::PMDPortArg::kPortId: {
       err = find_dpdk_port_by_id(arg.port_id(), &ret_port_id);
+      ptype_ = NIC;
       break;
     }
     case bess::pb::PMDPortArg::kPci: {
       err = find_dpdk_port_by_pci_addr(arg.pci(), &ret_port_id, &hot_plugged_);
+      ptype_ = NIC;
       break;
     }
     case bess::pb::PMDPortArg::kVdev: {
       err = find_dpdk_vdev(arg.vdev(), &ret_port_id, &hot_plugged_);
+      ptype_ = VHOST;
       break;
     }
     default:
@@ -269,23 +495,32 @@ CommandResponse PMDPort::Init(const bess::pb::PMDPortArg &arg) {
     conf_.rate_limiting = true;
     uint32_t rate = arg.rate() * 1000000;
 
-    if(!rate)
+    if (!rate)
       return CommandFailure(ENOENT, "rate not found");
 
-    for(queue_t qid = 0; qid < MAX_QUEUES_PER_DIR; qid++) {
+    for (queue_t qid = 0; qid < MAX_QUEUES_PER_DIR; qid++) {
       limiter_.limit[PACKET_DIR_OUT][qid] = rate;
       limiter_.limit[PACKET_DIR_INC][qid] = rate;
     }
 
     LOG(INFO) << "Rate limiting on " << rate << "\n";
   }
-	  
+
+  if (arg.dcb()) {
+    conf_.dcb = arg.dcb();
+  }
 
   /* Use defaut rx/tx configuration as provided by PMD drivers,
    * with minor tweaks */
   rte_eth_dev_info_get(ret_port_id, &dev_info);
 
+  // if(conf_.dcb) {
+  //   eth_conf = custom_eth_conf(dev_info, num_rxq);
+  // } else
+  //   eth_conf = default_eth_conf(dev_info, num_rxq);
+
   eth_conf = default_eth_conf(dev_info, num_rxq);
+
   if (arg.loopback()) {
     eth_conf.lpbk_mode = 1;
   }
@@ -305,6 +540,7 @@ CommandResponse PMDPort::Init(const bess::pb::PMDPortArg &arg) {
   if (ret != 0) {
     return CommandFailure(-ret, "rte_eth_dev_configure() failed");
   }
+
   rte_eth_promiscuous_enable(ret_port_id);
 
   eth_txconf = dev_info.default_txconf;
@@ -337,6 +573,24 @@ CommandResponse PMDPort::Init(const bess::pb::PMDPortArg &arg) {
     }
   }
 
+  // ----------- overlay rule -------------- //
+  if (arg.overlay_rules() || arg.command_queue()) {
+    ret = overlay_rule_setup(ret_port_id);
+    LOG(INFO) << "Setup command queue rule\n";
+    if (ret != 0) {
+      return CommandFailure(-ret, "rule setup for overlay network failed.");
+    }
+  }
+
+  // ---------- data mapping ----------- //
+  if (arg.data_mapping()) {
+    ret = data_mapping_rule_setup(ret_port_id, num_rxq);
+    LOG(INFO) << "Setup data mapping rule\n";
+    if (ret != 0) {
+      return CommandFailure(-ret, "priority mapping rule setup failed.");
+    }
+  }
+
   int offload_mask = 0;
   offload_mask |= arg.vlan_offload_rx_strip() ? ETH_VLAN_STRIP_OFFLOAD : 0;
   offload_mask |= arg.vlan_offload_rx_filter() ? ETH_VLAN_FILTER_OFFLOAD : 0;
@@ -364,6 +618,14 @@ CommandResponse PMDPort::Init(const bess::pb::PMDPortArg &arg) {
   // Reset hardware stat counters, as they may still contain previous data
   CollectStats(true);
 
+  for (int queue = 0; queue < num_rxq; queue++) {
+    rte_eth_dev_set_rx_queue_stats_mapping(dpdk_port_id_, queue, queue);
+  }
+
+  for (int queue = 0; queue < num_txq; queue++) {
+    rte_eth_dev_set_tx_queue_stats_mapping(dpdk_port_id_, queue, queue);
+  }
+
   return CommandSuccess();
 }
 
@@ -386,8 +648,8 @@ CommandResponse PMDPort::UpdateConf(const Conf &conf) {
 
   if (conf_.mac_addr != conf.mac_addr && !conf.mac_addr.IsZero()) {
     rte_ether_addr tmp;
-    rte_ether_addr_copy(reinterpret_cast<const rte_ether_addr *>(&conf.mac_addr.bytes),
-                    &tmp);
+    rte_ether_addr_copy(
+        reinterpret_cast<const rte_ether_addr *>(&conf.mac_addr.bytes), &tmp);
     int ret = rte_eth_dev_default_mac_addr_set(dpdk_port_id_, &tmp);
     if (ret == 0) {
       conf_.mac_addr = conf.mac_addr;
@@ -409,6 +671,15 @@ CommandResponse PMDPort::UpdateConf(const Conf &conf) {
 }
 
 void PMDPort::DeInit() {
+  struct rte_flow_error error;
+  int ret;
+
+  ret = rte_flow_flush(dpdk_port_id_, &error);
+
+  if (ret != 0)
+    LOG(WARNING) << "rte_flow_flush(" << static_cast<int>(dpdk_port_id_)
+                 << ") failed: " << rte_strerror(-ret);
+
   rte_eth_dev_stop(dpdk_port_id_);
 
   if (hot_plugged_) {
@@ -417,23 +688,25 @@ void PMDPort::DeInit() {
     rte_eth_dev_info_get(dpdk_port_id_, &dev_info);
 
     char name[RTE_ETH_NAME_MAX_LEN];
-    int ret;
-    
+
     if (dev_info.device) {
       bus = rte_bus_find_by_device(dev_info.device);
       if (rte_eth_dev_get_name_by_port(dpdk_port_id_, name) == 0) {
         rte_eth_dev_close(dpdk_port_id_);
         ret = rte_eal_hotplug_remove(bus->name, name);
         if (ret < 0) {
-          LOG(WARNING) << "rte_eal_hotplug_remove(" << static_cast<int>(dpdk_port_id_)
+          LOG(WARNING) << "rte_eal_hotplug_remove("
+                       << static_cast<int>(dpdk_port_id_)
                        << ") failed: " << rte_strerror(-ret);
         }
         return;
       } else {
-        LOG(WARNING) << "rte_eth_dev_get_name failed for port" << static_cast<int>(dpdk_port_id_);
+        LOG(WARNING) << "rte_eth_dev_get_name failed for port"
+                     << static_cast<int>(dpdk_port_id_);
       }
     } else {
-        LOG(WARNING) << "rte_eth_def_info_get failed for port" << static_cast<int>(dpdk_port_id_);
+      LOG(WARNING) << "rte_eth_def_info_get failed for port"
+                   << static_cast<int>(dpdk_port_id_);
     }
 
     rte_eth_dev_close(dpdk_port_id_);
@@ -497,18 +770,18 @@ void PMDPort::CollectStats(bool reset) {
 }
 
 int PMDPort::RecvPackets(queue_t qid, bess::Packet **pkts, int cnt) {
-  // uint64_t total_bytes = 0;
   int recv = 0;
   uint32_t allowed_packets = 0;
 
+  // if (ptype_ == VHOST && conf_.rate_limiting && qid) {
   if (conf_.rate_limiting) {
     allowed_packets = RateLimit(PACKET_DIR_INC, qid);
     if (allowed_packets == 0) {
       // shouldn't read any packets; we affect the rate so update the rate;
-      RecordRate(PACKET_DIR_INC, qid, 0);
+      RecordRate(PACKET_DIR_INC, qid, pkts, 0);
       return 0;
     }
-   
+
     if (allowed_packets < (uint32_t)cnt) {
       cnt = allowed_packets;
     }
@@ -521,11 +794,7 @@ int PMDPort::RecvPackets(queue_t qid, bess::Packet **pkts, int cnt) {
     recv = rte_eth_rx_burst(dpdk_port_id_, qid, (struct rte_mbuf **)pkts, cnt);
   }
 
-  // for (int pkt = 0; pkt < recv; pkt++) {
-  //     total_bytes += pkts[pkt]->total_len();
-  // }
-
-  RecordRate(PACKET_DIR_INC, qid, recv);
+  RecordRate(PACKET_DIR_INC, qid, pkts, recv);
 
   return recv;
 }
@@ -535,17 +804,17 @@ int PMDPort::SendPackets(queue_t qid, bess::Packet **pkts, int cnt) {
 
   int sent = rte_eth_tx_burst(dpdk_port_id_, qid,
                               reinterpret_cast<struct rte_mbuf **>(pkts), cnt);
-  int dropped = cnt - sent;
-  queue_stats[PACKET_DIR_OUT][qid].dropped += dropped;
-  queue_stats[PACKET_DIR_OUT][qid].requested_hist[cnt]++;
-  queue_stats[PACKET_DIR_OUT][qid].actual_hist[sent]++;
-  queue_stats[PACKET_DIR_OUT][qid].diff_hist[dropped]++;
+  // int dropped = cnt - sent;
+  // queue_stats[PACKET_DIR_OUT][qid].dropped += dropped;
+  // queue_stats[PACKET_DIR_OUT][qid].requested_hist[cnt]++;
+  // queue_stats[PACKET_DIR_OUT][qid].actual_hist[sent]++;
+  // queue_stats[PACKET_DIR_OUT][qid].diff_hist[dropped]++;
 
   // for (int pkt = 0; pkt < sent; pkt++) {
   //   total_bytes += pkts[pkt]->total_len();
   // }
 
-  RecordRate(PACKET_DIR_OUT, qid, sent);
+  RecordRate(PACKET_DIR_OUT, qid, pkts, sent);
 
   return sent;
 }

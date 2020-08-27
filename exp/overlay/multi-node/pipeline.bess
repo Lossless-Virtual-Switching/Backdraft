@@ -1,0 +1,97 @@
+import os
+import json
+import subprocess 
+
+
+config = json.load(open('.pipeline_config.json'))
+count_queue = config['count_queue'] 
+queue_size = config['queue_size'] 
+pci = os.environ.get('PCI', '7:00.1')
+
+rate_limiting = config['overlay'] 
+rate = 10 
+
+cdq = config['cdq'] 
+pfq = config['pfq']
+buffering = config['buffering']
+bp = config['bp']
+overlay = config['overlay']
+mq=0
+
+# =========
+import socket
+host_name = socket.gethostname()
+#========
+
+
+socket ='/tmp/vhost_0.sock' 
+vdev = 'eth_vhost0,iface={},queues={}'.format(socket, count_queue)
+print(vdev)
+
+if os.path.exists(socket):
+  subprocess.check_call('sudo rm %s' % socket, shell=True)
+
+vhost = PMDPort(
+  name='vhost',
+  vdev=vdev,
+  num_inc_q=count_queue,
+  num_out_q=count_queue,
+  size_inc_q=queue_size,
+  size_out_q=queue_size,
+  rate_limiting=rate_limiting,
+  rate=rate)
+
+if host_name == '!node4.5nodes.uic-dcs-pg0.utah.cloudlab.us':
+  print ('rate limited')
+  nic = PMDPort(pci=pci,
+    num_inc_q=count_queue,
+    num_out_q=count_queue,
+    command_queue=cdq,
+    data_mapping=cdq,
+    rate_limiting=1, # rate_limiting
+    rate=1) # rate
+else:
+  nic = PMDPort(pci=pci,
+    num_inc_q=count_queue,
+    num_out_q=count_queue,
+    command_queue=cdq,
+    data_mapping=cdq,
+    rate_limiting=rate_limiting,
+    rate=rate)
+
+BKDRFTQueueInc(port=vhost,
+  qid=0,
+  cdq=cdq,
+  backpressure=bp,
+  overlay=overlay)  -> \
+BKDRFTQueueOut(port=nic,
+  count_queues=count_queue,
+  qid=0,
+  lossless=buffering,
+  backpressure=bp,
+  log=0,
+  cdq=cdq,
+  per_flow_buffering=pfq,
+  ecn_threshold=100000,
+  overlay=overlay,
+  multiqueue=mq,
+  mname="nic_queue_out")
+
+BKDRFTQueueInc(port=nic,
+  qid=0,
+  cdq=cdq,
+  backpressure=bp,
+  overlay=overlay)  -> \
+BKDRFTQueueOut(port=vhost,
+  count_queues=count_queue,
+  qid=0,
+  lossless=buffering,
+  backpressure=bp,
+  log=0,
+  cdq=cdq,
+  per_flow_buffering=pfq,
+  ecn_threshold=100000,
+  overlay=overlay,
+  multiqueue=mq,
+  mname="vhost_queue_out")
+

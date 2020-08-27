@@ -216,10 +216,27 @@ int network_thread_init(struct dataplane_context *ctx)
 
   struct network_thread *t = &ctx->net;
   int ret;
+  unsigned ctrl_pool_id;
+  static unsigned ctrl_pool_id_counter;
+  char pool_name[32];
 
   /* allocate mempool */
   if ((t->pool = mempool_alloc()) == NULL) {
     goto error_mpool;
+  }
+
+  if (config.fp_command_data_queue) {
+    // setup command packets pool
+    ctrl_pool_id = __sync_fetch_and_add(&ctrl_pool_id_counter, 1);
+    snprintf(pool_name, 32, "ctrl_pool_%u", ctrl_pool_id);
+    t->ctrl_cmd_pool = rte_pktmbuf_pool_create(pool_name, PERTHREAD_MBUFS, 
+          	  64, 0, RTE_MBUF_DEFAULT_BUF_SIZE, rte_socket_id());
+    if (t->ctrl_cmd_pool == NULL) {
+      goto error_mpool;
+    }
+    // if ((t->ctrl_cmd_pool = mempool_alloc()) == NULL) {
+    //         goto error_mpool;
+    // }
   }
 
   /* initialize tx queue */

@@ -40,6 +40,7 @@
 
 struct network_thread {
   struct rte_mempool *pool;
+  struct rte_mempool *ctrl_cmd_pool;
   uint16_t queue_id;
 };
 

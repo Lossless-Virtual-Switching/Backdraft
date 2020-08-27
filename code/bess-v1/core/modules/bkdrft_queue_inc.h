@@ -5,15 +5,18 @@
 
 #include "../module.h"
 #include "../pb/module_msg.pb.h"
+#include "../pb/bkdrft_msg.pb.h"
 #include "../port.h"
 
 #include "../utils/flow.h"
 using Flow = bess::bkdrft::Flow;
 
-#define MAX_NUMBER_OF_QUEUE 8
+#define MAX_QUEUES 8
 
 struct queue_pause_status {
 	uint64_t until;
+	uint64_t failed_ctrl;
+  int64_t remaining_dpkt;
 	Flow flow;
 };
 
@@ -37,6 +40,14 @@ class BKDRFTQueueInc final : public Module {
       const bess::pb::BKDRFTQueueIncCommandSetBurstArg &arg);
 
  private:
+  uint32_t  CDQ(Context *ctx, bess::PacketBatch *batch, queue_t &_qid);
+  bool CheckQueuedCtrlMessages(Context *ctx, queue_t *qid, uint32_t *burst);
+  uint32_t ReadBatch(queue_t qid, bess::PacketBatch *batch, uint32_t burst);
+  bess::pb::Ctrl *ParseCtrlMsg(bess::Packet *pkt);
+  bool IsQueuePausedInCache(Context *ctx, queue_t qid);
+   
+
+ private:
   Port *port_;
   queue_t qid_;
   int prefetch_;
@@ -46,8 +57,10 @@ class BKDRFTQueueInc final : public Module {
   // it is a cache for what BKDRFTSwDpCtrl knows
   // if this array says it should not wait then 
   // we should check BKDRFTSwDpCtrl
-  queue_pause_status q_status_[MAX_NUMBER_OF_QUEUE];
+  queue_pause_status q_status_[MAX_QUEUES];
   bool backpressure_;
+  bool cdq_;
+  bool overlay_;
 };
 
 #endif  // BESS_MODULES_BKDRFQUEUEINC_H_

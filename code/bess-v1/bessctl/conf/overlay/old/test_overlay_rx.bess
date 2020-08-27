@@ -1,0 +1,20 @@
+pci = '7:00.1'
+cnt_queue = 8
+dcb = False
+overlay_rules = True
+
+my_vhost0 = PMDPort(pci=pci,
+  num_inc_q=cnt_queue,
+  num_out_q=cnt_queue,
+  dcb=dcb,
+  overlay_rules=overlay_rules)
+# my_vhost0 = PMDPort(name='test_interface', vdev='eth_vhost0,iface=/tmp/test.sock,queues=8')
+
+
+# ================
+for i in range(cnt_queue):
+  TestQueueInc(port=my_vhost0.name, qid=i) -> \
+  PauseOverlay() -> \
+  MACSwap() -> \
+  QueueOut(port=my_vhost0.name, qid=i)
+

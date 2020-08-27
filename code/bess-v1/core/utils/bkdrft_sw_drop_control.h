@@ -41,7 +41,7 @@ namespace bess {
 				FlowCache flowCache_;
 
 			public:
-				void PauseFlow(uint16_t duration, const Flow &flow);
+				void PauseFlow(uint64_t ts, const Flow &flow);
 
 				// uint64_t GetIncQueueStatus(uint16_t qid);
 

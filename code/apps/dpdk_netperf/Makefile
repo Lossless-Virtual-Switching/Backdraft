@@ -1,13 +1,8 @@
 #   BSD LICENSE
-#
-#   Copyright(c) 2010-2014 Intel Corporation. All rights reserved.
-#   All rights reserved.
-#
+# Copyright(c) 2010-2014 Intel Corporation. All rights reserved.  All rights reserved.  
 #   Redistribution and use in source and binary forms, with or without
 #   modification, are permitted provided that the following conditions
-#   are met:
-#
-#     * Redistributions of source code must retain the above copyright
+#   are met: * Redistributions of source code must retain the above copyright
 #       notice, this list of conditions and the following disclaimer.
 #     * Redistributions in binary form must reproduce the above copyright
 #       notice, this list of conditions and the following disclaimer in
@@ -46,6 +41,8 @@ SRCS-y := dpdk_netperf.c
 SRCS-y += utils/bkdrft.c
 SRCS-y += utils/zipf.c
 SRCS-y += utils/percentile.c
+SRCS-y += utils/packet.c
+SRCS-y += utils/include/bkdrft_msg.pb-c.c
 SRCS-y += data_structure/f_linklist.c
 
 CFLAGS += $(WERROR_FLAGS)
@@ -56,6 +53,7 @@ ifeq ($(CONFIG_RTE_TOOLCHAIN_GCC),y)
 CFLAGS_main.o += -Wno-return-type
 endif
 
-EXTRA_CFLAGS += -O3 -g -Wfatal-errors -Wno-format-nonliteral
+EXTRA_CFLAGS += -O3 -g -Wfatal-errors -Wno-format-nonlitera 
+LDLIBS := -lprotobuf-c 
 
 include $(RTE_SDK)/mk/rte.extapp.mk

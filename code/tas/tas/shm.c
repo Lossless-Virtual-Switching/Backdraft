@@ -49,11 +49,11 @@ struct flexnic_info *tas_info = NULL;
 /* destroy shared memory region */
 static void destroy_shm(const char *name, size_t size, void *addr);
 /* create shared memory region using huge pages */
-static void *util_create_shmsiszed_huge(const char *name, size_t size,
-    void *addr) __attribute__((used));
+static void *util_create_shmsiszed_huge(const char *name, char *file_prefix,
+		size_t size, void *addr) __attribute__((used));
 /* destroy shared huge page memory region */
-static void destroy_shm_huge(const char *name, size_t size, void *addr)
-    __attribute__((used));
+static void destroy_shm_huge(const char *name, char *file_prefix, size_t size,
+		void *addr) __attribute__((used));
 /* convert microseconds to cycles */
 static uint64_t us_to_cycles(uint32_t us);
 
@@ -62,7 +62,7 @@ int shm_preinit(void)
 {
   /* create shm for dma memory */
   if (config.fp_hugepages) {
-    tas_shm = util_create_shmsiszed_huge(FLEXNIC_NAME_DMA_MEM,
+    tas_shm = util_create_shmsiszed_huge(FLEXNIC_NAME_DMA_MEM, config.fp_file_prefix, 
         config.shm_len, NULL);
   } else {
     tas_shm = util_create_shmsiszed(FLEXNIC_NAME_DMA_MEM, config.shm_len,
@@ -75,7 +75,7 @@ int shm_preinit(void)
 
   /* create shm for internal memory */
   if (config.fp_hugepages) {
-    fp_state = util_create_shmsiszed_huge(FLEXNIC_NAME_INTERNAL_MEM,
+    fp_state = util_create_shmsiszed_huge(FLEXNIC_NAME_INTERNAL_MEM, config.fp_file_prefix,
         FLEXNIC_INTERNAL_MEM_SIZE, NULL);
   } else {
     fp_state = util_create_shmsiszed(FLEXNIC_NAME_INTERNAL_MEM,
@@ -121,7 +121,7 @@ void shm_cleanup(void)
   /* cleanup internal memory region */
   if (fp_state != NULL) {
     if (config.fp_hugepages) {
-      destroy_shm_huge(FLEXNIC_NAME_INTERNAL_MEM, FLEXNIC_INTERNAL_MEM_SIZE,
+      destroy_shm_huge(FLEXNIC_NAME_INTERNAL_MEM, config.fp_file_prefix, FLEXNIC_INTERNAL_MEM_SIZE,
           fp_state);
     } else {
       destroy_shm(FLEXNIC_NAME_INTERNAL_MEM, FLEXNIC_INTERNAL_MEM_SIZE,
@@ -132,7 +132,7 @@ void shm_cleanup(void)
   /* cleanup dma memory region */
   if (tas_shm != NULL) {
     if (config.fp_hugepages) {
-      destroy_shm_huge(FLEXNIC_NAME_DMA_MEM, config.shm_len, tas_shm);
+      destroy_shm_huge(FLEXNIC_NAME_DMA_MEM, config.fp_file_prefix, config.shm_len, tas_shm);
     } else {
       destroy_shm(FLEXNIC_NAME_DMA_MEM, config.shm_len, tas_shm);
     }
@@ -191,14 +191,20 @@ static void destroy_shm(const char *name, size_t size, void *addr)
   shm_unlink(name);
 }
 
-static void *util_create_shmsiszed_huge(const char *name, size_t size,
-    void *addr)
+static void *util_create_shmsiszed_huge(const char *name, char *file_prefix,
+		size_t size, void *addr)
 {
   int fd;
   void *p;
   char path[128];
 
-  snprintf(path, sizeof(path), "%s/%s", FLEXNIC_HUGE_PREFIX, name);
+  if (file_prefix != NULL)
+    snprintf(path, sizeof(path), "%s/%s/%s", FLEXNIC_HUGE_PREFIX, file_prefix,
+		  name);
+  else
+    snprintf(path, sizeof(path), "%s/%s", FLEXNIC_HUGE_PREFIX, name);
+
+  printf("==========\npath: %s\n", path);
 
   if ((fd = open(path, O_CREAT | O_RDWR, 0666)) == -1) {
     perror("util_create_shmsiszed: open failed");
@@ -229,11 +235,16 @@ error_out:
   return NULL;
 }
 
-static void destroy_shm_huge(const char *name, size_t size, void *addr)
+static void destroy_shm_huge(const char *name, char *file_prefix, size_t size,
+		void *addr)
 {
   char path[128];
 
-  snprintf(path, sizeof(path), "%s/%s", FLEXNIC_HUGE_PREFIX, name);
+  if (file_prefix != NULL)
+    snprintf(path, sizeof(path), "%s/%s/%s", FLEXNIC_HUGE_PREFIX, file_prefix,
+		  name);
+  else
+    snprintf(path, sizeof(path), "%s/%s", FLEXNIC_HUGE_PREFIX, name);
 
   if (munmap(addr, size) != 0) {
     fprintf(stderr, "Warning: munmap failed (%s)\n", strerror(errno));

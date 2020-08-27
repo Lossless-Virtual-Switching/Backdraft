@@ -1,0 +1,112 @@
+Q = 8
+RX_QUEUE_COUNT = 8
+TX_QUEUE_COUNT = 8
+Q_SIZE = 512
+
+BESSPP = 1
+BESS = 2
+
+type = BESSPP
+# type = BESS
+
+ecn_queue_size = 1024
+ecn_threshold = 14800
+
+# == Insert here ==
+# =================
+
+print ('ecn_t:', ecn_threshold)
+
+bess.add_worker(0, 0)
+# bess.add_worker(1, 2)
+
+host0 = PMDPort(
+	name='tas_server_1',
+	vdev='eth_vhost0,iface=tmp_vhost/tas_server_1.sock,queues={}'.format(Q),
+		num_inc_q=TX_QUEUE_COUNT,
+		num_out_q=RX_QUEUE_COUNT,
+		size_inc_q=Q_SIZE,
+		size_out_q=Q_SIZE)
+
+host1 = PMDPort(
+	name='tas_client_1',
+	vdev='eth_vhost1,iface=tmp_vhost/tas_client_1.sock,queues={}'.format(Q),
+		num_inc_q=TX_QUEUE_COUNT,
+		num_out_q=RX_QUEUE_COUNT,
+		size_inc_q=Q_SIZE,
+		size_out_q=Q_SIZE)
+
+# if type == BESSPP:
+# 	host0_inc = BKDRFTQueueInc(port=host0.name,
+# 			qid=0,
+# 			cdq=False,
+# 			per_flow_buffering=False,
+# 			backpressure=False)
+# 
+# 	host1_out = BKDRFTQueueOut(port=host1.name,
+# 		qid=0,
+# 		count_queues=2,
+# 		cdq=False,
+# 		per_flow_buffering=False,
+# 		backpressure=False,
+# 		ecn_threshold=ecn_threshold,
+# 		batch_size=32)
+# 
+# 	host1_inc = BKDRFTQueueInc(port=host1.name,
+# 			qid=0,
+# 			cdq=False,
+# 			per_flow_buffering=False,
+# 			backpressure=False)
+# 
+# 	host0_out = BKDRFTQueueOut(port=host0.name,
+# 		qid=0,
+# 		count_queues=2,
+# 		cdq=False,
+# 		per_flow_buffering=False,
+# 		backpressure=False,
+# 		ecn_threshold=ecn_threshold,
+# 		batch_size=32)
+# 
+# 	## Error: burst size should be between [0, 32]
+# 	## so reduce the ecn_threshold to 16 instead
+# 	# host0_inc.set_burst(burst=64)
+# 	# host1_inc.set_burst(burst=64)
+# 
+# 	host0_inc -> host1_out
+# 	host1_inc -> host0_out
+# 
+if type == BESSPP:
+	host0_inc = QueueInc(port=host0.name, qid=0)
+	host0_out = QueueOut(port=host0.name, qid=0)
+
+	host1_inc = QueueInc(port=host1.name, qid=0)
+	host1_out = QueueOut(port=host1.name, qid=0)
+
+	host0_inc -> \
+	ecn1::ECNMarker(size=ecn_queue_size,
+		high_water=ecn_threshold) -> host1_out
+	host1_inc -> \
+	ecn2::ECNMarker(size=ecn_queue_size,
+		high_water=ecn_threshold) -> host0_out
+elif type == BESS:
+	host0_inc = QueueInc(port=host0.name, qid=0)
+	host0_out = QueueOut(port=host0.name, qid=0)
+
+	host1_inc = QueueInc(port=host1.name, qid=0)
+	host1_out = QueueOut(port=host1.name, qid=0)
+
+	host0_inc -> host1_out
+	host1_inc -> host0_out
+
+else:
+	raise Exception()
+
+
+
+# Attach to worker
+# host0_inc.attach_task(wid=0)
+# ecn1.attach_task(wid=0)
+# 
+# host1_inc.attach_task(wid=1)
+# ecn2.attach_task(wid=1)
+

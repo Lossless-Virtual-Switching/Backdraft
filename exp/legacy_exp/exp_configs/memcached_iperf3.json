@@ -1,0 +1,29 @@
+[
+  {
+    "name": "memcached_1",
+    "image": "legacy_exp_memcached",
+    "args": "server",
+    "ip": "10.1.1.1",
+    "mac": "98:f2:b3:c1:e1:91",
+    "cpuset": "3,4,5,6",
+    "cpu_share": 4
+  },
+  {
+    "name": "mutilate",
+    "image": "legacy_exp_memcached",
+    "args": "client iperf3 10.2.2.1",
+    "ip": "10.1.1.2",
+    "mac": "98:f2:b3:c2:e2:92",
+    "cpuset": "8,9,10,11",
+    "cpu_share": 4
+  },
+  {
+    "name": "bg_iperf3",
+    "image": "legacy_exp_iperf3",
+    "args": "server 10.2.2.1",
+    "ip": "10.2.2.1",
+    "mac": "98:f2:b3:c3:e3:93",
+    "cpuset": "13",
+    "cpu_share": 1.000
+  }
+]

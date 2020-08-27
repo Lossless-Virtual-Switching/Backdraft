@@ -1,0 +1,1007 @@
+*************************************************************************
+bess 0
+*************************************************************************
+start bess daemon
+==============================
+     Slow Receiver Exp.
+==============================
+===============
+     server    
+sudo /proj/uic-dcs-PG0/fshahi5/latest/post-loom/exp/udp_slow_receiver/client_server_src/build/slow_receiver_exp --no-pci -l6 --file-prefix=slow_receiver_server_0 --vdev="virtio_user0,path=/tmp/ex_vhost0.sock,queues=3" --socket-mem=128 -- bess server 0
+===============
+===============
+     server    
+sudo /proj/uic-dcs-PG0/fshahi5/latest/post-loom/exp/udp_slow_receiver/client_server_src/build/slow_receiver_exp --no-pci -l10 --file-prefix=slow_receiver_server_1 --vdev="virtio_user2,path=/tmp/ex_vhost2.sock,queues=3" --socket-mem=128 -- bess server 0
+===============
+===============
+     client
+sudo /proj/uic-dcs-PG0/fshahi5/latest/post-loom/exp/udp_slow_receiver/client_server_src/build/slow_receiver_exp --no-pci -l14 --file-prefix=slow_receiver_exp_client --vdev="virtio_user1,path=/tmp/ex_vhost1.sock,queues=3" --socket-mem=128 -- bess client 2 192.168.2.10 10.0.2.11
+===============
+======
+EAL: Probing VFIO support...
+EAL: VFIO support initialized
+args parsed: 6
+system mode: bess    host: client
+Connecting to port 0 with 3 queues
+Client...
+Client done
+
+======
+EAL: Probing VFIO support...
+EAL: VFIO support initialized
+args parsed: 6
+system mode: bess    host: server
+Connecting to port 0 with 3 queues
+Server delay: 0
+Running server
+Latency [@50](us): 19.343975
+Latency [@90](us): 22.021137
+Latency [@95](us): 22.355783
+Latency [@99](us): 22.623499
+Latency [@99.9](us): 44.717770
+Throughput (pps):
+0: 4157632
+1: 4194624
+2: 4155552
+3: 4199232
+4: 4184064
+5: 4200832
+6: 4196064
+7: 4200064
+8: 4186176
+9: 4187616
+10: 4196928
+11: 4155936
+12: 4191008
+13: 4154592
+14: 4183616
+15: 4187552
+16: 4178560
+17: 4124928
+18: 4177344
+19: 4199648
+20: 4181184
+21: 4215936
+22: 4207552
+23: 4150720
+24: 4198304
+25: 4191584
+26: 4178304
+27: 4195392
+28: 4152352
+29: 4192224
+=================================
+
+======
+EAL: Probing VFIO support...
+EAL: VFIO support initialized
+args parsed: 6
+system mode: bess    host: server
+Connecting to port 0 with 3 queues
+Server delay: 0
+Running server
+Latency [@50](us): 19.351078
+Latency [@90](us): 22.111940
+Latency [@95](us): 22.457048
+Latency [@99](us): 38.135002
+Latency [@99.9](us): 54.188347
+Throughput (pps):
+0: 959104
+1: 925536
+2: 965632
+3: 923424
+4: 939808
+5: 921696
+6: 924448
+7: 927904
+8: 944192
+9: 942560
+10: 930560
+11: 972064
+12: 941024
+13: 975872
+14: 944832
+15: 941888
+16: 951936
+17: 999936
+18: 951584
+19: 930560
+20: 949248
+21: 913408
+22: 916352
+23: 970272
+24: 923840
+25: 930240
+26: 942976
+27: 926144
+28: 968512
+29: 938080
+=================================
+
+======
+server1
+   ex_vhost0    Driver PMDPort    HWaddr 56:48:4f:53:54:04  MTU 1500  
+               Speed 10,000Mbps  Link DOWN  Duplex FULL  Autoneg OFF  
+       Inc/RX  packets: 0                   bytes: 0                   
+               dropped: 0                   
+       Out/TX  packets: 125,475,520         bytes: 17,817,523,840      
+               dropped: 32                  
+
+server2
+   ex_vhost2    Driver PMDPort    HWaddr 56:48:4f:53:54:06  MTU 1500  
+               Speed 10,000Mbps  Link DOWN  Duplex FULL  Autoneg OFF  
+       Inc/RX  packets: 0                   bytes: 0                   
+               dropped: 0                   
+       Out/TX  packets: 28,293,632          bytes: 4,017,695,744       
+               dropped: 0                   
+
+client
+   ex_vhost1    Driver PMDPort    HWaddr 56:48:4f:53:54:05  MTU 1500  
+               Speed 10,000Mbps  Link DOWN  Duplex FULL  Autoneg OFF  
+       Inc/RX  packets: 153,769,184         bytes: 21,835,224,128      
+               dropped: 0                   
+       Out/TX  packets: 0                   bytes: 0                   
+               dropped: 0                   
+
+=== pause call per sec ===
+=== pause call per sec ===
+*************************************************************************
+bess 40
+*************************************************************************
+start bess daemon
+==============================
+     Slow Receiver Exp.
+==============================
+===============
+     server    
+sudo /proj/uic-dcs-PG0/fshahi5/latest/post-loom/exp/udp_slow_receiver/client_server_src/build/slow_receiver_exp --no-pci -l6 --file-prefix=slow_receiver_server_0 --vdev="virtio_user0,path=/tmp/ex_vhost0.sock,queues=3" --socket-mem=128 -- bess server 0
+===============
+===============
+     server    
+sudo /proj/uic-dcs-PG0/fshahi5/latest/post-loom/exp/udp_slow_receiver/client_server_src/build/slow_receiver_exp --no-pci -l10 --file-prefix=slow_receiver_server_1 --vdev="virtio_user2,path=/tmp/ex_vhost2.sock,queues=3" --socket-mem=128 -- bess server 40
+===============
+===============
+     client
+sudo /proj/uic-dcs-PG0/fshahi5/latest/post-loom/exp/udp_slow_receiver/client_server_src/build/slow_receiver_exp --no-pci -l14 --file-prefix=slow_receiver_exp_client --vdev="virtio_user1,path=/tmp/ex_vhost1.sock,queues=3" --socket-mem=128 -- bess client 2 192.168.2.10 10.0.2.11
+===============
+======
+EAL: Probing VFIO support...
+EAL: VFIO support initialized
+args parsed: 6
+system mode: bess    host: client
+Connecting to port 0 with 3 queues
+Client...
+Client done
+
+======
+EAL: Probing VFIO support...
+EAL: VFIO support initialized
+args parsed: 6
+system mode: bess    host: server
+Connecting to port 0 with 3 queues
+Server delay: 0
+Running server
+Latency [@50](us): 13.834300
+Latency [@90](us): 16.996267
+Latency [@95](us): 20.145245
+Latency [@99](us): 23.498550
+Latency [@99.9](us): 43.274235
+Throughput (pps):
+0: 3613312
+1: 3619616
+2: 3621376
+3: 3619968
+4: 3619456
+5: 3617440
+6: 3620224
+7: 3618624
+8: 3618400
+9: 3615040
+10: 3613120
+11: 3609920
+12: 3615552
+13: 3617568
+14: 3616256
+15: 3622080
+16: 3616960
+17: 3620704
+18: 3617728
+19: 3616448
+20: 3625216
+21: 3618176
+22: 3615392
+23: 3616544
+24: 3620032
+25: 3620096
+26: 3615616
+27: 3618176
+28: 3617664
+29: 3609696
+=================================
+
+======
+EAL: Probing VFIO support...
+EAL: VFIO support initialized
+args parsed: 6
+system mode: bess    host: server
+Connecting to port 0 with 3 queues
+Server delay: 40
+Running server
+Latency [@50](us): 151.782242
+Latency [@90](us): 175.210175
+Latency [@95](us): 178.138672
+Latency [@99](us): 180.481476
+Latency [@99.9](us): 278.418396
+Throughput (pps):
+0: 736384
+1: 736608
+2: 736544
+3: 736512
+4: 736640
+5: 736608
+6: 736768
+7: 736832
+8: 736608
+9: 736640
+10: 736480
+11: 736576
+12: 736512
+13: 736416
+14: 736704
+15: 736608
+16: 736576
+17: 736672
+18: 736608
+19: 736768
+20: 736832
+21: 736576
+22: 736480
+23: 736736
+24: 736512
+25: 736512
+26: 736672
+27: 736800
+28: 736576
+29: 736576
+30: 32
+=================================
+
+======
+server1
+   ex_vhost0    Driver PMDPort    HWaddr 56:48:4f:53:54:04  MTU 1500  
+               Speed 10,000Mbps  Link DOWN  Duplex FULL  Autoneg OFF  
+       Inc/RX  packets: 0                   bytes: 0                   
+               dropped: 0                   
+       Out/TX  packets: 108,526,400         bytes: 15,410,748,800      
+               dropped: 32                  
+
+server2
+   ex_vhost2    Driver PMDPort    HWaddr 56:48:4f:53:54:06  MTU 1500  
+               Speed 10,000Mbps  Link DOWN  Duplex FULL  Autoneg OFF  
+       Inc/RX  packets: 0                   bytes: 0                   
+               dropped: 0                   
+       Out/TX  packets: 22,098,368          bytes: 3,137,968,256       
+               dropped: 62,656,320          
+
+client
+   ex_vhost1    Driver PMDPort    HWaddr 56:48:4f:53:54:05  MTU 1500  
+               Speed 10,000Mbps  Link DOWN  Duplex FULL  Autoneg OFF  
+       Inc/RX  packets: 193,281,120         bytes: 27,445,919,040      
+               dropped: 0                   
+       Out/TX  packets: 0                   bytes: 0                   
+               dropped: 0                   
+
+=== pause call per sec ===
+=== pause call per sec ===
+*************************************************************************
+bkdrft 0 (bp=0)
+*************************************************************************
+start bess daemon
+==============================
+     Slow Receiver Exp.
+==============================
+===============
+     server    
+sudo /proj/uic-dcs-PG0/fshahi5/latest/post-loom/exp/udp_slow_receiver/client_server_src/build/slow_receiver_exp --no-pci -l6 --file-prefix=slow_receiver_server_0 --vdev="virtio_user0,path=/tmp/ex_vhost0.sock,queues=3" --socket-mem=128 -- bkdrft server 0
+===============
+===============
+     server    
+sudo /proj/uic-dcs-PG0/fshahi5/latest/post-loom/exp/udp_slow_receiver/client_server_src/build/slow_receiver_exp --no-pci -l10 --file-prefix=slow_receiver_server_1 --vdev="virtio_user2,path=/tmp/ex_vhost2.sock,queues=3" --socket-mem=128 -- bkdrft server 0
+===============
+===============
+     client
+sudo /proj/uic-dcs-PG0/fshahi5/latest/post-loom/exp/udp_slow_receiver/client_server_src/build/slow_receiver_exp --no-pci -l14 --file-prefix=slow_receiver_exp_client --vdev="virtio_user1,path=/tmp/ex_vhost1.sock,queues=3" --socket-mem=128 -- bkdrft client 2 192.168.2.10 10.0.2.11
+===============
+======
+EAL: Probing VFIO support...
+EAL: VFIO support initialized
+args parsed: 6
+system mode: bkdrft    host: client
+Connecting to port 0 with 3 queues
+Client...
+Client done
+
+======
+EAL: Probing VFIO support...
+EAL: VFIO support initialized
+args parsed: 6
+system mode: bkdrft    host: server
+Connecting to port 0 with 3 queues
+Server delay: 0
+Running server
+Latency [@50](us): 38.798973
+Latency [@90](us): 44.241547
+Latency [@95](us): 44.921867
+Latency [@99](us): 58.373924
+Latency [@99.9](us): 84.341202
+Throughput (pps):
+0: 2155456
+1: 2154304
+2: 2154432
+3: 2154272
+4: 2157152
+5: 2159552
+6: 2159872
+7: 2156288
+8: 2155008
+9: 2153280
+10: 2158208
+11: 2155200
+12: 2154144
+13: 2153440
+14: 2156480
+15: 2153344
+16: 2154432
+17: 2157056
+18: 2152832
+19: 2153120
+20: 2155104
+21: 2154592
+22: 2160160
+23: 2156032
+24: 2154496
+25: 2152384
+26: 2153504
+27: 2152864
+28: 2148800
+29: 2154496
+=================================
+
+======
+EAL: Probing VFIO support...
+EAL: VFIO support initialized
+args parsed: 6
+system mode: bkdrft    host: server
+Connecting to port 0 with 3 queues
+Server delay: 0
+Running server
+Latency [@50](us): 38.802490
+Latency [@90](us): 44.246941
+Latency [@95](us): 44.927498
+Latency [@99](us): 58.507214
+Latency [@99.9](us): 84.502022
+Throughput (pps):
+0: 2152864
+1: 2154336
+2: 2154400
+3: 2154272
+4: 2157184
+5: 2159552
+6: 2159872
+7: 2156224
+8: 2154944
+9: 2153280
+10: 2158240
+11: 2155168
+12: 2154176
+13: 2153408
+14: 2156448
+15: 2153376
+16: 2154432
+17: 2157056
+18: 2152864
+19: 2153120
+20: 2155072
+21: 2154624
+22: 2160128
+23: 2156032
+24: 2154432
+25: 2152384
+26: 2153536
+27: 2152864
+28: 2148640
+29: 2154368
+=================================
+
+======
+server1
+   ex_vhost0    Driver PMDPort    HWaddr 56:48:4f:53:54:04  MTU 1500  
+               Speed 10,000Mbps  Link DOWN  Duplex FULL  Autoneg OFF  
+       Inc/RX  packets: 0                   bytes: 0                   
+               dropped: 0                   
+       Out/TX  packets: 66,670,626          bytes: 9,438,944,384       
+               dropped: 0                   
+
+server2
+   ex_vhost2    Driver PMDPort    HWaddr 56:48:4f:53:54:06  MTU 1500  
+               Speed 10,000Mbps  Link DOWN  Duplex FULL  Autoneg OFF  
+       Inc/RX  packets: 0                   bytes: 0                   
+               dropped: 0                   
+       Out/TX  packets: 66,667,524          bytes: 9,438,505,216       
+               dropped: 0                   
+
+client
+   ex_vhost1    Driver PMDPort    HWaddr 56:48:4f:53:54:05  MTU 1500  
+               Speed 10,000Mbps  Link DOWN  Duplex FULL  Autoneg OFF  
+       Inc/RX  packets: 133,338,150         bytes: 18,562,286,700      
+               dropped: 0                   
+       Out/TX  packets: 0                   bytes: 0                   
+               dropped: 0                   
+
+=== pause call per sec ===
+=== pause call per sec ===
+*************************************************************************
+bkdrft 40 (bp=0)
+*************************************************************************
+start bess daemon
+==============================
+     Slow Receiver Exp.
+==============================
+===============
+     server    
+sudo /proj/uic-dcs-PG0/fshahi5/latest/post-loom/exp/udp_slow_receiver/client_server_src/build/slow_receiver_exp --no-pci -l6 --file-prefix=slow_receiver_server_0 --vdev="virtio_user0,path=/tmp/ex_vhost0.sock,queues=3" --socket-mem=128 -- bkdrft server 0
+===============
+===============
+     server    
+sudo /proj/uic-dcs-PG0/fshahi5/latest/post-loom/exp/udp_slow_receiver/client_server_src/build/slow_receiver_exp --no-pci -l10 --file-prefix=slow_receiver_server_1 --vdev="virtio_user2,path=/tmp/ex_vhost2.sock,queues=3" --socket-mem=128 -- bkdrft server 40
+===============
+===============
+     client
+sudo /proj/uic-dcs-PG0/fshahi5/latest/post-loom/exp/udp_slow_receiver/client_server_src/build/slow_receiver_exp --no-pci -l14 --file-prefix=slow_receiver_exp_client --vdev="virtio_user1,path=/tmp/ex_vhost1.sock,queues=3" --socket-mem=128 -- bkdrft client 2 192.168.2.10 10.0.2.11
+===============
+======
+EAL: Probing VFIO support...
+EAL: VFIO support initialized
+args parsed: 6
+system mode: bkdrft    host: client
+Connecting to port 0 with 3 queues
+Client...
+Client done
+
+======
+EAL: Probing VFIO support...
+EAL: VFIO support initialized
+args parsed: 6
+system mode: bkdrft    host: server
+Connecting to port 0 with 3 queues
+Server delay: 0
+Running server
+Latency [@50](us): 31.346386
+Latency [@90](us): 43.614498
+Latency [@95](us): 45.216000
+Latency [@99](us): 61.390575
+Latency [@99.9](us): 85.760941
+Throughput (pps):
+0: 2193024
+1: 2188256
+2: 2191552
+3: 2190848
+4: 2198976
+5: 2198464
+6: 2199424
+7: 2196864
+8: 2200064
+9: 2202880
+10: 2198016
+11: 2197952
+12: 2197824
+13: 2190400
+14: 2193504
+15: 2203104
+16: 2181856
+17: 2216992
+18: 2218816
+19: 2215488
+20: 2213120
+21: 2205536
+22: 2200384
+23: 2205472
+24: 2206592
+25: 2202624
+26: 2198176
+27: 2204960
+28: 2202432
+29: 2209216
+=================================
+
+======
+EAL: Probing VFIO support...
+EAL: VFIO support initialized
+args parsed: 6
+system mode: bkdrft    host: server
+Connecting to port 0 with 3 queues
+Server delay: 40
+Running server
+Latency [@50](us): 154.910797
+Latency [@90](us): 176.453186
+Latency [@95](us): 179.145996
+Latency [@99](us): 210.934052
+Latency [@99.9](us): 316.517761
+Throughput (pps):
+0: 712928
+1: 713280
+2: 713472
+3: 713440
+4: 713888
+5: 713472
+6: 713632
+7: 713408
+8: 713600
+9: 713760
+10: 713696
+11: 713952
+12: 713504
+13: 713376
+14: 713984
+15: 713952
+16: 713952
+17: 714080
+18: 714368
+19: 713632
+20: 714272
+21: 714208
+22: 714144
+23: 714176
+24: 714048
+25: 713728
+26: 713728
+27: 713984
+28: 713760
+29: 714144
+=================================
+
+======
+server1
+   ex_vhost0    Driver PMDPort    HWaddr 56:48:4f:53:54:04  MTU 1500  
+               Speed 10,000Mbps  Link DOWN  Duplex FULL  Autoneg OFF  
+       Inc/RX  packets: 0                   bytes: 0                   
+               dropped: 0                   
+       Out/TX  packets: 68,086,029          bytes: 9,639,331,136       
+               dropped: 0                   
+
+server2
+   ex_vhost2    Driver PMDPort    HWaddr 56:48:4f:53:54:06  MTU 1500  
+               Speed 10,000Mbps  Link DOWN  Duplex FULL  Autoneg OFF  
+       Inc/RX  packets: 0                   bytes: 0                   
+               dropped: 0                   
+       Out/TX  packets: 22,082,742          bytes: 3,126,380,928       
+               dropped: 34,298,592          
+
+client
+   ex_vhost1    Driver PMDPort    HWaddr 56:48:4f:53:54:05  MTU 1500  
+               Speed 10,000Mbps  Link DOWN  Duplex FULL  Autoneg OFF  
+       Inc/RX  packets: 125,539,194         bytes: 17,476,577,492      
+               dropped: 0                   
+       Out/TX  packets: 0                   bytes: 0                   
+               dropped: 0                   
+
+=== pause call per sec ===
+=== pause call per sec ===
+*************************************************************************
+bkdrft 0 (bp=1)
+*************************************************************************
+start bess daemon
+==============================
+     Slow Receiver Exp.
+==============================
+===============
+     server    
+sudo /proj/uic-dcs-PG0/fshahi5/latest/post-loom/exp/udp_slow_receiver/client_server_src/build/slow_receiver_exp --no-pci -l6 --file-prefix=slow_receiver_server_0 --vdev="virtio_user0,path=/tmp/ex_vhost0.sock,queues=3" --socket-mem=128 -- bkdrft server 0
+===============
+===============
+     server    
+sudo /proj/uic-dcs-PG0/fshahi5/latest/post-loom/exp/udp_slow_receiver/client_server_src/build/slow_receiver_exp --no-pci -l10 --file-prefix=slow_receiver_server_1 --vdev="virtio_user2,path=/tmp/ex_vhost2.sock,queues=3" --socket-mem=128 -- bkdrft server 0
+===============
+===============
+     client
+sudo /proj/uic-dcs-PG0/fshahi5/latest/post-loom/exp/udp_slow_receiver/client_server_src/build/slow_receiver_exp --no-pci -l14 --file-prefix=slow_receiver_exp_client --vdev="virtio_user1,path=/tmp/ex_vhost1.sock,queues=3" --socket-mem=128 -- bkdrft client 2 192.168.2.10 10.0.2.11
+===============
+======
+EAL: Probing VFIO support...
+EAL: VFIO support initialized
+args parsed: 6
+system mode: bkdrft    host: client
+Connecting to port 0 with 3 queues
+Client...
+Client done
+
+======
+EAL: Probing VFIO support...
+EAL: VFIO support initialized
+args parsed: 6
+system mode: bkdrft    host: server
+Connecting to port 0 with 3 queues
+Server delay: 0
+Running server
+Latency [@50](us): 38.788647
+Latency [@90](us): 44.224213
+Latency [@95](us): 44.903660
+Latency [@99](us): 57.594021
+Latency [@99.9](us): 82.109863
+Throughput (pps):
+0: 2171744
+1: 2170048
+2: 2167232
+3: 2160256
+4: 2160288
+5: 2162272
+6: 2162592
+7: 2161312
+8: 2161152
+9: 2161792
+10: 2160640
+11: 2160448
+12: 2162048
+13: 2161024
+14: 2159776
+15: 2160800
+16: 2163328
+17: 2160768
+18: 2162752
+19: 2160704
+20: 2161344
+21: 2161600
+22: 2144512
+23: 2157184
+24: 2160704
+25: 2162752
+26: 2162912
+27: 2152736
+28: 2158208
+29: 2162048
+=================================
+
+======
+EAL: Probing VFIO support...
+EAL: VFIO support initialized
+args parsed: 6
+system mode: bkdrft    host: server
+Connecting to port 0 with 3 queues
+Server delay: 0
+Running server
+Latency [@50](us): 38.793362
+Latency [@90](us): 44.230503
+Latency [@95](us): 44.910145
+Latency [@99](us): 57.746403
+Latency [@99.9](us): 82.192909
+Throughput (pps):
+0: 2164544
+1: 2169952
+2: 2167232
+3: 2160256
+4: 2160256
+5: 2162272
+6: 2162624
+7: 2161280
+8: 2161152
+9: 2161792
+10: 2160672
+11: 2160416
+12: 2162016
+13: 2161056
+14: 2159808
+15: 2160768
+16: 2163296
+17: 2160800
+18: 2162688
+19: 2160768
+20: 2161376
+21: 2161568
+22: 2144512
+23: 2157184
+24: 2160704
+25: 2162752
+26: 2162912
+27: 2152736
+28: 2158208
+29: 2161984
+=================================
+
+======
+server1
+   ex_vhost0    Driver PMDPort    HWaddr 56:48:4f:53:54:04  MTU 1500  
+               Speed 10,000Mbps  Link DOWN  Duplex FULL  Autoneg OFF  
+       Inc/RX  packets: 0                   bytes: 0                   
+               dropped: 0                   
+       Out/TX  packets: 66,861,069          bytes: 9,465,906,496       
+               dropped: 0                   
+
+server2
+   ex_vhost2    Driver PMDPort    HWaddr 56:48:4f:53:54:06  MTU 1500  
+               Speed 10,000Mbps  Link DOWN  Duplex FULL  Autoneg OFF  
+       Inc/RX  packets: 0                   bytes: 0                   
+               dropped: 0                   
+       Out/TX  packets: 66,853,446          bytes: 9,464,827,264       
+               dropped: 0                   
+
+client
+   ex_vhost1    Driver PMDPort    HWaddr 56:48:4f:53:54:05  MTU 1500  
+               Speed 10,000Mbps  Link DOWN  Duplex FULL  Autoneg OFF  
+       Inc/RX  packets: 133,714,515         bytes: 18,614,681,270      
+               dropped: 0                   
+       Out/TX  packets: 0                   bytes: 0                   
+               dropped: 0                   
+
+=== pause call per sec ===
+server1
+0 0
+1 0
+2 0
+3 0
+4 0
+5 0
+6 0
+7 0
+8 0
+9 0
+10 0
+11 0
+12 0
+13 0
+14 0
+15 0
+16 0
+17 0
+18 0
+19 0
+20 0
+21 0
+22 0
+23 0
+24 0
+25 0
+26 0
+27 0
+28 0
+server2
+0 0
+1 0
+2 0
+3 0
+4 0
+5 0
+6 0
+7 0
+8 0
+9 0
+10 0
+11 0
+12 0
+13 0
+14 0
+15 0
+16 0
+17 0
+18 0
+19 0
+20 0
+21 0
+22 0
+23 0
+24 0
+25 0
+26 0
+27 0
+28 0
+=== pause call per sec ===
+*************************************************************************
+bkdrft 40 (bp=1)
+*************************************************************************
+start bess daemon
+==============================
+     Slow Receiver Exp.
+==============================
+===============
+     server    
+sudo /proj/uic-dcs-PG0/fshahi5/latest/post-loom/exp/udp_slow_receiver/client_server_src/build/slow_receiver_exp --no-pci -l6 --file-prefix=slow_receiver_server_0 --vdev="virtio_user0,path=/tmp/ex_vhost0.sock,queues=3" --socket-mem=128 -- bkdrft server 0
+===============
+===============
+     server    
+sudo /proj/uic-dcs-PG0/fshahi5/latest/post-loom/exp/udp_slow_receiver/client_server_src/build/slow_receiver_exp --no-pci -l10 --file-prefix=slow_receiver_server_1 --vdev="virtio_user2,path=/tmp/ex_vhost2.sock,queues=3" --socket-mem=128 -- bkdrft server 40
+===============
+===============
+     client
+sudo /proj/uic-dcs-PG0/fshahi5/latest/post-loom/exp/udp_slow_receiver/client_server_src/build/slow_receiver_exp --no-pci -l14 --file-prefix=slow_receiver_exp_client --vdev="virtio_user1,path=/tmp/ex_vhost1.sock,queues=3" --socket-mem=128 -- bkdrft client 2 192.168.2.10 10.0.2.11
+===============
+======
+EAL: Probing VFIO support...
+EAL: VFIO support initialized
+args parsed: 6
+system mode: bkdrft    host: client
+Connecting to port 0 with 3 queues
+Client...
+Client done
+
+======
+EAL: Probing VFIO support...
+EAL: VFIO support initialized
+args parsed: 6
+system mode: bkdrft    host: server
+Connecting to port 0 with 3 queues
+Server delay: 0
+Running server
+Latency [@50](us): 60.167969
+Latency [@90](us): 85.952042
+Latency [@95](us): 89.982697
+Latency [@99](us): 149.867767
+Latency [@99.9](us): 238.236343
+Throughput (pps):
+0: 1055936
+1: 1005312
+2: 1007360
+3: 1002560
+4: 1007424
+5: 1007232
+6: 1007360
+7: 1006752
+8: 1004256
+9: 1009664
+10: 1010880
+11: 1011808
+12: 1010592
+13: 1005824
+14: 1010496
+15: 1011712
+16: 1010560
+17: 1010688
+18: 1010688
+19: 1010112
+20: 1010432
+21: 1011840
+22: 1002880
+23: 1006464
+24: 1013056
+25: 1011072
+26: 1008256
+27: 1004928
+28: 1003648
+29: 1012544
+=================================
+
+======
+EAL: Probing VFIO support...
+EAL: VFIO support initialized
+args parsed: 6
+system mode: bkdrft    host: server
+Connecting to port 0 with 3 queues
+Server delay: 40
+Running server
+Latency [@50](us): 79026.328125
+Latency [@90](us): 89927.320312
+Latency [@95](us): 91289.945312
+Latency [@99](us): 92380.046875
+Latency [@99.9](us): 92625.320312
+Throughput (pps):
+0: 698592
+1: 697888
+2: 697760
+3: 697952
+4: 698016
+5: 698240
+6: 698304
+7: 697984
+8: 698336
+9: 698272
+10: 698432
+11: 698496
+12: 698272
+13: 697984
+14: 698368
+15: 698336
+16: 698656
+17: 698432
+18: 698304
+19: 698848
+20: 698592
+21: 698272
+22: 697632
+23: 698688
+24: 698304
+25: 698464
+26: 698528
+27: 698336
+28: 698080
+29: 698784
+30: 32
+=================================
+
+======
+server1
+   ex_vhost0    Driver PMDPort    HWaddr 56:48:4f:53:54:04  MTU 1500  
+               Speed 10,000Mbps  Link DOWN  Duplex FULL  Autoneg OFF  
+       Inc/RX  packets: 0                   bytes: 0                   
+               dropped: 0                   
+       Out/TX  packets: 31,249,284          bytes: 4,424,141,056       
+               dropped: 0                   
+
+server2
+   ex_vhost2    Driver PMDPort    HWaddr 56:48:4f:53:54:06  MTU 1500  
+               Speed 10,000Mbps  Link DOWN  Duplex FULL  Autoneg OFF  
+       Inc/RX  packets: 0                   bytes: 0                   
+               dropped: 0                   
+       Out/TX  packets: 21,603,846          bytes: 3,058,580,864       
+               dropped: 0                   
+
+client
+   ex_vhost1    Driver PMDPort    HWaddr 56:48:4f:53:54:05  MTU 1500  
+               Speed 10,000Mbps  Link DOWN  Duplex FULL  Autoneg OFF  
+       Inc/RX  packets: 59,215,266          bytes: 8,243,482,788       
+               dropped: 0                   
+       Out/TX  packets: 0                   bytes: 0                   
+               dropped: 0                   
+
+=== pause call per sec ===
+server1
+0 0
+1 0
+2 0
+3 0
+4 0
+5 0
+6 0
+7 0
+8 0
+9 0
+10 0
+11 0
+12 0
+13 0
+14 0
+15 0
+16 0
+17 0
+18 0
+19 0
+20 0
+21 0
+22 0
+23 0
+24 0
+25 0
+26 0
+27 0
+28 0
+server2
+0 29390
+1 28262
+2 28222
+3 28217
+4 28276
+5 28268
+6 28292
+7 28312
+8 28233
+9 28288
+10 28367
+11 28324
+12 28355
+13 28216
+14 28307
+15 28354
+16 28382
+17 28359
+18 28350
+19 28372
+20 28399
+21 28372
+22 28089
+23 28232
+24 28308
+25 28330
+26 28278
+27 28161
+28 28248
+=== pause call per sec ===
+*************************************************************************
+done
+*************************************************************************

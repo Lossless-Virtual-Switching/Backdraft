@@ -122,7 +122,7 @@ class PMDPort final : public Port {
   int SendPackets(queue_t qid, bess::Packet **pkts, int cnt) override;
 
   uint64_t GetFlags() const override {
-    return DRIVER_FLAG_SELF_INC_STATS | DRIVER_FLAG_SELF_OUT_STATS;
+    return DRIVER_FLAG_SELF_INC_STATS; //  | DRIVER_FLAG_SELF_OUT_STATS;
   }
 
   LinkStatus GetLinkStatus() override;
@@ -136,7 +136,7 @@ class PMDPort final : public Port {
   placement_constraint GetNodePlacementConstraint() const override {
     return node_placement_;
   }
-
+  
  private:
   /*!
    * The DPDK port ID number (set after binding).
@@ -156,5 +156,6 @@ class PMDPort final : public Port {
 
   std::string driver_;  // ixgbe, i40e, ...
 };
+
 
 #endif  // BESS_DRIVERS_PMD_H_

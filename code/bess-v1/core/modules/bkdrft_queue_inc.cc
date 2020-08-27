@@ -1,230 +1,394 @@
 #include "bkdrft_queue_inc.h"
 
 #include "../port.h"
-#include "../utils/time.h"
-#include "../utils/format.h"
-#include "../utils/endian.h"
 #include "../utils/bkdrft.h"
+#include "../utils/bkdrft_overlay_ctrl.h"
 #include "../utils/bkdrft_sw_drop_control.h"
+#include "../utils/endian.h"
+#include "../utils/format.h"
+#include "../utils/time.h"
+#include "../utils/ether.h"
 
-using bess::utils::be32_t;
+#define max_burst (32)
+
 using bess::utils::be16_t;
+using bess::utils::be32_t;
 using namespace bess::bkdrft;
 
-const Commands BKDRFTQueueInc::cmds = {{"set_burst", "BKDRFTQueueIncCommandSetBurstArg",
-	MODULE_CMD_FUNC(&BKDRFTQueueInc::CommandSetBurst),
-	Command::THREAD_SAFE}};
+
+bool is_arp(bess::Packet *pkt) {
+  using bess::utils::Ethernet;
+  Ethernet *eth = reinterpret_cast<Ethernet *>(pkt->head_data());
+  uint16_t ether_type = eth->ether_type.value();
+  if (ether_type == Ethernet::Type::kArp)
+    return true;
+  return false;
+}
+
+const Commands BKDRFTQueueInc::cmds = {
+    {"set_burst", "BKDRFTQueueIncCommandSetBurstArg",
+     MODULE_CMD_FUNC(&BKDRFTQueueInc::CommandSetBurst), Command::THREAD_SAFE}};
 
 CommandResponse BKDRFTQueueInc::Init(const bess::pb::BKDRFTQueueIncArg &arg) {
-	const char *port_name;
-	task_id_t tid;
-	CommandResponse err;
-	burst_ = bess::PacketBatch::kMaxBurst;
-	if (!arg.port().length()) {
-		return CommandFailure(EINVAL, "Field 'port' must be specified");
-	}
-	port_name = arg.port().c_str();
-	qid_ = arg.qid();
+  const char *port_name;
+  task_id_t tid;
+  CommandResponse err;
+  burst_ = bess::PacketBatch::kMaxBurst;
+  if (!arg.port().length()) {
+    return CommandFailure(EINVAL, "Field 'port' must be specified");
+  }
+  port_name = arg.port().c_str();
+  qid_ = arg.qid();
 
-	const auto &it = PortBuilder::all_ports().find(port_name);
-	if (it == PortBuilder::all_ports().end()) {
-		return CommandFailure(ENODEV, "Port %s not found", port_name);
-	}
-	port_ = it->second;
-	burst_ = bess::PacketBatch::kMaxBurst;
+  const auto &it = PortBuilder::all_ports().find(port_name);
+  if (it == PortBuilder::all_ports().end()) {
+    return CommandFailure(ENODEV, "Port %s not found", port_name);
+  }
+  port_ = it->second;
+  burst_ = bess::PacketBatch::kMaxBurst;
 
-	if (arg.prefetch()) {
-		prefetch_ = 1;
-	}
-	node_constraints_ = port_->GetNodePlacementConstraint();
-	if (qid_ == BKDRFT_CTRL_QUEUE) {
-		tid = RegisterTask((void *)(uintptr_t)qid_);
-		if (tid == INVALID_TASK_ID)
-			return CommandFailure(ENOMEM, "Context creation failed");
-	}
+  if (arg.prefetch()) {
+    prefetch_ = 1;
+  }
+  node_constraints_ = port_->GetNodePlacementConstraint();
 
-	int ret = port_->AcquireQueues(reinterpret_cast<const module *>(this),
-			PACKET_DIR_INC, nullptr, 0);
-	if (ret < 0) {
-		return CommandFailure(-ret);
-	}
+  // check if module backpressure is active
+  backpressure_ = arg.backpressure();
+  overlay_ = arg.overlay();
+  cdq_ = arg.cdq();
 
-	// check if module backpressure is active
-	if (arg.backpressure()) {
-		backpressure_ = 1;
-	} else {
-		backpressure_ = 0;	
-	}
+  // Check if port supports rate limiting, it is needed for overlay
+  if (overlay_ && (!port_->isRateLimitingEnabled()))
+    return CommandFailure(EINVAL, "Port does not support rate limmiting, it is "
+                                  "needed for overlay to work.");
 
-	// initialize q_status
-	for (int i = 0; i < MAX_NUMBER_OF_QUEUE; i++)
-		q_status_[i] = (queue_pause_status) {
-			.until = 0,
-			.flow = {
-				.addr_src = (be32_t)0,
-				.addr_dst = (be32_t)0,
-				.port_src = (be16_t)0,
-				.port_dst = (be16_t)0,
-				.protocol = 0,
-			},
-		};
+  if (overlay_ && !cdq_)
+    return CommandFailure(EINVAL, "Overlay is implemented in cdq mode, "
+                                   "cdq is not active");
 
-	return CommandSuccess();
+  // acquire queue
+  int ret;
+  if (cdq_) {
+    // acquire all queues because we have command_data_queue mechanism
+    ret = port_->AcquireQueues(reinterpret_cast<const module *>(this),
+                               PACKET_DIR_INC, nullptr, 0);
+  } else {
+    // only acquire the given q
+    ret = port_->AcquireQueues(reinterpret_cast<const module *>(this),
+                               PACKET_DIR_INC, &qid_, 1);
+  }
+
+  if (ret < 0) {
+    return CommandFailure(-ret);
+  }
+
+  // register task
+  if (qid_ == BKDRFT_CTRL_QUEUE || !cdq_) {
+    tid = RegisterTask((void *)(uintptr_t)qid_);
+    if (tid == INVALID_TASK_ID)
+      return CommandFailure(ENOMEM, "Context creation failed");
+  }
+
+  // initialize q_status
+  for (int i = 0; i < MAX_QUEUES; i++) {
+    q_status_[i] = (queue_pause_status){
+      until : 0,
+      failed_ctrl : 0,
+      remaining_dpkt : 0,
+      flow : bess::bkdrft::empty_flow,
+    };
+  }
+
+  return CommandSuccess();
 }
 
 void BKDRFTQueueInc::DeInit() {
-	if (port_) {
-		port_->ReleaseQueues(reinterpret_cast<const module *>(this), PACKET_DIR_INC,
-				&qid_, 1);
-	}
+  if (port_) {
+    if (cdq_) {
+      port_->ReleaseQueues(reinterpret_cast<const module *>(this),
+                           PACKET_DIR_INC, nullptr, 0);
+    } else {
+      port_->ReleaseQueues(reinterpret_cast<const module *>(this),
+                           PACKET_DIR_INC, &qid_, 1);
+    }
+  }
 }
 
 std::string BKDRFTQueueInc::GetDesc() const {
-	return bess::utils::Format("%s:%hhu/%s", port_->name().c_str(), qid_,
-			port_->port_builder()->class_name().c_str());
+  return bess::utils::Format("%s:%hhu/%s", port_->name().c_str(), qid_,
+                             port_->port_builder()->class_name().c_str());
 }
 
-struct task_result BKDRFTQueueInc::RunTask(Context *ctx, bess::PacketBatch *batch,
-		void *arg) {
-	Port *p = port_;
+bool BKDRFTQueueInc::IsQueuePausedInCache(Context *ctx, queue_t qid) {
+  uint64_t now = ctx->current_ns;
+  if (overlay_ && !Flow::EqualTo()(q_status_[qid].flow, empty_flow)) {
+    auto &overlay_ctrl = BKDRFTOverlayCtrl::GetInstance();
+    auto entry = overlay_ctrl.getOverlayEntry(q_status_[qid].flow);
+    if (entry != nullptr && entry->pause_until_ts > now)
+      return true;
+  }
 
-	if (!p->conf().admin_up) {
-		return {.block = true, .packets = 0, .bits = 0};
+  if (backpressure_) {
+    if (q_status_[qid].until > now) {
+      return true;
+    }
+  }
+  return false;
+}
+
+bess::pb::Ctrl *BKDRFTQueueInc::ParseCtrlMsg(bess::Packet *pkt) {
+  void *ptr;
+  size_t size = get_packet_payload(pkt, &ptr, true);
+  if (ptr == nullptr) {
+    LOG(WARNING) << "ParseCtrlMsg: could not find payload of the pkt.";
+    return nullptr;
+  }
+  if (size >= BKDRFT_MAX_MESSAGE_SIZE) {
+    LOG(WARNING) << "ParseCtrlMsg: payload size is greater than expected.";
+    return nullptr;
+  }
+
+  char msg[BKDRFT_MAX_MESSAGE_SIZE];
+  bess::utils::Copy(msg, ptr, size, false);
+  msg[size] = '\0';
+  std::string strData(msg);
+  bess::pb::Ctrl *ctrl_msg = new bess::pb::Ctrl();
+  bool parseRes = ctrl_msg->ParseFromString(strData);
+  if (!parseRes) {
+    // LOG(WARNING) << "Failed to parse ctrl message\n";
+    return nullptr;
+  }
+  return ctrl_msg;
+}
+
+uint32_t BKDRFTQueueInc::ReadBatch(queue_t qid, bess::PacketBatch *batch,
+                                   uint32_t burst) {
+  Port *p = port_;
+  batch->set_cnt(p->RecvPackets(qid, batch->pkts(), burst));
+  const uint32_t cnt = batch->cnt();
+  p->queue_stats[PACKET_DIR_INC][qid].requested_hist[burst]++;
+  p->queue_stats[PACKET_DIR_INC][qid].actual_hist[cnt]++;
+  p->queue_stats[PACKET_DIR_INC][qid].diff_hist[burst - cnt]++;
+
+  uint64_t received_bytes = 0;
+  for (uint32_t i = 0; i < cnt; i++) {
+    received_bytes += batch->pkts()[i]->total_len();
+  }
+
+  if (!(p->GetFlags() & DRIVER_FLAG_SELF_INC_STATS)) {
+    p->queue_stats[PACKET_DIR_INC][qid].packets += cnt;
+    p->queue_stats[PACKET_DIR_INC][qid].bytes += received_bytes;
+  }
+  return cnt;
+}
+
+bool BKDRFTQueueInc::CheckQueuedCtrlMessages(Context *ctx, queue_t *qid,
+                                             uint32_t *burst) {
+  uint32_t tmp_burst = 0;
+  // TODO: this kind of iteration to find dqid has starvation problem!
+  for (int i = 0; i < MAX_QUEUES; i++) {
+    if (q_status_[i].remaining_dpkt > 0) {
+
+      if (IsQueuePausedInCache(ctx, i)) {
+        // Only for testing 
+        // LOG(INFO) << "q: " << i << " is paused\n";
+        continue;
+      }
+
+      *qid = i;
+      tmp_burst = q_status_[i].remaining_dpkt;
+      if (tmp_burst > max_burst)
+        tmp_burst = max_burst;
+      *burst = tmp_burst;
+      return true; // found a queue
+    }
+  }
+  return false; // did not found a queue
+}
+
+uint32_t BKDRFTQueueInc::CDQ(Context *ctx, bess::PacketBatch *batch, queue_t &_qid) {
+  // First check if there are data queues needed to be read from previous
+  // control messages
+  // If there are no data queues left from previous control messages then
+  // read a batch from the command/ctrl queue.
+  // If the command/ctrl queue is empty then nothing to do.
+  // Else if the command/ctrl queue has some packets update the list of data
+  // queues to be read and process one of them.
+
+  int res;
+  queue_t qid = 0;
+  uint32_t burst = 0;
+  bool found_qid = false; // = CheckQueuedCtrlMessages(ctx, &qid, &burst);
+
+  if (true) { // !found_qid
+    bess::PacketBatch ctrl_batch;
+    ctrl_batch.clear();
+    uint32_t cnt;
+    cnt = ReadBatch(BKDRFT_CTRL_QUEUE, &ctrl_batch, 32);
+    if (cnt == 0) {
+      // no ctrl msg. we are done!
+      // return 0;
+    }
+    // received some ctrl/commad message
+    queue_t dqid = 0;
+    uint32_t nb_pkts = 0;
+    for (uint32_t i = 0; i < cnt; i++) {
+      bess::Packet *pkt = ctrl_batch.pkts()[i];
+
+      // arp is allowed on this queue
+      // if (is_arp(pkt)) {
+      //   LOG(INFO) << "ARP !\n";
+      //   EmitPacket(ctx, pkt, 0);
+      //   continue;
+      // }
+
+      char message_type = '5';
+      void *pb; // a pointer to parsed protobuf object
+      res = parse_bkdrft_msg(pkt, &message_type, &pb);
+      if (res != 0) {
+	// LOG(WARNING) << "Failed to parse bkdrft msg\n";
+        bess::Packet::Free(pkt); // free unknown packet
+        continue;
+      }
+
+      if (message_type == BKDRFT_CTRL_MSG_TYPE) {
+        bess::pb::Ctrl *ctrl_msg = reinterpret_cast<bess::pb::Ctrl *>(pb);
+        dqid = static_cast<queue_t>(ctrl_msg->qid());
+        nb_pkts = ctrl_msg->nb_pkts();
+        q_status_[dqid].remaining_dpkt += nb_pkts;
+
+        delete ctrl_msg;
+      } else if (message_type == BKDRFT_OVERLAY_MSG_TYPE) {
+        bess::pb::Overlay *overlay_msg =
+            reinterpret_cast<bess::pb::Overlay *>(pb);
+
+        // LOG(INFO) << "Received overlay message:1 \n";
+        if (overlay_) {
+      	  uint64_t pps = overlay_msg->packet_per_sec();
+          LOG(INFO) << "Received overlay message: pps: "
+                    << pps << "\n";
+
+	        // update port rate limit for queue
+          auto &overlay_ctrl = BKDRFTOverlayCtrl::GetInstance();
+          overlay_ctrl.ApplyOverlayMessage(*overlay_msg, ctx->current_ns);
+        } else {
+	  LOG(ERROR) << "Wrong message type!\n";
 	}
 
-	const queue_t qid = (queue_t)(uintptr_t)arg;
-	queue_t dqid = 1;
-	uint32_t cnt2;
-	bess::Packet * ctrlpkt;
-	ctrl_pkt *ptr;
-	uint32_t nb_pkts;
-	uint64_t wait_until;
-	uint64_t received_bytes = 0;
+        delete overlay_msg;
+      }
+      bess::Packet::Free(pkt); // free ctrl pkt
+    }
+    found_qid = CheckQueuedCtrlMessages(ctx, &qid, &burst);
+  }
 
-	const int burst = ACCESS_ONCE(burst_);
-	const int pkt_overhead = 24;
+  if (found_qid) {
+    /* important note:
+     * if burst is less than a specific number (I guess 4) the packets are note
+     * read from the port.
+     */
+    uint32_t cnt = ReadBatch(qid, batch, max_burst); // burst
+    // if (port_->getConnectedPortType() == NIC) {
+    //   LOG(INFO) << "FOUND qid: " << (int)qid << " burst: " << burst << "\n";
+    //   LOG(INFO) << "Read packets: " << cnt << "\n";
+    // }
+    //
 
-	const int cnt = p->RecvPackets(qid, &ctrlpkt, 1);
-	p->queue_stats[PACKET_DIR_INC][qid].requested_hist[1]++;
-	p->queue_stats[PACKET_DIR_INC][qid].actual_hist[cnt]++;
-	p->queue_stats[PACKET_DIR_INC][qid].diff_hist[1 - cnt]++;
+    /* important note:
+     * ! if we do not read all the packets in the queue (I mean if we
+     * simply forget about the packets we tried to read but failed).
+     * very quickly (but not always) the data queue gets field with packets
+     * and sender cant send any packet and hence no ctrl message is send either.
+     * as a result a dead lock (live lock) happens.
+     * But what if the sender misinformed us or the packets were dropped in the
+     * network (e.g. in the switches).
+     */
+    q_status_[qid].remaining_dpkt -= cnt;
 
-	if (cnt == 0) {
-		// There is no ctrl pkt
-		return {.block = true, .packets = 0, .bits = 0};
-	}
+    // TODO: this code snipt should be here?
+    if (cnt && overlay_) {
+      // TODO: sampling is not the correct way (but what about flow caching?)
+      auto &OverlayMan = bess::bkdrft::BKDRFTOverlayCtrl::GetInstance();
+      bess::Packet *pkt = batch->pkts()[0];
+      bess::bkdrft::Flow f = bess::bkdrft::PacketToFlow(*pkt);
+      uint64_t pause_ts = OverlayMan.FillBook(port_, qid, f);
+      q_status_[qid].until = pause_ts;
+      q_status_[qid].flow = f;
+    }
 
-	// NOTE: we cannot skip this step since it might be used by scheduler.
-	if (prefetch_) {
-		received_bytes += ctrlpkt->total_len();
-		rte_prefetch0(ctrlpkt->head_data());
-	} else {
-		received_bytes += ctrlpkt->total_len();
-	}
+    _qid = qid;
+    return cnt;
+  }
+  return 0;
+}
 
-	if (!(p->GetFlags() & DRIVER_FLAG_SELF_INC_STATS)) {
-		p->queue_stats[PACKET_DIR_INC][qid].packets += cnt;
-		p->queue_stats[PACKET_DIR_INC][qid].bytes += received_bytes;
-	}
+struct task_result
+BKDRFTQueueInc::RunTask(Context *ctx, bess::PacketBatch *batch, void *arg) {
+  Port *p = port_;
 
-	// bess:Packet ~ rte_mbuf
-	ptr = static_cast<ctrl_pkt *>(ctrlpkt->head_data());
-	dqid = ptr->q;
-	nb_pkts = ptr->nb_pkts;
-	bess::Packet::Free(ctrlpkt); // free ctrl pkt
+  if (!p->conf().admin_up) {
+    return {.block = true, .packets = 0, .bits = 0};
+  }
 
-	/// Data queue section
-	
-	if (backpressure_) {
-		// check if data queue is paused
-		uint64_t now;
-		now = rdtsc();
-		now  = tsc_to_ns(now);  // nano seconds
+  queue_t qid = (queue_t)(uintptr_t)arg;
+  uint32_t cnt;
+  uint64_t received_bytes = 0;
 
-		if (q_status_[dqid].until > now) {
-			LOG(INFO) << "Queue " << dqid << " is paused (" << q_status_[dqid].until << " < " << now << ").\n";
-			// this queue is paused
-			return {.block = true, .packets = 0, .bits = 0};
-		}
-		// TODO: we can directly check BKDRFTSwDpCtrl (we have flow detail in q_status)
-		// Is this good?
-		LOG(INFO) << "Outside the if\n";
-	}
+  const int burst = ACCESS_ONCE(burst_);
+  const int pkt_overhead = 24;
 
-	/*
-	 * We are here because we know there is (nb_pkts) of 
-	 * data waiting in the queue so try to get them
-	 * (Do not ignore ctrl pkts)
-	 */
+  if (cdq_) {
+    cnt = CDQ(ctx, batch, qid);
+  } else {
+    if (IsQueuePausedInCache(ctx, qid)) {
+      return {.block = true, .packets = 0, .bits = 0};
+    }
+    cnt = ReadBatch(qid, batch, burst);
+  }
 
-	batch->set_cnt(p->RecvPackets(dqid, batch->pkts(), burst));
-	cnt2 = batch->cnt();
-	p->queue_stats[PACKET_DIR_INC][dqid].requested_hist[burst]++;
-	p->queue_stats[PACKET_DIR_INC][dqid].actual_hist[cnt2]++;
-	p->queue_stats[PACKET_DIR_INC][dqid].diff_hist[burst - cnt2]++;
+  if (cnt > 0) {
+    if (backpressure_) {
+      // ! assume all the batch belongs to the same flow
+      bess::bkdrft::Flow flow = PacketToFlow(*(batch->pkts()[0]));
 
-	if (cnt2 < nb_pkts) {
-		// TODO: what to do?
-	}
+      // check if the data queue is paused
+      // TODO: check bess shared object class!
+      BKDRFTSwDpCtrl &dropMan = bess::bkdrft::BKDRFTSwDpCtrl::GetInstance();
+      uint64_t wait_until = dropMan.GetFlowStatus(flow);
+      q_status_[qid].until = wait_until;
+      q_status_[qid].flow = flow;
+      // if (wait_until > 0)
+      // 	LOG(INFO) << "a flow is paused:" << (int)dqid << "\n";
+    }
 
-	// NOTE: we cannot skip this step since it might be used by scheduler.
-	received_bytes = 0;
-	if (prefetch_) {
-		for (uint32_t i = 0; i < cnt2; i++) {
-			received_bytes += batch->pkts()[i]->total_len();
-			rte_prefetch0(batch->pkts()[i]->head_data());
-		}
-	} else {
-		for (uint32_t i = 0; i < cnt2; i++) {
-			received_bytes += batch->pkts()[i]->total_len();
-		}
-	}
+    for (uint32_t i = 0; i < cnt; i++) {
+      received_bytes += batch->pkts()[i]->total_len();
+      if (prefetch_) {
+        rte_prefetch0(batch->pkts()[i]->head_data());
+      }
+    }
 
-	if (!(p->GetFlags() & DRIVER_FLAG_SELF_INC_STATS)) {
-		p->queue_stats[PACKET_DIR_INC][dqid].packets += cnt2;
-		p->queue_stats[PACKET_DIR_INC][dqid].bytes += received_bytes;
-	}
+    RunNextModule(ctx, batch);
 
-	if (cnt2 > 0) {
-		if (backpressure_) {
-			// assume all the batch belongs to the same flow
-			bess::bkdrft::Flow flow = PacketToFlow(*(batch->pkts()[0]));
-
-			// check if the data queue is paused
-			// TODO: move this in class attributes
-			BKDRFTSwDpCtrl &dropMan =
-				bess::bkdrft::BKDRFTSwDpCtrl::GetInstance();
-			wait_until = dropMan.GetFlowStatus(flow);
-			q_status_[dqid].until = wait_until;
-			q_status_[dqid].flow = flow;
-
-			// Note: We have fetched the packets so we send it down the
-			// path. but if it is paused we remeber not to fetch this
-			// queue for a while.
-		}
-
-		RunNextModule(ctx, batch);
-
-		return {.block = false,
-			.packets = cnt2,
-			.bits = (received_bytes + cnt2 * pkt_overhead) * 8};
-	} else {
-		// There is no  data pkts
-		LOG(INFO) << "No data in recv queue " << (int)dqid << "\n";
-		return {.block = true, .packets = 0, .bits = 0};
-	}
+    return {.block = false,
+            .packets = cnt,
+            .bits = (received_bytes + cnt * pkt_overhead) * 8};
+  } else {
+    // There is no  data pkts
+    return {.block = true, .packets = 0, .bits = 0};
+  }
 }
 
 CommandResponse BKDRFTQueueInc::CommandSetBurst(
-		const bess::pb::BKDRFTQueueIncCommandSetBurstArg &arg) {
-	if (arg.burst() > bess::PacketBatch::kMaxBurst) {
-		return CommandFailure(EINVAL, "burst size must be [0,%zu]",
-				bess::PacketBatch::kMaxBurst);
-	} else {
-		burst_ = arg.burst();
-		return CommandSuccess();
-	}
+    const bess::pb::BKDRFTQueueIncCommandSetBurstArg &arg) {
+  if (arg.burst() > bess::PacketBatch::kMaxBurst) {
+    return CommandFailure(EINVAL, "burst size must be [0,%zu]",
+                          bess::PacketBatch::kMaxBurst);
+  } else {
+    burst_ = arg.burst();
+    return CommandSuccess();
+  }
 }
 
 ADD_MODULE(BKDRFTQueueInc, "bkdrft_queue_inc",
-		"receives packets from a port via a specific queue")
+           "receives packets from a port via a specific queue")

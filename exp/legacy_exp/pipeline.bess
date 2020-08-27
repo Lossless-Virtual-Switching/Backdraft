@@ -1,0 +1,125 @@
+import json
+import subprocess
+
+
+def get_container_pid(container_name):
+    cmd = "sudo docker inspect --format '{{.State.Pid}}' " + container_name 
+    pid = int(subprocess.check_output(cmd, shell=True))
+    return pid
+
+def update_container_mac_address(container_name, ifname, mac):
+  pid = get_container_pid(container_name)
+  nsenter = 'sudo nsenter -t %d -n ' % pid
+  # interface down
+  cmd = nsenter + ' ip link set dev %s down' % ifname
+  subprocess.check_call(cmd, shell=True)
+  # set mac address
+  cmd = nsenter + ' ip link set %s address %s' % (ifname, mac)
+  subprocess.check_call(cmd, shell=True)
+  # interface up
+  cmd = nsenter + ' ip link set dev %s up' % ifname
+  subprocess.check_call(cmd, shell=True)
+  
+  
+
+config = json.load(open('.pipeline_config.json'))
+server_docker_name = config[0]['name']
+slow_server_docker_name = config[2]['name']
+client_docker_name = config[1]['name']
+
+server_ip = '10.1.1.1/8'
+server_mac = config[0]['mac']
+
+slow_server_ip = '10.2.2.1/8'
+slow_server_mac = config[2]['mac']
+
+client_ip = '10.1.1.2/8'
+client_mac = config[1]['mac']
+
+count_queue = 1
+cdq = False
+buffering = True
+bp = False
+pfq = False
+
+
+# Server
+server_port = VPort(ifname='server_port', docker=server_docker_name,
+               ip_addrs=[server_ip],
+               num_inc_q=count_queue, num_out_q=count_queue)
+
+update_container_mac_address(server_docker_name, 'server_port', server_mac)
+
+# Slow Server
+slow_server_port = VPort(ifname='sserver_port', docker=slow_server_docker_name,
+               ip_addrs=[slow_server_ip],
+               num_inc_q=count_queue, num_out_q=count_queue)
+
+update_container_mac_address(slow_server_docker_name, 'sserver_port',
+                             slow_server_mac)
+
+# Client
+client_port = VPort(ifname='client_port', docker=client_docker_name,
+               ip_addrs=[client_ip],
+               num_inc_q=count_queue, num_out_q=count_queue)
+
+update_container_mac_address(client_docker_name, 'client_port', client_mac)
+
+
+# NF Chain
+x = IPLookup()  # split flow of each server
+
+arp_resp = ArpResponder()  # answer client arp request
+server_side_arp_resp = ArpResponder()  # answer server arp request
+server_side_arp_resp2 = ArpResponder()  # anser slow_server arp request
+
+# server_inc = PortInc(port=server_port)
+# server_out = PortOut(port=server_port)
+# 
+# slow_server_inc = PortInc(port=slow_server_port)
+# slow_server_out = PortOut(port=slow_server_port)
+#  
+# client_inc = PortInc(port=client_port)
+# client_out = PortOut(port=client_port)
+
+server_inc = BKDRFTQueueInc(port=server_port, qid=0)
+server_out = BKDRFTQueueOut(port=server_port, qid=0, cdq=cdq, per_flow_buffering=pfq,
+                           count_queues=count_queue, backpressure=bp,
+                           lossless=buffering)
+
+slow_server_inc = BKDRFTQueueInc(port=slow_server_port, qid=0)
+slow_server_out = BKDRFTQueueOut(port=slow_server_port, qid=0, cdq=cdq, per_flow_buffering=pfq,
+                           count_queues=count_queue, backpressure=bp,
+                           lossless=buffering)
+ 
+client_inc = BKDRFTQueueInc(port=client_port, qid=0)
+client_out = QueueOut(port=client_port, qid=0)
+# client_out = BKDRFTQueueOut(port=client_port, qid=0, cdq=cdq, per_flow_buffering=pfq,
+#                            count_queues=count_queue, backpressure=bp,
+#                            lossless=buffering)
+ 
+ 
+server_inc -> server_side_arp_resp
+server_side_arp_resp:0 -> server_out
+server_side_arp_resp:1 -> client_out
+
+slow_server_inc -> server_side_arp_resp2
+server_side_arp_resp2:0 -> slow_server_out
+server_side_arp_resp2:1 -> client_out
+
+# client_inc -> server_out
+client_inc -> arp_resp
+arp_resp:0 -> client_out  # ARP response of client requests
+arp_resp:1 -> x  # other packets that are not ARP
+x:1 -> server_out
+x:2 -> slow_server_out
+
+x.add(prefix='10.1.0.0', prefix_len=16, gate=1)
+x.add(prefix='10.2.0.0', prefix_len=16, gate=2)
+
+arp_resp.add(ip='10.1.1.1', mac_addr=server_mac)
+arp_resp.add(ip='10.2.2.1', mac_addr=slow_server_mac)
+
+server_side_arp_resp.add(ip='10.1.1.2', mac_addr=client_mac)
+server_side_arp_resp2.add(ip='10.1.1.2', mac_addr=client_mac)
+

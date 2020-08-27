@@ -123,6 +123,10 @@ struct configuration {
   uint32_t fp_hugepages;
   /** FP: enable vlan stripping */
   uint32_t fp_vlan_strip;
+  /** FP: enable command_data_queue */
+  uint32_t fp_command_data_queue;
+  /** FP: enable perflow queueing */
+  uint32_t fp_perflow_queueing;
   /** FP: polling interval for TAS */
   uint32_t fp_poll_interval_tas;
   /** FP: polling interval for app */
@@ -133,6 +137,8 @@ struct configuration {
   int ready_fd;
   /** Minimize output */
   int quiet;
+  /** Address space mapping location */
+  char *fp_file_prefix;
   /** DPDK extra argument vector */
   char **dpdk_argv;
   /** DPDK extra argument count */

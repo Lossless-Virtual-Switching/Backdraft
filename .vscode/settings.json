@@ -1,9 +1,0 @@
-{
-    "editor.formatOnSave": true,
-    "clang-format.executable": "${workspaceRoot}/core/.clang-format",
-    "C_Cpp.errorSquiggles": "Disabled",
-    "files.associations": {
-        "tuple": "cpp",
-        "chrono": "cpp"
-    }
-}

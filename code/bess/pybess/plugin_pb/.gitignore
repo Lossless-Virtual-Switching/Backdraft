@@ -1,7 +1,0 @@
-# see ../builtin_pb/.gitignore
-*
-!.gitignore
-!__init__.py
-!ports
-ports/*
-!ports/__init__.py

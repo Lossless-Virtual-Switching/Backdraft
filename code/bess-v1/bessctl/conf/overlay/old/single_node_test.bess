@@ -1,0 +1,36 @@
+import scapy.all as scapy
+
+
+def aton(ip):
+  return socket.inet_aton(ip)
+
+
+# Craft a packet with the specified IP addresses
+def gen_packet(proto, src_ip, dst_ip, prio):
+  eth = scapy.Ether(src='98:f2:b3:cc:02:f1', dst='98:f2:b3:ca:d0:c1')
+  dot1q1 = scapy.Dot1Q(vlan=our_vlan1, prio=prio, id=prio)
+  # dot1q2 = scapy.Dot1Q(vlan=our_vlan2, prio=prio, id=prio)
+  ip = scapy.IP(src=src_ip, dst=dst_ip)
+  transport = proto(sport=10001, dport=10003)
+  payload = 'helloworld'
+  # pkt = eth/dot1q1/dot1q2/ip/transport/payload
+  pkt = eth/dot1q1/ip/transport/payload
+  return str(pkt)
+
+
+packets = [gen_packet(scapy.TCP, '10.0.0.1', '10.0.0.3', prio)]
+
+port1 = PMDPort()
+port2 = PMDPort()
+
+Source() -> \
+Rewrite(templates=packets) -> \
+TestQueueOut(port=port1.name, qid=0)
+
+TestQueueInc(port=port2.name, qid=0) -> \
+MACSwap() -> \
+TestQueueOut(port=port2.name, qid=0)
+
+TestQueueInc(port=port2.name, qid=0) -> \
+Sink()
+

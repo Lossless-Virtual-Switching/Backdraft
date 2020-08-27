@@ -116,6 +116,7 @@ CXXFLAGS += -std=c++17 -g3 -ggdb3 $(CXXARCHFLAGS) \
             -Werror -Wall -Wextra -Wcast-align -Wno-error=deprecated-declarations \
             -Wno-error=array-bounds \
             $(PKG_CFLAGS)
+#-DHOLB \
 
 ifeq "$(shell test $(CXXVERSION) -ge 9; echo $$?)" "0"
   CXXFLAGS += -Wno-error=address-of-packed-member

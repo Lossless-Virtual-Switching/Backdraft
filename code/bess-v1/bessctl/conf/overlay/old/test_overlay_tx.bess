@@ -1,0 +1,49 @@
+import scapy.all as scapy
+
+
+pci = '7:00.1'
+cnt_queues = 8
+overlay_rules=True
+
+sender_mac = '98:f2:b3:ca:c0:91'
+receiver_mac = '98:f2:b3:c8:49:f5'
+
+our_vlan1 = 1
+our_vlan2 = 2
+prio = 1
+
+
+def aton(ip):
+    return socket.inet_aton(ip)
+
+
+def gen_packet(proto, src_ip, dst_ip):
+    """
+    Craft a packet with the specified IP addresses
+    """
+    eth = scapy.Ether(src=sender_mac, dst=receiver_mac)
+    dot1q1 = scapy.Dot1Q(vlan=our_vlan1, prio=prio, id=prio)
+    dot1q2 = scapy.Dot1Q(vlan=our_vlan2, prio=prio, id=prio)
+    ip = scapy.IP(src=src_ip, dst=dst_ip)
+    transport = proto(sport=10001, dport=10003)
+    payload = 'helloworld'
+    # pkt = eth/dot1q1/dot1q2/ip/transport/payload
+    pkt = eth/ip/transport/payload
+    return str(pkt)
+
+
+packets = [gen_packet(scapy.TCP, '10.0.0.1', '10.0.0.3'),
+	   gen_packet(scapy.TCP, '10.0.0.1', '10.0.0.3'),]
+
+my_vhost0 = PMDPort(pci=pci, num_inc_q=cnt_queues, num_out_q=cnt_queues, overlay_rules=overlay_rules)
+# my_vhost0 = PMDPort(name='test_interface', vdev='eth_vhost0,iface=/tmp/test.sock,queues=8')
+
+# ================
+Source() -> \
+Rewrite(templates=packets) -> \
+Bypass(cycles_per_packet=10000) -> \
+QueueOut(port=my_vhost0.name, qid=0)
+
+for i in range(cnt_queues):
+  TestQueueInc(port=my_vhost0.name, qid=i) -> Sink()
+

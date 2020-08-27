@@ -69,7 +69,8 @@ void ArpResponder::ProcessBatch(Context *ctx, bess::PacketBatch *batch) {
     Ethernet *eth = pkt->head_data<Ethernet *>();
     if (eth->ether_type != be16_t(Ethernet::Type::kArp)) {
       // Currently drop all non ARP packets
-      DropPacket(ctx, pkt);
+      // DropPacket(ctx, pkt);
+      EmitPacket(ctx, pkt, 1); // send non-ARP packets on gate 1
       continue;
     }
 

@@ -1,0 +1,23 @@
+syntax = "proto3";
+
+package bess.pb;
+
+message Ctrl { 
+  uint32 qid = 1;
+  uint32 nb_pkts = 2;
+  uint32 total_bytes = 3;
+}
+
+message Overlay {
+  uint32 src_port = 1;
+  uint32 dst_port = 2;
+  uint32 src_ip = 3;
+  uint32 dst_ip = 4;
+  string src_mac = 5;
+  string dst_mac = 6;
+  uint32 protocol = 7;
+  uint32 wnd_size = 8;
+  uint64 packet_per_sec = 9;
+  uint64 pause_duration = 10;
+}
+

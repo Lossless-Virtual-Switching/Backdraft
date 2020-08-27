@@ -1,0 +1,28 @@
+
+import scapy.all as scapy
+import socket
+
+
+def aton(ip):
+     return socket.inet_aton(ip)
+
+
+# Craft a packet with the specified IP addresses
+def gen_packet(proto, src_ip, dst_ip, dport):
+    eth = scapy.Ether(src='9c:dc:71:4a:4c:f1', dst='98:f2:b3:cb:05:a1')  # node3 -> node2
+    ip = scapy.IP(src=src_ip, dst=dst_ip, tos=0x02)
+    tcp = proto(sport=10001, dport=dport)
+    payload = 'h' * 64
+    pkt = eth/ip/tcp/payload
+    return str(pkt)
+
+packets = [gen_packet(scapy.TCP, '192.168.1.3', '192.168.1.2', 1234),
+    gen_packet(scapy.TCP, '192.168.1.3', '192.168.1.2', 1235)]
+
+dmux = Demultiplex(ranges=[
+    {'start':1000, 'end':1235, 'gate':0},
+    {'start':1235, 'end':2000, 'gate':1}])
+
+Source() -> Rewrite(templates=packets) -> dmux
+dmux:0 -> Sink()
+dmux:1 -> Sink()

@@ -1,0 +1,13 @@
+count_queue = 8
+vdev="eth_vhost0,iface=/tmp/tmp_vhost.sock,queues={}".format(count_queue)
+port = PMDPort(name="tmp_vhost",
+  vdev=vdev,
+  num_inc_q = count_queue,
+  num_out_q=count_queue)
+
+
+BKDRFTQueueInc(port=port.name,
+  qid=0,
+  cdq=1,
+  backpressure=0) -> Sink()
+

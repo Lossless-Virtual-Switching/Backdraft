@@ -1,5 +1,5 @@
 #include "bkdrft_sw_drop_control.h"
-#include "time.h"
+// #include "time.h"
 
 namespace bess {
 	namespace bkdrft {
@@ -8,22 +8,23 @@ namespace bess {
 		// of the given flow.
 		// TODO: what if some flows share the same queue
 		// TODO: what if the flow change its queue
-		void BKDRFTSwDpCtrl::PauseFlow(uint16_t duration,
+		void BKDRFTSwDpCtrl::PauseFlow(uint64_t ts,
 				const Flow &flow)
 		{
+			// LOG(INFO) << "Pause flow\n";
 
-			uint64_t now;
+			// uint64_t now;
 			auto entry = flowBook_.Find(flow);
 
-			now = rdtsc();
-			now  = tsc_to_ns(now);  // nano seconds
+			// now = rdtsc();
+			// now  = tsc_to_ns(now);  // nano seconds
 			
 			if (entry == nullptr) {
 				flowBook_.Insert(flow, {
-					.until = now + duration,
+					.until = ts,
 					});
 			} else {
-				entry->second.until = now + duration;
+				entry->second.until = ts;
 			}
 
 			// uint16_t qid;
@@ -48,15 +49,17 @@ namespace bess {
 
 		uint64_t BKDRFTSwDpCtrl::GetFlowStatus(Flow &flow)
 		{
-			uint64_t now;
+			uint64_t now = 0;
 			uint64_t until;
 			auto entry = flowBook_.Find(flow);
+			// LOG(INFO) << "get flow status"<< flow.addr_dst.value() << "\n";
 			if (entry == nullptr) {
 				return 0;
 			} else {
-				now = rdtsc();
-				now  = tsc_to_ns(now);  // nano seconds
+				// now = rdtsc();
+				// now  = tsc_to_ns(now);  // nano seconds
 				until = entry->second.until;
+				// LOG(INFO) << "until (" << until << "), now (" << now << ");\n";
 				if (until < now) {
 					entry->second.until = 0;
 					return 0;

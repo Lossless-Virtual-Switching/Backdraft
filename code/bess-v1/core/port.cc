@@ -183,8 +183,7 @@ Port::PortStats Port::GetPortStats() {
     ret.inc.requested_hist += inc.requested_hist;
     ret.inc.actual_hist += inc.actual_hist;
     ret.inc.diff_hist += inc.diff_hist;
-  }
-
+  } 
   for (queue_t qid = 0; qid < num_queues[PACKET_DIR_OUT]; qid++) {
     const QueueStats &out = queue_stats[PACKET_DIR_OUT][qid];
     ret.out.packets += out.packets;
@@ -281,30 +280,42 @@ void Port::ReleaseQueues(const struct module *m, packet_dir_t dir,
   }
 }
 
-void Port::RecordRate(packet_dir_t dir, queue_t qid, int packets) {
+void Port::RecordRate(packet_dir_t dir, queue_t qid, bess::Packet **pkts,
+                      int packets) {
   uint64_t now = tsc_to_ns(rdtsc());
-  // uint64_t window = 0;
+  uint64_t diff;
+  uint64_t total_bytes;
 
-  /* 
-  window = now - rate_.latest_timestamp[dir][qid];
-
-  rate_.pps[dir][qid] = 0.6*rate_.pps[dir][qid] +
-  0.4*(packets*8)*second_ns/window;
-
-  rate_.latest_timestamp[dir][qid]= now;
-  */
-  rate_.packets[dir][qid] += packets;
-
-  if (now - rate_.timestamp[dir][qid] > second_ns) { 
-    rate_.pps[dir][qid] = rate_.packets[dir][qid]; 
-    rate_.packets[dir][qid] = 0;
-    rate_.timestamp[dir][qid] = now;
-    
-    // if(dir == PACKET_DIR_OUT)
-    //   LOG(INFO) << (float)rate_.pps[dir][qid] / 1000000 << " TX Rate Mpps\n";
-    // else
-    //   LOG(INFO) << (float)rate_.pps[dir][qid] / 1000000 << " RX Rate Mpps\n";
+  total_bytes = 0;
+  for (int pkt = 0; pkt < packets; pkt++) {
+    total_bytes += pkts[pkt]->total_len();
   }
+
+  // TODO: maybe use a moving average
+  static const double g = 0.50;
+  diff = now - rate_.timestamp[dir][qid];
+  // rate_.pps[dir][qid] = 4000000LL;
+  // rate_.bps[dir][qid] = 10000000000LL;
+  rate_.pps[dir][qid] = g * ((long int)packets * 1e9 / (double)diff) + ( 1 - g) * rate_.pps[dir][qid];
+  rate_.bps[dir][qid] = (total_bytes + 24 * packets) * 8 * 1e9 / diff;
+  // I don't understand the packets headers yet, however, I created an issue in
+  // BESS repo
+
+  rate_.packets[dir][qid] += packets;
+  rate_.bytes[dir][qid] += total_bytes;
+  rate_.timestamp[dir][qid] = now;
+    
+  // if (now - rate_.latest_timestamp[dir][qid] > second_ns) {
+  //   rate_.latest_timestamp[dir][qid] = now;
+  //   if (dir == PACKET_DIR_OUT) {
+  //     LOG(INFO) << rate_.pps[dir][qid] / 1000000 << " TX Rate Mpps "
+  //               << packets << " " << diff<< "\n";
+  //     LOG(INFO) << rate_.bps[dir][qid] / 1000000 << " TX Rate Mbps\n";
+  //   } else {
+  //     LOG(INFO) << rate_.pps[dir][qid] / 1000000 << " RX Rate Mpps\n";
+  //     LOG(INFO) << rate_.bps[dir][qid] / 1000000 << " RX Rate Mbps\n";
+  //   }
+  // }
 }
 
 uint32_t Port::RateLimit(packet_dir_t dir, queue_t qid) {
@@ -320,17 +331,21 @@ uint32_t Port::RateLimit(packet_dir_t dir, queue_t qid) {
   window = now - limiter_.latest_timestamp[dir][qid]; 
   allowed_to_send = window * limit / second_ns;
 
-  limiter_.latest_timestamp[dir][qid] = now;
+  // limiter_.latest_timestamp[dir][qid] = now;
 
   if (allowed_to_send + token > limit) {
     // Throttling
-    allowed_to_send = limit - token;
+    if (token > limit)
+      allowed_to_send = 0;
+    else
+      allowed_to_send = limit - token;
   }
 
   // if recharing tokens!
   if (now - limiter_.timestamp[dir][qid] > second_ns) {
     limiter_.timestamp[dir][qid] = now;
     limiter_.token[dir][qid] = 0;
+    // LOG(INFO) << "recharging tokens, name: " << name_ << " dir: " << dir << " q: " << (int)qid <<  " limit: " << limit << "\n";
   }
 
   return allowed_to_send;

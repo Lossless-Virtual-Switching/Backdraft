@@ -1,6 +1,0 @@
--kr
--bad
--bap
--sob
--ut
--i8

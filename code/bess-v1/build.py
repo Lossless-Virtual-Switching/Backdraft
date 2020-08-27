@@ -296,7 +296,7 @@ def configure_dpdk():
 
     generate_dpdk_extra_mk()
 
-    cmd('make -C %s config T=%s' % (DPDK_DIR, DPDK_TARGET))
+    p = cmd('make -C %s config T=%s' % (DPDK_DIR, DPDK_TARGET))
 
 
 def makeflags():
@@ -397,7 +397,10 @@ def build_bess():
     sys.stdout.flush()
     cmd('bin/bessctl daemon stop 2> /dev/null || true', shell=True)
     cmd('rm -f core/bessd')  # force relink as DPDK might have been rebuilt
-    cmd('make -C core bessd modules all_test %s' % makeflags())
+    p = cmd('make -C core bessd modules all_test %s' % makeflags())
+    # p.wait()
+    # print(p.stdout().decode())
+    print(p)
 
 
 def build_kmod():
