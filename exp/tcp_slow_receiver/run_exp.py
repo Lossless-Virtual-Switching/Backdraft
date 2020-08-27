@@ -6,6 +6,9 @@ import argparse
 import subprocess
 import argparse
 
+sys.path.insert(0, '../')
+from bkdrft_common import *
+
 
 cur_script_dir = os.path.dirname(os.path.abspath(__file__))
 bessctl_dir = os.path.abspath(os.path.join(cur_script_dir,
@@ -21,15 +24,6 @@ tas_spinup_script = os.path.abspath(os.path.join(cur_script_dir,
     '../../code/apps/tas_container/spin_up_tas_container.sh'))
 # tas_spinup_script = os.path.abspath(os.path.join(cur_script_dir,
 #     '../../code/apps/tas_unidir/spin_up_tas_container.sh'))
-
-
-def bessctl_do(command, stdout=None):
-    """
-    Run bessctl command
-    """
-    cmd = '{} {}'.format(bessctl_bin, command)
-    ret = subprocess.run(cmd, shell=True, stdout=subprocess.PIPE)
-    return ret
 
 
 def update_config():
@@ -48,16 +42,6 @@ def update_config():
 
     with open(pipeline_config_file, 'w') as f:
         f.writelines(content)
-
-
-def remove_socks():
-    """
-    In .bess file vdev files are placed in /tmp/*.sock
-    this function removes all of them
-    ------------------------------------------------
-    This function may not be safe
-    """
-    subprocess.run('sudo rm ./tmp_vhost/*.sock -f', shell=True)
 
 
 def spin_up_tas(conf):
@@ -148,22 +132,31 @@ def main():
     socket_dir = os.path.abspath('./tmp_vhost')
 
     # number of available cores
-    total_cores = 10
-    reserved_cores = 1
+    total_cores = 14
+    reserved_cores = 1  # possibly for BESS
     available_cores = total_cores - reserved_cores
+    only_even = True  # for numa machinces (to place on one node)
+    print('should place cores on even ids: ', only_even)
     # how many core each container have
-    count_instance = 3
-    count_cpu = 3
+    count_instance = 4  # how many container
+    count_cpu = 3  # how many core to each container
     if count_cpu < 3:
         print('warning: each tas_container needs at least 3 cores to function properly')
+
     tas_cores = count_queue  # how many cores are allocated to tas
+
     cores =  []
     for instance_num in range(count_instance):
         cpu_ids = []
         for cpu_num in range(count_cpu):
             cpu_id = instance_num * count_cpu + cpu_num
+            if cpu_id > available_cores:
+                print('warning: number of cores was now enough some '
+                'cores are assigned to multiple containers')
             cpu_id = cpu_id % available_cores
             cpu_id += reserved_cores
+            if only_even:
+                cpu_id = 2 * cpu_id
             cpu_ids.append(str(cpu_id))
         cpu_ids_str = ','.join(cpu_ids)
         cores.append(cpu_ids_str) 
@@ -173,18 +166,17 @@ def main():
 
     print(count_cpu, cores)
 
-
     # image_name = 'tas_unidir'
     image_name = 'tas_container'
     containers = [
         {
-            'name': 'tas_server',
+            'name': 'tas_server_1',
             'type': 'server',
             'image': image_name,
             'cpu': cores[0],
             'socket': socket_dir + '/tas_server_1.sock',
             'ip': '10.10.0.1',
-            'prefix': 'tas_server',
+            'prefix': 'tas_server_1',
             'cpus': count_cpu,
             'port': 1234,
             'count_flow': 10,
@@ -201,10 +193,10 @@ def main():
         {
             'name': 'tas_server_2',
             'type': 'server',
-            'image': 'tas_container',
+            'image': image_name,
             'cpu': cores[1],
             'socket': socket_dir + '/tas_server_2.sock',
-            'ip': '10.10.0.3',
+            'ip': '10.10.0.2',
             'prefix': 'tas_server_2',
             'cpus': slow_rec_cpu,
             'port': 5678,
@@ -220,17 +212,38 @@ def main():
             'count_threads': 1,
         },
         {
-            'name': 'tas_client',
+            'name': 'tas_client_1',
             'type': 'client',
             'image': image_name,
             'cpu': cores[2],
-            'socket': socket_dir + '/tas_client.sock',
-            'ip': '172.17.0.3',
-            'prefix': 'tas_client',
+            'socket': socket_dir + '/tas_client_1.sock',
+            'ip': '172.17.0.1',
+            'prefix': 'tas_client_1',
             'cpus': count_cpu,
             'port': 7788,  # not used for client
             'count_flow': count_flow,
-            'ips': [('10.10.0.1', 1234), ('10.10.0.3', 5678)],
+            'ips': [('10.10.0.1', 1234)],  # , ('10.10.0.2', 5678)
+            'flow_duration': 0,
+            'message_per_sec': -1,
+            'tas_cores': tas_cores,
+            'tas_queues': count_queue,
+            'cdq': int(cdq),
+            'message_size': 500,
+            'flow_num_msg': 0,
+            'count_threads': 1,
+        },
+        {
+            'name': 'tas_client_2',
+            'type': 'client',
+            'image': image_name,
+            'cpu': cores[3],
+            'socket': socket_dir + '/tas_client_2.sock',
+            'ip': '172.17.0.2',
+            'prefix': 'tas_client_2',
+            'cpus': count_cpu,
+            'port': 7788,  # not used for client
+            'count_flow': count_flow,
+            'ips': [('10.10.0.2', 5678)],  # ('10.10.0.1', 1234), 
             'flow_duration': 0,
             'message_per_sec': -1,
             'tas_cores': tas_cores,
@@ -249,8 +262,10 @@ def main():
     print('remove containers from previous experiment')
     for c in reversed(containers):
         name = c.get('name')
-        subprocess.run('sudo docker stop -t 0 {}'.format(name), shell=True, stdout=subprocess.PIPE)
-        subprocess.run('sudo docker rm {}'.format(name), shell=True, stdout=subprocess.PIPE)
+        subprocess.run('sudo docker stop -t 0 {}'.format(name),
+                shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        subprocess.run('sudo docker rm {}'.format(name),
+                shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
 
     # Run BESS daemon
     print('start BESS daemon')
@@ -263,7 +278,6 @@ def main():
     update_config()
 
     # Run a configuration (pipeline)
-    remove_socks()
     file_path = pipeline_config_file
     ret = bessctl_do('daemon start -- run file {}'.format(file_path))
 
@@ -293,7 +307,7 @@ def main():
     # Collect logs and store in a file
     print('gather client log, through put and percentiles...')
     subprocess.run(
-        'sudo docker cp tas_client:/tmp/log_drop_client.txt {}'.format(output_log_file),
+        'sudo docker cp tas_client_1:/tmp/log_drop_client.txt {}'.format(output_log_file),
         shell=True)
     subprocess.run('sudo chown $USER {}'.format(output_log_file), shell=True)
 
@@ -321,15 +335,21 @@ def main():
     logs.append(txt)
     print('server2\n', txt)
 
-    p = bessctl_do('show port client', subprocess.PIPE)
+    p = bessctl_do('show port tas_client_1', subprocess.PIPE)
     txt = p.stdout.decode()
     logs.append(txt)
-    print('client\n', txt)
+    print('client1\n', txt)
+
+    p = bessctl_do('show port tas_client_2', subprocess.PIPE)
+    txt = p.stdout.decode()
+    logs.append(txt)
+    print('client2\n', txt)
 
     # pause call per sec
     bessctl_do('command module bkdrft_queue_out0 get_pause_calls EmptyArg {}')
     bessctl_do('command module bkdrft_queue_out1 get_pause_calls EmptyArg {}')
-    # bessctl_do('command module bkdrft_queue_out2 get_pause_calls EmptyArg {}')
+    bessctl_do('command module bkdrft_queue_out2 get_pause_calls EmptyArg {}')
+    bessctl_do('command module bkdrft_queue_out3 get_pause_calls EmptyArg {}')
     pps_log = get_pps_from_info_log()
     print(pps_log)
 

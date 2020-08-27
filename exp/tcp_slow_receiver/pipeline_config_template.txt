@@ -28,10 +28,13 @@ bess.add_worker(0, 0)
 
 
 del_socket('tmp_vhost/tas_server_1.sock')
-del_socket('tmp_vhost/tas_client.sock')
+del_socket('tmp_vhost/tas_server_2.sock')
+del_socket('tmp_vhost/tas_client_1.sock')
+del_socket('tmp_vhost/tas_client_2.sock')
+
 
 # Define PMDPorts
-host0 = PMDPort(
+server1 = PMDPort(
   name='tas_server_1',
   vdev='eth_vhost0,iface=tmp_vhost/tas_server_1.sock,queues={}'.format(Q),
   num_inc_q=TX_QUEUE_COUNT,
@@ -39,7 +42,7 @@ host0 = PMDPort(
   size_inc_q=Q_SIZE,
   size_out_q=Q_SIZE)
 
-host1 = PMDPort(
+server2 = PMDPort(
   name='tas_server_2',
   vdev='eth_vhost1,iface=tmp_vhost/tas_server_2.sock,queues={}'.format(Q),
   num_inc_q=TX_QUEUE_COUNT,
@@ -47,9 +50,17 @@ host1 = PMDPort(
   size_inc_q=Q_SIZE,
   size_out_q=Q_SIZE)
 
-host2 = PMDPort(
-  name='client',
-  vdev='eth_vhost2,iface=tmp_vhost/tas_client.sock,queues={}'.format(Q),
+client1 = PMDPort(
+  name='tas_client_1',
+  vdev='eth_vhost2,iface=tmp_vhost/tas_client_1.sock,queues={}'.format(Q),
+  num_inc_q=TX_QUEUE_COUNT,
+  num_out_q=RX_QUEUE_COUNT,
+  size_inc_q=Q_SIZE,
+  size_out_q=Q_SIZE)
+
+client2 = PMDPort(
+  name='tas_client_2',
+  vdev='eth_vhost3,iface=tmp_vhost/tas_client_2.sock,queues={}'.format(Q),
   num_inc_q=TX_QUEUE_COUNT,
   num_out_q=RX_QUEUE_COUNT,
   size_inc_q=Q_SIZE,
@@ -57,36 +68,70 @@ host2 = PMDPort(
 
 
 # plumbing the bidirectional path
-x = Demultiplex(ranges=[
-  {'start': 1000, 'end': 2000, 'gate': 1},
-  {'start': 5000, 'end': 6000, 'gate': 2},
-])
+aggregate = Merge()
+# client_side_dmux = Demultiplex(ranges=[
+#   {'start': 1000, 'end': 2000, 'gate': 1},
+#   {'start': 5000, 'end': 6000, 'gate': 2},
+# ])
+client_side_iplookup = IPLookup()
+client_side_iplookup.add(prefix='10.10.0.1', prefix_len=32, gate=1)  # should match with container
+client_side_iplookup.add(prefix='10.10.0.2', prefix_len=32, gate=2)  # should match with container
+client_side_iplookup.add(prefix='0.0.0.0', prefix_len=0, gate=0)  # should match with container
+crepeater = Replicate(gates=[1, 2])
 
-server_1_out = BKDRFTQueueOut(port=host0, qid=0, count_queues=Q,
+server_side_iplookup = IPLookup()
+server_side_iplookup.add(prefix='172.17.0.1', prefix_len=32, gate=1)  # should match with container
+server_side_iplookup.add(prefix='172.17.0.2', prefix_len=32, gate=2)  # should match with container
+server_side_iplookup.add(prefix='0.0.0.0', prefix_len=0, gate=0)  # should match with container
+srepeater = Replicate(gates=[1, 2])
+
+aggregate_server = Merge()
+# server_side_dmux = Demultiplex(ranges=[
+#   {'start': 1000, 'end': 2000, 'gate': 1},
+#   {'start': 5000, 'end': 6000, 'gate': 2},
+# ])
+
+server_1_out = BKDRFTQueueOut(port=server1, qid=0, count_queues=Q,
   backpressure=bp, lossless=lossless, cdq=cdq, per_flow_buffering=pfq,
   mname='server1', overlay=False)
-# server_1_out = QueueOut(port=host0, qid=0)
+# server_1_out = QueueOut(port=server1, qid=0)
 
-server_2_out = BKDRFTQueueOut(port=host1, qid=0, count_queues=Q,
+server_2_out = BKDRFTQueueOut(port=server2, qid=0, count_queues=Q,
   backpressure=bp, lossless=lossless, cdq=cdq, per_flow_buffering=pfq,
   mname='server1', overlay=False)
-# server_2_out = QueueOut(port=host1, qid=0)
+# server_2_out = QueueOut(port=server2, qid=0)
 
-client_out = BKDRFTQueueOut(port=host2, qid=0, count_queues=Q,
+client_1_out = BKDRFTQueueOut(port=client1, qid=0, count_queues=Q,
   backpressure=bp, lossless=lossless, cdq=cdq, per_flow_buffering=pfq,
   mname='server1', overlay=False)
-# client_out = QueueOut(port=host2, qid=0)
+# client_out = QueueOut(port=client1, qid=0)
+
+client_2_out = BKDRFTQueueOut(port=client2, qid=0, count_queues=Q,
+  backpressure=bp, lossless=lossless, cdq=cdq, per_flow_buffering=pfq,
+  mname='server1', overlay=False)
+# client_2_out = QueueOut(port=client2, qid=0)
 
 # client
-BKDRFTQueueInc(port=host2, qid=0, backpressure=bp, cdq=cdq) -> x
-x:1 -> server_1_out
-x:2 -> server_2_out
+BKDRFTQueueInc(port=client1, qid=0, backpressure=bp, cdq=cdq) -> aggregate
+BKDRFTQueueInc(port=client2, qid=0, backpressure=bp, cdq=cdq) -> aggregate
+
+aggregate -> client_side_iplookup
+client_side_iplookup:1 -> server_1_out
+client_side_iplookup:2 -> server_2_out
+client_side_iplookup:0 -> crepeater
+crepeater:1 -> server_1_out
+crepeater:2 -> server_2_out
 
 
-# server1
-BKDRFTQueueInc(port=host0, qid=0, backpressure=bp, cdq=cdq) -> client_out
+# server
+BKDRFTQueueInc(port=server1, qid=0, backpressure=bp, cdq=cdq) -> aggregate_server
+BKDRFTQueueInc(port=server2, qid=0, backpressure=bp, cdq=cdq) ->aggregate_server 
 
-# server2
-BKDRFTQueueInc(port=host1, qid=0, backpressure=bp, cdq=cdq) -> client_out
+aggregate_server -> server_side_iplookup
+server_side_iplookup:1 -> client_1_out
+server_side_iplookup:2 -> client_2_out
+server_side_iplookup:0 -> srepeater
+srepeater:1 -> client_1_out
+srepeater:2 -> client_2_out
 
 

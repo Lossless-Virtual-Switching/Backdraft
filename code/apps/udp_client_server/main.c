@@ -235,6 +235,20 @@ int main(int argc, char *argv[]) {
   argc -= args_parsed;
   argv += args_parsed;
 
+  // arguments:
+  // * source_ip: ip of host on which app is running (useful for arp)
+  // * number of queue
+  // * system mode: bess or bkdrft
+  // * mode: client or server
+  // [client]
+  // * count destination ips
+  // * valid ip values (as many as defined in prev. param)
+  // * count flow
+  // * experiment duration
+  // * client port
+  // [server]
+  // * server delay for each batch
+
   // source_ip
   str_to_ip(argv[1], &source_ip);
   argv++;
@@ -284,8 +298,11 @@ int main(int argc, char *argv[]) {
     count_flow = atoi(argv[4 + count_server_ips]);
     if (argc > 5 + count_server_ips)
       duration = atoi(argv[5 + count_server_ips]);
-
     printf("Experiment duration: %d\n", duration);
+
+    if (argc > 6 + count_server_ips)
+      client_port = atoi(argv[6 + count_server_ips]);
+    printf("Client port: %d\n", client_port);
 
   } else if (!strcmp(argv[2], "server")) {
     // server
