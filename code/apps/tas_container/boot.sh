@@ -20,6 +20,7 @@
 # flow_num_msg
 # app_cores
 
+
 TAS_DIR=/root/post-loom/code/tas
 TAS_BENCH=/root/post-loom/code/tas-benchmark
 
@@ -30,42 +31,38 @@ QUEUES=$count_queues
 # kill tas
 pkill tas
 
-# if [ ${command-data-queue} -gt 0 ]; then
-# exec $TAS_DIR/tas/tas --dpdk-extra=--vdev \
-# 	--dpdk-extra="virtio_user0,path=$socket_file,queues=$QUEUES" \
-# 	--dpdk-extra=--file-prefix --dpdk-extra=$prefix \
-# 	--dpdk-extra=--no-pci \
-# 	--fp-no-xsumoffload \
-# 	--ip-addr=$IP \
-# 	--cc=dctcp-win \
-# 	--fp-command-data-queue \
-# 	--fp-no-autoscale \
-# 	--fp-cores-max=$CORES &  # 1> /dev/null 2>&1 
-# else
 
+flags=""
+if [ ${command_data_queue} -gt 0 ]
+then
+  flags="--fp-command-data-queue"
+fi
+
+
+# Log execution command
 echo $TAS_DIR/tas/tas --dpdk-extra=--vdev \
-	--dpdk-extra="virtio_user0,path=$socket_file,queues=$QUEUES" \
-	--dpdk-extra=--file-prefix --dpdk-extra=$prefix \
-	--dpdk-extra=--no-pci \
-	--fp-no-xsumoffload \
-	--fp-no-autoscale \
+  --dpdk-extra="virtio_user0,path=$socket_file,queues=$QUEUES" \
+  --dpdk-extra=--file-prefix --dpdk-extra=$prefix \
+  --dpdk-extra=--no-pci \
+  --fp-no-xsumoffload \
+  --fp-no-autoscale \
   --fp-no-ints \
-	--ip-addr=$IP \
-	--cc=dctcp-win \
-	--fp-cores-max=$CORES &
+  --ip-addr=$IP \
+  --cc=dctcp-win \
+  --fp-cores-max=$CORES \
+  ${flags} &
 
 exec $TAS_DIR/tas/tas --dpdk-extra=--vdev \
-	--dpdk-extra="virtio_user0,path=$socket_file,queues=$QUEUES" \
-	--dpdk-extra=--file-prefix --dpdk-extra=$prefix \
-	--dpdk-extra=--no-pci \
-	--fp-no-xsumoffload \
-	--fp-no-autoscale \
+  --dpdk-extra="virtio_user0,path=$socket_file,queues=$QUEUES" \
+  --dpdk-extra=--file-prefix --dpdk-extra=$prefix \
+  --dpdk-extra=--no-pci \
+  --fp-no-xsumoffload \
+  --fp-no-autoscale \
   --fp-no-ints \
-	--ip-addr=$IP \
-	--cc=dctcp-win \
-	--fp-cores-max=$CORES &  # 1> /dev/null 2>&1 
-# fi
-# --dpdk-extra=-l --dpdk-extra=0-$(($CORES - 1)) \
+  --ip-addr=$IP \
+  --cc=dctcp-win \
+  --fp-cores-max=$CORES \
+  ${flags} &  # 1> /dev/null 2>&1 
 
 
 # wait for tas server to be ready
@@ -77,7 +74,7 @@ cores=1
 mtcp_config=foo
 result_file=/tmp/log_drop_client.txt
 if [ -z "$message_size" ]; then
-	message_size=200
+  message_size=200
 fi
 max_pending_flow=64
 openall_delay=0
@@ -86,23 +83,23 @@ dst_ip_port_pair=$(echo "$dst_ip_port_pair" | tr -d '"')
 echo $dst_ip_port_pair
 
 if [ "$type" = "client" ]; then
-	echo LD_PRELOAD=$TAS_DIR/lib/libtas_interpose.so \
-		$TAS_BENCH/micro_rpc_modified/testclient_linux \
-		$count_ip_port_pair $dst_ip_port_pair $app_cores \
-		$mtcp_config $result_file $message_size $max_pending_flow \
-		$count_flow $flow_duration $message_per_sec $openall_delay \
-		$flow_num_msg
+  echo LD_PRELOAD=$TAS_DIR/lib/libtas_interpose.so \
+    $TAS_BENCH/micro_rpc_modified/testclient_linux \
+    $count_ip_port_pair $dst_ip_port_pair $app_cores \
+    $mtcp_config $result_file $message_size $max_pending_flow \
+    $count_flow $flow_duration $message_per_sec $openall_delay \
+    $flow_num_msg
 
-	LD_PRELOAD=$TAS_DIR/lib/libtas_interpose.so \
-		$TAS_BENCH/micro_rpc_modified/testclient_linux \
-		$count_ip_port_pair $dst_ip_port_pair $app_cores \
-		$mtcp_config $result_file $message_size $max_pending_flow \
-		$count_flow $flow_duration $message_per_sec $openall_delay \
-		$flow_num_msg
+  LD_PRELOAD=$TAS_DIR/lib/libtas_interpose.so \
+    $TAS_BENCH/micro_rpc_modified/testclient_linux \
+    $count_ip_port_pair $dst_ip_port_pair $app_cores \
+    $mtcp_config $result_file $message_size $max_pending_flow \
+    $count_flow $flow_duration $message_per_sec $openall_delay \
+    $flow_num_msg
 elif [ "$type" = "server" ]; then
-	LD_PRELOAD=$TAS_DIR/lib/libtas_interpose.so \
-		$TAS_BENCH/micro_rpc_modified/echoserver_linux $port $cores $mtcp_config $count_flow $message_size 
+  LD_PRELOAD=$TAS_DIR/lib/libtas_interpose.so \
+    $TAS_BENCH/micro_rpc_modified/echoserver_linux $port $cores $mtcp_config $count_flow $message_size 
 else
-	echo "type variable is not supported (type=$type)"
+  echo "type variable is not supported (type=$type)"
 fi
 

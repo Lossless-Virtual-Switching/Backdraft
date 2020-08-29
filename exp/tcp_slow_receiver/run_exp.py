@@ -194,7 +194,7 @@ def main():
     if count_cpu < 3:
         print('warning: each tas_container needs at least 3 cores to function properly')
 
-    tas_cores = count_queue  # how many cores are allocated to tas
+    tas_cores = 1  # how many cores are allocated to tas (fp-max-cores)
 
     cores =  []
     last_cpu_id = 0

@@ -154,10 +154,21 @@ int network_init(unsigned n_threads)
     port_conf.intr_conf.rxq = 0;
 
   /* initialize port */
-  ret = rte_eth_dev_configure(net_port_id, n_threads, n_threads, &port_conf);
-  if (ret < 0) {
-    fprintf(stderr, "rte_eth_dev_configure failed\n");
-    goto error_exit;
+
+  if (config.fp_command_data_queue) {
+    // TODO: multi core is not implemented in command data queue mode
+    printf("port was initialized in CDQ mode (only one worker is allowed)\n");
+    ret = rte_eth_dev_configure(net_port_id, 2, 2, &port_conf);
+    if (ret < 0) {
+      fprintf(stderr, "rte_eth_dev_configure failed\n");
+      goto error_exit;
+    }
+  } else {
+    ret = rte_eth_dev_configure(net_port_id, n_threads, n_threads, &port_conf);
+    if (ret < 0) {
+      fprintf(stderr, "rte_eth_dev_configure failed\n");
+      goto error_exit;
+    }
   }
 
 
@@ -219,6 +230,7 @@ int network_thread_init(struct dataplane_context *ctx)
   unsigned ctrl_pool_id;
   static unsigned ctrl_pool_id_counter;
   char pool_name[32];
+  struct rte_mempool *pool_2 = NULL;
 
   /* allocate mempool */
   if ((t->pool = mempool_alloc()) == NULL) {
@@ -230,13 +242,16 @@ int network_thread_init(struct dataplane_context *ctx)
     ctrl_pool_id = __sync_fetch_and_add(&ctrl_pool_id_counter, 1);
     snprintf(pool_name, 32, "ctrl_pool_%u", ctrl_pool_id);
     t->ctrl_cmd_pool = rte_pktmbuf_pool_create(pool_name, PERTHREAD_MBUFS, 
-          	  64, 0, RTE_MBUF_DEFAULT_BUF_SIZE, rte_socket_id());
+              64, 0, RTE_MBUF_DEFAULT_BUF_SIZE, rte_socket_id());
     if (t->ctrl_cmd_pool == NULL) {
       goto error_mpool;
     }
     // if ((t->ctrl_cmd_pool = mempool_alloc()) == NULL) {
     //         goto error_mpool;
     // }
+    if ((pool_2 = mempool_alloc()) == NULL) {
+      goto error_mpool;
+    }
   }
 
   /* initialize tx queue */
@@ -248,6 +263,18 @@ int network_thread_init(struct dataplane_context *ctx)
   if (ret != 0) {
     fprintf(stderr, "network_thread_init: rte_eth_tx_queue_setup failed\n");
     goto error_tx_queue;
+  }
+
+  if (config.fp_command_data_queue) {
+    // TODO: multiple core support is not implemented for command data queue
+    rte_spinlock_lock(&initlock);
+    ret = rte_eth_tx_queue_setup(net_port_id, 1, TX_DESCRIPTORS,
+            rte_socket_id(), &eth_devinfo.default_txconf);
+    rte_spinlock_unlock(&initlock);
+    if (ret != 0) {
+      fprintf(stderr, "network_thread_init: rte_eth_tx_queue_setup failed\n");
+      goto error_tx_queue;
+    }
   }
 
   /* barrier to make sure tx queues are initialized first */
@@ -263,6 +290,18 @@ int network_thread_init(struct dataplane_context *ctx)
   if (ret != 0) {
     fprintf(stderr, "network_thread_init: rte_eth_rx_queue_setup failed\n");
     goto error_rx_queue;
+  }
+
+  if (config.fp_command_data_queue) {
+    // TODO: multiple core support is not implemented for command data queue
+    rte_spinlock_lock(&initlock);
+    ret = rte_eth_rx_queue_setup(net_port_id, 1, RX_DESCRIPTORS,
+            rte_socket_id(), &eth_devinfo.default_rxconf, pool_2);
+    rte_spinlock_unlock(&initlock);
+    if (ret != 0) {
+      fprintf(stderr, "network_thread_init: rte_eth_rx_queue_setup failed\n");
+      goto error_rx_queue;
+    }
   }
 
   /* barrier to make sure rx queues are initialized first */

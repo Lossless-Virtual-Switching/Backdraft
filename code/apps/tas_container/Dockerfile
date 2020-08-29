@@ -1,12 +1,25 @@
 FROM ubuntu:18.04
 
+
 # install some programs
 RUN apt-get update; \
     apt-get install -y git build-essential python3 python3-pip libnuma-dev; \
     cd /usr/bin/; \
-    ln -sf python3 python 
+    ln -sf python3 python; \
+    apt-get install -y autoconf automake libtool curl make g++ unzip pkg-config
 
-# setup post-loom
+
+# build protobuf
+RUN cd /opt/; \
+    git clone https://github.com/google/protobuf.git; \
+    git clone https://github.com/protobuf-c/protobuf-c; \
+    cd protobuf/; \
+    ./autogen.sh && ./configure && make -j && make install && ldconfig; \
+    cd ../protobuf-c/ ; \
+    ./autogen.sh && ./configure && make && make install && ldconfig
+
+
+# setup post-loom: build DPDK, TAS, and, benchmark
 WORKDIR /root
 COPY ./post-loom.tar.xz ./post-loom.tar.xz
 RUN  tar -xzf ./post-loom.tar.xz; \
@@ -25,3 +38,4 @@ RUN cd post-loom/code/dpdk; \
 COPY ./boot.sh ./boot.sh
 
 ENTRYPOINT ["/root/boot.sh"]
+

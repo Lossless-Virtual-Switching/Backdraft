@@ -10,7 +10,7 @@ CFLAGS += $(EXTRA_CFLAGS)
 CFLAGS_SHARED += $(CFLAGS) -fPIC
 LDFLAGS += -pthread -g
 LDFLAGS += $(EXTRA_LDFLAGS)
-LDLIBS += -lm -lpthread -lrt -ldl
+LDLIBS += -lm -lpthread -lrt -ldl -lprotobuf-c
 LDLIBS += $(EXTRA_LDLIBS)
 
 PREFIX ?= /usr/local

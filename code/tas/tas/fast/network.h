@@ -94,11 +94,11 @@ static inline int network_poll(struct network_thread *t, unsigned num,
 {
   struct rte_mbuf **mbs = (struct rte_mbuf **) bhs;
 
-  // if (config.fp_command_data_queue) {
-  //   num = poll_ctrl_queue(net_port_id, BKDRFT_CTRL_QUEUE, num, mbs, false);
-  // } else {
+  if (config.fp_command_data_queue) {
+    num = poll_ctrl_queue(net_port_id, BKDRFT_CTRL_QUEUE, num, mbs, false);
+  } else {
     num = rte_eth_rx_burst(net_port_id, t->queue_id, mbs, num);
-  // }
+  }
   if (num == 0) {
     return 0;
   }
@@ -117,12 +117,13 @@ static inline int network_poll(struct network_thread *t, unsigned num,
 static inline int network_send(struct network_thread *t, unsigned num,
     struct network_buf_handle **bhs)
 {
-  // int qid = 0; // TODO: this should be chosen differently (perflow_queueing)
+  // TODO: changes only work on single core TAS
+  int qid = 0; // TODO: this should be chosen differently (perflow_queueing)
   struct rte_mbuf **mbs = (struct rte_mbuf **) bhs;
 
-  // if(config.fp_command_data_queue) {
-  //   qid = 1;
-  // }
+  if(config.fp_command_data_queue) {
+    qid = 1;
+  }
 
 #ifdef FLEXNIC_TRACE_TX
   unsigned i;
@@ -132,8 +133,8 @@ static inline int network_send(struct network_thread *t, unsigned num,
   }
 #endif
 
-  // return send_pkt(net_port_id, qid, mbs, num, config.fp_command_data_queue, t->ctrl_cmd_pool); // t->queue_id, t->pool
-  return rte_eth_tx_burst(net_port_id, t->queue_id, mbs, num);
+  return send_pkt(net_port_id, qid, mbs, num, config.fp_command_data_queue, t->ctrl_cmd_pool); // t->queue_id, t->pool  
+  // return rte_eth_tx_burst(net_port_id, t->queue_id, mbs, num);
 }
 
 

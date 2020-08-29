@@ -101,15 +101,19 @@ server_2_out = BKDRFTQueueOut(port=server2, qid=0, count_queues=Q,
   mname='server2', overlay=False)
 # server_2_out = QueueOut(port=server2, qid=0)
 
-# client_1_out = BKDRFTQueueOut(port=client1, qid=0, count_queues=Q,
-#   backpressure=bp, lossless=lossless, cdq=cdq, per_flow_buffering=pfq,
-#   mname='client1', overlay=False)
-client_1_out = QueueOut(port=client1, qid=0)
+if cdq:
+    client_1_out = BKDRFTQueueOut(port=client1, qid=0, count_queues=Q,
+      backpressure=bp, lossless=lossless, cdq=cdq, per_flow_buffering=pfq,
+      mname='client1', overlay=False)
+else:
+    client_1_out = QueueOut(port=client1, qid=0)
 
-# client_2_out = BKDRFTQueueOut(port=client2, qid=0, count_queues=Q,
-#   backpressure=bp, lossless=lossless, cdq=cdq, per_flow_buffering=pfq,
-#   mname='client2', overlay=False)
-client_2_out = QueueOut(port=client2, qid=0)
+if cdq:
+    client_2_out = BKDRFTQueueOut(port=client2, qid=0, count_queues=Q,
+      backpressure=bp, lossless=lossless, cdq=cdq, per_flow_buffering=pfq,
+      mname='client2', overlay=False)
+else:
+    client_2_out = QueueOut(port=client2, qid=0)
 
 # client
 BKDRFTQueueInc(port=client1, qid=0, backpressure=bp, cdq=cdq) -> aggregate
@@ -144,5 +148,4 @@ server_side_iplookup:2 -> client_2_out
 server_side_iplookup:0 -> srepeater
 srepeater:1 -> client_1_out
 srepeater:2 -> client_2_out
-
 
