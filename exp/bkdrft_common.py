@@ -13,12 +13,12 @@ __bessctl_bin = os.path.join(__bessctl_dir, 'bessctl')
 __bess_kmod_dir = os.path.join(__bess_dir, 'core/kmod')
 
 
-def bessctl_do(command, stdout=None):
+def bessctl_do(command, stdout=None, stderr=None):
     """
     Run bessctl command
     """
     cmd = '{} {}'.format(__bessctl_bin, command)
-    ret = subprocess.run(cmd, shell=True, stdout=stdout)
+    ret = subprocess.run(cmd, shell=True, stdout=stdout, stderr=stderr)
     return ret
 
 

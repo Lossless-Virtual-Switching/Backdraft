@@ -1,8 +1,7 @@
 #!/bin/bash
 
 curdir=$(dirname $0)
-curdir=$(realpath $curdir)
-
+curdir=$(realpath $curdir) 
 if [ $# -lt 20 ]; then
 	echo "useage $(basename $0): '< expecting 20 params as below >'"
 	echo "== docker config ==:"
@@ -96,5 +95,6 @@ sudo docker run \
 	--log-opt mode=non-blocking \
 	--log-opt max-buffer-size=4m \
 	--log-opt max-size="20m" \
+	--network none \
 	$container_image_name
 

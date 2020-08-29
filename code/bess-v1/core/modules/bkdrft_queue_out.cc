@@ -9,8 +9,8 @@
 #include <rte_ethdev.h>
 
 #define MIN_PAUSE_DURATION (10000)
-#define MAX_PAUSE_DURATION (46875) // (31250L) // (93750)// (125000)// (62500L)
-// (ns)// 93750
+#define MAX_PAUSE_DURATION (125000) // (31250L) // (93750)// (125000)// (62500L)
+// (ns)// 93750// 46875
 #define PAUSE_DURATION_GAMMA (2)  // (ns)
 #define MAX_BUFFER_SIZE (4194304) // (5242880) //  (1048576) // 1 mega byte
 #define LOW_WATER_MARK (5449973)  // ~ MAX_BUFFER_SIZE * 2/3
@@ -697,10 +697,6 @@ void BKDRFTQueueOut::ProcessBatchWithBuffer(Context *cntx,
 
   // if (BKDRFTQueueOut::count_packets_in_buffer_ > buffer_len_high_water) {
   if (packets_in_buffer > buffer_len_high_water) {
-    if (backpressure_)
-      // TODO: maybe findout how many bytes are in this flow's buffers
-      Pause(cntx, flow, qid, packets_in_buffer);
-
     if (overlay_ && cntx->current_ns - fstate->ts_last_overlay > fstate->no_overlay_duration) {
       fstate->ts_last_overlay = cntx->current_ns; 
       fstate->overlay_state = OverlayState::TRIGGERED;
@@ -709,6 +705,11 @@ void BKDRFTQueueOut::ProcessBatchWithBuffer(Context *cntx,
       fstate->no_overlay_duration = duration;
     }
   } 
+
+  if (backpressure_ && packets_in_buffer > bp_buffer_len_high_water)
+    // TODO: maybe findout how many bytes are in this flow's buffers
+    Pause(cntx, flow, qid, packets_in_buffer);
+
   // NOTE: MeasureForPolicy is not used in the case of having buffers. it was decided not to have the function call overhead.
   // it probably should be removed.
 }

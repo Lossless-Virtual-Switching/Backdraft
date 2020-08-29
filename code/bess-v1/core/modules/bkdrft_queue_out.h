@@ -20,6 +20,8 @@ const int drop_high_water = 30; // assumming batch size is 32
 const int buffer_len_high_water = 256;
 const int buffer_len_low_water = 64;
 
+const int bp_buffer_len_high_water = 32;
+
 using bess::bkdrft::Flow;
 struct queue_flow_info {
   // TODO: remove the assumption of one flow per queue

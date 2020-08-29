@@ -347,7 +347,8 @@ BKDRFTQueueInc::RunTask(Context *ctx, bess::PacketBatch *batch, void *arg) {
   }
 
   if (cnt > 0) {
-    if (backpressure_) {
+    // only pause vhost the nic should not be paused (?)
+    if (p->getConnectedPortType() == VHOST && backpressure_) {
       // ! assume all the batch belongs to the same flow
       bess::bkdrft::Flow flow = PacketToFlow(*(batch->pkts()[0]));
 

@@ -98,22 +98,23 @@ server_1_out = BKDRFTQueueOut(port=server1, qid=0, count_queues=Q,
 
 server_2_out = BKDRFTQueueOut(port=server2, qid=0, count_queues=Q,
   backpressure=bp, lossless=lossless, cdq=cdq, per_flow_buffering=pfq,
-  mname='server1', overlay=False)
+  mname='server2', overlay=False)
 # server_2_out = QueueOut(port=server2, qid=0)
 
-client_1_out = BKDRFTQueueOut(port=client1, qid=0, count_queues=Q,
-  backpressure=bp, lossless=lossless, cdq=cdq, per_flow_buffering=pfq,
-  mname='server1', overlay=False)
-# client_out = QueueOut(port=client1, qid=0)
+# client_1_out = BKDRFTQueueOut(port=client1, qid=0, count_queues=Q,
+#   backpressure=bp, lossless=lossless, cdq=cdq, per_flow_buffering=pfq,
+#   mname='client1', overlay=False)
+client_1_out = QueueOut(port=client1, qid=0)
 
-client_2_out = BKDRFTQueueOut(port=client2, qid=0, count_queues=Q,
-  backpressure=bp, lossless=lossless, cdq=cdq, per_flow_buffering=pfq,
-  mname='server1', overlay=False)
-# client_2_out = QueueOut(port=client2, qid=0)
+# client_2_out = BKDRFTQueueOut(port=client2, qid=0, count_queues=Q,
+#   backpressure=bp, lossless=lossless, cdq=cdq, per_flow_buffering=pfq,
+#   mname='client2', overlay=False)
+client_2_out = QueueOut(port=client2, qid=0)
 
 # client
 BKDRFTQueueInc(port=client1, qid=0, backpressure=bp, cdq=cdq) -> aggregate
 BKDRFTQueueInc(port=client2, qid=0, backpressure=bp, cdq=cdq) -> aggregate
+
 
 aggregate -> client_side_iplookup
 client_side_iplookup:1 -> server_1_out
@@ -126,6 +127,16 @@ crepeater:2 -> server_2_out
 # server
 BKDRFTQueueInc(port=server1, qid=0, backpressure=bp, cdq=cdq) -> aggregate_server
 BKDRFTQueueInc(port=server2, qid=0, backpressure=bp, cdq=cdq) ->aggregate_server 
+
+
+if pfq and not cdq:
+    # poll other queues
+    for i in range(1, Q):
+        # BKDRFTQueueInc(port=client1, qid=i, backpressure=bp, cdq=cdq) -> aggregate
+        # BKDRFTQueueInc(port=client2, qid=i, backpressure=bp, cdq=cdq) -> aggregate
+        BKDRFTQueueInc(port=server1, qid=i, backpressure=bp, cdq=cdq) -> aggregate_server
+        BKDRFTQueueInc(port=server2, qid=i, backpressure=bp, cdq=cdq) ->aggregate_server 
+
 
 aggregate_server -> server_side_iplookup
 server_side_iplookup:1 -> client_1_out

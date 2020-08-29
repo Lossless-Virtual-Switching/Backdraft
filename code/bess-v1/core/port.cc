@@ -292,7 +292,7 @@ void Port::RecordRate(packet_dir_t dir, queue_t qid, bess::Packet **pkts,
   }
 
   // TODO: maybe use a moving average
-  static const double g = 0.50;
+  static const double g = 0.80;
   diff = now - rate_.timestamp[dir][qid];
   // rate_.pps[dir][qid] = 4000000LL;
   // rate_.bps[dir][qid] = 10000000000LL;

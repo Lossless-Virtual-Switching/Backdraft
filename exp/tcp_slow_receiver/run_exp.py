@@ -87,8 +87,8 @@ def spin_up_tas(conf):
                 '{type} {port} {count_flow} {count_ips} "{_ips}" {flow_duration} '
                 '{message_per_sec} {message_size} {flow_num_msg} {count_threads}').format(
             tas_script=tas_spinup_script, count_ips=count_ips, _ips=_ips, **conf)
-        print(cmd)
-        return subprocess.run(cmd, shell=True)
+        # print(cmd)
+        return subprocess.run(cmd, shell=True, stdout=subprocess.PIPE)
 
 
 def get_pps_from_info_log():
@@ -105,7 +105,11 @@ def get_pps_from_info_log():
                 name = raw[7]
                 if name not in book:
                     book[name] = list()
-                book[name].append(value)
+                book[name].append(float(value))
+    return book
+
+
+def str_format_pps(book): 
     res = []
     res.append("=== pause call per sec ===")
     for name in book:
@@ -115,6 +119,53 @@ def get_pps_from_info_log():
     res.append("=== pause call per sec ===")
     txt = '\n'.join(res)
     return txt
+
+
+def get_port_packets(port_name):
+    p = bessctl_do('show port {}'.format(port_name), subprocess.PIPE)
+    txt = p.stdout.decode()
+    txt = txt.strip()
+    lines = txt.split('\n')
+    count_line = len(lines)
+    res = { 'rx': { 'packet': -1, 'byte': -1, 'drop': -1},
+            'tx': {'packet': -1, 'byte': -1, 'drop': -1}}
+    if count_line < 6:
+        return res
+
+    raw = lines[2].split()
+    res['rx']['packet'] = int(raw[2].replace(',',''))
+    res['rx']['byte'] = int(raw[4].replace(',',''))
+    raw = lines[3].split() 
+    res['rx']['drop'] = int(raw[1].replace(',',''))
+
+
+    raw = lines[4].split()
+    res['tx']['packet'] = int(raw[2].replace(',',''))
+    res['tx']['byte'] = int(raw[4].replace(',',''))
+    raw = lines[5].split() 
+    res['tx']['drop'] = int(raw[1].replace(',',''))
+    return res
+
+
+def delta_port_packets(before, after):
+    res = {}
+    for key, value in after.items():
+        if isinstance(value, dict):
+            res[key] = {}
+            for key2, val2 in value.items():
+                res[key][key2] = val2 - before[key][key2]
+        elif isinstance(value, int):
+            res[key] = value - before[key]
+    return res
+
+
+def mean(iterable):
+    count = 0
+    summ = 0
+    for val in iterable:
+        count += 1
+        summ += val
+    return summ / count
 
 
 def main():
@@ -146,10 +197,13 @@ def main():
     tas_cores = count_queue  # how many cores are allocated to tas
 
     cores =  []
+    last_cpu_id = 0
+    cpus = [count_cpu, count_cpu, count_cpu, count_cpu]
     for instance_num in range(count_instance):
         cpu_ids = []
-        for cpu_num in range(count_cpu):
-            cpu_id = instance_num * count_cpu + cpu_num
+        for cpu_num in range(cpus[instance_num]):
+            cpu_id = last_cpu_id
+            last_cpu_id += 1
             if cpu_id > available_cores:
                 print('warning: number of cores was now enough some '
                 'cores are assigned to multiple containers')
@@ -164,6 +218,7 @@ def main():
     # how much cpu slow receiver have
     slow_rec_cpu = count_cpu * ((100 - slow_by) / 100)
 
+    print('count core for each container:', count_cpu)
     print(count_cpu, cores)
 
     # image_name = 'tas_unidir'
@@ -179,7 +234,7 @@ def main():
             'prefix': 'tas_server_1',
             'cpus': count_cpu,
             'port': 1234,
-            'count_flow': 10,
+            'count_flow': 100,
             'ips': [('10.0.0.2', 1234),],  # not used for server
             'flow_duration': 0,  # ms # not used for server
             'message_per_sec': -1,  # not used for server
@@ -200,7 +255,7 @@ def main():
             'prefix': 'tas_server_2',
             'cpus': slow_rec_cpu,
             'port': 5678,
-            'count_flow': 10,
+            'count_flow': 100,
             'ips': [('10.0.0.2', 1234),],  # not used for server
             'flow_duration': 0,  # ms # not used for server
             'message_per_sec': -1,  # not used for server
@@ -221,7 +276,7 @@ def main():
             'prefix': 'tas_client_1',
             'cpus': count_cpu,
             'port': 7788,  # not used for client
-            'count_flow': count_flow,
+            'count_flow': 4,
             'ips': [('10.10.0.1', 1234)],  # , ('10.10.0.2', 5678)
             'flow_duration': 0,
             'message_per_sec': -1,
@@ -256,7 +311,8 @@ def main():
     ]
 
     # Kill anything running
-    bessctl_do('daemon stop') # this may show an error it is nothing
+    bessctl_do('daemon stop', stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE) # this may show an error it is nothing
 
     # Stop and remove running containers
     print('remove containers from previous experiment')
@@ -290,33 +346,43 @@ def main():
     print('==============================')
 
     # Spin up TAS
+    print('running containers...')
     for c in containers:
         spin_up_tas(c)
         sleep(5)
 
+
+    print('5 sec warm up...')
+    warmup_time = 5
+    sleep(warmup_time)
+
+    # Get result before
+    before_res = get_port_packets('tas_server_1')
+
+    # Wait for experiment duration to finish
     print('wait {} seconds...'.format(duration))
     sleep(duration)
 
-    # Stop running containers
-    print('stop containers...')
-    for c in reversed(containers):
-        name = c.get('name')
-        subprocess.run('sudo docker stop -t 0 {}'.format(name), shell=True,
-            stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    after_res = get_port_packets('tas_server_1')
+    # client 1 tas logs
+    client_1_container_name = containers[2]['name']
+    p = subprocess.run('sudo docker logs {}'.format(client_1_container_name),
+            shell=True, stdout=subprocess.PIPE)
+    client_1_tas_logs = p.stdout.decode().strip()
 
     # Collect logs and store in a file
     print('gather client log, through put and percentiles...')
     subprocess.run(
         'sudo docker cp tas_client_1:/tmp/log_drop_client.txt {}'.format(output_log_file),
-        shell=True)
-    subprocess.run('sudo chown $USER {}'.format(output_log_file), shell=True)
+        shell=True, stdout=subprocess.PIPE)
+    subprocess.run('sudo chown $USER {}'.format(output_log_file), shell=True, stdout=subprocess.PIPE)
 
     print('gather TAS engine logs')
     logs = ['\n']
     for container in containers:
         name = container['name']
         p = subprocess.run('sudo docker logs {}'.format(name), shell=True,
-                stdout=subprocess.PIPE)
+                stdout=subprocess.PIPE, stderr=subprocess.PIPE)
         txt = p.stdout.decode()
         header = '=================\n{}\n================='.format(name)
         logs.append(header)
@@ -328,33 +394,97 @@ def main():
     p = bessctl_do('show port tas_server_1', subprocess.PIPE)
     txt = p.stdout.decode()
     logs.append(txt)
-    print('server1\n', txt)
+#     print('server1\n', txt)
 
     p = bessctl_do('show port tas_server_2', subprocess.PIPE)
     txt = p.stdout.decode()
     logs.append(txt)
-    print('server2\n', txt)
+#     print('server2\n', txt)
 
     p = bessctl_do('show port tas_client_1', subprocess.PIPE)
     txt = p.stdout.decode()
     logs.append(txt)
-    print('client1\n', txt)
+#     print('client1\n', txt)
 
     p = bessctl_do('show port tas_client_2', subprocess.PIPE)
     txt = p.stdout.decode()
     logs.append(txt)
-    print('client2\n', txt)
+#     print('client2\n', txt)
 
     # pause call per sec
     bessctl_do('command module bkdrft_queue_out0 get_pause_calls EmptyArg {}')
     bessctl_do('command module bkdrft_queue_out1 get_pause_calls EmptyArg {}')
-    bessctl_do('command module bkdrft_queue_out2 get_pause_calls EmptyArg {}')
-    bessctl_do('command module bkdrft_queue_out3 get_pause_calls EmptyArg {}')
-    pps_log = get_pps_from_info_log()
-    print(pps_log)
+    # bessctl_do('command module bkdrft_queue_out2 get_pause_calls EmptyArg {}')
+    # bessctl_do('command module bkdrft_queue_out3 get_pause_calls EmptyArg {}')
+    pps_val = get_pps_from_info_log()
+    pps_log = str_format_pps(pps_val)
+    # print(pps_log)
 
     logs.append(pps_log)
     logs.append('\n')
+
+    # extract measures for client ==============
+    # 1) get sw throughput and drop
+    client_tp = delta_port_packets(before_res, after_res)
+    # 2) get TAS throughput and latency
+    client_1_dst_count = len(containers[2]['ips'])
+    lines = client_1_tas_logs.split('\n')
+    count_line = len(lines)
+    line_jump = (2 + client_1_dst_count)
+    line_no_start = 29 + line_jump * (5 + warmup_time)
+    line_no_end = 29 + line_jump * (5 + duration + warmup_time)
+    tas_res = {'mbps': 0, 'pps': 0, 'latency@99.9': 0, 'latency@99.99': 0, 'drop': 0}
+
+    # engine drop line
+    if line_no_end < count_line:
+        for line_no in range(line_no_start, line_no_end, line_jump):
+            line = lines[line_no_end]
+            raw = line.strip().split()
+            drop = float(raw[1].split('=')[1])
+            # print(line, drop)
+            tas_res['drop'] += drop # accumulate drop per sec
+
+            # app stats line
+            line_no = line_no + 2
+            line = lines[line_no]
+            line = line.strip()
+            # print(line)
+            raw = line.split()
+            tp = float(raw[1].split('=')[1])  # mbps
+            tp_pkt = float(raw[3].split('=')[1])  #pps
+            l1 = float(raw[13].split('=')[1]) # 99.9 us
+            l2 = float(raw[15].split('=')[1]) # 99.9 us
+            tas_res['mbps'] = max(tp, tas_res['mbps'])
+            tas_res['pps'] = max(tp_pkt, tas_res['pps'])
+            tas_res['latency@99.9'] = max(l1, tas_res['latency@99.9'])
+            tas_res['latency@99.99'] = max(l2,tas_res['latency@99.99'])
+    else:
+        print('warning: TAS engine data not found, line number unexpected')
+
+    pps_avg = {}
+    for key, vals in pps_val.items():
+        avg = mean(vals[-duration:])
+        pps_avg[key] = avg
+
+    logs.append('\nclient 1 sw')
+    logs.append(str(client_tp))
+    logs.append('\nclient 1 tas')
+    logs.append(str(tas_res))
+    logs.append('\npps')
+    logs.append(str(pps_avg))
+    logs.append('\n')
+
+    print('client 1 sw')
+    print(str(client_tp))
+    print('client 1 tas')
+    print(str(tas_res))
+    print('pps')
+    print(str(pps_avg))
+
+    # print(before_res)
+    # print(after_res)
+    # ==================
+
 
     # append swithc log to client log file
     sw_log = '\n'.join(logs)
@@ -364,9 +494,9 @@ def main():
 
     # Stop running containers
     print('stop and remove containers...')
-    for c in reversed(containers):
-        name = c.get('name')
-        subprocess.run('sudo docker stop {}'.format(name), shell=True,
+    for container in reversed(containers):
+        name = container.get('name')
+        subprocess.run('sudo docker stop -t 0 {}'.format(name), shell=True,
             stdout=subprocess.PIPE, stderr=subprocess.PIPE)
         subprocess.run('sudo docker rm {}'.format(name), shell=True,
             stdout=subprocess.PIPE, stderr=subprocess.PIPE)
@@ -406,6 +536,7 @@ if __name__ == '__main__':
     duration = args.duration
     output_log_file = args.client_log
 
+    print('experiment parameters: ')
     print(('count_queue: {}    slow_by: {}   '
            'cdq: {}    pfq: {}    bp: {}    count_flow: {}\n'
           ).format(count_queue, slow_by, cdq, pfq, bp, count_flow))
