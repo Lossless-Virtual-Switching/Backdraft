@@ -136,31 +136,6 @@ bool BKDRFTQueueInc::IsQueuePausedInCache(Context *ctx, queue_t qid) {
   return false;
 }
 
-bess::pb::Ctrl *BKDRFTQueueInc::ParseCtrlMsg(bess::Packet *pkt) {
-  void *ptr;
-  size_t size = get_packet_payload(pkt, &ptr, true);
-  if (ptr == nullptr) {
-    LOG(WARNING) << "ParseCtrlMsg: could not find payload of the pkt.";
-    return nullptr;
-  }
-  if (size >= BKDRFT_MAX_MESSAGE_SIZE) {
-    LOG(WARNING) << "ParseCtrlMsg: payload size is greater than expected.";
-    return nullptr;
-  }
-
-  char msg[BKDRFT_MAX_MESSAGE_SIZE];
-  bess::utils::Copy(msg, ptr, size, false);
-  msg[size] = '\0';
-  std::string strData(msg);
-  bess::pb::Ctrl *ctrl_msg = new bess::pb::Ctrl();
-  bool parseRes = ctrl_msg->ParseFromString(strData);
-  if (!parseRes) {
-    // LOG(WARNING) << "Failed to parse ctrl message\n";
-    return nullptr;
-  }
-  return ctrl_msg;
-}
-
 uint32_t BKDRFTQueueInc::ReadBatch(queue_t qid, bess::PacketBatch *batch,
                                    uint32_t burst) {
   Port *p = port_;
@@ -242,12 +217,16 @@ uint32_t BKDRFTQueueInc::CDQ(Context *ctx, bess::PacketBatch *batch, queue_t &_q
       //   continue;
       // }
 
-      char message_type = '5';
+      char message_type = '5'; // Testing: initialize to something invalid
       void *pb; // a pointer to parsed protobuf object
       res = parse_bkdrft_msg(pkt, &message_type, &pb);
       if (res != 0) {
-	// LOG(WARNING) << "Failed to parse bkdrft msg\n";
+        // LOG(WARNING) << "Failed to parse bkdrft msg\n";
         bess::Packet::Free(pkt); // free unknown packet
+
+        // send packet through pipeline it is not ctrl msg
+        // LOG(INFO) << "emiting pkt: data offset: " << pkt->data_off() << "\n";
+        // EmitPacket(ctx, pkt);
         continue;
       }
 
@@ -256,27 +235,27 @@ uint32_t BKDRFTQueueInc::CDQ(Context *ctx, bess::PacketBatch *batch, queue_t &_q
         dqid = static_cast<queue_t>(ctrl_msg->qid());
         nb_pkts = ctrl_msg->nb_pkts();
         q_status_[dqid].remaining_dpkt += nb_pkts;
+        // LOG(INFO) << "Received ctrl message: qid: " << (int)dqid << "\n";
 
         delete ctrl_msg;
       } else if (message_type == BKDRFT_OVERLAY_MSG_TYPE) {
         bess::pb::Overlay *overlay_msg =
             reinterpret_cast<bess::pb::Overlay *>(pb);
 
-        // LOG(INFO) << "Received overlay message:1 \n";
         if (overlay_) {
       	  uint64_t pps = overlay_msg->packet_per_sec();
-          LOG(INFO) << "Received overlay message: pps: "
-                    << pps << "\n";
+          LOG(INFO) << "Received overlay message: pps: " << pps << "\n";
 
 	        // update port rate limit for queue
           auto &overlay_ctrl = BKDRFTOverlayCtrl::GetInstance();
           overlay_ctrl.ApplyOverlayMessage(*overlay_msg, ctx->current_ns);
-        } else {
-	  LOG(ERROR) << "Wrong message type!\n";
-	}
-
+        }
         delete overlay_msg;
+      } else {
+        LOG(ERROR) << "Wrong message type!\n";
       }
+
+
       bess::Packet::Free(pkt); // free ctrl pkt
     }
     found_qid = CheckQueuedCtrlMessages(ctx, &qid, &burst);

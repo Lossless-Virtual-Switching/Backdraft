@@ -141,17 +141,17 @@ size_t get_payload(struct rte_mbuf *pkt, void **payload) {
   struct rte_ether_hdr *eth = get_ethernet_header(pkt);
   *payload = NULL;
   if (!eth) {
-    printf("eth is null\n");
+    // printf("eth is null\n");
     return 0;
   }
   struct rte_ipv4_hdr *ip = get_ipv4_header(eth);
   if (!ip) {
-    printf("ip is null\n");
+    // printf("ip is null\n");
     return 0;
   }
   struct rte_udp_hdr *udp = get_udp_header(ip);
   if (!udp) {
-    printf("udp is null\n");
+    // printf("udp is null\n");
     return 0;
   }
   *payload = (udp + 1);

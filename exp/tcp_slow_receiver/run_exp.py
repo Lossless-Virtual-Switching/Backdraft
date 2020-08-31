@@ -351,7 +351,6 @@ def main():
         spin_up_tas(c)
         sleep(5)
 
-
     print('5 sec warm up...')
     warmup_time = 5
     sleep(warmup_time)
@@ -359,9 +358,13 @@ def main():
     # Get result before
     before_res = get_port_packets('tas_server_1')
 
-    # Wait for experiment duration to finish
-    print('wait {} seconds...'.format(duration))
-    sleep(duration)
+    try:
+        # Wait for experiment duration to finish
+        print('wait {} seconds...'.format(duration))
+        sleep(duration)
+    except:
+        # catch Ctrl-C
+        print('experiment termination process...')
 
     after_res = get_port_packets('tas_server_1')
     # client 1 tas logs
@@ -414,8 +417,9 @@ def main():
     # pause call per sec
     bessctl_do('command module bkdrft_queue_out0 get_pause_calls EmptyArg {}')
     bessctl_do('command module bkdrft_queue_out1 get_pause_calls EmptyArg {}')
-    # bessctl_do('command module bkdrft_queue_out2 get_pause_calls EmptyArg {}')
-    # bessctl_do('command module bkdrft_queue_out3 get_pause_calls EmptyArg {}')
+    if cdq:
+        bessctl_do('command module bkdrft_queue_out2 get_pause_calls EmptyArg {}')
+        bessctl_do('command module bkdrft_queue_out3 get_pause_calls EmptyArg {}')
     pps_val = get_pps_from_info_log()
     pps_log = str_format_pps(pps_val)
     # print(pps_log)
