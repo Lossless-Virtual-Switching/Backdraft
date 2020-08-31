@@ -20,11 +20,6 @@ pipeline_config_temp = os.path.join(cur_script_dir,
 pipeline_config_file = os.path.join(cur_script_dir,
     'pipeline.bess')
 
-tas_spinup_script = os.path.abspath(os.path.join(cur_script_dir,
-    '../../code/apps/tas_container/spin_up_tas_container.sh'))
-# tas_spinup_script = os.path.abspath(os.path.join(cur_script_dir,
-#     '../../code/apps/tas_unidir/spin_up_tas_container.sh'))
-
 
 def update_config():
     """
@@ -45,50 +40,73 @@ def update_config():
 
 
 def spin_up_tas(conf):
-        """
-        Spinup Tas Container
+    """
+    Spinup Tas Container
 
-        note: path to spin_up_tas_container.sh is set in the global variable
-        tas_spinup_script.
-        
-        conf: dict
-        * name:
-        * type: server, client
-        * image: tas_container (it is the preferred image)
-        * cpu: cpuset to use
-        * socket: socket path
-        * ip: current tas ip
-        * prefix:
-        * cpus: how much of cpu should be used (for slow receiver scenario)
-        * port:
-        * count_flow:
-        * ips: e.g. [(ip, port), (ip, port), ...]
-        * flow_duration
-        * message_per_sec
-        * tas_cores
-        * tas_queues
-        * cdq
-        * message_size
-        * flow_num_msg
-        * count_threads
-        """
-        assert conf['type'] in ('client', 'server')
+    note: path to spin_up_tas_container.sh is set in the global variable
+    tas_spinup_script.
+    
+    conf: dict
+    * name:
+    * type: server, client
+    * image: tas_container (it is the preferred image)
+    * cpu: cpuset to use
+    * socket: socket path
+    * ip: current tas ip
+    * prefix:
+    * cpus: how much of cpu should be used (for slow receiver scenario)
+    * port:
+    * count_flow:
+    * ips: e.g. [(ip, port), (ip, port), ...]
+    * flow_duration
+    * message_per_sec
+    * tas_cores
+    * tas_queues
+    * cdq
+    * message_size
+    * flow_num_msg
+    * count_threads
+    """
+    assert conf['type'] in ('client', 'server')
 
-        temp = []
-        for x in conf['ips']:
-                x = map(str, x) 
-                res = ':'.join(x)
-                temp.append(res)
-        _ips = ' '.join(temp)
-        count_ips = len(conf['ips'])
+    temp = []
+    for x in conf['ips']:
+            x = map(str, x) 
+            res = ':'.join(x)
+            temp.append(res)
+    _ips = ' '.join(temp)
+    count_ips = len(conf['ips'])
 
-        cmd = ('{tas_script} {name} {image} {cpu} {cpus:.2f} '
-                '{socket} {ip} {tas_cores} {tas_queues} {prefix} {cdq} '
-                '{type} {port} {count_flow} {count_ips} "{_ips}" {flow_duration} '
-                '{message_per_sec} {message_size} {flow_num_msg} {count_threads}').format(
-            tas_script=tas_spinup_script, count_ips=count_ips, _ips=_ips, **conf)
-        # print(cmd)
-        return subprocess.run(cmd, shell=True, stdout=subprocess.PIPE)
+    cmd = ('{tas_script} {name} {image} {cpu} {cpus:.2f} '
+            '{socket} {ip} {tas_cores} {tas_queues} {prefix} {cdq} '
+            '{type} {port} {count_flow} {count_ips} "{_ips}" {flow_duration} '
+            '{message_per_sec} {message_size} {flow_num_msg} {count_threads}').format(
+        tas_script=tas_spinup_script, count_ips=count_ips, _ips=_ips, **conf)
+    # print(cmd)
+    return subprocess.run(cmd, shell=True, stdout=subprocess.PIPE)
+
+
+def spin_up_memcached(conf):
+    cmd = ('{tas_script} {name} {image} {cpu} {cpus:.2f} '
+            '{socket} {ip} {tas_cores} {tas_queues} {prefix} {cdq} '
+            '{type} ').format(tas_script=tas_spinup_script, **conf)
+    if conf['type'] == 'client':
+        cmd = ('{cmd} {dst_ip} {duration} {warmup_time} {wait_before_measure} '
+               '{threads} {connections}').format(cmd=cmd, **conf)
+    elif conf['type'] == 'server':
+        cmd = '{cmd} {memory} {threads}'.format(cmd=cmd, **conf) 
+    else:
+        raise Exception('Container miss configuration: '
+                        'expecting type to be client or server')
+    # print(cmd)
+    return subprocess.run(cmd, shell=True, stdout=subprocess.PIPE)
+
+
+def run_container(container):
+    if app == 'memcached':
+        return spin_up_memcached(container)
+    else:
+        return spin_up_tas(container)
 
 
 def get_pps_from_info_log():
@@ -168,37 +186,22 @@ def mean(iterable):
     return summ / count
 
 
-def main():
-    """
-    About experiment:
-        TCP Slow Receiver Test Using Tas (with an app).
-        + BESS
-        + BESS + bp
-        + Per-Flow Input Queueing
-        + PFIQ + bp
-    """
-
-    if not os.path.exists('./tmp_vhost/'):
-        os.mkdir('./tmp_vhost')
-    socket_dir = os.path.abspath('./tmp_vhost')
-
+def get_cores(count_instance):
     # number of available cores
-    total_cores = 14
+    total_cores = 14  # TODO: this is hardcoded
     reserved_cores = 1  # possibly for BESS
     available_cores = total_cores - reserved_cores
     only_even = True  # for numa machinces (to place on one node)
     print('should place cores on even ids: ', only_even)
     # how many core each container have
-    count_instance = 4  # how many container
-    count_cpu = 3  # how many core to each container
-    if count_cpu < 3:
-        print('warning: each tas_container needs at least 3 cores to function properly')
-
-    tas_cores = 1  # how many cores are allocated to tas (fp-max-cores)
-
+    # count cpu is one of the arguments to this program
+    
     cores =  []
     last_cpu_id = 0
-    cpus = [count_cpu, count_cpu, count_cpu, count_cpu]
+    # this array helps to have better control on number of cores for each
+    # instance. currently all of the containers have the same number of 
+    # cores
+    cpus = [count_cpu for i in range(count_instance)]
     for instance_num in range(count_instance):
         cpu_ids = []
         for cpu_num in range(cpus[instance_num]):
@@ -215,14 +218,98 @@ def main():
         cpu_ids_str = ','.join(cpu_ids)
         cores.append(cpu_ids_str) 
 
+    print('count core for each container:', count_cpu)
+    print('allocated cores:', ' | '.join(cores))
+    return cores
+
+def _get_rpc_unidir_containers(containers):
+    app_params = [
+        {   # server 1
+            'port': 1234,
+            'count_flow': 100,
+            'ips': [('10.0.0.2', 1234),],  # not used for server
+            'flow_duration': 0,  # ms # not used for server
+            'message_per_sec': -1,  # not used for server
+            'message_size': 64,  # not used for server
+            'flow_num_msg': 0,   # not used for server
+            'count_threads': 1,
+        },
+        {   # server 2
+            'port': 5678,
+            'count_flow': 100,
+            'ips': [('10.0.0.2', 1234),],  # not used for server
+            'flow_duration': 0,  # ms # not used for server
+            'message_per_sec': -1,  # not used for server
+            'message_size': 64,  # not used for server
+            'flow_num_msg': 0,   # not used for server
+            'count_threads': 1,
+        },
+        {   # client 1
+            'port': 7788,  # not used for client
+            'count_flow': 4,
+            'ips': [('10.10.0.1', 1234)],  # , ('10.10.0.2', 5678)
+            'flow_duration': 0,
+            'message_per_sec': -1,
+            'message_size': 500,
+            'flow_num_msg': 0,
+            'count_threads': 1,
+        },
+        {   # client 2
+            'port': 7788,  # not used for client
+            'count_flow': count_flow,
+            'ips': [('10.10.0.2', 5678)],  # ('10.10.0.1', 1234), 
+            'flow_duration': 0,
+            'message_per_sec': -1,
+            'message_size': 500,
+            'flow_num_msg': 0,
+            'count_threads': 1,
+        },
+    ]
+    for container, params in zip(containers, app_params):
+        container.update(params)
+     
+
+def _get_memcached_containers(containers):
+    app_params = [
+        {   # server 1
+            'memory': 64,
+            'threads': 4,
+        },
+        {   # server 2
+            'memory': 64,   # not used for server
+            'threads': 4,
+        },
+        {   # client 1
+            'dst_ip': containers[0]['ip'],
+            'duration': duration,
+            'warmup_time': warmup_time,
+            'wait_before_measure': 0,
+            'threads': 1,
+            'connections': 1,
+        },
+        {   # client 2
+            'dst_ip': containers[1]['ip'],
+            'duration': duration,
+            'warmup_time': warmup_time,
+            'wait_before_measure': 0,
+            'threads': 1,
+            'connections': 1,
+        },
+    ]
+    for container, params in zip(containers, app_params):
+        container.update(params)
+
+
+def get_containers_config():
+    if not os.path.exists('./tmp_vhost/'):
+        os.mkdir('./tmp_vhost')
+    socket_dir = os.path.abspath('./tmp_vhost')
+
+    count_instance = 4
+    cores = get_cores(count_instance)
     # how much cpu slow receiver have
     slow_rec_cpu = count_cpu * ((100 - slow_by) / 100)
 
-    print('count core for each container:', count_cpu)
-    print(count_cpu, cores)
-
-    # image_name = 'tas_unidir'
-    image_name = 'tas_container'
     containers = [
         {
             'name': 'tas_server_1',
@@ -233,17 +320,9 @@ def main():
             'ip': '10.10.0.1',
             'prefix': 'tas_server_1',
             'cpus': count_cpu,
-            'port': 1234,
-            'count_flow': 100,
-            'ips': [('10.0.0.2', 1234),],  # not used for server
-            'flow_duration': 0,  # ms # not used for server
-            'message_per_sec': -1,  # not used for server
             'tas_cores': tas_cores,
             'tas_queues': count_queue,
             'cdq': int(cdq),
-            'message_size': 64,  # not used for server
-            'flow_num_msg': 0,   # not used for server
-            'count_threads': 1,
         },
         {
             'name': 'tas_server_2',
@@ -254,17 +333,9 @@ def main():
             'ip': '10.10.0.2',
             'prefix': 'tas_server_2',
             'cpus': slow_rec_cpu,
-            'port': 5678,
-            'count_flow': 100,
-            'ips': [('10.0.0.2', 1234),],  # not used for server
-            'flow_duration': 0,  # ms # not used for server
-            'message_per_sec': -1,  # not used for server
             'tas_cores': tas_cores,
             'tas_queues': count_queue,
             'cdq': int(cdq),
-            'message_size': 64,  # not used for server
-            'flow_num_msg': 0,   # not used for server
-            'count_threads': 1,
         },
         {
             'name': 'tas_client_1',
@@ -275,17 +346,9 @@ def main():
             'ip': '172.17.0.1',
             'prefix': 'tas_client_1',
             'cpus': count_cpu,
-            'port': 7788,  # not used for client
-            'count_flow': 4,
-            'ips': [('10.10.0.1', 1234)],  # , ('10.10.0.2', 5678)
-            'flow_duration': 0,
-            'message_per_sec': -1,
             'tas_cores': tas_cores,
             'tas_queues': count_queue,
             'cdq': int(cdq),
-            'message_size': 500,
-            'flow_num_msg': 0,
-            'count_threads': 1,
         },
         {
             'name': 'tas_client_2',
@@ -296,19 +359,84 @@ def main():
             'ip': '172.17.0.2',
             'prefix': 'tas_client_2',
             'cpus': count_cpu,
-            'port': 7788,  # not used for client
-            'count_flow': count_flow,
-            'ips': [('10.10.0.2', 5678)],  # ('10.10.0.1', 1234), 
-            'flow_duration': 0,
-            'message_per_sec': -1,
             'tas_cores': tas_cores,
             'tas_queues': count_queue,
             'cdq': int(cdq),
-            'message_size': 500,
-            'flow_num_msg': 0,
-            'count_threads': 1,
         },
     ]
+    if app == 'memcached':
+        _get_memcached_containers(containers)
+    else:
+        _get_rpc_unidir_containers(containers)
+    return containers
+
+
+def get_tas_results(containers, client_1_tas_logs):
+    client_1_dst_count = len(containers[2]['ips'])
+    lines = client_1_tas_logs.split('\n')
+    count_line = len(lines)
+
+    # skip the application related logs in the beginning
+    count_skip_lines = 0
+    while lines[count_skip_lines]:
+        count_skip_lines += 1
+    count_skip_lines += 1
+
+    line_jump = (2 + client_1_dst_count)
+    line_no_start = count_skip_lines + line_jump * (5 + warmup_time)
+    line_no_end = count_skip_lines + line_jump * (5 + duration + warmup_time)
+    tas_res = {'mbps': 0, 'pps': 0, 'latency@99.9': 0, 'latency@99.99': 0, 'drop': 0}
+    tmp_count = 0
+
+    # engine drop line
+    if line_no_end < count_line:
+        for line_no in range(line_no_start, line_no_end, line_jump):
+            line = lines[line_no_end]
+            raw = line.strip().split()
+            drop = float(raw[1].split('=')[1])
+            # print(line, drop)
+            tas_res['drop'] += drop # accumulate drop per sec
+
+            # app stats line
+            line_no = line_no + 2
+            line = lines[line_no]
+            line = line.strip()
+            # print(line)
+            raw = line.split()
+            tp = float(raw[1].split('=')[1])  # mbps
+            tp_pkt = float(raw[3].split('=')[1])  #pps
+            l1 = float(raw[13].split('=')[1]) # 99.9 us
+            l2 = float(raw[15].split('=')[1]) # 99.9 us
+            # tas_res['mbps'] = max(tp, tas_res['mbps'])
+            # tas_res['pps'] = max(tp_pkt, tas_res['pps'])
+            # tas_res['latency@99.9'] = max(l1, tas_res['latency@99.9'])
+            # tas_res['latency@99.99'] = max(l2,tas_res['latency@99.99'])
+            tas_res['mbps'] += tp
+            tas_res['pps'] += tp_pkt
+            tas_res['latency@99.9'] += l1
+            tas_res['latency@99.99'] += l2
+            tmp_count += 1
+
+        tas_res['mbps'] = tas_res['mbps'] / tmp_count
+        tas_res['pps'] = tas_res['pps'] / tmp_count
+        tas_res['latency@99.9'] =  tas_res['latency@99.9'] / tmp_count
+        tas_res['latency@99.99'] = tas_res['latency@99.99'] / tmp_count
+    else:
+        print('warning: TAS engine data not found, line number unexpected')
+    return tas_res
+
+
+def main():
+    """
+    About experiment:
+        TCP Slow Receiver Test Using Tas (with an app).
+        + BESS
+        + BESS + bp
+        + Per-Flow Input Queueing
+        + PFIQ + bp
+    """
+    # Get containers config
+    containers = get_containers_config() 
 
     # Kill anything running
     bessctl_do('daemon stop', stdout=subprocess.PIPE,
@@ -341,18 +469,17 @@ def main():
         print('BESS pipeline ready.')
         return 
 
-    print('==============================')
-    print('     TCP Performance Test')
-    print('==============================')
+    print('==========================================')
+    print('     TCP/Linux Socket App Performance Test')
+    print('==========================================')
 
     # Spin up TAS
     print('running containers...')
     for c in containers:
-        spin_up_tas(c)
+        run_container(c)
         sleep(5)
 
-    print('5 sec warm up...')
-    warmup_time = 5
+    print('{} sec warm up...'.format(warmup_time))
     sleep(warmup_time)
 
     # Get result before
@@ -367,18 +494,24 @@ def main():
         print('experiment termination process...')
 
     after_res = get_port_packets('tas_server_1')
+
     # client 1 tas logs
     client_1_container_name = containers[2]['name']
     p = subprocess.run('sudo docker logs {}'.format(client_1_container_name),
             shell=True, stdout=subprocess.PIPE)
     client_1_tas_logs = p.stdout.decode().strip()
 
-    # Collect logs and store in a file
-    print('gather client log, through put and percentiles...')
-    subprocess.run(
-        'sudo docker cp tas_client_1:/tmp/log_drop_client.txt {}'.format(output_log_file),
-        shell=True, stdout=subprocess.PIPE)
-    subprocess.run('sudo chown $USER {}'.format(output_log_file), shell=True, stdout=subprocess.PIPE)
+    if app == 'rpc':
+        # collect logs and store in a file
+        print('gather client log, through put and percentiles...')
+        subprocess.run(
+            'sudo docker cp tas_client_1:/tmp/log_drop_client.txt {}'.format(output_log_file),
+            shell=True, stdout=subprocess.PIPE)
+        subprocess.run('sudo chown $USER {}'.format(output_log_file), shell=True, stdout=subprocess.PIPE)
+    else:
+        # craete log file
+        output = open(output_log_file, 'w')
+        output.close()
 
     print('gather TAS engine logs')
     logs = ['\n']
@@ -391,28 +524,28 @@ def main():
         logs.append(header)
         logs.append(txt)
 
-
+    # TODO: add switch port names to config and use a for loop
     logs.append('========= switch ==========')
     # BESS port stats
     p = bessctl_do('show port tas_server_1', subprocess.PIPE)
     txt = p.stdout.decode()
     logs.append(txt)
-#     print('server1\n', txt)
+    # print('server1\n', txt)
 
     p = bessctl_do('show port tas_server_2', subprocess.PIPE)
     txt = p.stdout.decode()
     logs.append(txt)
-#     print('server2\n', txt)
+    # print('server2\n', txt)
 
     p = bessctl_do('show port tas_client_1', subprocess.PIPE)
     txt = p.stdout.decode()
     logs.append(txt)
-#     print('client1\n', txt)
+    # print('client1\n', txt)
 
     p = bessctl_do('show port tas_client_2', subprocess.PIPE)
     txt = p.stdout.decode()
     logs.append(txt)
-#     print('client2\n', txt)
+    # print('client2\n', txt)
 
     # pause call per sec
     bessctl_do('command module bkdrft_queue_out0 get_pause_calls EmptyArg {}')
@@ -431,39 +564,12 @@ def main():
     # 1) get sw throughput and drop
     client_tp = delta_port_packets(before_res, after_res)
     # 2) get TAS throughput and latency
-    client_1_dst_count = len(containers[2]['ips'])
-    lines = client_1_tas_logs.split('\n')
-    count_line = len(lines)
-    line_jump = (2 + client_1_dst_count)
-    line_no_start = 29 + line_jump * (5 + warmup_time)
-    line_no_end = 29 + line_jump * (5 + duration + warmup_time)
-    tas_res = {'mbps': 0, 'pps': 0, 'latency@99.9': 0, 'latency@99.99': 0, 'drop': 0}
-
-    # engine drop line
-    if line_no_end < count_line:
-        for line_no in range(line_no_start, line_no_end, line_jump):
-            line = lines[line_no_end]
-            raw = line.strip().split()
-            drop = float(raw[1].split('=')[1])
-            # print(line, drop)
-            tas_res['drop'] += drop # accumulate drop per sec
-
-            # app stats line
-            line_no = line_no + 2
-            line = lines[line_no]
-            line = line.strip()
-            # print(line)
-            raw = line.split()
-            tp = float(raw[1].split('=')[1])  # mbps
-            tp_pkt = float(raw[3].split('=')[1])  #pps
-            l1 = float(raw[13].split('=')[1]) # 99.9 us
-            l2 = float(raw[15].split('=')[1]) # 99.9 us
-            tas_res['mbps'] = max(tp, tas_res['mbps'])
-            tas_res['pps'] = max(tp_pkt, tas_res['pps'])
-            tas_res['latency@99.9'] = max(l1, tas_res['latency@99.9'])
-            tas_res['latency@99.99'] = max(l2,tas_res['latency@99.99'])
-    else:
-        print('warning: TAS engine data not found, line number unexpected')
+    try:
+      tas_res = get_tas_results(containers, client_1_tas_logs)
+    except Exception as e:
+       # failed in parsing tas results
+       print(e)
+       tas_res = {}
 
     pps_avg = {}
     for key, vals in pps_val.items():
@@ -484,9 +590,6 @@ def main():
     print(str(tas_res))
     print('pps')
     print(str(pps_avg))
-
-    # print(before_res)
-    # print(after_res)
     # ==================
 
 
@@ -510,7 +613,9 @@ def main():
 
 
 if __name__ == '__main__':
+    supported_apps = ('memcached', 'rpc', 'unidir')
     parser = argparse.ArgumentParser()
+    parser.add_argument('app', choices=supported_apps)
     parser.add_argument('--slow_by', type=float, required=False, default=0,
         help='slow down the component by percent [0, 100]')
     parser.add_argument('--cdq', action='store_true', required=False,
@@ -528,6 +633,9 @@ if __name__ == '__main__':
     parser.add_argument('--client_log', type=str, required=False,
         default='./client_log.txt', help='where to store log file')
     parser.add_argument('--duration', type=int, required=False, default=20)
+    parser.add_argument('--count_cpu', type=int, required=False, default=3,
+        help='how many cores each container should have')
+    parser.add_argument('--warmup_time', type=int, required=False, default=60)
 
     args = parser.parse_args()
     slow_by = args.slow_by
@@ -539,10 +647,46 @@ if __name__ == '__main__':
     count_queue = args.count_queue
     duration = args.duration
     output_log_file = args.client_log
+    count_cpu = args.count_cpu
+    app = args.app
+    warmup_time = args.warmup_time
+    # tas should have only one core (not tested with more)
+    tas_cores = 1  # how many cores are allocated to tas (fp-max-cores)
+
+    # select the app
+    if app == 'rpc':
+        # micro rpc modified
+        tas_spinup_script = os.path.abspath(os.path.join(cur_script_dir,
+            '../../code/apps/tas_container/spin_up_tas_container.sh'))
+        image_name = 'tas_container'
+    elif app == 'unidir':
+        # unidir
+        tas_spinup_script = os.path.abspath(os.path.join(cur_script_dir,
+            '../../code/apps/tas_unidir/spin_up_tas_container.sh'))
+        image_name = 'tas_unidir'
+    elif app == 'memcached':
+        # memcached
+        tas_spinup_script = os.path.abspath(os.path.join(cur_script_dir,
+            '../../code/apps/tas_memcached/spin_up_tas_container.sh'))
+        image_name = 'tas_memcached'
+    else:
+        print('app name unexpected: {}'.format(app), file=sys.stderr)
+        sys.exit(1)
+
+
+    # do parameter checks
+    if count_cpu < 3:
+        print('warning: each tas_container needs at least 3 cores to function properly')
+
+    if cdq and count_queue < 2:
+        print('command data queue needs at least two queues available')
+        sys.exit(1)
+
 
     print('experiment parameters: ')
+    print('running app: {}'.format(app))
     print(('count_queue: {}    slow_by: {}   '
-           'cdq: {}    pfq: {}    bp: {}    count_flow: {}\n'
+           'cdq: {}    pfq: {}    bp: {}    count_flow: {}'
           ).format(count_queue, slow_by, cdq, pfq, bp, count_flow))
     main()
 
