@@ -246,7 +246,7 @@ def _get_rpc_unidir_containers(containers):
         },
         {   # client 1
             'port': 7788,  # not used for client
-            'count_flow': 4,
+            'count_flow': 4,  # TODO: This has been set to const value for testing
             'ips': [('10.10.0.1', 1234)],  # , ('10.10.0.2', 5678)
             'flow_duration': 0,
             'message_per_sec': -1,
@@ -273,11 +273,11 @@ def _get_memcached_containers(containers):
     app_params = [
         {   # server 1
             'memory': 64,
-            'threads': 4,
+            'threads': 1,
         },
         {   # server 2
             'memory': 64,   # not used for server
-            'threads': 4,
+            'threads': 1,
         },
         {   # client 1
             'dst_ip': containers[0]['ip'],
@@ -285,7 +285,7 @@ def _get_memcached_containers(containers):
             'warmup_time': warmup_time,
             'wait_before_measure': 0,
             'threads': 1,
-            'connections': 1,
+            'connections': count_flow,
         },
         {   # client 2
             'dst_ip': containers[1]['ip'],
@@ -293,7 +293,7 @@ def _get_memcached_containers(containers):
             'warmup_time': warmup_time,
             'wait_before_measure': 0,
             'threads': 1,
-            'connections': 1,
+            'connections': count_flow,
         },
     ]
     for container, params in zip(containers, app_params):
