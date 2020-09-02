@@ -51,10 +51,13 @@ static inline void ecnMark(bess::Packet *pkt) {
 }
 
 /*
- * Ask module to log pause call per second stats to LOG(INFO)
+ * Define BKDRFTQueueOut Commands
  * */
 const Commands BKDRFTQueueOut::cmds = {
-  {"get_pause_calls", "EmptyArg", MODULE_CMD_FUNC(&BKDRFTQueueOut::CommandPauseCalls), Command::THREAD_SAFE}
+  {"get_pause_calls", "EmptyArg",
+    MODULE_CMD_FUNC(&BKDRFTQueueOut::CommandPauseCalls), Command::THREAD_SAFE},
+  {"get_ctrl_msg_tp", "EmptyArg",
+    MODULE_CMD_FUNC(&BKDRFTQueueOut::CommandGetCtrlMsgTp), Command::THREAD_SAFE}
 };
 
 CommandResponse BKDRFTQueueOut::Init(const bess::pb::BKDRFTQueueOutArg &arg) {
@@ -118,6 +121,8 @@ CommandResponse BKDRFTQueueOut::Init(const bess::pb::BKDRFTQueueOutArg &arg) {
   BKDRFTQueueOut::bytes_in_buffer_ = 0;
   pause_call_total = 0;
   pause_call_begin_ts_ = 0; // not started yet
+  ctrl_msg_tp_ = 0;
+  ctrl_msg_tp_begin_ts_ = 0;
 
   name_ = arg.mname();
   if (name_.length() < 1) {
@@ -503,6 +508,7 @@ inline uint16_t BKDRFTQueueOut::SendCtrlPkt(Port *p, queue_t qid,
       bess::Packet::Free(pkt);
       failed_ctrl_packets[qid] += dropped;
     }
+    ctrl_msg_tp_ += sent_ctrl_pkts;
     return sent_ctrl_pkts;
   } else {
     if (log_)
@@ -572,6 +578,7 @@ bool BKDRFTQueueOut::TryFailedCtrlPackets() {
       }
 
       sent = p->SendPackets(BKDRFT_CTRL_QUEUE, pkts, k);
+      ctrl_msg_tp_ += sent;
       failed_ctrl_packets[i] -= sent;
       if (sent < k) {
         bess::Packet::Free(pkts + sent, k - sent);
@@ -955,8 +962,17 @@ struct task_result BKDRFTQueueOut::RunTask(Context *ctx,
                                            __attribute__((unused))
                                            bess::PacketBatch *batch,
                                            __attribute__((unused)) void *arg) {
-  if (cdq_)
+  if (cdq_) {
     TryFailedCtrlPackets();
+    // check if control message throughput value should be updated
+    if (ctrl_msg_tp_begin_ts_ == 0) {
+      ctrl_msg_tp_begin_ts_ = ctx->current_ns;
+    } else if (ctx->current_ns - ctrl_msg_tp_begin_ts_ > ONE_SEC) {
+      ctrl_msg_tp_last_ = ctrl_msg_tp_;
+      ctrl_msg_tp_ = 0;
+      ctrl_msg_tp_begin_ts_ = ctx->current_ns;
+    }
+  }
 
   if (per_flow_buffering_) {
     TrySendBufferPFQ(ctx);
@@ -964,21 +980,16 @@ struct task_result BKDRFTQueueOut::RunTask(Context *ctx,
     TrySendBuffer(ctx);
   }
 
-  // TODO: redesign the code so it has a better place for keeping track of
   // pause calls
   if (backpressure_) {
     // check pause_call_per_sec
     if (pause_call_begin_ts_ == 0) {
       pause_call_begin_ts_ = ctx->current_ns;
     } else if (ctx->current_ns - pause_call_begin_ts_ > ONE_SEC) {
-      // TODO: find a better way of reporting this statistic
-      // LOG(INFO) << "pcps: " << pause_call_total << " name: " << name_ <<
-      // "\n";
       pcps.push_back(pause_call_total);
       pause_call_total = 0;
       pause_call_begin_ts_ = ctx->current_ns;
     }
-
   }
 
   return {.block = false, .packets = 0, .bits = 0};
@@ -992,6 +1003,16 @@ CommandResponse BKDRFTQueueOut::CommandPauseCalls(const bess::pb::EmptyArg &)
       LOG(INFO) << "===================="
                 << "\n";
       return CommandSuccess();
+}
+
+CommandResponse BKDRFTQueueOut::CommandGetCtrlMsgTp(const bess::pb::EmptyArg &)
+{
+  bess::pb::BKDRFTQueueOutCommandGetCtrlMsgTpResponse resp;
+  resp.set_throughput(ctrl_msg_tp_last_);
+  LOG(INFO) << "name: " << name_
+            << " control message throughput: " << ctrl_msg_tp_last_
+            << "\n";
+  return CommandSuccess(resp);
 }
 
 ADD_MODULE(BKDRFTQueueOut, "bkdrft_queue_out",

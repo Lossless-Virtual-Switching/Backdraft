@@ -65,6 +65,7 @@ public:
   std::string GetDesc() const override;
 
   CommandResponse CommandPauseCalls(const bess::pb::EmptyArg &);
+  CommandResponse CommandGetCtrlMsgTp(const bess::pb::EmptyArg &);
 
 private:
   // place not sent packets in the buffer for the given flow
@@ -170,6 +171,11 @@ private:
   uint64_t pause_call_begin_ts_dummy;
   // data structure for holding pause call per sec values
   std::vector<int> pcps;
+
+  // control message throughput
+  uint64_t ctrl_msg_tp_;
+  uint64_t ctrl_msg_tp_last_;
+  uint64_t ctrl_msg_tp_begin_ts_;
 
   // a  name given to this module. currently used for loggin pause per sec
   // statistics.

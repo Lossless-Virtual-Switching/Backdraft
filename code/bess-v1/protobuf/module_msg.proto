@@ -866,6 +866,16 @@ message BKDRFTQueueOutArg {
 }
 
 /**
+ * The BKDRFTQueueOut module has a command `get_ctrl_msg_tp()` that takes no
+ * parameters.
+ * Thic command returns the throughput of the sent control messages from this
+ * module.
+ */
+message BKDRFTQueueOutCommandGetCtrlMsgTpResponse {
+  uint64 throughput = 1; /// number of control packets sent in last second
+}
+
+/**
  * The Queue module implements a simple packet queue.
  *
  * __Input Gates__: 1
