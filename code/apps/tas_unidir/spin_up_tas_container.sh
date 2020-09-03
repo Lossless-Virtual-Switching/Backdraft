@@ -3,7 +3,7 @@
 curdir=$(dirname $0)
 curdir=$(realpath $curdir)
 
-if [ $# -lt 20 ]; then
+if [ $# -lt 11 ]; then
 	echo "useage $(basename $0): '< expecting 20 params as below >'"
 	echo "== docker config ==:"
 	echo "* param1: container-name"
@@ -17,17 +17,17 @@ if [ $# -lt 20 ]; then
 	echo "* param8: tas count queues"
 	echo "* param9: huge prefix"
 	echo "* param10: tas use command data"
-	echo " == Client or Server ==:"
+  echo " ============="
 	echo "* param11: type: 'client' or 'server'"
-	echo "* param12: port"
-	echo "* param13: count flow"
-	echo "* param14: count ip port pair"
-	echo "* param15: dst ip port pair (e.g. 10.0.0.1:1234 172.17.2.1:3532 ...)"
-	echo "* param16: flow duration"
-	echo "* param17: message per sec"
-	echo "* param18: message size"
-	echo "* param19: flow num msg"
-        echo "* param20: count threads" 
+	echo " == Client  ==:"
+	echo "* param12: server_ip"
+  echo "* param13: threads"
+  echo "* param14: connections"
+  echo "* param15: message size"
+  echo " == Server ==:"
+  echo "* param 12: threads"
+  echo "* param 13: connections"
+  echo "* param 14: message size"
 	exit 1
 fi
 
@@ -43,17 +43,31 @@ tas_cores=$7
 tas_queues=$8
 tas_dpdk_prefix=$9
 tas_cmd=${10}
-# Client or Server
+# =======
 app_type=${11}
-app_port=${12}
-app_count_flow=${13}
-app_count_ip_port=${14}
-app_ip_port=${15}
-app_flow_duration=${16}
-app_message_per_sec=${17}
-app_message_size=${18}
-app_flow_num_msg=${19}
-app_count_thread=${20}
+
+app_flags=""
+if [ "$app_type" = "client" ]
+then
+# Client
+client_dst_ip=${12}
+client_threads=${13}
+client_conns=${14}
+client_msg_size=${15}
+app_flags="--env server_ip=$client_dst_ip \
+  --env threads=$client_threads \
+  --env connections=$client_conns \
+  --env message_size=$client_msg_size "
+elif [ "$app_type" = "server" ]
+then
+# Server
+threads=${12}
+conns=${13}
+msg_size=${14}
+app_flags="--env threads=$threads \
+  --env connections=$conns \
+  --env message_size=$msg_size "
+fi
 
 if [ ! -d /dev/hugepages/$tas_dpdk_prefix ]; then
 	sudo mkdir -p /dev/hugepages/$7
@@ -83,19 +97,11 @@ sudo docker run \
 	--env prefix=$tas_dpdk_prefix \
 	--env command_data_queue=$tas_cmd \
 	--env type=$app_type \
-	--env port=$app_port \
-	--env count_flow=$app_count_flow \
-	--env count_ip_port_pair=$app_count_ip_port \
-	--env dst_ip_port_pair=\""$app_ip_port"\" \
-	--env server_ip=10.0.0.1 \
-	--env flow_duration=$app_flow_duration \
-	--env message_per_sec=$app_message_per_sec \
-	--env message_size=$app_message_size \
-	--env flow_num_msg=$app_flow_num_msg \
-	--env app_cores=$app_count_thread \
+  $app_flags \
 	-d \
 	--log-opt mode=non-blocking \
 	--log-opt max-buffer-size=4m \
 	--log-opt max-size="20m" \
+  --network none \
 	$container_image_name
 

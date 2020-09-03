@@ -86,6 +86,21 @@ def spin_up_tas(conf):
     return subprocess.run(cmd, shell=True, stdout=subprocess.PIPE)
 
 
+def spin_up_unidir(conf):
+    cmd = ('{tas_script} {name} {image} {cpu} {cpus:.2f} '
+            '{socket} {ip} {tas_cores} {tas_queues} {prefix} {cdq} '
+            '{type} ').format(tas_script=tas_spinup_script, **conf)
+    if conf['type'] == 'client':
+        cmd = '{cmd} {server_ip} {threads} {connections} {message_size}'.format(cmd=cmd, **conf)
+    elif conf['type'] == 'server':
+        cmd = '{cmd} {threads} {connections} {message_size}'.format(cmd=cmd, **conf)
+    else:
+        raise Exception('Container miss configuration: '
+                        'expecting type to be client or server')
+    # print(cmd)
+    return subprocess.run(cmd, shell=True, stdout=subprocess.PIPE)
+
+
 def spin_up_memcached(conf):
     cmd = ('{tas_script} {name} {image} {cpu} {cpus:.2f} '
             '{socket} {ip} {tas_cores} {tas_queues} {prefix} {cdq} '
@@ -105,6 +120,8 @@ def spin_up_memcached(conf):
 def run_container(container):
     if app == 'memcached':
         return spin_up_memcached(container)
+    elif app == 'unidir':
+        return spin_up_unidir(container)
     else:
         return spin_up_tas(container)
 
@@ -222,7 +239,7 @@ def get_cores(count_instance):
     print('allocated cores:', ' | '.join(cores))
     return cores
 
-def _get_rpc_unidir_containers(containers):
+def _get_rpc_containers(containers):
     app_params = [
         {   # server 1
             'port': 1234,
@@ -264,6 +281,35 @@ def _get_rpc_unidir_containers(containers):
             'flow_num_msg': 0,
             'count_threads': 1,
         },
+    ]
+    for container, params in zip(containers, app_params):
+        container.update(params)
+
+
+def _get_unidir_containers(containers):
+    app_params = [
+        {  # server1
+            'threads': 1,
+            'connections': count_flow,
+            'message_size': 64,
+        },
+        {  # server2
+            'threads': 1,
+            'connections': count_flow,
+            'message_size': 64,
+        },
+        {  # client 1
+            'server_ip': containers[0]['ip'],
+            'threads': 1,
+            'connections': count_flow,
+            'message_size': 500,
+        },
+        {  # client 2
+            'server_ip': containers[1]['ip'],
+            'threads': 1,
+            'connections': count_flow,
+            'message_size': 500,
+        }
     ]
     for container, params in zip(containers, app_params):
         container.update(params)
@@ -366,6 +412,8 @@ def get_containers_config():
     ]
     if app == 'memcached':
         _get_memcached_containers(containers)
+    elif app == 'unidir':
+        _get_unidir_containers(containers)
     else:
         _get_rpc_unidir_containers(containers)
     return containers

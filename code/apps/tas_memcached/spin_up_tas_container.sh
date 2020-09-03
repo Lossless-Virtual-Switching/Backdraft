@@ -3,7 +3,7 @@
 curdir=$(dirname $0)
 curdir=$(realpath $curdir)
 
-if [ $# -lt 20 ]; then
+if [ $# -lt 13 ]; then
 	echo "useage $(basename $0): '< expecting 20 params as below >'"
 	echo "== docker config ==:"
 	echo "* param1: container-name"
@@ -29,6 +29,7 @@ if [ $# -lt 20 ]; then
 	echo " == Server ==:"
 	echo "* param12: memory"
 	echo "* param13: threads"
+  exit 1
 fi
 
 # Docker
