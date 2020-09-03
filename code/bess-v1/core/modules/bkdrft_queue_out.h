@@ -17,8 +17,10 @@
 
 const queue_t MAX_QUEUES = 8;
 const int drop_high_water = 30; // assumming batch size is 32
-const int buffer_len_high_water = 256;
-const int buffer_len_low_water = 64;
+// const int buffer_len_high_water = 256;
+const uint64_t buffer_len_high_water = 150000; // bytes
+// const int buffer_len_low_water = 64;
+const uint64_t buffer_len_low_water = 30000; // bytes
 
 const int bp_buffer_len_high_water = 32;
 
@@ -37,9 +39,12 @@ enum OverlayState {
 
 struct flow_state {
   queue_t qid; // the flow is mapped to this qid
-  OverlayState overlay_state; 
+  OverlayState overlay_state; // overlay state (TRIGGERED, SAFE)
   uint64_t ts_last_overlay; // when was last overlay sent
-  uint64_t no_overlay_duration;
+  uint64_t no_overlay_duration; // for what duration no overlay should be sent
+  uint64_t packet_in_buffer; // how many packets in the buffer
+  uint64_t byte_in_buffer; // how many bytes in the buffer
+  std::vector<bess::Packet *> *buffer; // pointer to queue buffer
 };
 
 class BKDRFTQueueOut final : public Module {
@@ -50,8 +55,7 @@ public:
   BKDRFTQueueOut()
       : Module(), port_(), count_queues_(), lossless_(), backpressure_(),
         log_(), cdq_(), per_flow_buffering_(), overlay_(),
-        pause_call_total(),
-        pause_call_begin_ts_() {}
+        pause_call_total() {}
 
   CommandResponse Init(const bess::pb::BKDRFTQueueOutArg &arg);
 
@@ -66,6 +70,7 @@ public:
 
   CommandResponse CommandPauseCalls(const bess::pb::EmptyArg &);
   CommandResponse CommandGetCtrlMsgTp(const bess::pb::EmptyArg &);
+  CommandResponse CommandGetOverlayTp(const bess::pb::EmptyArg &);
 
 private:
   // place not sent packets in the buffer for the given flow
@@ -167,15 +172,15 @@ private:
 
   uint64_t failed_ctrl_packets[MAX_QUEUES];
   uint64_t pause_call_total;
-  uint64_t pause_call_begin_ts_;
-  uint64_t pause_call_begin_ts_dummy;
   // data structure for holding pause call per sec values
   std::vector<int> pcps;
-
   // control message throughput
   uint64_t ctrl_msg_tp_;
   uint64_t ctrl_msg_tp_last_;
-  uint64_t ctrl_msg_tp_begin_ts_;
+  // overlay throughput
+  uint64_t overlay_tp_;
+  std::vector<uint64_t> overlay_per_sec;
+  uint64_t stats_begin_ts_;
 
   // a  name given to this module. currently used for loggin pause per sec
   // statistics.

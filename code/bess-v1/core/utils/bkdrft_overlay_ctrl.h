@@ -45,7 +45,7 @@ class BKDRFTOverlayCtrl final {
 
 
  public:
-  void SendOverlayMessage(const Flow &f, Packet * pkt, uint64_t pps,
+  int SendOverlayMessage(const Flow &f, Packet * pkt, uint64_t pps,
 		  uint64_t pause_duration);
   uint64_t FillBook(Port * port, queue_t qid, const Flow &flow);
   void ApplyOverlayMessage(bess::pb::Overlay &overlay_msg, uint64_t current_ns);

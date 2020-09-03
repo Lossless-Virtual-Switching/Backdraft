@@ -243,8 +243,8 @@ uint32_t BKDRFTQueueInc::CDQ(Context *ctx, bess::PacketBatch *batch, queue_t &_q
             reinterpret_cast<bess::pb::Overlay *>(pb);
 
         if (overlay_) {
-      	  uint64_t pps = overlay_msg->packet_per_sec();
-          LOG(INFO) << "Received overlay message: pps: " << pps << "\n";
+      	  // uint64_t pps = overlay_msg->packet_per_sec();
+          // LOG(INFO) << "Received overlay message: pps: " << pps << "\n";
 
 	        // update port rate limit for queue
           auto &overlay_ctrl = BKDRFTOverlayCtrl::GetInstance();

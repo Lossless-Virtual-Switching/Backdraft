@@ -130,13 +130,14 @@ uint64_t BKDRFTOverlayCtrl::FillBook(Port *port, queue_t qid,  const Flow &flow)
   }
 }
 
-void BKDRFTOverlayCtrl::SendOverlayMessage(const Flow &flow, Packet *pkt,
+int BKDRFTOverlayCtrl::SendOverlayMessage(const Flow &flow, Packet *pkt,
   uint64_t pps, uint64_t pause_duration) {
 
   auto entry = flowBook_.Find(flow);
   if (entry != nullptr) {
     Port *port = entry->second.port;
-    if (port->getConnectedPortType() == VHOST) return;
+    if (port->getConnectedPortType() == VHOST)
+      return -2;
 
     // LOG(INFO) << "Sending overlay: name: " << 0 << " pps: " << pps
     //   << " pause duration: " << pause_duration << "\n";
@@ -148,11 +149,14 @@ void BKDRFTOverlayCtrl::SendOverlayMessage(const Flow &flow, Packet *pkt,
     if(sent == 0) {
       bess::Packet::Free(pkt);
       LOG(INFO) << "FREED bkdrft overlay packet, failed to send!\n";
+      return -1; // failed
     }
+    return 0; // success
   } else {
     LOG(INFO) << "Send Overlay Failed: flow not found (not mapped)\n";
     LOG(INFO) << "Flow: " << FlowToString(flow) << "\n";
   }
+  return -1; // failed
 }
 
 void BKDRFTOverlayCtrl::ApplyOverlayMessage(bess::pb::Overlay &overlay_msg,
