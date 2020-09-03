@@ -171,7 +171,7 @@ int do_server(void *_cntx) {
     for (i = 0; i < nb_rx; i++) {
       buf = rx_bufs[i];
 
-      if (!check_eth_hdr(my_ip, &my_eth, buf, tx_mem_pool, cdq, port, 1)) {
+      if (!check_eth_hdr(my_ip, &my_eth, buf, tx_mem_pool, cdq, port, qid)) {
         rte_pktmbuf_free(rx_bufs[i]); // free packet
         continue;
       }

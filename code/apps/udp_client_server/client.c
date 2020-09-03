@@ -26,6 +26,7 @@ int do_client(void *_cntx) {
   int system_mode = cntx->system_mode;
   int port = cntx->port;
   uint8_t qid = cntx->default_qid;
+  uint16_t count_queues = cntx->count_queues;
   struct rte_mempool *tx_mem_pool = cntx->tx_mem_pool;
   // struct rte_mempool *rx_mem_pool = cntx->rx_mem_pool;
   struct rte_mempool *ctrl_mem_pool = cntx->ctrl_mem_pool;
@@ -69,6 +70,7 @@ int do_client(void *_cntx) {
   char *ptr;
   uint16_t flow_q[count_dst_ip];
   uint16_t selected_q = 0;
+  uint16_t rx_q = qid;
 
   // node3: 98:f2:b3:cc:83:81
   // node4: 98:f2:b3:cc:02:c1 
@@ -83,7 +85,7 @@ int do_client(void *_cntx) {
 
   // TODO: this will fail for more destinations
   uint16_t prio[count_dst_ip];
-  uint16_t _prio = 4;
+  uint16_t _prio = 3;
   uint16_t dei = 0;
   uint16_t vlan_id = 100;
   uint16_t tci;
@@ -112,8 +114,13 @@ int do_client(void *_cntx) {
   hist = malloc(count_dst_ip * sizeof(struct p_hist *));
   for (i = 0; i < count_dst_ip; i++) {
     hist[i] = new_p_hist_from_max_value(MAX_EXPECTED_LATENCY);
+    
     // sending each destinations packets on different queue
-    flow_q[i] = i + 1;
+    // in CDQ mode the queue zero is reserved for later use
+    if (cdq)
+      flow_q[i] = 1 + (i % (count_queues - 1));
+    else
+      flow_q[i] = (i % count_queues);
   }
 
   if (rte_eth_dev_socket_id(port) > 0 &&
@@ -128,7 +135,7 @@ int do_client(void *_cntx) {
     printf("sending ARP requests\n");
     for (int i = 0; i < count_dst_ip; i++) {
       struct rte_ether_addr dst_mac = get_dst_mac(port, qid, src_ip, my_eth,
-          dst_ips[i], broadcast_mac, tx_mem_pool, cdq);
+          dst_ips[i], broadcast_mac, tx_mem_pool, cdq, count_queues);
       _server_eth[i] = dst_mac; 
       char ip[20];
       ip_to_str(dst_ips[i], ip, 20);
@@ -278,7 +285,6 @@ int do_client(void *_cntx) {
             send_pkt(port, selected_q, bufs, BURST_SIZE, true, ctrl_mem_pool);
       }
 
-      // printf("sending: %d\n", nb_tx);
       total_sent_pkts[k] += nb_tx;
 
       // free packets failed to send
@@ -293,85 +299,86 @@ int do_client(void *_cntx) {
 
     // recv packets
   recv:
-    while (1) {
-      if (system_mode == system_bkdrft) {
-        // sysmod = bkdrft
-        // read ctrl queue (non-blocking)
-        nb_rx2 = poll_ctrl_queue(port, BKDRFT_CTRL_QUEUE, BURST_SIZE, recv_bufs,
-                                 false);
-      } else {
-        // bess
-        nb_rx2 = rte_eth_rx_burst(port, qid, recv_bufs, BURST_SIZE);
-        // for (int q = 0; q < 3; q++) {
-        //   nb_rx2 = rte_eth_rx_burst(port, q, recv_bufs, BURST_SIZE);
-        //   if (nb_rx2 > 0) {
-        //    printf("qid: %d\n", q);
-        //    break;
-        //   }
-        // }
-      }
-
-      // no packets, TODO: maybe it is good to assign a core just for fetching
-      if (nb_rx2 == 0)
-        break;
-
-      for (j = 0; j < nb_rx2; j++) {
-        buf = recv_bufs[j];
-        ptr = rte_pktmbuf_mtod(buf, char *);
-
-        eth_hdr = (struct rte_ether_hdr *)ptr;
-        if (use_vlan) {
-          if (rte_be_to_cpu_16(eth_hdr->ether_type) != RTE_ETHER_TYPE_VLAN) {
-            rte_pktmbuf_free(buf); // free packet
-            continue;
-          }
+   for (rx_q = qid; rx_q < qid + count_queues; rx_q++) {
+      while (1) {
+        if (system_mode == system_bkdrft) {
+          // sysmod = bkdrft
+          // read ctrl queue (non-blocking)
+          nb_rx2 = poll_ctrl_queue(port, BKDRFT_CTRL_QUEUE, BURST_SIZE, recv_bufs,
+                                   false);
         } else {
-          if (rte_be_to_cpu_16(eth_hdr->ether_type) != RTE_ETHER_TYPE_IPV4) {
+          // bess
+          nb_rx2 = rte_eth_rx_burst(port, rx_q, recv_bufs, BURST_SIZE);
+          // for (int q = 0; q < 3; q++) {
+          //   nb_rx2 = rte_eth_rx_burst(port, q, recv_bufs, BURST_SIZE);
+          //   if (nb_rx2 > 0) {
+          //    printf("qid: %d\n", q);
+          //    break;
+          //   }
+          // }
+        }
+
+        if (nb_rx2 == 0)
+          break;
+
+        for (j = 0; j < nb_rx2; j++) {
+          buf = recv_bufs[j];
+          ptr = rte_pktmbuf_mtod(buf, char *);
+
+          eth_hdr = (struct rte_ether_hdr *)ptr;
+          if (use_vlan) {
+            if (rte_be_to_cpu_16(eth_hdr->ether_type) != RTE_ETHER_TYPE_VLAN) {
+              rte_pktmbuf_free(buf); // free packet
+              continue;
+            }
+          } else {
+            if (rte_be_to_cpu_16(eth_hdr->ether_type) != RTE_ETHER_TYPE_IPV4) {
+              rte_pktmbuf_free(buf); // free packet
+              continue;
+            }
+          }
+
+          // skip the first 20 seconds of the experiment, no percentile info.
+          if (end_time < start_time + 20 * hz) {
             rte_pktmbuf_free(buf); // free packet
             continue;
           }
+
+          // check ip
+        if (use_vlan) {
+          ptr = ptr + RTE_ETHER_HDR_LEN + sizeof(struct rte_vlan_hdr);
+        } else  {
+            ptr = ptr + RTE_ETHER_HDR_LEN;
         }
+          ipv4_hdr = (struct rte_ipv4_hdr *)ptr;
+          recv_ip = rte_be_to_cpu_32(ipv4_hdr->src_addr);
 
-        // skip the first 20 seconds of the experiment, no percentile info.
-        if (end_time < start_time + 20 * hz) {
-          rte_pktmbuf_free(buf); // free packet
-          continue;
-        }
-
-        // check ip
-      if (use_vlan) {
-        ptr = ptr + RTE_ETHER_HDR_LEN + sizeof(struct rte_vlan_hdr);
-      } else  {
-          ptr = ptr + RTE_ETHER_HDR_LEN;
-      }
-        ipv4_hdr = (struct rte_ipv4_hdr *)ptr;
-        recv_ip = rte_be_to_cpu_32(ipv4_hdr->src_addr);
-
-        // find ip index;
-        int found = 0;
-        for (k = 0; k < count_dst_ip; k++) {
-          if (recv_ip == dst_ips[k]) {
-            found = 1;
-            break;
+          // find ip index;
+          int found = 0;
+          for (k = 0; k < count_dst_ip; k++) {
+            if (recv_ip == dst_ips[k]) {
+              found = 1;
+              break;
+            }
           }
-        }
-        if (found == 0) {
-          uint32_t ip = rte_be_to_cpu_32(recv_ip);
-          uint8_t *bytes = (uint8_t *)(&ip);
-          printf("Ip: %u.%u.%u.%u\n", bytes[0], bytes[1], bytes[2], bytes[3]);
-          printf("k not found: qid=%d\n", qid);
-          rte_pktmbuf_free(buf); // free packet
-          continue;
-        }
+          if (found == 0) {
+            uint32_t ip = rte_be_to_cpu_32(recv_ip);
+            uint8_t *bytes = (uint8_t *)(&ip);
+            printf("Ip: %u.%u.%u.%u\n", bytes[0], bytes[1], bytes[2], bytes[3]);
+            printf("k not found: qid=%d\n", qid);
+            rte_pktmbuf_free(buf); // free packet
+            continue;
+          }
 
-        // get timestamp
-        ptr = ptr + sizeof(struct rte_ipv4_hdr) + sizeof(struct rte_udp_hdr);
-        timestamp = (*(uint64_t *)ptr);
-        latency =
-            (rte_get_timer_cycles() - timestamp) * 1000 * 1000 / hz; // (us)
-        add_number_to_p_hist(hist[k], (float)latency);
-        total_received_pkts[k] += 1;
-        rte_pktmbuf_free(buf); // free packet
+          // get timestamp
+          ptr = ptr + sizeof(struct rte_ipv4_hdr) + sizeof(struct rte_udp_hdr);
+          timestamp = (*(uint64_t *)ptr);
+          latency =
+              (rte_get_timer_cycles() - timestamp) * 1000 * 1000 / hz; // (us)
+          add_number_to_p_hist(hist[k], (float)latency);
+          total_received_pkts[k] += 1;
+          rte_pktmbuf_free(buf); // free packet
+        }
       }
     }
 

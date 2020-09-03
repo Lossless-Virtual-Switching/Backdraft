@@ -276,7 +276,7 @@ int data_mapping_rule_setup(dpdk_port_t port_id, uint16_t count_queue) {
 
     // prio: 3, vlan_id: 100
     flow = bkdrft::filter_by_ip_tos_with_vlan(port_id, tos,
-          tos_mask, 4, 100, 0xefff, i, &error);
+          tos_mask, 3, 100, 0xefff, i, &error);
 
     if (!flow) {
       LOG(INFO) << "Data mapping error message: " << error.message << " \n";

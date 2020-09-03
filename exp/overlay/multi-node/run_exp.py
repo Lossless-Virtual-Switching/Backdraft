@@ -25,7 +25,7 @@ udp_app_bin = os.path.join(udp_app_dir, 'build/') # udp_app
 
 def _stop_everything():
     try:
-      bessctl_do('daemon stop') # this may show an error it is nothing
+      bessctl_do('daemon stop', stderr=subprocess.PIPE)
     except:
       # bess was not running
       pass
@@ -142,11 +142,38 @@ def main():
         # add this try except for catching CTR-C for the server
         pass
 
+    # experiment is finished, gather data
+    pfc_stats_after = get_pfc_results()
+
+    print('switch stats')
+    p = bessctl_do('show port', subprocess.PIPE)
+    txt = p.stdout.decode()
+    print(txt)
+    print('')
+
+    print('overlay packet per second average:')
+    for i in range(2):
+        module_name = 'bkdrft_queue_out{0}'.format(i)
+        cmd =  'command module {0} get_overlay_tp EmptyArg {{}}'
+        cmd = cmd.format(module_name)
+        res = bessctl_do(cmd, stdout=subprocess.PIPE)
+        log = res.stdout.decode()
+        log = log.replace('response: ', '').replace('throughput: ','').strip()
+        if not log:
+            print('module:', module_name, 'avg: 0')
+            continue
+        overlay_tp = list(map(float, log.split('\n')))
+        overlay_tp2 = overlay_tp[-duration:]
+        avg = sum(overlay_tp2) / duration
+        print('module:', module_name, 'avg: {:.2f}'.format(avg))
+        print(overlay_tp)
+    print('')
+
     _stop_everything()
 
-    pfc_stats_after = get_pfc_results()
     pfc_stats = get_delta_pfc(pfc_stats_before, pfc_stats_after) 
     if args.output == None:
+        print('pfc stats:')
         pprint(pfc_stats)
     else:
         with open(arg.output, 'w') as f:

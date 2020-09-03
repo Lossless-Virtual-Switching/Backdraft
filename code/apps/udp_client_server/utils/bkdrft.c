@@ -100,6 +100,7 @@ int poll_ctrl_queue_expose_qid(const int port, const int ctrl_qid,
   struct rte_mbuf *ctrl_rx_bufs[1];
   struct rte_mbuf *buf;
   uint8_t dqid;
+  uint16_t dq_burst;
   uint8_t msg[BKDRFT_MAX_MESSAGE_SIZE];
   char msg_type;
   void *data;
@@ -114,22 +115,20 @@ int poll_ctrl_queue_expose_qid(const int port, const int ctrl_qid,
         return 0;
       }
     }
-// else {
-//   printf("receive ctrl msg\n");
-// }
 
     buf = ctrl_rx_bufs[0];
-    // printf("recv pkt\n");
     size = get_payload(buf, &data);
     if (data == NULL) {
       printf("bkdrft.c: payload is null\n");
       // assume it was a corrupt packet
+      rte_pktmbuf_free(buf); // free ctrl_pkt
       continue;
     }
-    // printf("payload here size: %lu\n", size);
+
     memcpy(msg, data, size);
     msg[size] = '\0';
     rte_pktmbuf_free(buf); // free ctrl_pkt
+
     // first byte defines the bkdrft message type
     msg_type = msg[0];
     if (msg_type == BKDRFT_OVERLAY_MSG_TYPE) {
@@ -150,11 +149,15 @@ int poll_ctrl_queue_expose_qid(const int port, const int ctrl_qid,
       continue;
     }
     dqid = (uint8_t)ctrl_msg->qid;
-    burst = (uint16_t)ctrl_msg->nb_pkts;
+    dq_burst = (uint16_t)ctrl_msg->nb_pkts;
     // TODO: msg->total_bytes is not used yet!
     // printf("data qid: %d\n", (int)dqid);
     // fflush(stdout);
     dpdk_net_perf__ctrl__free_unpacked(ctrl_msg, NULL);
+
+    // TODO: keep track of packets on each queue
+    if (dq_burst > burst)
+      dq_burst = burst; // recv_bufs are limited
 
     // read data queue
     nb_data_rx = rte_eth_rx_burst(port, dqid, recv_bufs, burst);
@@ -162,9 +165,11 @@ int poll_ctrl_queue_expose_qid(const int port, const int ctrl_qid,
       // printf("Read data queue %d but no data\n", 1);
       continue;
     }
+
     if (data_qid != NULL) {
       *data_qid = dqid;
     }
+
     return nb_data_rx; // result is in recv_bufs
   }
 }

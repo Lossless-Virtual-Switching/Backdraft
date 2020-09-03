@@ -21,7 +21,7 @@ mq=0
 # =========
 import socket
 host_name = socket.gethostname()
-#========
+# =========
 
 
 socket ='/tmp/vhost_0.sock' 
@@ -59,39 +59,57 @@ else:
     rate_limiting=rate_limiting,
     rate=rate)
 
-BKDRFTQueueInc(port=vhost,
-  qid=0,
-  cdq=cdq,
-  backpressure=bp,
-  overlay=overlay)  -> \
-BKDRFTQueueOut(port=nic,
-  count_queues=count_queue,
-  qid=0,
-  lossless=buffering,
-  backpressure=bp,
-  log=0,
-  cdq=cdq,
-  per_flow_buffering=pfq,
-  ecn_threshold=100000,
-  overlay=overlay,
-  multiqueue=mq,
-  mname="nic_queue_out")
 
-BKDRFTQueueInc(port=nic,
-  qid=0,
-  cdq=cdq,
-  backpressure=bp,
-  overlay=overlay)  -> \
-BKDRFTQueueOut(port=vhost,
-  count_queues=count_queue,
-  qid=0,
-  lossless=buffering,
-  backpressure=bp,
-  log=0,
-  cdq=cdq,
-  per_flow_buffering=pfq,
-  ecn_threshold=100000,
-  overlay=overlay,
-  multiqueue=mq,
-  mname="vhost_queue_out")
+nic_qout = BKDRFTQueueOut(port=nic,
+    count_queues=count_queue,
+    qid=0,
+    lossless=buffering,
+    backpressure=bp,
+    log=0,
+    cdq=cdq,
+    per_flow_buffering=pfq,
+    ecn_threshold=100000,
+    overlay=overlay,
+    multiqueue=mq,
+    mname="nic_queue_out")
+
+vhost_qout = BKDRFTQueueOut(port=vhost,
+    count_queues=count_queue,
+    qid=0,
+    lossless=buffering,
+    backpressure=bp,
+    log=0,
+    cdq=cdq,
+    per_flow_buffering=pfq,
+    ecn_threshold=100000,
+    overlay=overlay,
+    multiqueue=mq,
+    mname="vhost_queue_out")
+
+
+if cdq:
+  BKDRFTQueueInc(port=vhost,
+    qid=0,
+    cdq=cdq,
+    backpressure=bp,
+    overlay=overlay)  -> nic_qout
+
+  BKDRFTQueueInc(port=nic,
+    qid=0,
+    cdq=cdq,
+    backpressure=bp,
+    overlay=overlay)  -> vhost_qout
+else:
+  for i in range(count_queue):
+    BKDRFTQueueInc(port=vhost,
+      qid=i,
+      cdq=cdq,
+      backpressure=bp,
+      overlay=overlay)  -> nic_qout
+
+    BKDRFTQueueInc(port=nic,
+      qid=i,
+      cdq=cdq,
+      backpressure=bp,
+      overlay=overlay)  -> vhost_qout
 

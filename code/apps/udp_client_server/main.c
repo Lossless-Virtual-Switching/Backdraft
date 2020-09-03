@@ -183,7 +183,8 @@ int main(int argc, char *argv[]) {
   int server_port[16] = {1001, 5001, 6002};
 
   // how much is the size of udp payload
-  int payload_size = 1450; //64;
+  // TODO: take message size from arguments
+  int payload_size = 1450; // 64; // 
 
   // how many queues does the connected Nic/Vhost have
   int num_queues = 3;
@@ -445,6 +446,7 @@ int main(int argc, char *argv[]) {
       cntxs[i].fp = fp;
       cntxs[i].count_flow = count_flow;
       cntxs[i].base_port_number = server_port[i];
+      cntxs[i].count_queues = num_queues;
 
       cntxs[i].duration = duration;
 
