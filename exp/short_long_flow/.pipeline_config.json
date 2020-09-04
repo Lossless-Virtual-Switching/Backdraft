@@ -1,6 +1,6 @@
 {
   "pci": "07:00.1",
-  "count_queue": 1,
+  "count_queue": 8,
   "queue_size": 64,
   "bp": false,
   "cdq": false,

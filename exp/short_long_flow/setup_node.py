@@ -12,78 +12,12 @@ import sys
 import argparse
 import subprocess
 import json
+from pprint import pprint
 from cluster_config_parse_utils import *
 
-
-def bessctl_do(command, stdout=None):
-        """
-        Run bessctl commands.
-        bessctl_bin is the path to bessctl binary and
-        is defined globaly.
-        """
-        cmd = '{} {}'.format(bessctl_bin, command)
-        ret = subprocess.run(cmd, shell=True) # , stdout=subprocess.PIPE
-        return ret
-
-
-def setup_bess_pipeline(pipeline_config_path):
-        # Make sure bessctl daemon is down
-        bessctl_do('daemon stop')
-
-        # Run BESS config
-        ret = bessctl_do('daemon start')
-        if ret.returncode != 0:
-                print('failed to start bess daemon', file=sys.stderr)
-                return -1
-        # Run a configuration (pipeline)
-        ret = bessctl_do('daemon start -- run file {}'.format(pipeline_config_path))
-
-
-def spin_up_tas(conf):
-        """
-        Spinup Tas Container
-
-        note: path to spin_up_tas_container.sh is set in the global variable
-        tas_spinup_script.
-        
-        conf: dict
-        * name:
-        * type: server, client
-        * image: tas_container (it is the preferred image)
-        * cpu: cpuset to use
-        * socket: socket path
-        * ip: current tas ip
-        * prefix:
-        * cpus: how much of cpu should be used (for slow receiver scenario)
-        * port:
-        * count_flow:
-        * ips: e.g. [(ip, port), (ip, port), ...]
-        * flow_duration
-        * message_per_sec
-        * tas_cores
-        * tas_queues
-        * cdq
-        * message_size
-        * flow_num_msg
-        * app_threads
-        """
-        assert conf['type'] in ('client', 'server')
-
-        temp = []
-        for x in conf['ips']:
-                x = map(str, x) 
-                res = ':'.join(x)
-                temp.append(res)
-        _ips = ' '.join(temp)
-        count_ips = len(conf['ips'])
-
-        cmd = ('{tas_script} {name} {image} {cpu} {cpus:.2f} '
-                '{socket} {ip} {tas_cores} {tas_queues} {prefix} {cdq} '
-                '{type} {port} {count_flow} {count_ips} "{_ips}" {flow_duration} '
-                '{message_per_sec} {message_size} {flow_num_msg} {app_threads}').format(
-            tas_script=tas_spinup_script, count_ips=count_ips, _ips=_ips, **conf)
-        print(cmd)
-        return subprocess.run(cmd, shell=True)
+sys.path.insert(0, '../')
+from bkdrft_common import *
+from tas_containers import *
 
 
 def get_socket_with_name(name):
@@ -155,6 +89,8 @@ def setup_container(node_name: str, instance_number: int, config: dict):
         instance = node_config['instances'][instance_number]
         instance_type = instance['type']
         ip = node_config['ip']  # current node ip
+        if 'ip' in instance:
+                ip = instance['ip']
         port = instance.get('port', '8432')
 
         # destination ip, port tuples
@@ -205,7 +141,7 @@ def setup_container(node_name: str, instance_number: int, config: dict):
         config = {
                 'name': container_name,
                 'type': instance_type,
-                'image': 'tas_container',
+                'image': container_image_name,
                 'cpu': cpu,
                 'socket': socket,
                 'ip': ip,
@@ -217,21 +153,43 @@ def setup_container(node_name: str, instance_number: int, config: dict):
                 'flow_duration': flow_duration, # (value is in ms), 0 = no limit
                 'message_per_sec': message_per_sec, # -1 = not limited
                 'tas_cores': tas_cores,
-                'tas_queues': 8,
-                'cdq': 0,
+                'tas_queues': pipeline_config['count_queue'],
+                'cdq': int(pipeline_config['cdq']),
                 'message_size': message_size,
                 'flow_num_msg': flow_num_msg,
-                'app_threads': count_thread,
+                'count_threads': count_thread,
         }
-        spin_up_tas(config)
+        # TODO: needs better implementation for supporting different configs
+        if args.app == 'unidir':
+            if len(ips) > 1:
+                  print('warning: unidir supports only one destination!', file=sys.stderr)
+            app_params = {
+                'server_ip': ips[0][0],  # unidir supports only one destination
+                'threads': count_thread,
+                'connections': count_flow,
+                'message_size': message_size,
+                'server_delay_cycles': flow_conf.get('delay_cycles', 0) # no effect on client
+            }
+            config.update(app_params) 
+        run_container(config)
+        # pprint(config)
+
+
+def run_container(config):
+        if args.app == 'rpc':
+                spin_up_tas(config)
+        elif args.app == 'unidir':
+                spin_up_unidir(config)
+        else:
+                raise Exception('app type is unknown')
 
 
 def kill_node(instances):
         # stop containers
         for i, instance in enumerate(instances):
                 name = 'tas_{}_{}'.format(instance['type'], i)
-                subprocess.run('sudo docker stop {}'.format(name), shell=True)
-                subprocess.run('sudo docker rm {}'.format(name), shell=True)
+                subprocess.run('sudo docker stop -t 0 {}'.format(name), shell=True, stdout=subprocess.PIPE)
+                subprocess.run('sudo docker rm {}'.format(name), shell=True, stdout=subprocess.PIPE)
         # stop BESS pipeline
         bessctl_do('daemon stop')
 
@@ -249,6 +207,7 @@ if __name__ == '__main__':
 
 
         # parse arguments
+        supported_app = ('rpc', 'unidir')
         parser = argparse.ArgumentParser(description='Setup a node for short-long-flow experiment')
         parser.add_argument('-config',
                 help="path to cluster config file (default: {})".format(default_config_path),
@@ -260,7 +219,15 @@ if __name__ == '__main__':
                 action='store_true', default=False)
         parser.add_argument('-kill', help='kill previous running instances and exit',
                 action='store_true', default=False)
+        parser.add_argument('-app', choices=supported_app, default='unidir',
+                help='which app should be used for the experiment')
         args = parser.parse_args()
+
+        # define the image to be used in exp.
+        if args.app == 'rpc':
+                container_image_name = 'tas_container'
+        elif args.app == 'unidir':
+                container_image_name = 'tas_unidir'
 
         # read config file 
         full_config = get_full_config(args.config)
@@ -270,7 +237,7 @@ if __name__ == '__main__':
                 sys.exit(-1)
         instances = info['instances']
 
-	# kill previous instances
+        # kill previous instances
         if args.kill:
                 kill_node(instances)
                 sys.exit(0)
@@ -281,6 +248,12 @@ if __name__ == '__main__':
         if args.bessonly:
                 print('only BESS has been setuped')
                 sys.exit(0)
+
+        # read pipeline config
+        pipeline_config = json.load(open('.pipeline_config.json'))
+        print('pipeline config:')
+        pprint(pipeline_config)
+        print('')
         
         # setup TAS instances
         for i, instance in enumerate(instances): 
@@ -288,4 +261,6 @@ if __name__ == '__main__':
                         setup_container(node_name=node_name, instance_number=i, config=full_config)
                 else:
                         print('instance type ({}) is not defined'.format(instance['type']))
+
+        print('Node has been setup successfully')
 
