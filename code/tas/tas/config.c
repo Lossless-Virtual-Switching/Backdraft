@@ -84,6 +84,7 @@ enum cfg_params {
   CP_FP_FILE_PREFIX,
   CP_FP_COMMAND_DATA_QUEUE,
   CP_FP_PERFLOW_QUEUE,
+  CP_COUNT_QUEUE,
 };
 
 static struct option opts[] = {
@@ -234,6 +235,9 @@ static struct option opts[] = {
     { .name = "fp-perflow-queueing",
       .has_arg = no_argument,
       .val = CP_FP_PERFLOW_QUEUE },
+    { .name = "count-queue",
+      .has_arg = required_argument,
+      .val = CP_COUNT_QUEUE },
     { .name = NULL },
   };
 
@@ -500,11 +504,17 @@ int config_parse(struct configuration *c, int argc, char *argv[])
         c->fp_vlan_strip = 1;
         break;
       case CP_FP_COMMAND_DATA_QUEUE:
-	c->fp_command_data_queue = 1;
-	break;
+        c->fp_command_data_queue = 1;
+        break;
       case CP_FP_PERFLOW_QUEUE:
-	c->fp_perflow_queueing = 1;
-	break;
+        c->fp_perflow_queueing = 1;
+        break;
+      case CP_COUNT_QUEUE:
+        if (parse_int32(optarg, &c->count_queue) != 0) {
+          fprintf(stderr, "count queue parsing failed\n");
+          goto failed;
+        }
+        break;
       case CP_FP_POLL_INTERVAL_TAS:
         if (parse_int32(optarg, &c->fp_poll_interval_tas) != 0) {
           fprintf(stderr, "fp tas poll interval parsing failed\n");
@@ -624,6 +634,7 @@ static int config_defaults(struct configuration *c, char *progname)
   c->quiet = 0;
   c->fp_command_data_queue = 0;
   c->fp_perflow_queueing = 0;
+  c->count_queue = 1;
 
   c->dpdk_argc = 1;
   if ((c->dpdk_argv = calloc(2, sizeof(*c->dpdk_argv))) == NULL) {
@@ -742,6 +753,9 @@ static void print_usage(struct configuration *c, char *progname)
           "[default: disabled]\n"
       "  --ready-fd=FD               File descriptor to signal readiness "
           "[default: disabled]\n"
+      "  --count-queue=CQ            Number of queues one thread handles \n"
+          "(This ruins multi-core support) "
+          "[default: 1]\n"
       "\n",
       progname, c->shm_len,
       c->nic_rx_len, c->nic_tx_len, c->app_kin_len, c->app_kout_len,

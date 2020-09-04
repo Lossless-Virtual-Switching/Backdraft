@@ -127,6 +127,7 @@ struct configuration {
   uint32_t fp_command_data_queue;
   /** FP: enable perflow queueing */
   uint32_t fp_perflow_queueing;
+  uint32_t count_queue;
   /** FP: polling interval for TAS */
   uint32_t fp_poll_interval_tas;
   /** FP: polling interval for app */

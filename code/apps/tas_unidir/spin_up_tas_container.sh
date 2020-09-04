@@ -3,7 +3,7 @@
 curdir=$(dirname $0)
 curdir=$(realpath $curdir)
 
-if [ $# -lt 11 ]; then
+if [ $# -lt 15 ]; then
 	echo "useage $(basename $0): '< expecting 20 params as below >'"
 	echo "== docker config ==:"
 	echo "* param1: container-name"
@@ -28,6 +28,7 @@ if [ $# -lt 11 ]; then
   echo "* param 12: threads"
   echo "* param 13: connections"
   echo "* param 14: message size"
+  echo "* param 15: delay cycles"
 	exit 1
 fi
 
@@ -64,9 +65,11 @@ then
 threads=${12}
 conns=${13}
 msg_size=${14}
+delay_cycles=${15}
 app_flags="--env threads=$threads \
   --env connections=$conns \
-  --env message_size=$msg_size "
+  --env message_size=$msg_size \
+  --env delay_cycles=$delay_cycles"
 fi
 
 if [ ! -d /dev/hugepages/$tas_dpdk_prefix ]; then

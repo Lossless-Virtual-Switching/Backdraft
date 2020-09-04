@@ -14,6 +14,7 @@
 # threads
 # connections
 # message_size
+# delay_cycles
 
 TAS_DIR=/root/post-loom/code/tas
 TAS_BENCH=/root/post-loom/code/tas-benchmark
@@ -41,6 +42,7 @@ exec $TAS_DIR/tas/tas --dpdk-extra=--vdev \
 	--ip-addr=$IP \
 	--cc=dctcp-win \
 	--fp-cores-max=$CORES \
+  --count-queue=$QUEUES \
   $flags &
 
 # wait for tas server to be ready
@@ -52,9 +54,15 @@ if [ "$type" = "client" ]; then
 		$TAS_BENCH/micro_unidir/unidir_linux \
 		-i $server_ip -t $threads -c $connections -b $message_size
 elif [ "$type" = "server" ]; then
+
+  if [ -z "$delay_cycles" ]; then
+    # if no env variable set it to zero
+    delay_cycles=0
+  fi
+
 	LD_PRELOAD=$TAS_DIR/lib/libtas_interpose.so \
 		$TAS_BENCH/micro_unidir/unidir_linux \
-    -t $threads -c $connections -b $message_size -r
+    -t $threads -c $connections -b $message_size -o $delay_cycles -r
 else
 	echo "type variable is not supported (type=$type)"
 fi

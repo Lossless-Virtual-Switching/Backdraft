@@ -164,7 +164,9 @@ int network_init(unsigned n_threads)
       goto error_exit;
     }
   } else {
-    ret = rte_eth_dev_configure(net_port_id, n_threads, n_threads, &port_conf);
+    // ret = rte_eth_dev_configure(net_port_id, n_threads, n_threads, &port_conf);
+    ret = rte_eth_dev_configure(net_port_id, config.count_queue,
+                                config.count_queue, &port_conf);
     if (ret < 0) {
       fprintf(stderr, "rte_eth_dev_configure failed\n");
       goto error_exit;
@@ -256,26 +258,33 @@ int network_thread_init(struct dataplane_context *ctx)
 
   /* initialize tx queue */
   t->queue_id = ctx->id;
+  // rte_spinlock_lock(&initlock);
+  // ret = rte_eth_tx_queue_setup(net_port_id, t->queue_id, TX_DESCRIPTORS,
+  //         rte_socket_id(), &eth_devinfo.default_txconf);
+  // rte_spinlock_unlock(&initlock);
   rte_spinlock_lock(&initlock);
-  ret = rte_eth_tx_queue_setup(net_port_id, t->queue_id, TX_DESCRIPTORS,
-          rte_socket_id(), &eth_devinfo.default_txconf);
+  ret = 1;
+  for (int i = 0; i < config.count_queue; i++) {
+    ret = rte_eth_tx_queue_setup(net_port_id, i, TX_DESCRIPTORS,
+            rte_socket_id(), &eth_devinfo.default_txconf);
+  }
   rte_spinlock_unlock(&initlock);
   if (ret != 0) {
     fprintf(stderr, "network_thread_init: rte_eth_tx_queue_setup failed\n");
     goto error_tx_queue;
   }
 
-  if (config.fp_command_data_queue) {
-    // TODO: multiple core support is not implemented for command data queue
-    rte_spinlock_lock(&initlock);
-    ret = rte_eth_tx_queue_setup(net_port_id, 1, TX_DESCRIPTORS,
-            rte_socket_id(), &eth_devinfo.default_txconf);
-    rte_spinlock_unlock(&initlock);
-    if (ret != 0) {
-      fprintf(stderr, "network_thread_init: rte_eth_tx_queue_setup failed\n");
-      goto error_tx_queue;
-    }
-  }
+  // if (config.fp_command_data_queue) {
+  //   // TODO: multiple core support is not implemented for command data queue
+  //   rte_spinlock_lock(&initlock);
+  //   ret = rte_eth_tx_queue_setup(net_port_id, 1, TX_DESCRIPTORS,
+  //           rte_socket_id(), &eth_devinfo.default_txconf);
+  //   rte_spinlock_unlock(&initlock);
+  //   if (ret != 0) {
+  //     fprintf(stderr, "network_thread_init: rte_eth_tx_queue_setup failed\n");
+  //     goto error_tx_queue;
+  //   }
+  // }
 
   /* barrier to make sure tx queues are initialized first */
   __sync_add_and_fetch(&tx_init_done, 1);
@@ -283,32 +292,38 @@ int network_thread_init(struct dataplane_context *ctx)
 
   /* initialize rx queue */
   t->queue_id = ctx->id;
+  // rte_spinlock_lock(&initlock);
+  // ret = rte_eth_rx_queue_setup(net_port_id, t->queue_id, RX_DESCRIPTORS,
+  //         rte_socket_id(), &eth_devinfo.default_rxconf, t->pool);
+  // rte_spinlock_unlock(&initlock);
   rte_spinlock_lock(&initlock);
-  ret = rte_eth_rx_queue_setup(net_port_id, t->queue_id, RX_DESCRIPTORS,
-          rte_socket_id(), &eth_devinfo.default_rxconf, t->pool);
+  for (int i = 0; i < config.count_queue; i++) {
+    ret = rte_eth_rx_queue_setup(net_port_id, i, RX_DESCRIPTORS,
+            rte_socket_id(), &eth_devinfo.default_rxconf, t->pool);
+  }
   rte_spinlock_unlock(&initlock);
   if (ret != 0) {
     fprintf(stderr, "network_thread_init: rte_eth_rx_queue_setup failed\n");
     goto error_rx_queue;
   }
 
-  if (config.fp_command_data_queue) {
-    // TODO: multiple core support is not implemented for command data queue
-    rte_spinlock_lock(&initlock);
-    ret = rte_eth_rx_queue_setup(net_port_id, 1, RX_DESCRIPTORS,
-            rte_socket_id(), &eth_devinfo.default_rxconf, pool_2);
-    rte_spinlock_unlock(&initlock);
-    if (ret != 0) {
-      fprintf(stderr, "network_thread_init: rte_eth_rx_queue_setup failed\n");
-      goto error_rx_queue;
-    }
-  }
+  // if (config.fp_command_data_queue) {
+  //   // TODO: multiple core support is not implemented for command data queue
+  //   rte_spinlock_lock(&initlock);
+  //   ret = rte_eth_rx_queue_setup(net_port_id, 1, RX_DESCRIPTORS,
+  //           rte_socket_id(), &eth_devinfo.default_rxconf, pool_2);
+  //   rte_spinlock_unlock(&initlock);
+  //   if (ret != 0) {
+  //     fprintf(stderr, "network_thread_init: rte_eth_rx_queue_setup failed\n");
+  //     goto error_rx_queue;
+  //   }
+  // }
 
   /* barrier to make sure rx queues are initialized first */
   __sync_add_and_fetch(&rx_init_done, 1);
   while (rx_init_done < num_threads);
 
-  /* start device if this ìs core 0 */
+  /* start device if this is core 0 */
   if (ctx->id == 0) {
     if (rte_eth_dev_start(net_port_id) != 0) {
       fprintf(stderr, "rte_eth_dev_start failed\n");

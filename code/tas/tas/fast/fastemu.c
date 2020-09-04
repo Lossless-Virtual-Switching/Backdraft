@@ -148,6 +148,8 @@ void dataplane_loop(struct dataplane_context *ctx)
 
   notify_canblock_reset(&nbs);
   while (!exited) {
+    // poll next queue id for this thread // TODO: this is not supporting multi-core
+    ctx->net.queue_id = (ctx->net.queue_id + 1) % config.count_queue;
     unsigned n = 0;
 
     /* count cycles of previous iteration if it was busy */
