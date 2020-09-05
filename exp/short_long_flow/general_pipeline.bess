@@ -57,6 +57,11 @@ def get_current_node_info(file_path):
   return (key, item)
 
 
+def get_tci(prio, dei, vlan_id):
+  tci = prio << 13 | 0 << 12 | vlan_id  
+  return tci
+
+
 name, info =  get_current_node_info(config_file)
 instances = info['instances']
 count_instances = len(instances)
@@ -149,11 +154,15 @@ for i, (vhost, ip) in enumerate(vhosts):
     lookup_gate += 1
     print(ip, ' : ', lookup_gate)
     x.add(prefix=ip, prefix_len=32, gate=lookup_gate)
-merge -> sw_q_out
+push_vlan = VLANPush(tci=get_tci(3, 0, 100))
+merge -> push_vlan -> sw_q_out
+# merge -> sw_q_out
 
 #TODO: if two instance have the same ip we will have problems
 # Rx
-sw_merge -> x
+pop_vlan = VLANPop()
+sw_merge -> pop_vlan -> x
+# sw_merge -> x
 lookup_gate = 1
 # x:0 -> rep
 for i, (vhost, ip) in enumerate(vhosts):
