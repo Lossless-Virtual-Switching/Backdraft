@@ -8,10 +8,11 @@ if [ ! -z "$1" ]; then
 else
 	type=bess
 fi
-count_queue=1
+count_queue=8
 count_flow=1
-source_ip="192.168.1.2"
+source_ip="192.168.1.4"
 duration=40
+port=1234
 
 
 echo ================
@@ -26,13 +27,13 @@ sudo ./build/udp_app \
 	-l 16 \
 	-w $pci \
 	--file-prefix=m2 \
-	-- $source_ip $count_queue $type client 1 192.168.1.3 $count_flow $duration
+	-- $source_ip $count_queue $type client 1 192.168.1.3 $count_flow $duration $port
 else
 # run clinet
 sudo ./build/udp_app \
 	-l 14,16 \
 	-w $pci \
 	--file-prefix=m2 \
-	-- $source_ip $count_queue $type client 2 192.168.2.10 10.0.1.2 $count_flow $duration
+	-- $source_ip $count_queue $type client 2 192.168.2.10 10.0.1.2 $count_flow $duration $port
 fi
 

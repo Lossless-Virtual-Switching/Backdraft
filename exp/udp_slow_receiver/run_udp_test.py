@@ -6,6 +6,9 @@ import argparse
 import subprocess
 import argparse
 
+sys.path.insert(0, "../")
+from bkdrft_common import *
+
 
 cur_script_dir = os.path.dirname(os.path.abspath(__file__))
 bessctl_dir = os.path.abspath(os.path.join(cur_script_dir, '../../code/bess-v1/bessctl'))
@@ -16,15 +19,6 @@ pipeline_config_file = os.path.join(cur_script_dir, 'slow_receiver.bess')
 
 slow_receiver_exp = os.path.abspath(os.path.join(cur_script_dir,
         '../../code/apps/udp_client_server/build/udp_app'))
-
-
-def bessctl_do(command, stdout=None):
-    """
-    """
-    cmd = '{} {}'.format(bessctl_bin, command)
-    ret = subprocess.run(cmd, shell=True, stdout=subprocess.PIPE)
-    print(ret.stdout.decode())
-    return ret
 
 
 def update_config():
@@ -63,7 +57,7 @@ def run_server(instance):
         Start a server process
     """
     prefix = 'slow_receiver_server_{}'.format(instance)
-    cpu = ['4', '10'][instance]  # on which cpu
+    cpu = ['2', '3'][instance]  # on which cpu
     vdev = ['virtio_user0,path=/tmp/ex_vhost0.sock,queues='+str(count_queue),
             'virtio_user2,path=/tmp/ex_vhost2.sock,queues='+str(count_queue)][instance]
     server_delay = [0, slow][instance]
@@ -74,52 +68,59 @@ def run_server(instance):
             'file-prefix': prefix,
             'vdev': vdev,
             'count_queue': count_queue,
-	    'sysmod': 'bess' if sysmod == 'bess-bp' else sysmod,
+            'sysmod': 'bess' if sysmod == 'bess-bp' else sysmod,
             'mode': 'server',
             'inst': instance,
             'delay': server_delay,
+            'source_ip': _server_ip,
             }
     cmd = ('sudo {bin} --no-pci -l{cpu} --file-prefix={file-prefix} '
             '--vdev="{vdev}" --socket-mem=128 -- '
-            '{count_queue} {sysmod} {mode} {delay}').format(**args)
+            '{source_ip} {count_queue} {sysmod} {mode} {delay}').format(**args)
 
     print("===============")
     print("     server    ")
     print(cmd)
     print("===============")
     # Run in background
-    p = subprocess.Popen(cmd, shell=True, stdout=subprocess.PIPE)
+    p = subprocess.Popen(cmd, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
     return p
 
 
-def run_client(ips):
+def run_client(instance):
     """
         Start a client process
 
         First 20 seconds of the client runtime is not counted in
         percentiles report. (Consult the .../apps/.../client.c source code)
     """
-    prefix = 'slow_receiver_exp_client'
-    cpu = '14'
-    vdev = 'virtio_user1,path=/tmp/ex_vhost1.sock,queues='+str(count_queue)
+    port = [1001, 5001,][instance]
+    prefix = 'slow_receiver_exp_client_{}'.format(instance)
+    cpu = [5, 6][instance]
+    vdev = ['virtio_user1,path=/tmp/ex_vhost1.sock,queues='+str(count_queue),
+           'virtio_user3,path=/tmp/ex_vhost3.sock,queues='+str(count_queue),][instance]
+    ips = [[_server_ip],[_server_ip]][instance]
     _ips = ' '.join(ips)
+    _cnt_flow = [4, count_flow][instance]
     args = {
             'bin': slow_receiver_exp,
             'cpu': cpu,
             'file-prefix': prefix,
             'vdev': vdev,
             'count_queue': count_queue,
-	    'sysmod': 'bess' if sysmod == 'bess-bp' else sysmod,
+	          'sysmod': 'bess' if sysmod == 'bess-bp' else sysmod,
             'mode': 'client',
             'cnt_ips': len(ips),
             'ips':  _ips,
-            'count_flow': count_flow,
+            'count_flow': _cnt_flow,
             'duration': duration,
+            'source_ip': _client_ip,
+            'port': port,
             }
     cmd = ('sudo {bin} --no-pci -l{cpu} --file-prefix={file-prefix} '
             '--vdev="{vdev}" --socket-mem=128 -- '
-            '{count_queue} {sysmod} {mode} {cnt_ips} {ips} '
-            '{count_flow} {duration}').format(**args)
+            '{source_ip} {count_queue} {sysmod} {mode} {cnt_ips} {ips} '
+            '{count_flow} {duration} {port}').format(**args)
 
     print("===============")
     print("     client")
@@ -188,41 +189,58 @@ def main():
 
     # Run server
     server_p1 = run_server(0)
-    sleep(1)
-    server_p2 = run_server(1)
-
+    sleep(3)
+    # server_p2 = run_server(1)
     # Run client
-    client_p = run_client(['192.168.2.10', '10.0.2.11'])
+    client_p = run_client(0)
+    sleep(3)
+    client_p2 = run_client(1)
 
     # Wait
     client_p.wait()
-    subprocess.run('sudo pkill udp_app', shell=True)  # Stop server
+    client_p2.wait()
+    # subprocess.run('sudo pkill udp_app', shell=True)  # Stop server
+    # server_p1.kill()
     server_p1.wait()
-    server_p2.wait()
+    # server_p2.wait()
 
 
     # Get output of processes
-    txt0= str(client_p.stdout.read().decode())
-    txt1 = str(server_p1.stdout.read().decode())
-    txt2 = str(server_p2.stdout.read().decode())
+    print('====== client1 ====')
+    txt = str(client_p.stdout.read().decode())
+    print(txt)
+    print('====== client2 ====')
+    txt = str(client_p2.stdout.read().decode())
+    print(txt)
+    print('====== server ====')
+    txt = str(server_p1.stdout.read().decode())
+    print(txt)
+    txt = str(server_p1.stderr.read().decode())
+    print(txt)
     print('======')
-    print(txt0)
-    print('======')
-    print(txt1)
-    print('======')
-    print(txt2)
-    print('======')
+    # print('======')
+    # txt = str(server_p2.stdout.read().decode())
+    # print(txt)
+    # print('======')
 
     print('server1\n')
-    p = bessctl_do('show port ex_vhost0', subprocess.PIPE)
-    # txt = p.stdout.decode()
+    p = bessctl_do('show port ex_vhost0', stdout=subprocess.PIPE)
+    txt = p.stdout.decode()
+    print(txt)
 
-    p = bessctl_do('show port ex_vhost2', subprocess.PIPE)
     print('server2\n')
-    # txt = p.stdout.decode()
+    p = bessctl_do('show port ex_vhost2', stdout=subprocess.PIPE)
+    txt = p.stdout.decode()
+    print(txt)
 
     print('client\n')
-    p = bessctl_do('show port ex_vhost1', subprocess.PIPE)
+    p = bessctl_do('show port ex_vhost1', stdout=subprocess.PIPE)
+    txt = p.stdout.decode()
+    print(txt)
+    print('client2\n')
+    p = bessctl_do('show port ex_vhost3', stdout=subprocess.PIPE)
+    txt = p.stdout.decode()
+    print(txt)
     # txt = p.stdout.decode()
     # bessctl_do('command module client_qout0 get_pause_calls EmptyArg {}')
     bessctl_do('command module server1_qout get_pause_calls EmptyArg {}')
@@ -256,6 +274,9 @@ if __name__ == '__main__':
     pfq = args.pfq
     lossless = args.buffering
     duration = args.duration
+
+    _server_ip = '10.10.1.3'
+    _client_ip = '10.10.1.2'
 
     if cdq and sysmod != 'bkdrft':
         print('comand data queueing is only available on bkdrft mode', file=sys.stderr)

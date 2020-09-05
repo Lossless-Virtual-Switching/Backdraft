@@ -103,8 +103,10 @@ int do_client(void *_cntx) {
   // throughput
   uint64_t total_sent_pkts[count_dst_ip];
   uint64_t total_received_pkts[count_dst_ip];
+  uint64_t failed_to_push[count_dst_ip];
   memset(total_sent_pkts, 0, sizeof(uint64_t) * count_dst_ip);
   memset(total_received_pkts, 0, sizeof(uint64_t) * count_dst_ip);
+  memset(failed_to_push, 0, sizeof(uint64_t) * count_dst_ip);
 
   uint8_t cdq = system_mode == system_bkdrft;
 
@@ -286,6 +288,7 @@ int do_client(void *_cntx) {
       }
 
       total_sent_pkts[k] += nb_tx;
+      failed_to_push[k] += BURST_SIZE - nb_tx;
 
       // free packets failed to send
       for (i = nb_tx; i < BURST_SIZE; i++)
@@ -399,6 +402,8 @@ int do_client(void *_cntx) {
     uint32_t ip = rte_be_to_cpu_32(dst_ips[k]);
     uint8_t *bytes = (uint8_t *)(&ip);
     fprintf(fp, "Ip: %u.%u.%u.%u\n", bytes[0], bytes[1], bytes[2], bytes[3]);
+    percentile = get_percentile(hist[k], 0.01);
+    fprintf(fp, "%d latency (1.0): %f\n", k, percentile);
     percentile = get_percentile(hist[k], 0.50);
     fprintf(fp, "%d latency (50.0): %f\n", k, percentile);
     percentile = get_percentile(hist[k], 0.90);
@@ -419,6 +424,7 @@ int do_client(void *_cntx) {
     fprintf(fp, "Ip: %u.%u.%u.%u\n", bytes[0], bytes[1], bytes[2], bytes[3]);
     fprintf(fp, "Tx: %ld\n", total_sent_pkts[k]);
     fprintf(fp, "Rx: %ld\n", total_received_pkts[k]);
+    fprintf(fp, "failed to push: %ld\n", failed_to_push[k]);
   }
   fprintf(fp, "Client done\n");
   fflush(fp);

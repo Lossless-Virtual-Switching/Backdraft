@@ -8,7 +8,7 @@ else
 	type=bess
 fi
 delay=40
-count_queue=1
+count_queue=8
 source_ip="192.168.1.3"
 
 echo ================

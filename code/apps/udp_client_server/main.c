@@ -395,7 +395,7 @@ int main(int argc, char *argv[]) {
     cntxs[i].default_qid = next_qid++; // poll this queue
     cntxs[i].running = 1;     // this job of this cntx has not finished yet
     cntxs[i].src_ip = source_ip;
-    cntxs[i].use_vlan = 1;
+    cntxs[i].use_vlan = 0;
     cntxs[i].bidi = 1;
     if (mode == mode_server) {
       // TODO: fractions are not counted here
@@ -486,10 +486,13 @@ int main(int argc, char *argv[]) {
 
   // free
   for (int i = 0; i < count_core; i++) {
-    free(cntxs[i].dst_ips);
-    free(cntxs[i].managed_queues);
-    fclose(cntxs[i].fp);
-    free(output_buffers[i]);
+    if (mode == mode_server) {
+      free(cntxs[i].managed_queues);
+    } else {
+      free(cntxs[i].dst_ips);
+      fclose(cntxs[i].fp);
+      free(output_buffers[i]);
+    }
   }
   for (int q = 0; q < num_queues; q++) {
     rte_eth_tx_done_cleanup(dpdk_port, q, 0);

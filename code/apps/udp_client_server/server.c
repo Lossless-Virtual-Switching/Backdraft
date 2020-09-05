@@ -72,10 +72,12 @@ int do_server(void *_cntx) {
   uint64_t start_time;
   uint64_t current_time;
   uint64_t current_sec = 0;
-  // uint64_t last_pkt_time = 0;
-  // const uint64_t termination_threshold = 5 * rte_get_timer_hz();
+  uint64_t last_pkt_time = 0;
+  const uint64_t termination_threshold = 5 * rte_get_timer_hz();
   int run = 1;
   struct rte_ipv4_hdr *ipv4_hdr;
+
+  uint64_t failed_to_push = 0;
 
   char *ptr;
   // struct p_hist *hist;
@@ -122,16 +124,16 @@ int do_server(void *_cntx) {
     }
 
     if (nb_rx == 0) {
-      // if (first_pkt) {
-      //   // if client has started sending data
-      //   // and some amount of time has passed since
-      //   // last pkt then server is done
-      //   current_time = rte_get_timer_cycles();
-      //   if (current_time - last_pkt_time > termination_threshold) {
-      //     run = 0;
-      //     break;
-      //   }
-      // }
+      if (first_pkt) {
+        // if client has started sending data
+        // and some amount of time has passed since
+        // last pkt then server is done
+        current_time = rte_get_timer_cycles();
+        if (current_time - last_pkt_time > termination_threshold) {
+          run = 0;
+          break;
+        }
+      }
       continue;
     }
     
@@ -146,13 +148,14 @@ int do_server(void *_cntx) {
 
     // update throughput table
     current_time = rte_get_timer_cycles();
-    // last_pkt_time = current_time;
+    last_pkt_time = current_time;
     current_sec = (current_time - start_time) / hz;
     if (current_sec > 1) {
       // print_stats(throughput, hist);
       printf("TP: %lu\n", throughput);
       throughput = 0;
       start_time = current_time;
+      printf("failed to push: %ld\n", failed_to_push);
     }
 
     // spend some time for the whole batch
@@ -249,7 +252,8 @@ int do_server(void *_cntx) {
     } else {
       nb_tx = send_pkt(port, 1, tx_buf, k, true, ctrl_mem_pool);
     }
-    // printf("server echo packet: %d", nb_tx);
+    failed_to_push += k - nb_tx;
+    // printf("server echo packet: %d\n", nb_tx);
 
     // free the packets failed to send
     // rte_pktmbuf_free_bulk(rx_bufs + nb_tx, nb_rx - nb_tx);

@@ -18,7 +18,7 @@ COMMAND_Q = 0
 ECNT=32000
 LOSSLESS = 0
 
-CNT_Q = 3
+CNT_Q = 8
 
 # == Insert here ==
 # ==     End     ==
@@ -44,8 +44,16 @@ host0 = PMDPort(
 
 # Client
 host1 = PMDPort(
-    name='ex_vhost1',
-    vdev='eth_vhost1,iface=/tmp/ex_vhost1.sock,queues={}'.format(Q),
+  name='ex_vhost1',
+  vdev='eth_vhost1,iface=/tmp/ex_vhost1.sock,queues={}'.format(Q),
+  num_inc_q=TX_QUEUE_COUNT,
+  num_out_q=RX_QUEUE_COUNT,
+  size_inc_q=Q_SIZE,
+  size_out_q=Q_SIZE)
+
+client2 = PMDPort(
+  name='ex_vhost3',
+  vdev='eth_vhost3,iface=/tmp/ex_vhost3.sock,queues={}'.format(Q),
   num_inc_q=TX_QUEUE_COUNT,
   num_out_q=RX_QUEUE_COUNT,
   size_inc_q=Q_SIZE,
@@ -73,21 +81,25 @@ def bkdrft_pipeline():
     """
     print('cnt q:', CNT_Q, 'pfq:', PFQ, 'cdq:', COMMAND_Q, 'lossless:', LOSSLESS, 'bp:', BP) 
     router = IPLookup()
-    router.add(prefix='192.0.0.0', prefix_len=8, gate=1)
+    router.add(prefix='10.10.1.3', prefix_len=32, gate=1)
     router.add(prefix='10.0.0.0', prefix_len=8, gate=2)
 
     receive_side_x = Demultiplex(ranges=[
-	  {'start': 1000, 'end': 6000, 'gate': 1},
-	  # {'start': 5000, 'end': 6000, 'gate': 2},
-	])
+        {'start': 1000, 'end': 2000, 'gate': 1},
+        {'start': 5000, 'end': 6000, 'gate': 2},
+	  ])
 
     loop = CNT_Q
     if COMMAND_Q:
-      loop = 1
+        loop = 1
 
     client_qout0 = BKDRFTQueueOut(port=host1, qid=0, count_queues=CNT_Q,
-            backpressure=BP, lossless=LOSSLESS, cdq=COMMAND_Q, per_flow_buffering=PFQ,
-            ecn_threshold=ECNT, overlay=False, mname='client')
+        backpressure=BP, lossless=LOSSLESS, cdq=COMMAND_Q, per_flow_buffering=PFQ,
+        ecn_threshold=ECNT, overlay=False, mname='client')
+
+    client_qout2 = BKDRFTQueueOut(port=client2, qid=0, count_queues=CNT_Q,
+        backpressure=BP, lossless=LOSSLESS, cdq=COMMAND_Q, per_flow_buffering=PFQ,
+        ecn_threshold=ECNT, overlay=False, mname='client')
 
     # client_qout0 = QueueOut(port=host1.name, qid=0)
     # client_qout1 = QueueOut(port=host1.name, qid=1)
@@ -103,6 +115,9 @@ def bkdrft_pipeline():
     for i in range(loop):
         client_qin = BKDRFTQueueInc(port=host1,
             qid=i, backpressure=BP, cdq=COMMAND_Q, overlay=False)
+
+        client2_qin = BKDRFTQueueInc(port=client2,
+            qid=i, backpressure=BP, cdq=COMMAND_Q, overlay=False)
 	
         server1_qin = BKDRFTQueueInc(port=host0,
             qid=i, backpressure=BP, cdq=COMMAND_Q, overlay=False)
@@ -111,6 +126,7 @@ def bkdrft_pipeline():
             qid=i, backpressure=BP, cdq=COMMAND_Q, overlay=False)
 
         client_qin -> router
+        client2_qin -> router
         server1_qin -> receive_side_x
         server2_qin -> receive_side_x
 
@@ -118,7 +134,7 @@ def bkdrft_pipeline():
     router:2 -> server2_qout
 
     receive_side_x:1 -> client_qout0
-    # receive_side_x:2 -> client_qout1
+    receive_side_x:2 -> client_qout2
 
 
 # router = IPLookup()
@@ -135,35 +151,9 @@ def bkdrft_pipeline():
 
 
 if AGENT == BESS:
-    # client_qin -> iplookup -> server1_qout(/2)
-    # router::IPLookup()
-    # client_qin::QueueInc(port=host1.name, qid=0)
-    # client_qout::QueueOut(port=host1.name, qid=0)
-
-    # server1_qin::QueueInc(port=host0.name, qid=0)
-    # server1_qout::QueueOut(port=host0.name, qid=0)
-
-    # server2_qin::QueueInc(port=host2.name, qid=0)
-    # server2_qout::QueueOut(port=host2.name, qid=0)
-
-    # router.add(prefix='192.0.0.0', prefix_len=8, gate=0)
-    # router.add(prefix='10.0.0.0', prefix_len=8, gate=1)
-
-    # client_qin -> router
-    # router:0 -> server1_qout
-    # router:1 -> server2_qout
-
-    # server1_qin -> client_qout
-    # server2_qin -> client_qout
-
-    # COMMAND_Q = 0
-    # PFQ = 0
     bkdrft_pipeline()
 
 elif AGENT == BKDRFT:
-    # client_qin -> iplookup -> server1_qout(/2)
-    # COMMAND_Q = 1
-    # PFQ = 1
     bkdrft_pipeline()
 
 elif AGENT == BESS_BP:
