@@ -5,9 +5,11 @@ import os
 import argparse
 import subprocess
 import argparse
+from pprint import pprint
 
 sys.path.insert(0, '../')
 from bkdrft_common import *
+from tas_containers import *
 
 
 cur_script_dir = os.path.dirname(os.path.abspath(__file__))
@@ -37,84 +39,6 @@ def update_config():
 
     with open(pipeline_config_file, 'w') as f:
         f.writelines(content)
-
-
-def spin_up_tas(conf):
-    """
-    Spinup Tas Container
-
-    note: path to spin_up_tas_container.sh is set in the global variable
-    tas_spinup_script.
-    
-    conf: dict
-    * name:
-    * type: server, client
-    * image: tas_container (it is the preferred image)
-    * cpu: cpuset to use
-    * socket: socket path
-    * ip: current tas ip
-    * prefix:
-    * cpus: how much of cpu should be used (for slow receiver scenario)
-    * port:
-    * count_flow:
-    * ips: e.g. [(ip, port), (ip, port), ...]
-    * flow_duration
-    * message_per_sec
-    * tas_cores
-    * tas_queues
-    * cdq
-    * message_size
-    * flow_num_msg
-    * count_threads
-    """
-    assert conf['type'] in ('client', 'server')
-
-    temp = []
-    for x in conf['ips']:
-            x = map(str, x) 
-            res = ':'.join(x)
-            temp.append(res)
-    _ips = ' '.join(temp)
-    count_ips = len(conf['ips'])
-
-    cmd = ('{tas_script} {name} {image} {cpu} {cpus:.2f} '
-            '{socket} {ip} {tas_cores} {tas_queues} {prefix} {cdq} '
-            '{type} {port} {count_flow} {count_ips} "{_ips}" {flow_duration} '
-            '{message_per_sec} {message_size} {flow_num_msg} {count_threads}').format(
-        tas_script=tas_spinup_script, count_ips=count_ips, _ips=_ips, **conf)
-    # print(cmd)
-    return subprocess.run(cmd, shell=True, stdout=subprocess.PIPE)
-
-
-def spin_up_unidir(conf):
-    cmd = ('{tas_script} {name} {image} {cpu} {cpus:.2f} '
-            '{socket} {ip} {tas_cores} {tas_queues} {prefix} {cdq} '
-            '{type} ').format(tas_script=tas_spinup_script, **conf)
-    if conf['type'] == 'client':
-        cmd = '{cmd} {server_ip} {threads} {connections} {message_size}'.format(cmd=cmd, **conf)
-    elif conf['type'] == 'server':
-        cmd = '{cmd} {threads} {connections} {message_size}'.format(cmd=cmd, **conf)
-    else:
-        raise Exception('Container miss configuration: '
-                        'expecting type to be client or server')
-    # print(cmd)
-    return subprocess.run(cmd, shell=True, stdout=subprocess.PIPE)
-
-
-def spin_up_memcached(conf):
-    cmd = ('{tas_script} {name} {image} {cpu} {cpus:.2f} '
-            '{socket} {ip} {tas_cores} {tas_queues} {prefix} {cdq} '
-            '{type} ').format(tas_script=tas_spinup_script, **conf)
-    if conf['type'] == 'client':
-        cmd = ('{cmd} {dst_ip} {duration} {warmup_time} {wait_before_measure} '
-               '{threads} {connections}').format(cmd=cmd, **conf)
-    elif conf['type'] == 'server':
-        cmd = '{cmd} {memory} {threads}'.format(cmd=cmd, **conf) 
-    else:
-        raise Exception('Container miss configuration: '
-                        'expecting type to be client or server')
-    # print(cmd)
-    return subprocess.run(cmd, shell=True, stdout=subprocess.PIPE)
 
 
 def run_container(container):
@@ -263,8 +187,8 @@ def _get_rpc_containers(containers):
         },
         {   # client 1
             'port': 7788,  # not used for client
-            'count_flow': 4,  # TODO: This has been set to const value for testing
-            'ips': [('10.10.0.1', 1234)],  # , ('10.10.0.2', 5678)
+            'count_flow': count_flow,
+            'ips': [('10.10.0.2', 5678)],
             'flow_duration': 0,
             'message_per_sec': -1,
             'message_size': 500,
@@ -274,7 +198,7 @@ def _get_rpc_containers(containers):
         {   # client 2
             'port': 7788,  # not used for client
             'count_flow': count_flow,
-            'ips': [('10.10.0.2', 5678)],  # ('10.10.0.1', 1234), 
+            'ips': [('10.10.0.1', 1234)],  # ('10.10.0.1', 1234), 
             'flow_duration': 0,
             'message_per_sec': -1,
             'message_size': 500,
@@ -292,11 +216,13 @@ def _get_unidir_containers(containers):
             'threads': 1,
             'connections': count_flow,
             'message_size': 64,
+            'server_delay_cycles': 0,
         },
         {  # server2
             'threads': 1,
             'connections': count_flow,
             'message_size': 64,
+            'server_delay_cycles': 0,
         },
         {  # client 1
             'server_ip': containers[0]['ip'],
@@ -415,7 +341,7 @@ def get_containers_config():
     elif app == 'unidir':
         _get_unidir_containers(containers)
     else:
-        _get_rpc_unidir_containers(containers)
+        _get_rpc_containers(containers)
     return containers
 
 
@@ -524,6 +450,7 @@ def main():
     # Spin up TAS
     print('running containers...')
     for c in containers:
+        pprint(c)
         run_container(c)
         sleep(5)
 

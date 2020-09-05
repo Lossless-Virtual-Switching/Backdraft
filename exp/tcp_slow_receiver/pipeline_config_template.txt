@@ -133,11 +133,11 @@ BKDRFTQueueInc(port=server1, qid=0, backpressure=bp, cdq=cdq) -> aggregate_serve
 BKDRFTQueueInc(port=server2, qid=0, backpressure=bp, cdq=cdq) ->aggregate_server 
 
 
-if pfq and not cdq:
+if not cdq:
     # poll other queues
     for i in range(1, Q):
-        # BKDRFTQueueInc(port=client1, qid=i, backpressure=bp, cdq=cdq) -> aggregate
-        # BKDRFTQueueInc(port=client2, qid=i, backpressure=bp, cdq=cdq) -> aggregate
+        BKDRFTQueueInc(port=client1, qid=i, backpressure=bp, cdq=cdq) -> aggregate
+        BKDRFTQueueInc(port=client2, qid=i, backpressure=bp, cdq=cdq) -> aggregate
         BKDRFTQueueInc(port=server1, qid=i, backpressure=bp, cdq=cdq) -> aggregate_server
         BKDRFTQueueInc(port=server2, qid=i, backpressure=bp, cdq=cdq) ->aggregate_server 
 

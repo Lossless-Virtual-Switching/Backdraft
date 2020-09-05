@@ -920,7 +920,7 @@ int main(int argc, char *argv[])
     long double *ttp, tp, tp_total;
     uint32_t *hist, hx;
     uint64_t msg_total, open_total;
-    double fracs[6] = { 0.5, 0.9, 0.95, 0.99, 0.999, 0.9999 };
+    double fracs[7] = { 0.01, 0.5, 0.9, 0.95, 0.99, 0.999, 0.9999 };
     size_t fracs_pos[sizeof(fracs) / sizeof(fracs[0])];
     // == per flow ==
     int k;
@@ -1141,22 +1141,22 @@ int main(int argc, char *argv[])
         // ===============
 
 
-        printf("TP: total=%'.2Lf mbps  50p=%d us  90p=%d us  95p=%d us  "
+        printf("TP: total=%'.2Lf mbps  1p=%d us 50p=%d us  90p=%d us  95p=%d us  "
                 "99p=%d us  99.9p=%d us  99.99p=%d us  flows=%lu",
                 tp_total * message_size * 8 / 1000000.,
                 hist_value(fracs_pos[0]), hist_value(fracs_pos[1]),
                 hist_value(fracs_pos[2]), hist_value(fracs_pos[3]),
                 hist_value(fracs_pos[4]), hist_value(fracs_pos[5]),
-                open_total);
+                hist_value(fracs_pos[6]), open_total);
 
         if(file) {
-                fprintf(file, "TP: total=%'.2Lf mbps  50p=%d us  90p=%d us  95p=%d us  "
+                fprintf(file, "TP: total=%'.2Lf mbps  1p=%d us 50p=%d us  90p=%d us  95p=%d us  "
                 "99p=%d us  99.9p=%d us  99.99p=%d us  flows=%lu\n",
                 tp_total * message_size * 8 / 1000000.,
                 hist_value(fracs_pos[0]), hist_value(fracs_pos[1]),
                 hist_value(fracs_pos[2]), hist_value(fracs_pos[3]),
                 hist_value(fracs_pos[4]), hist_value(fracs_pos[5]),
-                open_total);
+                hist_value(fracs_pos[6]), open_total);
                 fflush(file);
         }
 
@@ -1170,16 +1170,18 @@ int main(int argc, char *argv[])
 
         // per flow ===
         for (k = 0; k < addrs_num; k++) {
-            printf("flow=%d tp=%'.2Lf mbps tp=%'.2Lf pps  50p=%d us  90p=%d us  95p=%d us  "
+            printf("flow=%d tp=%'.2Lf mbps tp=%'.2Lf pps  1p=%d us 50p=%d us  90p=%d us  95p=%d us  "
                     "99p=%d us  99.9p=%d us  99.99p=%d us\n",
                     k,
                     perflow_tp[k] * message_size * 8 / 1000000.,
                     perflow_tp[k],
                     hist_value(fracs_pos2[k][0]), hist_value(fracs_pos2[k][1]),
                     hist_value(fracs_pos2[k][2]), hist_value(fracs_pos2[k][3]),
-                    hist_value(fracs_pos2[k][4]), hist_value(fracs_pos2[k][5]));
+                    hist_value(fracs_pos2[k][4]), hist_value(fracs_pos2[k][5]),
+		    hist_value(fracs_pos2[k][6]));
             if(file) {
-                fprintf(file, "flow=%d tp=%'.2Lf mbps tp=%'.2Lf pps  50p=%d us  90p=%d us  95p=%d us  "
+                fprintf(file, "flow=%d tp=%'.2Lf mbps tp=%'.2Lf pps  1p=%d us "
+				"50p=%d us  90p=%d us  95p=%d us  "
                         "99p=%d us  99.9p=%d us  99.99p=%d us\n",
                         k,
                         perflow_tp[k] * message_size * 8 / 1000000.,
@@ -1189,7 +1191,8 @@ int main(int argc, char *argv[])
                         hist_value(fracs_pos2[k][2]),
                         hist_value(fracs_pos2[k][3]),
                         hist_value(fracs_pos2[k][4]),
-                        hist_value(fracs_pos2[k][5]));
+			hist_value(fracs_pos2[k][5]),
+                        hist_value(fracs_pos2[k][6]));
                 fflush(file);
             }
         }
