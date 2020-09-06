@@ -93,6 +93,10 @@ def setup_container(node_name: str, instance_number: int, config: dict):
                 ip = instance['ip']
         port = instance.get('port', '8432')
 
+        # current instance app
+        app = instance.get('app', args.app)
+        print('running app:', app, '\n')
+
         # destination ip, port tuples
         if instance_type == 'client':
                 dsts = instance.get('destinations', [])
@@ -107,6 +111,10 @@ def setup_container(node_name: str, instance_number: int, config: dict):
                         dst_instance = int(dst_instance)
                         dst_config = config[dst_name]  # machine config
                         dst_instance_config = dst_config['instances'][dst_instance]
+                        # assume if dst does not have app defined then it has the same app as src
+                        dst_app = dst_config.get('app', app)
+                        if dst_app != app:
+                                print('warning: client is using a server of another type', file=sys.stderr)
                         dst_ip = dst_config['ip']
                         if 'ip' in dst_instance_config:
                                 dst_ip = dst_instance_config['ip']
@@ -116,7 +124,12 @@ def setup_container(node_name: str, instance_number: int, config: dict):
                 ips = [('10.0.0.100', '4927')] # this address is not going to affect the server
 
         cpu=instance.get('cpus', '2,4,6')
-        cpus=len(cpu.split(','))
+        if isinstance(cpu, str):
+            cpus=len(cpu.split(','))
+        elif isinstance(cpu, int):
+            cpus=1
+        else:
+            raise ValueError('cpu value is not int or str')
 
         container_name = 'tas_{}_{}'.format(instance_type, instance_number)
         socket = get_socket_with_name(container_name)
@@ -139,7 +152,19 @@ def setup_container(node_name: str, instance_number: int, config: dict):
                 count_flow = flow_conf['max_flow']
         count_thread = flow_conf.get('count_thread', 1)
 
-        tas_cores = instance.get('tas_cores', 2)
+        tas_cores = instance.get('tas_cores', 1)
+        count_queue = pipeline_config['count_queue']
+        cdq = pipeline_config['cdq']
+     
+        # define the image to be used in exp.
+        if app == 'rpc':
+                container_image_name = 'tas_container'
+        elif app == 'unidir':
+                container_image_name = 'tas_unidir'
+        elif app == 'udp_app':
+                container_image_name = 'no-container-should-be-used' 
+        else:
+                raise ValueError('app field should have one of the {} values'.format(supported_app))
 
         config = {
                 'name': container_name,
@@ -156,14 +181,14 @@ def setup_container(node_name: str, instance_number: int, config: dict):
                 'flow_duration': flow_duration, # (value is in ms), 0 = no limit
                 'message_per_sec': message_per_sec, # -1 = not limited
                 'tas_cores': tas_cores,
-                'tas_queues': pipeline_config['count_queue'],
-                'cdq': int(pipeline_config['cdq']),
+                'tas_queues': count_queue,
+                'cdq': int(cdq),
                 'message_size': message_size,
                 'flow_num_msg': flow_num_msg,
                 'count_threads': count_thread,
         }
         # TODO: needs better implementation for supporting different configs
-        if args.app == 'unidir':
+        if app == 'unidir':
             if len(ips) > 1:
                   print('warning: unidir supports only one destination!', file=sys.stderr)
             app_params = {
@@ -171,30 +196,62 @@ def setup_container(node_name: str, instance_number: int, config: dict):
                 'threads': count_thread,
                 'connections': count_flow,
                 'message_size': message_size,
-                'server_delay_cycles': flow_conf.get('delay_cycles', 0) # no effect on client
+                'server_delay_cycles': flow_conf.get('delay_cycles', 0)  # no effect on client
             }
             config.update(app_params) 
-        run_container(config)
+        elif app == 'udp_app':
+            socket_name = 'tas_{}_{}'.format(instance['type'], instance_number)
+            socket = '/tmp/{}.sock'.format(socket_name)
+            vdev = ('virtio_user{},path={},queues={}'
+                   ).format(instance_number, socket, count_queue)
+            ips = [ip for ip, _ in ips]
+            if isinstance(cpu, str):
+                cpu = cpu.split(',')[0]
+            app_params = {
+               'cpu': cpu,
+               'vdev':vdev,
+               'count_queue': count_queue,
+               'sysmod': 'bkdrft' if cdq else 'bess',
+               'delay': flow_conf.get('delay_us', 0),  # no effect on client
+               'ips': ips,
+               'duration': -1,
+            }
+            config.update(app_params) 
+        run_app(config, app=app)
         # pprint(config)
 
 
-def run_container(config):
-        if args.app == 'rpc':
-                spin_up_tas(config)
-        elif args.app == 'unidir':
-                spin_up_unidir(config)
-        else:
-                raise Exception('app type is unknown')
+def run_app(config, app=None):
+    if app is None:
+        app = args.app
+    if app == 'rpc':
+        spin_up_tas(config)
+    elif app == 'unidir':
+        spin_up_unidir(config)
+    elif app == 'udp_app':
+        run_udp_app(config)
+        # p = run_udp_app(config)
+        # p.wait()
+        # print(p.stdout.read().decode())
+        # print(p.stderr.read().decode())
+    else:
+        raise ValueError('app type is unknown')
 
 
 def kill_node(instances):
-        # stop containers
-        for i, instance in enumerate(instances):
-                name = 'tas_{}_{}'.format(instance['type'], i)
-                subprocess.run('sudo docker stop -t 0 {}'.format(name), shell=True, stdout=subprocess.PIPE)
-                subprocess.run('sudo docker rm {}'.format(name), shell=True, stdout=subprocess.PIPE)
-        # stop BESS pipeline
-        bessctl_do('daemon stop')
+    # stop containers
+    killed_udp = False
+    for i, instance in enumerate(instances):
+        app = instance.get('app', args.app)
+        if app == 'udp_app' and not killed_udp:
+            killed_udp = True
+            subprocess.run('sudo pkill udp_app', shell=True)
+        else:
+            name = 'tas_{}_{}'.format(instance['type'], i)
+            subprocess.run('sudo docker stop -t 0 {}'.format(name), shell=True, stdout=subprocess.PIPE)
+            subprocess.run('sudo docker rm {}'.format(name), shell=True, stdout=subprocess.PIPE)
+    # stop BESS pipeline
+    bessctl_do('daemon stop')
 
 
 if __name__ == '__main__':
@@ -210,7 +267,7 @@ if __name__ == '__main__':
 
 
         # parse arguments
-        supported_app = ('rpc', 'unidir')
+        supported_app = ('rpc', 'unidir', 'udp_app')
         parser = argparse.ArgumentParser(description='Setup a node for short-long-flow experiment')
         parser.add_argument('-config',
                 help="path to cluster config file (default: {})".format(default_config_path),
@@ -225,12 +282,6 @@ if __name__ == '__main__':
         parser.add_argument('-app', choices=supported_app, default='rpc',
                 help='which app should be used for the experiment')
         args = parser.parse_args()
-
-        # define the image to be used in exp.
-        if args.app == 'rpc':
-                container_image_name = 'tas_container'
-        elif args.app == 'unidir':
-                container_image_name = 'tas_unidir'
 
         # read config file 
         full_config = get_full_config(args.config)

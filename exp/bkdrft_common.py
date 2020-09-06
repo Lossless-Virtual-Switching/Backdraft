@@ -33,7 +33,10 @@ def setup_bess_pipeline(pipeline_config_path):
         print('failed to start bess daemon', file=sys.stderr)
         return -1
     # Run a configuration (pipeline)
-    ret = bessctl_do('daemon start -- run file {}'.format(pipeline_config_path))
+    cmd = 'daemon start -- run file {}'.format(pipeline_config_path)
+    ret = bessctl_do(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    print(ret.stdout.decode())
+    print(ret.stderr.decode())
 
 
 def load_bess_kmod():

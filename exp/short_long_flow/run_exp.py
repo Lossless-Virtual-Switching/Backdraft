@@ -97,10 +97,16 @@ if __name__ == '__main__':
     # docker logs
     for i, instance in enumerate(info['instances']):
         type_ = instance['type']
-        name = 'tas_{}_{}'.format(type_, i)
-        log = get_docker_container_logs(name)
-        logger.log('\n ', name)
-        logger.log(log)
+        app = instance.get('app', None)
+        if app == 'udp_app':
+            continue
+        try:
+            name = 'tas_{}_{}'.format(type_, i)
+            log = get_docker_container_logs(name)
+            logger.log('\n ', name)
+            logger.log(log)
+        except:
+            pass
    
     # ===========================================
     # stop

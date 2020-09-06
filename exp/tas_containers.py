@@ -65,7 +65,7 @@ def spin_up_unidir(conf):
            '{socket} {ip} {tas_cores} {tas_queues} {prefix} {cdq} '
            '{type} ').format(tas_script=tas_spinup_script, **conf)
     if conf['type'] == 'client':
-        cmd = '{cmd} {server_ip} {threads} {connections} {message_size}'.format(cmd=cmd, **conf)
+        cmd = '{cmd} {server_ip} {threads} {connections} {message_size} {server_delay_cycles}'.format(cmd=cmd, **conf)
     elif conf['type'] == 'server':
         cmd = '{cmd} {threads} {connections} {message_size} {server_delay_cycles}'.format(cmd=cmd, **conf)
     else:
@@ -94,4 +94,79 @@ def spin_up_memcached(conf):
                         'expecting type to be client or server')
     # print(cmd)
     return subprocess.run(cmd, shell=True, stdout=subprocess.PIPE)
+
+
+def run_udp_app(config):
+    """
+    Run UDP application
+    it does not use container for running
+    config fields:
+    * -- general --
+    * type
+    * cpu
+    * prefix
+    * vdev
+    * ---- app ----
+    * ip
+    * count queue
+    * system mode (bess, bkdrft) 
+    * --- server ---
+    * delay
+    * ---- client ---
+    * ips
+    * count_flow
+    * duration
+    * port
+    """
+    here = os.path.dirname(__file__)
+    udp_app = os.path.abspath(os.path.join(here,
+            '../code/apps/udp_client_server/build/udp_app'))
+
+    # default values
+    conf = {
+      'dely': 0,
+      'count_flow': 1,
+      'duration': 40,
+      'port': 5000,
+    }
+    conf.update(config)
+
+    ips = conf['ips']
+    count_ips = len(ips)
+    conf['cnt_ips'] = count_ips
+    conf['ips'] = ' '.join(ips)
+
+    mode = conf['type']
+    # argv = ['sudo', udp_app, '--no-pci', '-l', conf['cpu'],
+    #         '--file-prefix={}'.format(conf['prefix']),
+    #         '--vdev={}'.format(conf['vdev']), '--socket-mem=128', '--']
+    if mode  == 'server':
+        cmd = ('sudo {bin} --no-pci -l{cpu} --file-prefix={prefix} '
+                '--vdev="{vdev}" --socket-mem=128 -- '
+                '{ip} {count_queue} {sysmod} {mode} {delay}'
+              ).format(bin=udp_app, mode=mode, **conf)
+        # params = [conf['ip'], conf['count_queue'], conf['sysmod'], conf['mode'],
+        #         conf['delay']]
+        # argv += params
+    elif mode == 'client':
+        cmd = ('sudo {bin} --no-pci -l{cpu} --file-prefix={prefix} '
+                '--vdev="{vdev}" --socket-mem=128 -- '
+                '{ip} {count_queue} {sysmod} {mode} {cnt_ips} {ips} '
+                '{count_flow} {duration} {port}'
+              ).format(bin=udp_app, mode=mode, **conf)
+        # params = [conf['ip'], conf['count_queue'], conf['sysmod'], mode,
+        #           count_ips, conf['ips'], conf['count_flow'], conf['duration'],
+        #           conf['port']]
+        # argv += params
+    else:
+        raise ValueError('type value should be either server or client')
+        
+    # pid = os.fork()
+    # if pid == 0:
+    #     os.execvp('sudo', argv)
+    # print(cmd)
+    FNULL = open(os.devnull, 'w')
+    proc = subprocess.Popen(cmd, shell=True, close_fds=True,
+                            stdout=FNULL, stderr=subprocess.STDOUT)
+    return proc
 

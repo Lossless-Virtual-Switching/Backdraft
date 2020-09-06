@@ -161,7 +161,7 @@ int do_client(void *_cntx) {
   tp_start_ts = start_time;
   for (;;) {
     end_time = rte_get_timer_cycles();
-    if (end_time > start_time + duration) {
+    if (duration > 0 && end_time > start_time + duration) {
       if (can_send) {
         can_send = false;
         start_time = rte_get_timer_cycles();

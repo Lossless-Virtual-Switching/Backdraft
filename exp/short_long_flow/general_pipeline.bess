@@ -94,6 +94,7 @@ for i, instance in enumerate(instances):
   ip = info['ip'] 
   if 'ip' in instance:
     ip = instance['ip']
+  ip = ip.strip()
   vhosts.append((tas_port, ip))
 
 
@@ -140,6 +141,9 @@ x = IPLookup()
 x.add(prefix='0.0.0.0', prefix_len=0, gate=0)
 rep = Replicate(gates=[i + 1 for i in range(len(vhosts))])
 x:0 -> rep
+
+x.add(prefix='192.0.0.0', prefix_len=8, gate=8000)
+x:8000 -> Sink()
 
 
 # Tx

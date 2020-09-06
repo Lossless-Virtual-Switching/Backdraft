@@ -24,6 +24,7 @@ if [ $# -lt 15 ]; then
   echo "* param13: threads"
   echo "* param14: connections"
   echo "* param15: message size"
+  echo "* param16: delay cycles"
   echo " == Server ==:"
   echo "* param 12: threads"
   echo "* param 13: connections"
@@ -55,10 +56,12 @@ client_dst_ip=${12}
 client_threads=${13}
 client_conns=${14}
 client_msg_size=${15}
+delay=${16}
 app_flags="--env server_ip=$client_dst_ip \
   --env threads=$client_threads \
   --env connections=$client_conns \
-  --env message_size=$client_msg_size "
+  --env message_size=$client_msg_size \
+  --env delay_cycles=$delay "
 elif [ "$app_type" = "server" ]
 then
 # Server
