@@ -38,7 +38,7 @@ if __name__ == '__main__':
     subprocess.check_call('./setup_node.py -kill', shell=True, cwd=here)
 
     # setup node
-    subprocess.check_call('./setup_node.py', shell=True, cwd=here)
+    subprocess.check_call('./setup_node.py -app unidir', shell=True, cwd=here)
 
     # warm up
     warmup_time = 10
@@ -93,6 +93,14 @@ if __name__ == '__main__':
         logger.log('module:', module_name, 'avg: {:.2f}'.format(avg))
         logger.log(overlay_tp)
     logger.log('')
+
+    # docker logs
+    for i, instance in enumerate(info['instances']):
+        type_ = instance['type']
+        name = 'tas_{}_{}'.format(type_, i)
+        log = get_docker_container_logs(name)
+        logger.log('\n ', name)
+        logger.log(log)
    
     # ===========================================
     # stop

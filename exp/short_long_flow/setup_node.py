@@ -105,9 +105,12 @@ def setup_container(node_name: str, instance_number: int, config: dict):
                 for name in dsts:
                         dst_name, dst_instance = name.split('_')
                         dst_instance = int(dst_instance)
-                        dst_config = config[dst_name]
+                        dst_config = config[dst_name]  # machine config
+                        dst_instance_config = dst_config['instances'][dst_instance]
                         dst_ip = dst_config['ip']
-                        dst_port = dst_config['instances'][dst_instance]['port']
+                        if 'ip' in dst_instance_config:
+                                dst_ip = dst_instance_config['ip']
+                        dst_port = dst_instance_config['port']
                         ips.append((dst_ip, dst_port))
         else:
                 ips = [('10.0.0.100', '4927')] # this address is not going to affect the server
@@ -219,7 +222,7 @@ if __name__ == '__main__':
                 action='store_true', default=False)
         parser.add_argument('-kill', help='kill previous running instances and exit',
                 action='store_true', default=False)
-        parser.add_argument('-app', choices=supported_app, default='unidir',
+        parser.add_argument('-app', choices=supported_app, default='rpc',
                 help='which app should be used for the experiment')
         args = parser.parse_args()
 
@@ -257,6 +260,9 @@ if __name__ == '__main__':
         
         # setup TAS instances
         for i, instance in enumerate(instances): 
+                print('setting up instance:')
+                pprint(instance)
+                print('')
                 if instance['type'] in ('client', 'server'):
                         setup_container(node_name=node_name, instance_number=i, config=full_config)
                 else:
