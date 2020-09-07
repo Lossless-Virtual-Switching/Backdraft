@@ -52,7 +52,7 @@ echo TAS Server Is Up
 if [ "$type" = "client" ]; then
 	LD_PRELOAD=$TAS_DIR/lib/libtas_interpose.so \
 		$TAS_BENCH/micro_unidir/unidir_linux \
-		-i $server_ip -t $threads -c $connections -b $message_size
+		-i $server_ip -t $threads -c $connections -b $message_size -o $delay_cycles
 elif [ "$type" = "server" ]; then
 
   if [ -z "$delay_cycles" ]; then

@@ -10,6 +10,21 @@
 #include "packet.h"
 #include "bkdrft_msg.pb-c.h"
 
+extern inline int mark_data_queue(struct rte_mbuf *pkt, uint8_t qid) {
+  struct rte_ether_hdr *eth = rte_pktmbuf_mtod(pkt, struct rte_ether_hdr *);
+  uint16_t ether_type = rte_be_to_cpu_16(eth->ether_type);
+
+  /* make sure the packet has an ipv4 header */
+  if (ether_type != RTE_ETHER_TYPE_IPV4)
+    return -1;
+
+  struct rte_ipv4_hdr *ip = (struct rte_ipv4_hdr *)(eth + 1);
+  ip->type_of_service = (qid << 2); // ip->type_of_service | (qid << 2);
+  ip->hdr_checksum = 0;
+  ip->hdr_checksum = rte_ipv4_cksum(ip);
+  return 0;
+}
+
 extern inline int send_pkt(int port, uint8_t qid, struct rte_mbuf **tx_pkts,
                            uint16_t nb_pkts, bool send_ctrl_pkt,
                            struct rte_mempool *tx_mbuf_pool) {
@@ -21,8 +36,13 @@ extern inline int send_pkt(int port, uint8_t qid, struct rte_mbuf **tx_pkts,
   size_t packed_size;
   unsigned char *payload = NULL;
 
+  if (send_ctrl_pkt) {
+    /* mark the packets to be placed on the mentioned queue by the recv nic */
+    for (i = 0; i < nb_pkts; i++)
+      mark_data_queue(tx_pkts[i], qid);
+  }
+
   /* send data packet */
-  // printf("before sending packet\n");
   nb_tx = rte_eth_tx_burst(port, qid, tx_pkts, nb_pkts);
 
   if (nb_tx == 0)
@@ -44,12 +64,9 @@ extern inline int send_pkt(int port, uint8_t qid, struct rte_mbuf **tx_pkts,
       assert(payload);
       prepare_packet(ctrl_pkt, payload, sample_pkt, packed_size);
       free(payload);
-      ////
-      // printf("before sending ctrl pkt\n");
       ctrl_nb_tx = rte_eth_tx_burst(port, BKDRFT_CTRL_QUEUE, &ctrl_pkt, 1);
-      // printf("try to send ctrl pkt qid: %d\n", qid);
       if (ctrl_nb_tx != 1) {
-        // sending ctrl pkt failed
+        /* sending ctrl pkt failed */
         rte_pktmbuf_free(ctrl_pkt);
         printf("failed to send ctrl_pkt\n");
       }
@@ -62,25 +79,21 @@ extern inline int send_pkt(int port, uint8_t qid, struct rte_mbuf **tx_pkts,
 size_t create_bkdraft_ctrl_msg(uint8_t qid, uint32_t nb_bytes, uint32_t nb_pkts,
                                unsigned char **buf) {
   size_t size = 0;
-  // size_t packed_size = 0;
   unsigned char *payload;
 
-  // memset(ctrl_msg, 0, sizeof(DpdkNetPerf__Ctrl));
-
   DpdkNetPerf__Ctrl ctrl_msg = DPDK_NET_PERF__CTRL__INIT;
-  // dpdk_net_perf__ctrl__init(&ctrl_msg);
   ctrl_msg.qid = qid;
   ctrl_msg.total_bytes = nb_bytes;
   ctrl_msg.nb_pkts = nb_pkts;
 
   size = dpdk_net_perf__ctrl__get_packed_size(&ctrl_msg);
-  size = size + 1; // one byte for adding message type tag
+  size = size + 1; /* one byte for adding message type tag */
 
-  // TODO: check if malloc has performance hit.
+  /* TODO: check if malloc has performance hit. should use dpdk apis */
   payload = malloc(size);
   assert(payload);
 
-  // first byte defines the bkdrft message type
+  /* first byte defines the bkdrft message type */
   payload[0] = BKDRFT_CTRL_MSG_TYPE;
   dpdk_net_perf__ctrl__pack(&ctrl_msg, payload + 1);
 
@@ -107,14 +120,14 @@ int poll_ctrl_queue_expose_qid(const int port, const int ctrl_qid,
   void *data;
   size_t size;
   uint16_t dq_burst;
-  uint16_t filled_packets = 0;  // packets set in recv_bufs
+  uint16_t filled_packets = 0;  /* packets set in recv_bufs */
 
   uint8_t found_data_queue;
-  static const uint16_t max_queue = 8; // supporting 8 queues
+  static const uint16_t max_queue = 8; /* supporting 8 queues */
   static int64_t outstanding_pkts[] = {0,0,0,0,0,0,0,0};
 
   for (;;) {
-    // read a ctrl packet
+    /* read a ctrl packet */
     nb_ctrl_rx = rte_eth_rx_burst(port, ctrl_qid, ctrl_rx_bufs, burst);
     
     if (nb_ctrl_rx == 0) {
@@ -128,14 +141,14 @@ int poll_ctrl_queue_expose_qid(const int port, const int ctrl_qid,
     for (uint32_t i = 0; i < nb_ctrl_rx; i++) {
       buf = ctrl_rx_bufs[i];
 
-      // try to parse bkdrft message
+      /* try to parse bkdrft message */
       size = get_payload(buf, &data);
       if (data == NULL) {
-        // assume it was a corrupt packet
-        // rte_pktmbuf_free(buf);
-        // continue;
+        /* assume it was a corrupt packet */
+        /* rte_pktmbuf_free(buf);
+           continue; */
         
-        // pass the packet to the engine
+        /* pass the packet to the engine */
         recv_bufs[filled_packets++] = buf; 
         if (data_qid != NULL)
           *data_qid = 0;
@@ -143,7 +156,7 @@ int poll_ctrl_queue_expose_qid(const int port, const int ctrl_qid,
 
       memcpy(msg, data, size);
       msg[size] = '\0';
-      // first byte defines the bkdrft message type
+      /* first byte defines the bkdrft message type */
       msg_type = msg[0];
       if (msg_type != BKDRFT_CTRL_MSG_TYPE) {
         // not a ctrl message
@@ -176,7 +189,7 @@ int poll_ctrl_queue_expose_qid(const int port, const int ctrl_qid,
       outstanding_pkts[dqid] += dq_burst;
     }
 
-    // select a data queue
+    /* select a data queue */
     found_data_queue = 0;
     for (uint16_t i = 0; i < max_queue; i++) {
       if (outstanding_pkts[i] > 0) {
@@ -190,7 +203,7 @@ int poll_ctrl_queue_expose_qid(const int port, const int ctrl_qid,
     if (!found_data_queue)
       continue;
 
-    // read data queue
+    /* read data queue */
     if (burst - filled_packets < dq_burst) {
       dq_burst = burst - filled_packets;
     }
@@ -207,6 +220,6 @@ int poll_ctrl_queue_expose_qid(const int port, const int ctrl_qid,
       *data_qid = dqid;
     }
 
-    return filled_packets; // result is in recv_bufs
+    return filled_packets; /* result is in recv_bufs */
   }
 }

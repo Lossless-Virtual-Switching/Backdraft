@@ -107,3 +107,25 @@ optional arguments:
   -kill                 kill previous running instances and exit
 
 ```
+
+# Experiments
+1. Overlay multi-node TCP
+
+## Overlay Multi-Node TCP
+This experiment compares Backdraft performance with focus on overlay messages.
+The setup containes 4 machines 2 of them configured as servers and the other as
+client. Both of the servers are working with full power (no slow down).
+One of the client machines have two instances of the app each sending messages
+to one of the server.
+Each container in which the applications are running has 3 cores.
+
+Experiment was ran with the `run_exp.py` script on all machines with the help of
+ansible. Warmup time was set to 180 sec and experiment duration was 60 sec.
+
+# Note
+For using `run_exp` make sure you have enable pfc for prio3
+
+```
+$ mlnx_qos -i eno50 --pfc 0,0,0,1,0,0,0,0
+```
+

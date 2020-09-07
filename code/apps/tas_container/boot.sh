@@ -50,6 +50,7 @@ echo $TAS_DIR/tas/tas --dpdk-extra=--vdev \
   --ip-addr=$IP \
   --cc=dctcp-win \
   --fp-cores-max=$CORES \
+  --count-queue=$QUEUES \
   ${flags} &
 
 exec $TAS_DIR/tas/tas --dpdk-extra=--vdev \
@@ -62,7 +63,11 @@ exec $TAS_DIR/tas/tas --dpdk-extra=--vdev \
   --ip-addr=$IP \
   --cc=dctcp-win \
   --fp-cores-max=$CORES \
-  ${flags} &  # 1> /dev/null 2>&1 
+  --count-queue=$QUEUES \
+  ${flags} 2>&1 &  # 1> /dev/null 2>&1 
+
+# dctcp-win
+# const-rate
 
 
 # wait for tas server to be ready

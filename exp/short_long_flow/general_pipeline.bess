@@ -62,15 +62,27 @@ def get_tci(prio, dei, vlan_id):
   return tci
 
 
-name, info =  get_current_node_info(config_file)
+host_name, info =  get_current_node_info(config_file)
 instances = info['instances']
 count_instances = len(instances)
 if count_instances == 0:
   raise Exception('This node has no instace!')
 
+bp = config['bp']
+buffering = config['buffering'] 
+cdq = config['cdq'] 
+pfq = config['pfq'] 
+overlay = config['overlay']
+
 
 # PCI of port connected to switch
-sw_port = PMDPort(pci=out_pci, num_inc_q=count_queue, num_out_q=count_queue)
+if host_name == 'node4':
+  # HARD CODED: Slow down node 4 port 
+  sw_port = PMDPort(pci=out_pci, num_inc_q=count_queue, num_out_q=count_queue,
+             rate_limiting=True, rate=1, command_queue=cdq, data_mapping=cdq)
+else:
+  sw_port = PMDPort(pci=out_pci, num_inc_q=count_queue, num_out_q=count_queue,
+             rate_limiting=overlay, rate=40, command_queue=cdq, data_mapping=cdq)
 
 # TAS vhost ports
 vhosts = []
@@ -90,7 +102,9 @@ for i, instance in enumerate(instances):
     num_inc_q=count_tas_queues,
     num_out_q=count_tas_queues,
     size_inc_q=size_q,
-    size_out_q=size_q)
+    size_out_q=size_q,
+    rate_limiting=overlay,
+    rate=40)
   ip = info['ip'] 
   if 'ip' in instance:
     ip = instance['ip']
@@ -117,26 +131,20 @@ for i, instance in enumerate(instances):
 #   x:i -> qout 
 # 
 
-bp = config['bp']
-buffering = config['buffering'] 
-cdq = config['cdq'] 
-pfq = config['pfq'] 
-overlay = config['overlay']
-
 sw_merge = Merge()
-for i in range(count_queue):
-  sw_q_inc = BKDRFTQueueInc(port=sw_port, qid=i, cdq=cdq, backpressure=bp, overlay=overlay)
-  sw_q_inc -> sw_merge:i
+if not cdq:
+  for i in range(count_queue):
+    sw_q_inc = BKDRFTQueueInc(port=sw_port, qid=i, cdq=cdq, backpressure=bp, overlay=overlay)
+    sw_q_inc -> sw_merge:i
+else:
+  sw_q_inc = BKDRFTQueueInc(port=sw_port, qid=0, cdq=cdq, backpressure=bp, overlay=overlay)
+  sw_q_inc -> sw_merge:0
 
 sw_q_out = BKDRFTQueueOut(port=sw_port, qid=0, count_queues=count_queue,
   backpressure=bp, lossless=buffering, cdq=cdq, per_flow_buffering=pfq, mname='sw',
   overlay = overlay)
 
 merge = Merge() # merge input 
-# x = HashLB(gates=[i for i in range(count_instances)], mode='l4')
-# TODO: this part does not scale. each instance can have its own ip. then
-# IPLookup can be used with a replicate module for passing arp and other
-# packets.
 x = IPLookup()
 x.add(prefix='0.0.0.0', prefix_len=0, gate=0)
 rep = Replicate(gates=[i + 1 for i in range(len(vhosts))])
@@ -150,8 +158,13 @@ x:8000 -> Sink()
 gate = 0
 lookup_gate = 1
 for i, (vhost, ip) in enumerate(vhosts):
-  for j in range(count_queue):
-    qinc = BKDRFTQueueInc(port=vhost, qid=j, cdq=cdq, backpressure=bp, overlay=overlay)
+  if not cdq:
+    for j in range(count_queue):
+      qinc = BKDRFTQueueInc(port=vhost, qid=j, cdq=cdq, backpressure=bp, overlay=overlay)
+      qinc -> merge:gate
+      gate += 1
+  else:
+    qinc = BKDRFTQueueInc(port=vhost, qid=0, cdq=cdq, backpressure=bp, overlay=overlay)
     qinc -> merge:gate
     gate += 1
   if ip is not None:
@@ -168,7 +181,6 @@ pop_vlan = VLANPop()
 sw_merge -> pop_vlan -> x
 # sw_merge -> x
 lookup_gate = 1
-# x:0 -> rep
 for i, (vhost, ip) in enumerate(vhosts):
   qout = BKDRFTQueueOut(port=vhost, qid=0, count_queues=count_queue,
     backpressure=bp, lossless=buffering, cdq=cdq, per_flow_buffering=pfq,
@@ -178,4 +190,24 @@ for i, (vhost, ip) in enumerate(vhosts):
     lookup_gate += 1
   gate = i + 1
   rep:gate -> qout
+
+# HARD CODED BURST GENERATOR
+# import scapy.all as scapy
+# 
+# if host_name == 'node5':
+#   src_mac = info['mac']
+#   dst_mac = '98:f2:b3:cc:02:c1' # TODO: this should be read from config file
+#   src_ip = '192.168.9.50'  # this ip should be dropped in vsw
+#   dst_ip = '192.168.1.41'  # TODO: this should be read from config
+#   eth = scapy.Ether(src=src_mac, dst=dst_mac)
+#   ip = scapy.IP(src=src_ip, dst=dst_ip)
+#   tcp = scapy.TCP(sport=10001, dport=8080, seq=134)
+#   payload = 'a' * 100
+#   pkt = bytes(eth/ip/tcp/payload)
+# 
+#   src::FlowGen(template=pkt, pps=1.0e6, flow_rate=800, flow_duration=5.0, \
+#       arrival='exponential', duration='pareto', quick_rampup=True) -> merge
+# 
+# # FOR ALL INSTANCES
+# x.add(prefix='192.168.9.50', prefix_len=32, gate=8000)
 

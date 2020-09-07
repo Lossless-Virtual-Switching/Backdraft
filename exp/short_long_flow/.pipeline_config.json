@@ -6,5 +6,5 @@
   "cdq": false,
   "pfq": false,
   "overlay": false,
-  "buffering": true
+  "buffering": false
 }

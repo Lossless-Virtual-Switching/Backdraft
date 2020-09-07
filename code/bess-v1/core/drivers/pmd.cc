@@ -259,10 +259,12 @@ int data_mapping_rule_setup(dpdk_port_t port_id, uint16_t count_queue) {
   struct rte_flow_error error;
   const uint8_t tos_mask = 0xfc; // does not care about the bottom two fields
 
-  for (int i = 1; i < count_queue; i++) {
+  for (int i = 0; i < count_queue; i++) {
+    // NOTE: mlx5 nic had problem with using multiple prio
     // map prio(i) -> queue(i) for i in [1,8)
     // flow = generate_vlan_flow(port_id, i, BKDRFT_OVERLAY_VLAN_ID, i, &error);
     
+    // NOTE: mlx5 nic we used did not support raw item used in the function.
     // flow = bkdrft::filter_by_ipv4_bkdrft_opt(port_id, i, i, &error);
     
     // map i * 4 -> queue(i) for i in [1, 8)
@@ -274,6 +276,7 @@ int data_mapping_rule_setup(dpdk_port_t port_id, uint16_t count_queue) {
       return -1;  // failed
     }
 
+    // also consider ingress packets having vlan
     // prio: 3, vlan_id: 100
     flow = bkdrft::filter_by_ip_tos_with_vlan(port_id, tos,
           tos_mask, 3, 100, 0xefff, i, &error);
@@ -291,6 +294,28 @@ int data_mapping_rule_setup(dpdk_port_t port_id, uint16_t count_queue) {
   // }
   
   return 0;
+}
+
+static int litter_rule_setup(dpdk_port_t id) {
+  int ret;
+  struct rte_flow *flow;
+  struct rte_flow_error error;
+
+  flow = bkdrft::filter_by_ether_type(id, bess::utils::Ethernet::Type::kArp, 0,
+                                     &error);
+
+  // flow = bkdrft::filter_by_vlan_type(id, 3, 100, 0xefff,
+  //                                    bess::utils::Ethernet::Type::kArp, 0,
+  //                                    &error);
+
+  if (flow) {
+    ret = 0;
+  } else {
+    LOG(INFO) << "litter rule error message: " << error.message << " \n";
+    ret = 1;
+  }
+
+  return ret;
 }
 
 void PMDPort::InitDriver() {
@@ -580,6 +605,11 @@ CommandResponse PMDPort::Init(const bess::pb::PMDPortArg &arg) {
     if (ret != 0) {
       return CommandFailure(-ret, "rule setup for overlay network failed.");
     }
+    // ---------- litter --------------- //
+    ret = litter_rule_setup(ret_port_id);
+    if (ret != 0) {
+      return CommandFailure(-ret, "rule setup for litter failed.");
+    }
   }
 
   // ---------- data mapping ----------- //
@@ -589,7 +619,7 @@ CommandResponse PMDPort::Init(const bess::pb::PMDPortArg &arg) {
     if (ret != 0) {
       return CommandFailure(-ret, "priority mapping rule setup failed.");
     }
-  }
+  } 
 
   int offload_mask = 0;
   offload_mask |= arg.vlan_offload_rx_strip() ? ETH_VLAN_STRIP_OFFLOAD : 0;

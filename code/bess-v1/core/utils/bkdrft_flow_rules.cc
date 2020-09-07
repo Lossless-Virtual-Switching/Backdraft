@@ -288,12 +288,56 @@ struct rte_flow *filter_by_ether_type(uint16_t port_id, rte_be16_t ether_type,
 
   memset(&eth_spec, 0, sizeof(struct rte_flow_item_eth));
   memset(&eth_mask, 0, sizeof(struct rte_flow_item_eth));
-  eth_spec.type = ether_type;
+  eth_spec.type = rte_cpu_to_be_16(ether_type);
   eth_mask.type = rte_cpu_to_be_16(0xffff);
   pattern[0].type = RTE_FLOW_ITEM_TYPE_ETH;
   pattern[0].spec = &eth_spec;
   pattern[0].mask = &eth_mask;
   pattern[1].type = RTE_FLOW_ITEM_TYPE_END;
+
+  res = rte_flow_validate(port_id, &attr, pattern, action, error);
+  if (!res)
+    flow = rte_flow_create(port_id, &attr, pattern, action, error);
+  return flow;
+}
+
+struct rte_flow *filter_by_vlan_type(uint16_t port_id, uint16_t prio,
+                                      uint16_t vlan_id, uint16_t vlan_id_mask,
+                                      uint16_t vlan_inner_type, uint16_t rx_q,
+                                      struct rte_flow_error *error) {
+  const int pattern_count = 4;
+  const int action_count = 2;
+  struct rte_flow_attr attr;
+  struct rte_flow_item pattern[pattern_count];
+  struct rte_flow_action action[action_count];
+  struct rte_flow *flow = NULL;
+  struct rte_flow_action_queue queue = {.index = rx_q};
+  struct rte_flow_item_vlan vlan_spec;
+  struct rte_flow_item_vlan vlan_mask;
+  int res;
+  memset(pattern, 0, sizeof(pattern));
+  memset(action, 0, sizeof(action));
+
+  memset(&attr, 0, sizeof(struct rte_flow_attr));
+  attr.ingress = 1;
+
+  action[0].type = RTE_FLOW_ACTION_TYPE_QUEUE;
+  action[0].conf = &queue;
+  action[1].type = RTE_FLOW_ACTION_TYPE_END;
+
+  pattern[0].type = RTE_FLOW_ITEM_TYPE_ETH;
+
+  memset(&vlan_spec, 0, sizeof(struct rte_flow_item_vlan));
+  memset(&vlan_mask, 0, sizeof(struct rte_flow_item_vlan));
+  vlan_spec.inner_type = rte_cpu_to_be_16(vlan_inner_type);
+  vlan_spec.tci = rte_cpu_to_be_16(prio << 13 | 0 << 12 | (vlan_id & 0x0fff));
+  vlan_mask.inner_type = rte_cpu_to_be_16(0xffff);
+  vlan_mask.tci = rte_cpu_to_be_16(vlan_id_mask);
+  pattern[1].type = RTE_FLOW_ITEM_TYPE_VLAN; 
+  pattern[1].spec = &vlan_spec;
+  pattern[1].mask = &vlan_mask;
+
+  pattern[2].type = RTE_FLOW_ITEM_TYPE_END;
 
   res = rte_flow_validate(port_id, &attr, pattern, action, error);
   if (!res)

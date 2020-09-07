@@ -118,10 +118,12 @@ static inline int network_send(struct network_thread *t, unsigned num,
     struct network_buf_handle **bhs)
 {
   // TODO: changes only work on single core TAS
-  int qid = 0; // TODO: this should be chosen differently (perflow_queueing)
+  int qid = t->queue_id;
   struct rte_mbuf **mbs = (struct rte_mbuf **) bhs;
 
   if(config.fp_command_data_queue) {
+    // TODO: this is should be set per flow
+    // queue zero is reserved
     qid = 1;
   }
 
@@ -133,7 +135,8 @@ static inline int network_send(struct network_thread *t, unsigned num,
   }
 #endif
 
-  return send_pkt(net_port_id, qid, mbs, num, config.fp_command_data_queue, t->ctrl_cmd_pool); // t->queue_id, t->pool  
+  return send_pkt(net_port_id, qid, mbs, num, config.fp_command_data_queue,
+                  t->ctrl_cmd_pool); // t->queue_id, t->pool  
   // return rte_eth_tx_burst(net_port_id, t->queue_id, mbs, num);
 }
 

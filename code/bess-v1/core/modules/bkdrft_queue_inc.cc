@@ -18,10 +18,15 @@ using namespace bess::bkdrft;
 
 bool is_arp(bess::Packet *pkt) {
   using bess::utils::Ethernet;
+  using bess::utils::Vlan;
   Ethernet *eth = reinterpret_cast<Ethernet *>(pkt->head_data());
   uint16_t ether_type = eth->ether_type.value();
   if (ether_type == Ethernet::Type::kArp)
     return true;
+  else if (ether_type == Ethernet::Type::kVlan) {
+    Vlan *vlan = reinterpret_cast<Vlan *>(eth + 1);
+    return vlan->ether_type.value() == Ethernet::Type::kArp;
+  }
   return false;
 }
 
@@ -194,16 +199,18 @@ uint32_t BKDRFTQueueInc::CDQ(Context *ctx, bess::PacketBatch *batch, queue_t &_q
   queue_t qid = 0;
   uint32_t burst = 0;
   bool found_qid = false; // = CheckQueuedCtrlMessages(ctx, &qid, &burst);
+  bool has_q0_litter = false;
+  // uint32_t cnt_litter = 0;
 
   if (true) { // !found_qid
     bess::PacketBatch ctrl_batch;
     ctrl_batch.clear();
     uint32_t cnt;
     cnt = ReadBatch(BKDRFT_CTRL_QUEUE, &ctrl_batch, 32);
-    if (cnt == 0) {
+    // if (cnt == 0) {
       // no ctrl msg. we are done!
       // return 0;
-    }
+    // }
     // received some ctrl/commad message
     queue_t dqid = 0;
     uint32_t nb_pkts = 0;
@@ -213,7 +220,7 @@ uint32_t BKDRFTQueueInc::CDQ(Context *ctx, bess::PacketBatch *batch, queue_t &_q
       // arp is allowed on this queue
       // if (is_arp(pkt)) {
       //   LOG(INFO) << "ARP !\n";
-      //   EmitPacket(ctx, pkt, 0);
+      //   EmitPacket(ctx, pkt, 0); // emitting will cause crash
       //   continue;
       // }
 
@@ -227,6 +234,12 @@ uint32_t BKDRFTQueueInc::CDQ(Context *ctx, bess::PacketBatch *batch, queue_t &_q
         // send packet through pipeline it is not ctrl msg
         // LOG(INFO) << "emiting pkt: data offset: " << pkt->data_off() << "\n";
         // EmitPacket(ctx, pkt);
+        if (is_arp(pkt)) {
+          batch->add(pkt);
+          has_q0_litter = true;
+          LOG(INFO) << "is arp\n";
+        }
+        // cnt_litter++;
         continue;
       }
 
@@ -258,6 +271,12 @@ uint32_t BKDRFTQueueInc::CDQ(Context *ctx, bess::PacketBatch *batch, queue_t &_q
 
       bess::Packet::Free(pkt); // free ctrl pkt
     }
+
+    // send out the unknown packets received on control queue
+    if (has_q0_litter) {
+      return batch->cnt();
+    } 
+
     found_qid = CheckQueuedCtrlMessages(ctx, &qid, &burst);
   }
 

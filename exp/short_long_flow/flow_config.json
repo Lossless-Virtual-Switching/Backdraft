@@ -2,28 +2,30 @@
   "default_client": {
     "message_per_sec": -1,
     "flow_duration": 0,
-    "message_size": 500,
+    "message_size": 1400,
     "flow_num_msg": 0,
     "flow_per_destination": 4,
-    "count_thread": 1
+    "count_thread": 1,
+    "delay_cycles": 0
   },
   "default_server": {
-    "message_size": 64,
+    "message_size": 1400,
     "max_flow": 8192,
-    "count_thread": 1
+    "count_thread": 1,
+    "delay_cycles": 0
   },
   "other_client": {
     "message_per_sec": -1,
     "flow_duration": 0,
-    "message_size": 500,
+    "message_size": 100,
     "flow_num_msg": 0,
-    "flow_per_destination": 8,
+    "flow_per_destination": 2,
     "count_thread": 1
   },
   "slow_server": {
-    "message_size": 64,
+    "message_size": 1400,
     "max_flow": 8192,
     "count_thread": 1,
-    "delay_cycles": 180000
+    "delay_cycles": 1000
   }
 }
