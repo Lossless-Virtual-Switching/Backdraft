@@ -35,6 +35,7 @@ int check_eth_hdr(uint32_t my_ip, struct rte_ether_addr *host_mac,
   struct rte_ether_hdr *ptr_mac_hdr;
   struct rte_arp_hdr *a_hdr;
   struct rte_ipv4_hdr *ipv4_hdr;
+  int res;
 
   ptr_mac_hdr = rte_pktmbuf_mtod(buf, struct rte_ether_hdr *);
   if (!rte_is_same_ether_addr(&ptr_mac_hdr->d_addr, host_mac) &&
@@ -64,9 +65,17 @@ int check_eth_hdr(uint32_t my_ip, struct rte_ether_addr *host_mac,
       a_hdr = (struct rte_arp_hdr *)(ipv4_hdr + 1);
       if (a_hdr->arp_opcode == rte_cpu_to_be_16(RTE_ARP_OP_REQUEST)
           && a_hdr->arp_data.arp_tip == rte_cpu_to_be_32(my_ip)) {
-        send_bkdrft_arp(port, queue, RTE_ARP_OP_REPLY, my_ip, a_hdr->arp_data.arp_sha,
-            rte_be_to_cpu_32(a_hdr->arp_data.arp_sip), tx_mbuf_pool, cdq);
-        printf("answering arp (cdq: %d) \n", cdq);
+        while (true) {
+          /* make sure arp is pushed to network */
+          res = send_bkdrft_arp(port, queue, RTE_ARP_OP_REPLY, my_ip,
+                                a_hdr->arp_data.arp_sha,
+                                rte_be_to_cpu_32(a_hdr->arp_data.arp_sip),
+                                tx_mbuf_pool, cdq);
+          if (res == 0) {
+            printf("answering arp (cdq: %d) \n", cdq);
+            break;
+          }
+        }
       }
       return 0;
     }

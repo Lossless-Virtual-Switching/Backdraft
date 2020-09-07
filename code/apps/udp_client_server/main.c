@@ -395,7 +395,7 @@ int main(int argc, char *argv[]) {
     cntxs[i].default_qid = next_qid++; // poll this queue
     cntxs[i].running = 1;     // this job of this cntx has not finished yet
     cntxs[i].src_ip = source_ip;
-    cntxs[i].use_vlan = 0;
+    cntxs[i].use_vlan = 1;
     cntxs[i].bidi = 1;
     if (mode == mode_server) {
       // TODO: fractions are not counted here
@@ -409,6 +409,8 @@ int main(int argc, char *argv[]) {
       cntxs[i].managed_queues = malloc(queue_per_core * sizeof(uint32_t));
       for (int q = 0; q < queue_per_core; q++) {
         cntxs[i].managed_queues[q] = (findex * queue_per_core) + q;
+        if (system_mode == system_bkdrft)
+          cntxs[i].managed_queues[q]++; // zero is reserved
       }
       findex++;
 

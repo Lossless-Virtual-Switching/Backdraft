@@ -7,7 +7,7 @@
 void send_arp(uint16_t op, uint32_t src_ip, struct rte_ether_addr dst_eth,
     uint32_t dst_ip, struct rte_mempool *tx_mbuf_pool, uint8_t cdq);
 
-void send_bkdrft_arp(uint16_t port, uint16_t queue, uint16_t op, uint32_t src_ip,
+int send_bkdrft_arp(uint16_t port, uint16_t queue, uint16_t op, uint32_t src_ip,
     struct rte_ether_addr dst_eth, uint32_t dst_ip,
     struct rte_mempool *tx_mbuf_pool, uint8_t cdq);
 

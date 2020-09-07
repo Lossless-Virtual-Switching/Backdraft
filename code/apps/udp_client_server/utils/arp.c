@@ -58,7 +58,7 @@ void send_arp(uint16_t op, uint32_t src_ip,
   }
 }
 
-void send_bkdrft_arp(uint16_t port, uint16_t queue, uint16_t op, uint32_t src_ip,
+int send_bkdrft_arp(uint16_t port, uint16_t queue, uint16_t op, uint32_t src_ip,
     struct rte_ether_addr dst_eth, uint32_t dst_ip,
     struct rte_mempool *tx_mbuf_pool, uint8_t cdq)
 {
@@ -70,11 +70,16 @@ void send_bkdrft_arp(uint16_t port, uint16_t queue, uint16_t op, uint32_t src_ip
   struct rte_arp_hdr *a_hdr;
   int nb_tx;
 
+  if (cdq && queue == 0)
+    printf("warning: sending arp pkt on queue 0\n");
+
   rte_eth_macaddr_get(0, &src_mac);
 
   buf = rte_pktmbuf_alloc(tx_mbuf_pool);
-  if (buf == NULL)
+  if (buf == NULL) {
     printf("error allocating arp mbuf\n");
+    return -1;
+  }
 
   // ethernet header
   buf_ptr = rte_pktmbuf_append(buf, RTE_ETHER_HDR_LEN);
@@ -88,7 +93,7 @@ void send_bkdrft_arp(uint16_t port, uint16_t queue, uint16_t op, uint32_t src_ip
   buf_ptr = rte_pktmbuf_append(buf, sizeof(struct rte_ipv4_hdr));
   ipv4_hdr = (struct rte_ipv4_hdr *)buf_ptr;
   ipv4_hdr->version_ihl = 0x45;
-  ipv4_hdr->type_of_service = 0;
+  ipv4_hdr->type_of_service = cdq ? queue << 2 : 0;
   ipv4_hdr->total_length =
   rte_cpu_to_be_16(sizeof(struct rte_ipv4_hdr) + sizeof(struct rte_arp_hdr));
   ipv4_hdr->packet_id = 0;
@@ -129,7 +134,10 @@ void send_bkdrft_arp(uint16_t port, uint16_t queue, uint16_t op, uint32_t src_ip
   nb_tx = send_pkt(port, queue, &buf, 1, cdq, tx_mbuf_pool);
   if (unlikely(nb_tx != 1)) {
     printf("error: could not send arp packet\n");
+    rte_pktmbuf_free(buf);
+    return -1;
   }
+  return 0;
 }
 
 
