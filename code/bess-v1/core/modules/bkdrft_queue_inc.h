@@ -17,6 +17,8 @@ struct queue_pause_status {
 	uint64_t until;
 	uint64_t failed_ctrl;
   int64_t remaining_dpkt;
+  uint64_t overlay_pkts;
+  uint64_t overlay_pause_duration;
 	Flow flow;
 };
 
@@ -38,6 +40,8 @@ class BKDRFTQueueInc final : public Module {
 
   CommandResponse CommandSetBurst(
       const bess::pb::BKDRFTQueueIncCommandSetBurstArg &arg);
+
+  CommandResponse CommandGetOverlayStats(const bess::pb::EmptyArg &);
 
  private:
   uint32_t  CDQ(Context *ctx, bess::PacketBatch *batch, queue_t &_qid);

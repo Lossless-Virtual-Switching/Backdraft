@@ -32,7 +32,11 @@ bool is_arp(bess::Packet *pkt) {
 
 const Commands BKDRFTQueueInc::cmds = {
     {"set_burst", "BKDRFTQueueIncCommandSetBurstArg",
-     MODULE_CMD_FUNC(&BKDRFTQueueInc::CommandSetBurst), Command::THREAD_SAFE}};
+     MODULE_CMD_FUNC(&BKDRFTQueueInc::CommandSetBurst), Command::THREAD_SAFE},
+    {"get_overlay_stats", "BKDRFTQueueIncCommandGetOverlayStatsResponse",
+     MODULE_CMD_FUNC(&BKDRFTQueueInc::CommandGetOverlayStats),
+                                                        Command::THREAD_SAFE}
+};
 
 CommandResponse BKDRFTQueueInc::Init(const bess::pb::BKDRFTQueueIncArg &arg) {
   const char *port_name;
@@ -100,6 +104,8 @@ CommandResponse BKDRFTQueueInc::Init(const bess::pb::BKDRFTQueueIncArg &arg) {
       until : 0,
       failed_ctrl : 0,
       remaining_dpkt : 0,
+      overlay_pkts: 0,
+      overlay_pause_duration: 0,
       flow : bess::bkdrft::empty_flow,
     };
   }
@@ -234,11 +240,11 @@ uint32_t BKDRFTQueueInc::CDQ(Context *ctx, bess::PacketBatch *batch, queue_t &_q
         // send packet through pipeline it is not ctrl msg
         // LOG(INFO) << "emiting pkt: data offset: " << pkt->data_off() << "\n";
         // EmitPacket(ctx, pkt);
-        if (is_arp(pkt)) {
-          batch->add(pkt);
-          has_q0_litter = true;
-          LOG(INFO) << "is arp\n";
-        }
+        // if (is_arp(pkt)) {
+        //   batch->add(pkt);
+        //   has_q0_litter = true;
+        //   LOG(INFO) << "is arp\n";
+        // }
         // cnt_litter++;
         continue;
       }
@@ -260,6 +266,9 @@ uint32_t BKDRFTQueueInc::CDQ(Context *ctx, bess::PacketBatch *batch, queue_t &_q
           // LOG(INFO) << "Received overlay message: pps: " << pps << "\n";
 
 	        // update port rate limit for queue
+          q_status_[dqid].overlay_pkts += 1;
+          q_status_[dqid].overlay_pause_duration +=
+                                                  overlay_msg->pause_duration();
           auto &overlay_ctrl = BKDRFTOverlayCtrl::GetInstance();
           overlay_ctrl.ApplyOverlayMessage(*overlay_msg, ctx->current_ns);
         }
@@ -387,6 +396,20 @@ CommandResponse BKDRFTQueueInc::CommandSetBurst(
     burst_ = arg.burst();
     return CommandSuccess();
   }
+}
+
+CommandResponse BKDRFTQueueInc::CommandGetOverlayStats(
+                                 const bess::pb::EmptyArg &)
+{
+  bess::pb::BKDRFTQueueIncCommandGetOverlayStatsResponse resp;
+  for (size_t i = 0; i < MAX_QUEUES; i++) {
+    resp.add_pkts(q_status_[i].overlay_pkts);
+    resp.add_duration(q_status_[i].overlay_pause_duration);
+  }
+  // LOG(INFO) << "name: " << name_
+  //           << " overlay throughput: " << "?"
+  //           << "\n";
+  return CommandSuccess(resp);
 }
 
 ADD_MODULE(BKDRFTQueueInc, "bkdrft_queue_inc",

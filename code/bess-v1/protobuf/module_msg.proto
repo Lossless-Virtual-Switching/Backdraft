@@ -323,6 +323,11 @@ message BKDRFTQueueIncCommandSetBurstArg {
   uint64 burst = 1; /// The maximum "burst" of packets (ie, the maximum batch size)
 }
 
+message BKDRFTQueueIncCommandGetOverlayStatsResponse {
+  repeated uint64 pkts = 1;
+  repeated uint64 duration = 2;
+}
+
 /**
  * The module Queue has a function `set_burst(...)` that allows you to specify
  * the maximum number of packets to be stored in a single PacketBatch released
@@ -883,6 +888,15 @@ message BKDRFTQueueOutCommandGetCtrlMsgTpResponse {
  */
 message BKDRFTQueueOutCommandGetOverlayTpResponse {
   repeated uint64 throughput = 1; /// number of control packets sent in last second
+}
+
+/**
+ * The BKDRFTQueueOut module has a command `set_overlay_threshold()` that sets
+ * low and high water values from parameters. The values are in bytes.
+ */
+message BKDRFTQueueOutCommandSetOverlayThresholdArg {
+  uint64 low_water=1;  /// Low water value in bytes
+  uint64 high_water=2; /// High water value in bytes
 }
 
 /**

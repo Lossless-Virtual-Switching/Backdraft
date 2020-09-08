@@ -18,11 +18,11 @@
 const queue_t MAX_QUEUES = 8;
 const int drop_high_water = 30; // assumming batch size is 32
 // const int buffer_len_high_water = 256;
-const uint64_t buffer_len_high_water = 150000; // bytes
+// const uint64_t buffer_len_high_water = 15000; // bytes
 // const int buffer_len_low_water = 64;
-const uint64_t buffer_len_low_water = 30000; // bytes
+// const uint64_t buffer_len_low_water = 6000; // bytes
 
-const int bp_buffer_len_high_water = 32;
+const int bp_buffer_len_high_water = 10;
 
 using bess::bkdrft::Flow;
 struct queue_flow_info {
@@ -71,6 +71,8 @@ public:
   CommandResponse CommandPauseCalls(const bess::pb::EmptyArg &);
   CommandResponse CommandGetCtrlMsgTp(const bess::pb::EmptyArg &);
   CommandResponse CommandGetOverlayTp(const bess::pb::EmptyArg &);
+  CommandResponse CommandSetOverlayThreshold(
+    const bess::pb::BKDRFTQueueOutCommandSetOverlayThresholdArg &args);
 
 private:
   // place not sent packets in the buffer for the given flow
@@ -181,6 +183,9 @@ private:
   uint64_t overlay_tp_;
   std::vector<uint64_t> overlay_per_sec;
   uint64_t stats_begin_ts_;
+
+  uint64_t buffer_len_high_water = 15000; // bytes
+  uint64_t buffer_len_low_water = 6000; // bytes
 
   // a  name given to this module. currently used for loggin pause per sec
   // statistics.
