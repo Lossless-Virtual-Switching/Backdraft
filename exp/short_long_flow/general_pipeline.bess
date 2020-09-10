@@ -26,7 +26,10 @@ def get_mac_address():
   """
   Get current device MAC address
   """
-  p = subprocess.Popen('cat /sys/class/net/eno50/address', shell=True, stdout=subprocess.PIPE)
+  import json
+
+  config = json.load(open(".pipeline_config.json", "r"))
+  p = subprocess.Popen('cat /sys/class/net/%s/address' %config["interface"], shell=True, stdout=subprocess.PIPE)
   res, _ = p.communicate()
   add = res.decode().strip()
   return add
@@ -63,6 +66,7 @@ def get_tci(prio, dei, vlan_id):
 
 
 host_name, info =  get_current_node_info(config_file)
+print(host_name, info)
 instances = info.get('instances', [])
 count_instances = len(instances)
 # if count_instances == 0:

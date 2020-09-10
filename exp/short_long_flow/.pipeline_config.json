@@ -1,10 +1,11 @@
 {
-  "pci": "07:00.1",
+  "pci": "65:00.0",
   "count_queue": 8,
-  "queue_size": 64,
+  "queue_size": 512,
   "bp": false,
   "cdq": false,
   "pfq": false,
   "overlay": false,
-  "buffering": false
+  "buffering": false,
+  "interface" : "eno50"
 }
