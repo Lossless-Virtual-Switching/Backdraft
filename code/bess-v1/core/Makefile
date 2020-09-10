@@ -62,6 +62,7 @@ endif
 HAS_PKG_CONFIG := $(shell command -v $(PKG_CONFIG) 2>&1 >/dev/null && echo yes || echo no)
 
 RTE_SDK ?= $(abspath ../deps/dpdk-19.11.1)
+# RTE_SDK ?= $(abspath ../deps/dpdk-20.08)
 RTE_TARGET ?= $(shell uname -m)-native-linuxapp-gcc
 DPDK_LIB ?= dpdk
 
@@ -114,6 +115,7 @@ CXXFLAGS += -std=c++17 -g3 -ggdb3 $(CXXARCHFLAGS) \
             -isystem $(dir $<).. -isystem $(COREDIR)/modules \
             -D_GNU_SOURCE \
             -Werror -Wall -Wextra -Wcast-align -Wno-error=deprecated-declarations \
+            -Wno-deprecated-declarations \
             -Wno-error=array-bounds \
             $(PKG_CFLAGS)
 #-DHOLB \

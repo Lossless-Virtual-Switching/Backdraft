@@ -90,12 +90,13 @@ DEPS_DIR = '%s/deps' % BESS_DIR
 
 DPDK_URL = 'https://fast.dpdk.org/rel'
 DPDK_VER = 'dpdk-19.11.1'
+# DPDK_VER = 'dpdk-20.08'
 DPDK_TARGET = 'x86_64-native-linuxapp-gcc'
 
 kernel_release = cmd('uname -r', quiet=True).strip()
 
 DPDK_DIR = '%s/%s' % (DEPS_DIR, DPDK_VER)
-DPDK_CFLAGS = '"-g -w -fPIC"'
+DPDK_CFLAGS = '"-g -w -fPIC "'
 DPDK_ORIG_CONFIG = '%s/config/common_linux' % DPDK_DIR
 
 extra_libs = set()

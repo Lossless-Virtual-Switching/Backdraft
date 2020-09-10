@@ -5,6 +5,7 @@
 #include <stdint.h>
 #include <vector>
 #include <rte_hash_crc.h>
+#include <rte_ring.h>
 
 #include "../module.h"
 #include "../packet_pool.h"
@@ -23,6 +24,10 @@ const int drop_high_water = 30; // assumming batch size is 32
 // const uint64_t buffer_len_low_water = 6000; // bytes
 
 const int bp_buffer_len_high_water = 10;
+const uint64_t overlay_max_pause_duration = 10000000;
+const uint32_t max_availabe_flows = 1024;
+const uint64_t flow_dealloc_limit = 100000000; // ns
+const uint32_t max_buffer_size=4096;
 
 using bess::bkdrft::Flow;
 struct queue_flow_info {
@@ -44,8 +49,10 @@ struct flow_state {
   uint64_t no_overlay_duration; // for what duration no overlay should be sent
   uint64_t packet_in_buffer; // how many packets in the buffer
   uint64_t byte_in_buffer; // how many bytes in the buffer
-  std::vector<bess::Packet *> *buffer; // pointer to queue buffer
-};
+  struct rte_ring *buffer; // pointer to queue buffer
+  bool in_use; // indicating if the object is being used by a flow
+  uint64_t last_used; // keeps track of the usage
+} __attribute__((aligned(64)));
 
 class BKDRFTQueueOut final : public Module {
 public:
@@ -80,7 +87,7 @@ private:
                              bess::PacketBatch *batch, uint16_t sent_pkt);
 
   // returns the size of assigned buffer for the given flow
-  uint64_t BufferSize(const Flow &flow);
+  // uint64_t BufferSize(const Flow &flow);
 
   // try to send packets in the buffer
   void TrySendBuffer(Context *cntx);
@@ -110,6 +117,7 @@ private:
 
   // map a flow to a queue (or get the queue it was mapped before)
   flow_state *GetFlowState(Context *cntx, Flow &flow);
+  void DeallocateFlowState(Context *cntx, Flow &flow);
 
   void MeasureForPolicy(Context *cntx, queue_t qid, const Flow &flow,
                         uint16_t sent_pkts, uint32_t sent_bytes,
@@ -126,13 +134,14 @@ private:
   // send an overlay message for the given flow
   // qid: the queue the flow is mapped to
   // (or the queue it is going to be send on)
-  int SendOverlay(const Flow &flow, queue_t qid, OverlayState state, uint64_t *duration=nullptr);
+  int SendOverlay(const Flow &flow, const struct flow_state *fstate,
+                  OverlayState state, uint64_t *duration=nullptr);
 
 private:
   using bufferHashTable =
       bess::utils::CuckooMap<Flow, std::vector<bess::Packet *> *, Flow::Hash,
                              Flow::EqualTo>;
-  
+
   Port *port_;
   queue_t qid_;
 
@@ -162,7 +171,8 @@ private:
 
   // The limmited_buffers_ are used for buffering packets when
   // per flow queueing is not active.
-  std::vector<bess::Packet *> limited_buffers_[MAX_QUEUES];
+  // std::vector<bess::Packet *> limited_buffers_[MAX_QUEUES];
+  struct rte_ring *limited_buffers_[MAX_QUEUES];
 
   uint64_t count_packets_in_buffer_;
   uint64_t bytes_in_buffer_;
@@ -184,8 +194,8 @@ private:
   std::vector<uint64_t> overlay_per_sec;
   uint64_t stats_begin_ts_;
 
-  uint64_t buffer_len_high_water = 15000; // bytes
-  uint64_t buffer_len_low_water = 6000; // bytes
+  uint64_t buffer_len_high_water = 64; // bytes
+  uint64_t buffer_len_low_water = 32; // bytes
 
   // a  name given to this module. currently used for loggin pause per sec
   // statistics.
@@ -202,6 +212,10 @@ private:
   // This is used to avoid passing context to other functions
   // TODO: this is no thread safe
   Context *context_;
+
+  struct flow_state *flow_state_pool_;
+  Flow *flow_state_flow_id_;
+  uint32_t fsp_top_; // flow state pool top of the stack
 };
 
 #endif // BESS_MODULES_BKDRFTQUEUEOUT_H_
