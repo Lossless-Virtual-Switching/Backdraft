@@ -14,7 +14,7 @@ config = json.load(open('.pipeline_config.json'))
 
 out_pci = config['pci']
 count_queue = config['count_queue']
-count_tas_queues = count_queue 
+count_tas_queues = count_queue
 size_q = config['queue_size']
 
 
@@ -36,7 +36,7 @@ def get_pci_address(iface):
   """
   Get PCI address for the given interface name
   """
-  # ethtool -i iface # this should give enough information  
+  # ethtool -i iface # this should give enough information
   raise Exception('Not implemented yet')
 
 
@@ -58,31 +58,31 @@ def get_current_node_info(file_path):
 
 
 def get_tci(prio, dei, vlan_id):
-  tci = prio << 13 | 0 << 12 | vlan_id  
+  tci = prio << 13 | 0 << 12 | vlan_id
   return tci
 
 
 host_name, info =  get_current_node_info(config_file)
-instances = info['instances']
+instances = info.get('instances', [])
 count_instances = len(instances)
-if count_instances == 0:
-  raise Exception('This node has no instace!')
+# if count_instances == 0:
+#   raise Exception('This node has no instace!')
 
 bp = config['bp']
-buffering = config['buffering'] 
-cdq = config['cdq'] 
-pfq = config['pfq'] 
+buffering = config['buffering']
+cdq = config['cdq']
+pfq = config['pfq']
 overlay = config['overlay']
 
 
 # PCI of port connected to switch
-if host_name == 'node4':
-  # HARD CODED: Slow down node 4 port 
-  sw_port = PMDPort(pci=out_pci, num_inc_q=count_queue, num_out_q=count_queue,
-             rate_limiting=True, rate=1, command_queue=cdq, data_mapping=cdq)
-else:
-  sw_port = PMDPort(pci=out_pci, num_inc_q=count_queue, num_out_q=count_queue,
-             rate_limiting=overlay, rate=40, command_queue=cdq, data_mapping=cdq)
+# if host_name == 'node4':
+#   # HARD CODED: Slow down node 4 port
+#   sw_port = PMDPort(pci=out_pci, num_inc_q=count_queue, num_out_q=count_queue,
+#              rate_limiting=True, rate=1, command_queue=cdq, data_mapping=cdq)
+# else:
+sw_port = PMDPort(pci=out_pci, num_inc_q=count_queue, num_out_q=count_queue,
+           rate_limiting=overlay, rate=40, command_queue=cdq, data_mapping=cdq)
 
 # TAS vhost ports
 vhosts = []
@@ -105,7 +105,7 @@ for i, instance in enumerate(instances):
     size_out_q=size_q,
     rate_limiting=overlay,
     rate=40)
-  ip = info['ip'] 
+  ip = info['ip']
   if 'ip' in instance:
     ip = instance['ip']
   ip = ip.strip()
@@ -123,13 +123,13 @@ for i, instance in enumerate(instances):
 #   qinc = QueueInc(port=vhost.name, qid=0)
 #   qinc -> merge:i
 # merge -> sw_q_out
-# 
+#
 # # Rx
 # sw_q_inc -> x
 # for i, vhost in enumerate(vhosts):
 #   qout = QueueOut(port=vhost.name, qid=0)
-#   x:i -> qout 
-# 
+#   x:i -> qout
+#
 
 sw_merge = Merge()
 if not cdq:
@@ -152,6 +152,12 @@ x:0 -> rep
 
 x.add(prefix='192.0.0.0', prefix_len=8, gate=8000)
 x:8000 -> Sink()
+
+# ACL for filtering unwanted packets
+rules = [ {'src_ip': '192.168.9.50', 'dst_ip':'',
+           'src_port':10001, 'dst_port':8080,
+           'drop':True},]
+acl = ACL(rules=rules)
 
 
 # Tx
@@ -178,7 +184,7 @@ merge -> push_vlan -> sw_q_out
 #TODO: if two instance have the same ip we will have problems
 # Rx
 pop_vlan = VLANPop()
-sw_merge -> pop_vlan -> x
+sw_merge -> pop_vlan -> acl -> x
 # sw_merge -> x
 lookup_gate = 1
 for i, (vhost, ip) in enumerate(vhosts):
@@ -186,28 +192,33 @@ for i, (vhost, ip) in enumerate(vhosts):
     backpressure=bp, lossless=buffering, cdq=cdq, per_flow_buffering=pfq,
     mname=vhost.name + '_' + str(i), overlay=overlay)
   if ip:
-    x:lookup_gate -> qout 
+    x:lookup_gate -> qout
     lookup_gate += 1
   gate = i + 1
   rep:gate -> qout
 
 # HARD CODED BURST GENERATOR
-# import scapy.all as scapy
-# 
-# if host_name == 'node5':
-#   src_mac = info['mac']
-#   dst_mac = '98:f2:b3:cc:02:c1' # TODO: this should be read from config file
-#   src_ip = '192.168.9.50'  # this ip should be dropped in vsw
-#   dst_ip = '192.168.1.41'  # TODO: this should be read from config
-#   eth = scapy.Ether(src=src_mac, dst=dst_mac)
-#   ip = scapy.IP(src=src_ip, dst=dst_ip)
-#   tcp = scapy.TCP(sport=10001, dport=8080, seq=134)
-#   payload = 'a' * 100
-#   pkt = bytes(eth/ip/tcp/payload)
-# 
-#   src::FlowGen(template=pkt, pps=1.0e6, flow_rate=800, flow_duration=5.0, \
-#       arrival='exponential', duration='pareto', quick_rampup=True) -> merge
-# 
-# # FOR ALL INSTANCES
-# x.add(prefix='192.168.9.50', prefix_len=32, gate=8000)
+import scapy.all as scapy
+
+if host_name in ('node5', 'node2'):
+  payload_size = 100
+  pps = 1.0e6
+  if host_name == 'node2':
+    pps = 0.8e6
+    payload_size = 1400
+  src_mac = info['mac']
+  dst_mac = '98:f2:b3:cc:02:c1' # TODO: this should be read from config file
+  src_ip = '192.168.9.50'  # this ip should be dropped in vsw
+  dst_ip = '192.168.1.41'  # TODO: this should be read from config
+  eth = scapy.Ether(src=src_mac, dst=dst_mac)
+  ip = scapy.IP(src=src_ip, dst=dst_ip)
+  tcp = scapy.TCP(sport=10001, dport=8080, seq=134)
+  payload = 'a' * payload_size
+  pkt = bytes(eth/ip/tcp/payload)
+
+  src::FlowGen(template=pkt, pps=pps, flow_rate=800, flow_duration=1.0, \
+      arrival='exponential', duration='pareto', quick_rampup=True) -> merge
+
+# FOR ALL INSTANCES
+x.add(prefix='192.168.9.50', prefix_len=32, gate=8000)
 

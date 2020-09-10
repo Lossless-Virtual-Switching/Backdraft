@@ -1,22 +1,25 @@
 import os
 import json
-import subprocess 
+import subprocess
 
 
 config = json.load(open('.pipeline_config.json'))
-count_queue = config['count_queue'] 
-queue_size = config['queue_size'] 
+count_queue = config['count_queue']
+queue_size = config['queue_size']
 pci = os.environ.get('PCI', '7:00.1')
 
-rate_limiting = config['overlay'] 
-rate = 10 
+rate_limiting = config['overlay']
+rate = 10
 
-cdq = config['cdq'] 
+cdq = config['cdq']
 pfq = config['pfq']
 buffering = config['buffering']
 bp = config['bp']
 overlay = config['overlay']
 mq=0
+
+overlay_lw = 5
+overlay_hw = overlay_lw + 1600
 
 # =========
 import socket
@@ -24,7 +27,7 @@ host_name = socket.gethostname()
 # =========
 
 
-socket ='/tmp/vhost_0.sock' 
+socket ='/tmp/vhost_0.sock'
 vdev = 'eth_vhost0,iface={},queues={}'.format(socket, count_queue)
 print(vdev)
 
@@ -86,30 +89,32 @@ vhost_qout = BKDRFTQueueOut(port=vhost,
     multiqueue=mq,
     mname="vhost_queue_out")
 
+vhost_qout.set_overlay_threshold(low_water=overlay_lw, high_water=overlay_hw)
+
 
 if cdq:
   BKDRFTQueueInc(port=vhost,
     qid=0,
     cdq=cdq,
     backpressure=bp,
-    overlay=overlay)  -> nic_qout
+    overlay=overlay) -> nic_qout
 
   BKDRFTQueueInc(port=nic,
     qid=0,
     cdq=cdq,
     backpressure=bp,
-    overlay=overlay)  -> vhost_qout
+    overlay=overlay) -> vhost_qout
 else:
   for i in range(count_queue):
     BKDRFTQueueInc(port=vhost,
       qid=i,
       cdq=cdq,
       backpressure=bp,
-      overlay=overlay)  -> nic_qout
+      overlay=overlay) -> nic_qout
 
     BKDRFTQueueInc(port=nic,
       qid=i,
       cdq=cdq,
       backpressure=bp,
-      overlay=overlay)  -> vhost_qout
+      overlay=overlay) -> vhost_qout
 

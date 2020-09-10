@@ -289,7 +289,7 @@ if __name__ == '__main__':
         if node_name is None:
                 print('Configuration for current node not found (mac address did not match any node)')
                 sys.exit(-1)
-        instances = info['instances']
+        instances = info.get('instances', [])
 
         # kill previous instances
         if args.kill:
@@ -308,9 +308,9 @@ if __name__ == '__main__':
         print('pipeline config:')
         pprint(pipeline_config)
         print('')
-        
+
         # setup TAS instances
-        for i, instance in enumerate(instances): 
+        for i, instance in enumerate(instances):
                 print('setting up instance:')
                 pprint(instance)
                 print('')

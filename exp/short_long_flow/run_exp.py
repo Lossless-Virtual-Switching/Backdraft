@@ -23,6 +23,7 @@ if __name__ == '__main__':
     cluster_config_path = 'cluster_config.yml'
     here = os.path.dirname(__file__)
     node_name, info = get_current_node_info(cluster_config_path)
+    count_instance = len(info.get('instances', []))
     if node_name is None:
         print('This node was not configured')
         sys.exit(0)
@@ -77,7 +78,7 @@ if __name__ == '__main__':
 
     # overlay result
     logger.log('overlay packet per second average:')
-    for i in range(2):
+    for i in range(count_instance + 1):
         module_name = 'bkdrft_queue_out{0}'.format(i)
         cmd =  'command module {0} get_overlay_tp EmptyArg {{}}'
         cmd = cmd.format(module_name)
@@ -95,7 +96,7 @@ if __name__ == '__main__':
     logger.log('')
 
     # docker logs
-    for i, instance in enumerate(info['instances']):
+    for i, instance in enumerate(info.get('instances', [])):
         type_ = instance['type']
         app = instance.get('app', None)
         if app == 'udp_app':
