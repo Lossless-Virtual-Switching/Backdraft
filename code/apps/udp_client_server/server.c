@@ -130,13 +130,13 @@ int do_server(void *_cntx) {
         // last pkt then server is done
         current_time = rte_get_timer_cycles();
         if (current_time - last_pkt_time > termination_threshold) {
-          run = 0;
-          break;
+          // run = 0;
+          // break;
         }
       }
       continue;
     }
-    
+
     // printf("recv: %d\n", nb_rx);
 
     if (!first_pkt) {
@@ -179,11 +179,6 @@ int do_server(void *_cntx) {
         continue;
       }
 
-      if (!bidi) {
-        rte_pktmbuf_free(rx_bufs[i]); // free packet
-        continue;
-      }
-
       ptr = rte_pktmbuf_mtod_offset(buf, char *, 0);
       eth_hdr = (struct rte_ether_hdr *)ptr;
 
@@ -209,9 +204,20 @@ int do_server(void *_cntx) {
         ipv4_hdr = (struct rte_ipv4_hdr *)(ptr + RTE_ETHER_HDR_LEN);
       }
 
+      if (rte_be_to_cpu_32(ipv4_hdr->dst_addr) != my_ip) {
+        // discard the packet (not our packet)
+        rte_pktmbuf_free(rx_bufs[i]); // free packet
+        continue;
+      }
+
       // update throughput
       throughput += 1;
       // throughput[current_sec] += 1;
+
+      if (!bidi) {
+        rte_pktmbuf_free(rx_bufs[i]); // free packet
+        continue;
+      }
 
       // swap mac address
       rte_ether_addr_copy(&eth_hdr->s_addr, &tmp_addr);

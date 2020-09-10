@@ -47,6 +47,7 @@ int do_client(void *_cntx) {
 
   uint64_t start_time, end_time;
   uint64_t duration = cntx->duration * rte_get_timer_hz();
+  uint64_t ignore_result_duration = 0;
 
   struct rte_mbuf *bufs[BURST_SIZE];
   // struct rte_mbuf *ctrl_recv_bufs[BURST_SIZE];
@@ -68,19 +69,17 @@ int do_client(void *_cntx) {
   uint64_t hz;
   int can_send = 1;
   char *ptr;
-  uint16_t flow_q[count_dst_ip];
+  uint16_t flow_q[count_dst_ip * count_flow];
   uint16_t selected_q = 0;
   uint16_t rx_q = qid;
 
-  // node3: 98:f2:b3:cc:83:81
-  // node4: 98:f2:b3:cc:02:c1 
-  // // {{0x52, 0x54, 0x00, 0x12, 0x00, 0x00}};
   // struct rte_ether_addr _server_eth[2] = {
   //     {{0x98, 0xf2, 0xb3, 0xcc, 0x83, 0x81}},
   //     {{0x98, 0xf2, 0xb3, 0xcc, 0x02, 0xc1}}};
   struct rte_ether_addr _server_eth[count_dst_ip];
   struct rte_ether_addr server_eth;
 
+  int selected_dst = 0;
   int flow = 0;
 
   // TODO: this will fail for more destinations
@@ -116,7 +115,9 @@ int do_client(void *_cntx) {
   hist = malloc(count_dst_ip * sizeof(struct p_hist *));
   for (i = 0; i < count_dst_ip; i++) {
     hist[i] = new_p_hist_from_max_value(MAX_EXPECTED_LATENCY);
-    
+  }
+
+  for (i = 0; i < count_dst_ip * count_flow; i++) {
     // sending each destinations packets on different queue
     // in CDQ mode the queue zero is reserved for later use
     if (cdq)
@@ -193,24 +194,25 @@ int do_client(void *_cntx) {
         continue;
       }
 
-      dst_ip = dst_ips[flow];
+      dst_ip = dst_ips[selected_dst];
       selected_q = flow_q[flow];
 
-      server_eth = _server_eth[flow];
+      server_eth = _server_eth[selected_dst];
       // printf("%x:%x:%x:%x:%x:%x\n",
       //   server_eth.addr_bytes[0],server_eth.addr_bytes[1],server_eth.addr_bytes[2],
       //   server_eth.addr_bytes[3],server_eth.addr_bytes[4],server_eth.addr_bytes[5]);
 
-      tci = get_tci(prio[flow], dei, vlan_id);
+      tci = get_tci(prio[selected_dst], dei, vlan_id);
       dst_port = dst_port + 1;
       if (dst_port >= base_port_number + count_flow) {
         dst_port = base_port_number;
       }
-      k = flow;
+      k = selected_dst;
       // printf("dst_port: %u\n", dst_port);
       // switching flows per-batch in a round robin fashion
       // TODO: maybe use a stocastic measure for changing the flows
-      flow = (flow + 1) % count_dst_ip; // round robin
+      selected_dst = (selected_dst + 1) % count_dst_ip; // round robin
+      flow = (flow + 1) % (count_dst_ip * count_flow); // round robin
 
       // create a burst for selected flow
       for (int i = 0; i < BURST_SIZE; i++) {
@@ -281,14 +283,18 @@ int do_client(void *_cntx) {
 
       // send packets
       if (system_mode == system_bess) {
-        nb_tx = send_pkt(port, qid, bufs, BURST_SIZE, false, ctrl_mem_pool);
+        nb_tx = send_pkt(port, selected_q, bufs, BURST_SIZE, false, ctrl_mem_pool);
       } else {
+        if (selected_q == 0)
+          printf("warning: sending data pkt on queue zero\n");
         nb_tx =
             send_pkt(port, selected_q, bufs, BURST_SIZE, true, ctrl_mem_pool);
       }
 
-      total_sent_pkts[k] += nb_tx;
-      failed_to_push[k] += BURST_SIZE - nb_tx;
+      if (end_time > start_time + ignore_result_duration * hz) {
+        total_sent_pkts[k] += nb_tx;
+        failed_to_push[k] += BURST_SIZE - nb_tx;
+      }
 
       // free packets failed to send
       for (i = nb_tx; i < BURST_SIZE; i++)
@@ -301,7 +307,7 @@ int do_client(void *_cntx) {
       continue;
 
     // recv packets
-  recv:
+recv:
    for (rx_q = qid; rx_q < qid + count_queues; rx_q++) {
       while (1) {
         if (system_mode == system_bkdrft) {
@@ -326,6 +332,10 @@ int do_client(void *_cntx) {
 
         for (j = 0; j < nb_rx2; j++) {
           buf = recv_bufs[j];
+          if (!check_eth_hdr(src_ip, &my_eth, buf, tx_mem_pool, cdq, port, qid)) {
+            rte_pktmbuf_free(buf); // free packet
+            continue;
+          }
           ptr = rte_pktmbuf_mtod(buf, char *);
 
           eth_hdr = (struct rte_ether_hdr *)ptr;
@@ -342,7 +352,7 @@ int do_client(void *_cntx) {
           }
 
           // skip the first 20 seconds of the experiment, no percentile info.
-          if (end_time < start_time + 20 * hz) {
+          if (end_time < start_time + ignore_result_duration * hz) {
             rte_pktmbuf_free(buf); // free packet
             continue;
           }
