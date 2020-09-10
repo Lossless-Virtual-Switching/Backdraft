@@ -17,8 +17,6 @@ struct queue_pause_status {
 	uint64_t until;
 	uint64_t failed_ctrl;
   int64_t remaining_dpkt;
-  uint64_t overlay_pkts;
-  uint64_t overlay_pause_duration;
 	Flow flow;
 };
 

@@ -830,8 +830,6 @@ int PMDPort::RecvPackets(queue_t qid, bess::Packet **pkts, int cnt) {
 }
 
 int PMDPort::SendPackets(queue_t qid, bess::Packet **pkts, int cnt) {
-  // uint32_t total_bytes = 0;
-
   int sent = rte_eth_tx_burst(dpdk_port_id_, qid,
                               reinterpret_cast<struct rte_mbuf **>(pkts), cnt);
   // int dropped = cnt - sent;
@@ -839,10 +837,6 @@ int PMDPort::SendPackets(queue_t qid, bess::Packet **pkts, int cnt) {
   // queue_stats[PACKET_DIR_OUT][qid].requested_hist[cnt]++;
   // queue_stats[PACKET_DIR_OUT][qid].actual_hist[sent]++;
   // queue_stats[PACKET_DIR_OUT][qid].diff_hist[dropped]++;
-
-  // for (int pkt = 0; pkt < sent; pkt++) {
-  //   total_bytes += pkts[pkt]->total_len();
-  // }
 
   RecordRate(PACKET_DIR_OUT, qid, pkts, sent);
 

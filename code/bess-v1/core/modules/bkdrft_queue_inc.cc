@@ -104,8 +104,6 @@ CommandResponse BKDRFTQueueInc::Init(const bess::pb::BKDRFTQueueIncArg &arg) {
       until : 0,
       failed_ctrl : 0,
       remaining_dpkt : 0,
-      overlay_pkts: 0,
-      overlay_pause_duration: 0,
       flow : bess::bkdrft::empty_flow,
     };
   }
@@ -262,13 +260,10 @@ uint32_t BKDRFTQueueInc::CDQ(Context *ctx, bess::PacketBatch *batch, queue_t &_q
             reinterpret_cast<bess::pb::Overlay *>(pb);
 
         if (overlay_) {
-      	  // uint64_t pps = overlay_msg->packet_per_sec();
-          // LOG(INFO) << "Received overlay message: pps: " << pps << "\n";
+      	  uint64_t pps = overlay_msg->packet_per_sec();
+          LOG(INFO) << "Received overlay message: pps: " << pps << "\n";
 
 	        // update port rate limit for queue
-          q_status_[dqid].overlay_pkts += 1;
-          q_status_[dqid].overlay_pause_duration +=
-                                                  overlay_msg->pause_duration();
           auto &overlay_ctrl = BKDRFTOverlayCtrl::GetInstance();
           overlay_ctrl.ApplyOverlayMessage(*overlay_msg, ctx->current_ns);
         }
@@ -402,9 +397,9 @@ CommandResponse BKDRFTQueueInc::CommandGetOverlayStats(
                                  const bess::pb::EmptyArg &)
 {
   bess::pb::BKDRFTQueueIncCommandGetOverlayStatsResponse resp;
-  for (size_t i = 0; i < MAX_QUEUES; i++) {
-    resp.add_pkts(q_status_[i].overlay_pkts);
-    resp.add_duration(q_status_[i].overlay_pause_duration);
+  for (size_t i = 0; i < port_->num_rx_queues(); i++) {
+    resp.add_pkts(port_->queue_stats[PACKET_DIR_INC][i].overlay_packets);
+    resp.add_duration(port_->queue_stats[PACKET_DIR_INC][i].overlay_duration);
   }
   // LOG(INFO) << "name: " << name_
   //           << " overlay throughput: " << "?"

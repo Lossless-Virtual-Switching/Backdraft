@@ -122,8 +122,7 @@ uint64_t BKDRFTOverlayCtrl::FillBook(Port *port, queue_t qid,  const Flow &flow)
         flow, {.port = port, qid = qid, .block = false, .pause_until_ts = 0,
           .window = DEFAULT_WINDOW_SIZE});
     return 0;
-  }
-  else {
+  } else {
     entry->second.port = port; // I can also update time to leave here.
     entry->second.qid = qid;
     return entry->second.pause_until_ts;
@@ -178,12 +177,18 @@ void BKDRFTOverlayCtrl::ApplyOverlayMessage(bess::pb::Overlay &overlay_msg,
   
   // limit pps
   pps = overlay_msg.packet_per_sec();
+  if (pps < one_batch)
+    pps = one_batch;
   entry->second.port->limiter_.limit[PACKET_DIR_OUT][qid] = pps;
   entry->second.port->limiter_.limit[PACKET_DIR_INC][qid] = pps;
 
   // update pause timestamp
   pause_duration = overlay_msg.pause_duration();
   entry->second.pause_until_ts = pause_duration + current_ns;
+
+  // update overlay stats
+  entry->second.port->queue_stats[PACKET_DIR_INC][qid].overlay_packets += 1;
+  entry->second.port->queue_stats[PACKET_DIR_INC][qid].overlay_duration += pause_duration;
 
   // LOG(INFO) << "port: " << entry->second.port->name()
   //         << " limit qid: " << (int)qid << " flow " << FlowToString(flow)

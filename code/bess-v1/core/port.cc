@@ -294,16 +294,27 @@ void Port::RecordRate(packet_dir_t dir, queue_t qid, bess::Packet **pkts,
   // TODO: maybe use a moving average
   static const double g = 0.80;
   diff = now - rate_.timestamp[dir][qid];
-  // rate_.pps[dir][qid] = 4000000LL;
-  // rate_.bps[dir][qid] = 10000000000LL;
-  rate_.pps[dir][qid] = g * ((long int)packets * 1e9 / (double)diff) + ( 1 - g) * rate_.pps[dir][qid];
-  rate_.bps[dir][qid] = (total_bytes + 24 * packets) * 8 * 1e9 / diff;
-  // I don't understand the packets headers yet, however, I created an issue in
-  // BESS repo
+  if (diff < 1000000000UL) {
+    rate_.tp[dir][qid] += packets;
+  } else {
+    // update rate every one second using EWMA
+    rate_.tp[dir][qid] += packets;
+
+    uint64_t current_rate = g * rate_.tp[dir][qid] * 1.0e9 / (double)diff;
+    rate_.pps[dir][qid] =  current_rate + (1 - g) * rate_.pps[dir][qid];
+    // rate_.pps[dir][qid] = g * (packets * 1e9 / (double)diff)
+    //                         + ( 1 - g) * rate_.pps[dir][qid];
+
+    rate_.bps[dir][qid] = (total_bytes + 24 * packets) * 8 * 1e9 / diff;
+    // I don't understand the packets headers yet, however, I created an issue in
+    // BESS repo
+
+    rate_.tp[dir][qid] = 0;
+    rate_.timestamp[dir][qid] = now;
+  }
 
   rate_.packets[dir][qid] += packets;
   rate_.bytes[dir][qid] += total_bytes;
-  rate_.timestamp[dir][qid] = now;
     
   // if (now - rate_.latest_timestamp[dir][qid] > second_ns) {
   //   rate_.latest_timestamp[dir][qid] = now;
@@ -325,10 +336,10 @@ uint32_t Port::RateLimit(packet_dir_t dir, queue_t qid) {
   uint64_t window = 0;
   uint64_t now = tsc_to_ns(rdtsc());
 
-  limit = limiter_.limit[dir][qid]; 
+  limit = limiter_.limit[dir][qid];
   token = limiter_.token[dir][qid];
 
-  window = now - limiter_.latest_timestamp[dir][qid]; 
+  window = now - limiter_.latest_timestamp[dir][qid];
   allowed_to_send = window * limit / second_ns;
 
   // limiter_.latest_timestamp[dir][qid] = now;
@@ -348,9 +359,30 @@ uint32_t Port::RateLimit(packet_dir_t dir, queue_t qid) {
     // LOG(INFO) << "recharging tokens, name: " << name_ << " dir: " << dir << " q: " << (int)qid <<  " limit: " << limit << "\n";
   }
 
+  if (allowed_to_send >= 32) {
+    // If client can send, increase the window
+    // if client can send and if packets are not
+    // dropped then we can assume an ack packet happening.
+    // if client can not send it is because it has used its link capacity
+    //
+    IncreaseRate(dir, qid);
+  }
+
   return allowed_to_send;
+}
+
+void Port::IncreaseRate(packet_dir_t dir, queue_t qid) {
+  // increase the rate
+  if (limiter_.limit[dir][qid] < 500000) {
+    limiter_.limit[dir][qid] = limiter_.limit[dir][qid] * 10;
+    if (limiter_.limit[dir][qid] > 500000)
+      limiter_.limit[dir][qid] = 500000;
+  } else {
+    limiter_.limit[dir][qid] += 1024;
+  }
 }
 
 void Port::UpdateTokens(packet_dir_t dir, queue_t qid, int recv) {
   limiter_.token[dir][qid] += recv;
 }
+
