@@ -83,7 +83,8 @@ def run_server(instance):
     print(cmd)
     print("===============")
     # Run in background
-    p = subprocess.Popen(cmd, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    p = subprocess.Popen(cmd, shell=True, stdout=subprocess.PIPE,
+                         stderr=subprocess.PIPE)
     return p
 
 
@@ -169,8 +170,6 @@ def main():
         print('failed to start bess daemon')
         return 1
 
-    #sleep(2)
-
     print('==============================')
     print('         UDP Testbed')
     print('==============================')
@@ -253,14 +252,22 @@ def main():
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('count_queue', type=int)
-    parser.add_argument('mode', help='define whether bess or bkdrft system should be used')
-    parser.add_argument('delay', type=int, help='delay of slow server in micro-seconds for each batch of packets')
-    parser.add_argument('--count_flow', type=int, default=1, help='number of flows, per each core. used for client app')
-    parser.add_argument('--cdq', action='store_true', default=False, help='enable command data queueing')
-    parser.add_argument('--bp', action='store_true', default=False, help='have pause call (backpresure) enabled')
-    parser.add_argument('--pfq', action='store_true', default=False, help='enable per flow queueing')
-    parser.add_argument('--buffering', action='store_true', default=False, help='buffer packets (no drop)')
-    parser.add_argument('--duration', type=int, default=10, help='experiment duration')
+    parser.add_argument('mode',
+      help='define whether bess or bkdrft system should be used')
+    parser.add_argument('delay', type=int,
+      help='delay of slow server in micro-seconds for each batch of packets')
+    parser.add_argument('--count_flow', type=int, default=1,
+      help='number of flows, per each core. used for client app')
+    parser.add_argument('--cdq', action='store_true', default=False,
+      help='enable command data queueing')
+    parser.add_argument('--bp', action='store_true', default=False,
+      help='have pause call (backpresure) enabled')
+    parser.add_argument('--pfq', action='store_true', default=False,
+      help='enable per flow queueing')
+    parser.add_argument('--buffering', action='store_true', default=False,
+      help='buffer packets (no drop)')
+    parser.add_argument('--duration', type=int, default=10,
+      help='experiment duration')
     parser.add_argument('--bessonly', action='store_true', default=False)
 
     args = parser.parse_args()
@@ -275,11 +282,13 @@ if __name__ == '__main__':
     lossless = args.buffering
     duration = args.duration
 
+    # TODO: having const ips does not scale
     _server_ip = '10.10.1.3'
     _client_ip = '10.10.1.2'
 
     if cdq and sysmod != 'bkdrft':
-        print('comand data queueing is only available on bkdrft mode', file=sys.stderr)
+        print('comand data queueing is only available on bkdrft mode',
+              file=sys.stderr)
         sys.exit(1)
 
     main()
