@@ -16,20 +16,20 @@ out_pci = config['pci']
 count_queue = config['count_queue']
 count_tas_queues = count_queue
 size_q = config['queue_size']
+add_vlan = config['add_vlan']
 
 
 # cluster config file
-config_file = './cluster_config.yml'
+config_file = config['cluster_config_file']
 
 
 def get_mac_address():
   """
   Get current device MAC address
   """
-  import json
-
-  config = json.load(open(".pipeline_config.json", "r"))
-  p = subprocess.Popen('cat /sys/class/net/%s/address' %config["interface"], shell=True, stdout=subprocess.PIPE)
+  # config is a global variable
+  cmd = 'cat /sys/class/net/%s/address' % config["interface"]
+  p = subprocess.Popen(cmd, shell=True, stdout=subprocess.PIPE)
   res, _ = p.communicate()
   add = res.decode().strip()
   return add
@@ -46,6 +46,8 @@ def get_pci_address(iface):
 def get_current_node_info(file_path):
   mac = get_mac_address()
   found = False
+  host_name = None
+  host_info = None
   with open(file_path) as f:
     config = yaml.load(f)
     for key in config.keys():
@@ -53,11 +55,11 @@ def get_current_node_info(file_path):
         continue
       item = config[key]
       if item['mac'] == mac:
+        host_name = key
+        host_info = item
         found = True
         break
-  if not found:
-    return (None, None)
-  return (key, item)
+  return host_name, host_info
 
 
 def get_tci(prio, dei, vlan_id):
@@ -66,11 +68,10 @@ def get_tci(prio, dei, vlan_id):
 
 
 host_name, info =  get_current_node_info(config_file)
-print(host_name, info)
+if host_name is None:
+  raise Exception('This node has not been configured!')
 instances = info.get('instances', [])
 count_instances = len(instances)
-# if count_instances == 0:
-#   raise Exception('This node has no instace!')
 
 bp = config['bp']
 buffering = config['buffering']
@@ -116,25 +117,6 @@ for i, instance in enumerate(instances):
   vhosts.append((tas_port, ip))
 
 
-# Pipeline
-# sw_q_inc = QueueInc(port=sw_port.name, qid=0)
-# sw_q_out = QueueOut(port=sw_port.name, qid=0)
-# merge = Merge() # merge input 
-# x = HashLB(gates=[i for i in range(count_instances)], mode='l4')
-
-# # Tx
-# for i, vhost in enumerate(vhosts):
-#   qinc = QueueInc(port=vhost.name, qid=0)
-#   qinc -> merge:i
-# merge -> sw_q_out
-#
-# # Rx
-# sw_q_inc -> x
-# for i, vhost in enumerate(vhosts):
-#   qout = QueueOut(port=vhost.name, qid=0)
-#   x:i -> qout
-#
-
 sw_merge = Merge()
 if not cdq:
   for i in range(count_queue):
@@ -148,20 +130,20 @@ sw_q_out = BKDRFTQueueOut(port=sw_port, qid=0, count_queues=count_queue,
   backpressure=bp, lossless=buffering, cdq=cdq, per_flow_buffering=pfq, mname='sw',
   overlay = overlay)
 
-merge = Merge() # merge input 
+merge = Merge() # merge input
 x = IPLookup()
 x.add(prefix='0.0.0.0', prefix_len=0, gate=0)
 rep = Replicate(gates=[i + 1 for i in range(len(vhosts))])
 x:0 -> rep
 
-x.add(prefix='192.0.0.0', prefix_len=8, gate=8000)
+x.add(prefix='10.10.0.0', prefix_len=16, gate=8000)
 x:8000 -> Sink()
 
 # ACL for filtering unwanted packets
-rules = [ {'src_ip': '192.168.9.50', 'dst_ip':'',
-           'src_port':10001, 'dst_port':8080,
-           'drop':True},]
-acl = ACL(rules=rules)
+# rules = [ {'src_ip': '192.168.9.50', 'dst_ip':'',
+#            'src_port':10001, 'dst_port':8080,
+#            'drop':True},]
+# acl = ACL(rules=rules)
 
 
 # Tx
@@ -181,15 +163,20 @@ for i, (vhost, ip) in enumerate(vhosts):
     print(ip, ' : ', lookup_gate)
     x.add(prefix=ip, prefix_len=32, gate=lookup_gate)
     lookup_gate += 1
-push_vlan = VLANPush(tci=get_tci(3, 0, 100))
-merge -> push_vlan -> sw_q_out
-# merge -> sw_q_out
+if add_vlan:
+  push_vlan = VLANPush(tci=get_tci(3, 0, 100))
+  merge -> push_vlan -> sw_q_out
+else:
+  merge -> sw_q_out
 
 #TODO: if two instance have the same ip we will have problems
 # Rx
-pop_vlan = VLANPop()
-sw_merge -> pop_vlan -> acl -> x
-# sw_merge -> x
+if add_vlan:
+  pop_vlan = VLANPop()
+  sw_merge -> pop_vlan -> x
+  # sw_merge -> pop_vlan -> acl -> x
+else:
+  sw_merge -> x
 lookup_gate = 1
 for i, (vhost, ip) in enumerate(vhosts):
   qout = BKDRFTQueueOut(port=vhost, qid=0, count_queues=count_queue,
@@ -204,24 +191,24 @@ for i, (vhost, ip) in enumerate(vhosts):
 # HARD CODED BURST GENERATOR
 import scapy.all as scapy
 
-if host_name in ('node5', 'node2'):
-  payload_size = 100
-  pps = 1.0e6
-  if host_name == 'node2':
-    pps = 0.8e6
-    payload_size = 1400
-  src_mac = info['mac']
-  dst_mac = '98:f2:b3:cc:02:c1' # TODO: this should be read from config file
-  src_ip = '192.168.9.50'  # this ip should be dropped in vsw
-  dst_ip = '192.168.1.41'  # TODO: this should be read from config
-  eth = scapy.Ether(src=src_mac, dst=dst_mac)
-  ip = scapy.IP(src=src_ip, dst=dst_ip)
-  tcp = scapy.TCP(sport=10001, dport=8080, seq=134)
-  payload = 'a' * payload_size
-  pkt = bytes(eth/ip/tcp/payload)
-
-  src::FlowGen(template=pkt, pps=pps, flow_rate=800, flow_duration=1.0, \
-      arrival='exponential', duration='pareto', quick_rampup=True) -> merge
+# if host_name in ('node5', 'node2'):
+#   payload_size = 100
+#   pps = 1.0e6
+#   if host_name == 'node2':
+#     pps = 0.8e6
+#     payload_size = 1400
+#   src_mac = info['mac']
+#   dst_mac = '98:f2:b3:cc:02:c1' # TODO: this should be read from config file
+#   src_ip = '192.168.9.50'  # this ip should be dropped in vsw
+#   dst_ip = '192.168.1.41'  # TODO: this should be read from config
+#   eth = scapy.Ether(src=src_mac, dst=dst_mac)
+#   ip = scapy.IP(src=src_ip, dst=dst_ip)
+#   tcp = scapy.TCP(sport=10001, dport=8080, seq=134)
+#   payload = 'a' * payload_size
+#   pkt = bytes(eth/ip/tcp/payload)
+#
+#   src::FlowGen(template=pkt, pps=pps, flow_rate=800, flow_duration=1.0, \
+#       arrival='exponential', duration='pareto', quick_rampup=True) -> merge
 
 # FOR ALL INSTANCES
 x.add(prefix='192.168.9.50', prefix_len=32, gate=8000)

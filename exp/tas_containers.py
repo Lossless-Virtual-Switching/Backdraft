@@ -88,7 +88,7 @@ def spin_up_memcached(conf):
         cmd = ('{cmd} {dst_ip} {duration} {warmup_time} {wait_before_measure} '
                '{threads} {connections}').format(cmd=cmd, **conf)
     elif conf['type'] == 'server':
-        cmd = '{cmd} {memory} {threads}'.format(cmd=cmd, **conf) 
+        cmd = '{cmd} {memory} {threads}'.format(cmd=cmd, **conf)
     else:
         raise Exception('Container miss configuration: '
                         'expecting type to be client or server')

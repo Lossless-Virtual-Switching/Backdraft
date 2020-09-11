@@ -10,8 +10,8 @@ def get_mac_address():
     import json
 
     config = json.load(open(".pipeline_config.json", "r"))
-
-    res = subprocess.run('cat /sys/class/net/{}/address'.format(config["interface"]), shell=True, stdout=subprocess.PIPE)
+    cmd = 'cat /sys/class/net/{}/address'.format(config["interface"])
+    res = subprocess.run(cmd, shell=True, stdout=subprocess.PIPE)
     add = res.stdout.decode().strip()
     return add
 
@@ -42,7 +42,6 @@ def get_current_node_info(file_path):
       if not found:
         return (None, None)
 
-    print(t_key, t_value)
     return (t_key, t_value)
 
 

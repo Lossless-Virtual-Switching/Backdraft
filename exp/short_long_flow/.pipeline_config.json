@@ -1,11 +1,13 @@
 {
-  "pci": "65:00.0",
+  "pci": "41:00.0",
   "count_queue": 8,
-  "queue_size": 512,
+  "queue_size": 64,
   "bp": false,
   "cdq": false,
   "pfq": false,
   "overlay": false,
   "buffering": false,
-  "interface" : "eno50"
+  "interface" : "enp65s0f0",
+  "cluster_config_file": "cluster_configs/memcached_config.yml",
+  "add_vlan": false
 }

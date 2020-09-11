@@ -37,6 +37,7 @@ def setup_bess_pipeline(pipeline_config_path):
     ret = bessctl_do(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
     print(ret.stdout.decode())
     print(ret.stderr.decode())
+    return 0
 
 
 def load_bess_kmod():
