@@ -13,8 +13,11 @@
 #include "include/percentile.h"
 #include "include/arp.h"
 
+#include "include/zipf.h"
+
 #define BURST_SIZE (32)
 #define MAX_EXPECTED_LATENCY (10000) // (us)
+
 
 inline uint16_t get_tci(uint16_t prio, uint16_t dei, uint16_t vlan_id) {
   return prio << 13 | dei << 12 | vlan_id;
@@ -42,6 +45,8 @@ int do_client(void *_cntx) {
   uint32_t base_port_number = cntx->base_port_number;
   uint8_t use_vlan = cntx->use_vlan;
   uint8_t bidi = cntx->bidi;
+  uint8_t worker_id = cntx->worker_id;
+  struct zipfgen *zipf;
   // int num_queues = cntx->num_queues;
   assert(count_dst_ip >= 1);
 
@@ -110,6 +115,9 @@ int do_client(void *_cntx) {
   uint8_t cdq = system_mode == system_bkdrft;
 
   hz = rte_get_timer_hz();
+
+  // Zipf initialization
+  zipf = new_zipfgen(count_queues, 1);
 
   // create a latency hist for each ip
   hist = malloc(count_dst_ip * sizeof(struct p_hist *));
@@ -195,7 +203,11 @@ int do_client(void *_cntx) {
       }
 
       dst_ip = dst_ips[selected_dst];
-      selected_q = flow_q[flow];
+
+      if(worker_id == 0)
+        selected_q = zipf->gen(zipf) - 1;
+      else
+        selected_q = flow_q[flow];
 
       server_eth = _server_eth[selected_dst];
       // printf("%x:%x:%x:%x:%x:%x\n",
@@ -437,6 +449,7 @@ recv:
     fprintf(fp, "failed to push: %ld\n", failed_to_push[k]);
   }
   fprintf(fp, "Client done\n");
+  free_zipfgen(zipf);
   fflush(fp);
 
   cntx->running = 0;

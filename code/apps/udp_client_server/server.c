@@ -11,6 +11,8 @@
 #define MAX_DURATION (60)             // (sec)
 #define MAX_EXPECTED_LATENCY (100000) // (us)
 
+uint32_t ip_based_counters[32] = {0};
+
 // void print_stats(uint64_t tp, struct p_hist *hist);
 void print_mac(struct rte_ether_addr *addr);
 
@@ -56,6 +58,7 @@ int do_server(void *_cntx) {
   uint8_t use_vlan = cntx->use_vlan;
   uint8_t bidi = cntx->bidi;
   uint32_t q_index = 0;
+  uint8_t worker_id = cntx->worker_id;
 
   struct rte_ether_hdr *eth_hdr;
   // struct rte_vlan_hdr *vlan_hdr;
@@ -92,6 +95,9 @@ int do_server(void *_cntx) {
   struct rte_ether_addr tmp_addr;
   uint32_t tmp_ip;
   uint64_t k;
+
+
+  printf("worker_id %d %d %d\n", cntx->worker_id, cntx->delay_us, delay_us);
   // float percentile;
 
   // hist = new_p_hist_from_max_value(MAX_EXPECTED_LATENCY);
@@ -130,8 +136,8 @@ int do_server(void *_cntx) {
         // last pkt then server is done
         current_time = rte_get_timer_cycles();
         if (current_time - last_pkt_time > termination_threshold) {
-          // run = 0;
-          // break;
+           run = 0;
+           break;
         }
       }
       continue;
@@ -159,7 +165,8 @@ int do_server(void *_cntx) {
     }
 
     // spend some time for the whole batch
-    if (delay_us > 0) {
+    if (delay_us > 0 && qid == 0 && worker_id == 0) {
+      // printf("delays\n");
       // rte_delay_us_block(delay_us);
       uint64_t now = rte_get_tsc_cycles();
       uint64_t end =
@@ -174,10 +181,11 @@ int do_server(void *_cntx) {
     for (i = 0; i < nb_rx; i++) {
       buf = rx_bufs[i];
 
-      if (!check_eth_hdr(my_ip, &my_eth, buf, tx_mem_pool, cdq, port, qid)) {
-        rte_pktmbuf_free(rx_bufs[i]); // free packet
-        continue;
-      }
+      // ARP COMMENTED
+      // if (!check_eth_hdr(my_ip, &my_eth, buf, tx_mem_pool, cdq, port, qid)) {
+      //   rte_pktmbuf_free(rx_bufs[i]); // free packet
+      //   continue;
+      // }
 
       ptr = rte_pktmbuf_mtod_offset(buf, char *, 0);
       eth_hdr = (struct rte_ether_hdr *)ptr;
@@ -204,15 +212,20 @@ int do_server(void *_cntx) {
         ipv4_hdr = (struct rte_ipv4_hdr *)(ptr + RTE_ETHER_HDR_LEN);
       }
 
-      if (rte_be_to_cpu_32(ipv4_hdr->dst_addr) != my_ip) {
-        // discard the packet (not our packet)
-        rte_pktmbuf_free(rx_bufs[i]); // free packet
-        continue;
-      }
+      // COMMENTED MY IP
+      // if (rte_be_to_cpu_32(ipv4_hdr->dst_addr) != my_ip) {
+      //   // discard the packet (not our packet)
+      //   rte_pktmbuf_free(rx_bufs[i]); // free packet
+      //   continue;
+      // }
 
       // update throughput
       throughput += 1;
       // throughput[current_sec] += 1;
+
+      int ip_counter_idx;
+      ip_counter_idx = rte_be_to_cpu_32(ipv4_hdr->dst_addr) - 0xc0a80100;
+      ip_based_counters[ip_counter_idx]++;
 
       if (!bidi) {
         rte_pktmbuf_free(rx_bufs[i]); // free packet
@@ -266,6 +279,9 @@ int do_server(void *_cntx) {
     for (i = nb_tx; i < k; i++)
       rte_pktmbuf_free(tx_buf[i]);
   }
+  int index_counter;
+  for(index_counter = worker_id * 8; index_counter < (worker_id + 1) * 8; index_counter++)
+    printf("ip index coutner %d value %d\n", index_counter, ip_based_counters[index_counter]);
 
   // Print throughput statistics
   // printf("Throughput (pps):\n");

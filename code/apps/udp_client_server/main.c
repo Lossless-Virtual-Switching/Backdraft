@@ -338,8 +338,10 @@ int main(int argc, char *argv[]) {
   }
 
   printf("Number of queues: %d\n", num_queues);
-  if (port_init(dpdk_port, rx_mbuf_pool, num_queues, &my_eth) != 0)
-    rte_exit(EXIT_FAILURE, "Cannot init port %hhu\n", dpdk_port);
+  int tmp_port;
+  for(tmp_port = 0; tmp_port < 4; tmp_port++)
+    if (port_init(tmp_port, rx_mbuf_pool, num_queues, &my_eth) != 0)
+      rte_exit(EXIT_FAILURE, "Cannot init port %hhu\n", dpdk_port);
 
 //   int res;
 //   printf("einval: %d, eio: %d, enotsup: %d, enodev: %d\n", EINVAL, EIO, ENOTSUP, ENODEV);
@@ -389,7 +391,7 @@ int main(int argc, char *argv[]) {
     cntxs[i].rx_mem_pool = rx_mbuf_pool;
     cntxs[i].tx_mem_pool = tx_mbuf_pool;
     cntxs[i].ctrl_mem_pool = ctrl_mbuf_pool;
-    cntxs[i].port = dpdk_port;
+    cntxs[i].port = i; // port id
     cntxs[i].num_queues = num_queues;
     cntxs[i].my_eth = my_eth;
     cntxs[i].default_qid = next_qid++; // poll this queue
@@ -397,26 +399,30 @@ int main(int argc, char *argv[]) {
     cntxs[i].src_ip = source_ip;
     cntxs[i].use_vlan = 0;
     cntxs[i].bidi = 0;
+    cntxs[i].worker_id = i;
     if (mode == mode_server) {
       // TODO: fractions are not counted here
       assert(num_queues % count_core == 0);
-      int queue_per_core = num_queues / count_core;
+      int queue_per_core = num_queues; // / count_core;
 
       // if it is server application
       cntxs[i].src_port = server_port[0];
 
       cntxs[i].count_queues = queue_per_core;
       cntxs[i].managed_queues = malloc(queue_per_core * sizeof(uint32_t));
+      // for (int q = 0; q < queue_per_core; q++) {
       for (int q = 0; q < queue_per_core; q++) {
-        cntxs[i].managed_queues[q] = (findex * queue_per_core) + q;
+        // cntxs[i].managed_queues[q] = (findex * queue_per_core) + q;
+        cntxs[i].managed_queues[q] = q;
         if (system_mode == system_bkdrft) {
           cntxs[i].managed_queues[q]++; // zero is reserved
-					if (cntxs[i].managed_queues[q] >= num_queues) 
+					if (cntxs[i].managed_queues[q] >= num_queues)
 						cntxs[i].managed_queues[q] = num_queues - 1;
 					}
       }
       findex++;
 
+      // if(i == 0)
       cntxs[i].delay_us = server_delay;
       printf("Server delay: %d\n", server_delay);
 
@@ -492,7 +498,9 @@ int main(int argc, char *argv[]) {
   // free
   for (int i = 0; i < count_core; i++) {
     if (mode == mode_server) {
-      free(cntxs[i].managed_queues);
+      printf("%d\n",i);
+      printf("%d\n", cntxs[i].managed_queues[0]);
+      // free(cntxs[i].managed_queues);
     } else {
       free(cntxs[i].dst_ips);
       fclose(cntxs[i].fp);
