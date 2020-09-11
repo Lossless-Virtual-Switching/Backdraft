@@ -14,7 +14,7 @@ cur_script_dir = os.path.dirname(os.path.abspath(__file__))
 bessctl_dir = os.path.abspath(os.path.join(cur_script_dir, '../../code/bess-v1/bessctl'))
 bessctl_bin = os.path.join(bessctl_dir, 'bessctl')
 
-pipeline_config_temp = os.path.join(cur_script_dir, 'pipeline_config_template.txt')
+pipeline_config_temp = os.path.join(cur_script_dir, 'multi_threaded_pipeline_config_template.txt')
 pipeline_config_file = os.path.join(cur_script_dir, 'slow_receiver.bess')
 
 slow_receiver_exp = os.path.abspath(os.path.join(cur_script_dir,
@@ -29,6 +29,8 @@ def update_config():
         agent = 'BESS'
     elif sysmod == 'bkdrft':
         agent = 'BKDRFT'
+    elif sysmod == 'multi_threaded':
+        agent = 'BESS_MULTITHREADED'
     else:
         agent = 'BESS_BP'
 
@@ -56,27 +58,41 @@ def run_server(instance):
     """
         Start a server process
     """
+    bess_offset = 1
     prefix = 'slow_receiver_server_{}'.format(instance)
-    cpu = ['2', '3'][instance]  # on which cpu
-    vdev = ['virtio_user0,path=/tmp/ex_vhost0.sock,queues='+str(count_queue),
-            'virtio_user2,path=/tmp/ex_vhost2.sock,queues='+str(count_queue)][instance]
-    server_delay = [0, slow][instance]
+    # cpu = ['2', '3'][instance]  # on which cpu
+    cpus = [str(i) for i in range((instance+bess_offset) * 4, (instance+bess_offset) * 4 + 4)]
+    cpus = ','.join(cpus)
+
+    vdev = ['virtio_user{}0,path=/tmp/ex_vhost{}0.sock,queues={}'.format(instance, instance, count_queue),
+            'virtio_user{}1,path=/tmp/ex_vhost{}1.sock,queues={}'.format(instance, instance, count_queue),
+            'virtio_user{}2,path=/tmp/ex_vhost{}2.sock,queues={}'.format(instance, instance, count_queue),
+            'virtio_user{}3,path=/tmp/ex_vhost{}3.sock,queues={}'.format(instance, instance, count_queue)]
+
+    print("server delay ", slow)
+    server_delay = slow # slow
     # ip = '192.168.1.2'
     args = {
             'bin': slow_receiver_exp,
-            'cpu': cpu,
+            'cpu': cpus,
             'file-prefix': prefix,
-            'vdev': vdev,
+            'vdev1': vdev[0],
+            'vdev2': vdev[1],
+            'vdev3': vdev[2],
+            'vdev4': vdev[3],
             'count_queue': count_queue,
-            'sysmod': 'bess' if sysmod == 'bess-bp' else sysmod,
+            # 'sysmod': 'bess' if sysmod == 'bess-bp' else sysmod,
+	        'sysmod': 'bess' if not cdq else 'bkdrft',
             'mode': 'server',
             'inst': instance,
             'delay': server_delay,
             'source_ip': _server_ip,
             }
+
     cmd = ('sudo {bin} --no-pci -l{cpu} --file-prefix={file-prefix} '
-            '--vdev="{vdev}" --socket-mem=128 -- '
-            '{source_ip} {count_queue} {sysmod} {mode} {delay}').format(**args)
+            '--vdev="{vdev1}" --vdev="{vdev2}" --vdev="{vdev3}" '
+            '--vdev="{vdev4}" --socket-mem=128 -- {source_ip} {count_queue} '
+            '{sysmod} {mode} {delay}').format(**args)
 
     print("===============")
     print("     server    ")
@@ -95,21 +111,42 @@ def run_client(instance):
         First 20 seconds of the client runtime is not counted in
         percentiles report. (Consult the .../apps/.../client.c source code)
     """
+    bess_offset = 1
+    prefix = 'slow_receiver_server_{}'.format(instance)
     port = [1001, 5001,][instance]
     prefix = 'slow_receiver_exp_client_{}'.format(instance)
-    cpu = [5, 6][instance]
-    vdev = ['virtio_user1,path=/tmp/ex_vhost1.sock,queues='+str(count_queue),
-           'virtio_user3,path=/tmp/ex_vhost3.sock,queues='+str(count_queue),][instance]
-    ips = [[_server_ip],[_server_ip]][instance]
+    # cpu = [5, 6][instance]
+    # vdev = ['virtio_user1,path=/tmp/ex_vhost1.sock,queues='+str(count_queue),
+    #        'virtio_user3,path=/tmp/ex_vhost3.sock,queues='+str(count_queue),][instance]
+    cpus = [str(i) for i in range((instance+bess_offset) * 4, (instance+bess_offset) * 4 + 4)]
+    cpus = ','.join(cpus)
+
+
+    vdev = ['virtio_user{}0,path=/tmp/ex_vhost{}0.sock,queues={}'.format(instance, instance, count_queue),
+            'virtio_user{}1,path=/tmp/ex_vhost{}1.sock,queues={}'.format(instance, instance, count_queue),
+            'virtio_user{}2,path=/tmp/ex_vhost{}2.sock,queues={}'.format(instance, instance, count_queue),
+            'virtio_user{}3,path=/tmp/ex_vhost{}3.sock,queues={}'.format(instance, instance, count_queue)]
+
+    ips = []
+    base_ip = '192.168.1.'
+    for i in range(32):
+       ip = base_ip + str(i)
+       ips.append(ip)
+
     _ips = ' '.join(ips)
     _cnt_flow = [4, count_flow][instance]
     args = {
             'bin': slow_receiver_exp,
-            'cpu': cpu,
+            'cpu': cpus,
             'file-prefix': prefix,
-            'vdev': vdev,
+            # 'vdev': vdev,
+            'vdev1': vdev[0],
+            'vdev2': vdev[1],
+            'vdev3': vdev[2],
+            'vdev4': vdev[3],
             'count_queue': count_queue,
-	          'sysmod': 'bess' if sysmod == 'bess-bp' else sysmod,
+	        # 'sysmod': 'bess' if sysmod == 'bess-bp' else sysmod,
+	        'sysmod': 'bess' if not cdq else 'bkdrft',
             'mode': 'client',
             'cnt_ips': len(ips),
             'ips':  _ips,
@@ -119,7 +156,8 @@ def run_client(instance):
             'port': port,
             }
     cmd = ('sudo {bin} --no-pci -l{cpu} --file-prefix={file-prefix} '
-            '--vdev="{vdev}" --socket-mem=128 -- '
+            '--vdev="{vdev1}" --vdev="{vdev2}" --vdev="{vdev3}" --vdev="{vdev4}" '
+            '--socket-mem=128 -- '
             '{source_ip} {count_queue} {sysmod} {mode} {cnt_ips} {ips} '
             '{count_flow} {duration} {port}').format(**args)
 
@@ -190,33 +228,35 @@ def main():
     server_p1 = run_server(0)
     sleep(3)
     # server_p2 = run_server(1)
-    # Run client
-    client_p = run_client(0)
-    sleep(3)
-    client_p2 = run_client(1)
+    # # Run client
+    client_p = run_client(1)
+    # sleep(3)
+    # client_p2 = run_client(1)
 
     # Wait
-    client_p.wait()
-    client_p2.wait()
+    # client_p.wait()
+    # client_p2.wait()
     # subprocess.run('sudo pkill udp_app', shell=True)  # Stop server
     # server_p1.kill()
     server_p1.wait()
     # server_p2.wait()
 
-
     # Get output of processes
     print('====== client1 ====')
     txt = str(client_p.stdout.read().decode())
     print(txt)
-    print('====== client2 ====')
-    txt = str(client_p2.stdout.read().decode())
-    print(txt)
+
+    # print('====== client2 ====')
+    # txt = str(client_p2.stdout.read().decode())
+    # print(txt)
+
     print('====== server ====')
     txt = str(server_p1.stdout.read().decode())
     print(txt)
     txt = str(server_p1.stderr.read().decode())
     print(txt)
     print('======')
+
     # print('======')
     # txt = str(server_p2.stdout.read().decode())
     # print(txt)
@@ -233,18 +273,18 @@ def main():
     print(txt)
 
     print('client\n')
-    p = bessctl_do('show port ex_vhost1', stdout=subprocess.PIPE)
+    p = bessctl_do('show port ex_vhost00', stdout=subprocess.PIPE)
     txt = p.stdout.decode()
     print(txt)
     print('client2\n')
-    p = bessctl_do('show port ex_vhost3', stdout=subprocess.PIPE)
+    p = bessctl_do('show port ex_vhost10', stdout=subprocess.PIPE)
     txt = p.stdout.decode()
     print(txt)
     # txt = p.stdout.decode()
     # bessctl_do('command module client_qout0 get_pause_calls EmptyArg {}')
-    bessctl_do('command module server1_qout get_pause_calls EmptyArg {}')
-    bessctl_do('command module server2_qout get_pause_calls EmptyArg {}')
-    bessctl_do('daemon stop')
+    # bessctl_do('command module server1_qout get_pause_calls EmptyArg {}')
+    # bessctl_do('command module server2_qout get_pause_calls EmptyArg {}')
+    # bessctl_do('daemon stop')
 
     print_pps_from_info_log()
 
@@ -253,7 +293,7 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('count_queue', type=int)
     parser.add_argument('mode',
-      help='define whether bess or bkdrft system should be used')
+      help='define whether bess or bkdrft or multi_threaded system should be used')
     parser.add_argument('delay', type=int,
       help='delay of slow server in micro-seconds for each batch of packets')
     parser.add_argument('--count_flow', type=int, default=1,
