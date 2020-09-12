@@ -4,15 +4,16 @@
     "flow_duration": 0,
     "message_size": 1400,
     "flow_num_msg": 0,
-    "flow_per_destination": 128,
-    "count_thread": 4,
+    "flow_per_destination": 1,
+    "count_thread": 8,
     "delay_cycles": 0
   },
   "default_server": {
     "message_size": 1400,
     "max_flow": 8192,
-    "count_thread": 4,
-    "delay_cycles": 0
+    "count_thread": 8,
+    "delay_cycles": 0,
+    "delay_us": 0
   },
   "other_client": {
     "message_per_sec": -1,

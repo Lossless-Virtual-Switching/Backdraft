@@ -8,7 +8,7 @@ def spin_up_tas(conf):
 
     note: path to spin_up_tas_container.sh is set in the global variable
     tas_spinup_script.
-    
+
     conf: dict
     * name:
     * type: server, client
@@ -109,7 +109,7 @@ def run_udp_app(config):
     * ---- app ----
     * ip
     * count queue
-    * system mode (bess, bkdrft) 
+    * system mode (bess, bkdrft)
     * --- server ---
     * delay
     * ---- client ---
@@ -160,12 +160,14 @@ def run_udp_app(config):
         # argv += params
     else:
         raise ValueError('type value should be either server or client')
-        
+
     # pid = os.fork()
     # if pid == 0:
     #     os.execvp('sudo', argv)
     # print(cmd)
-    FNULL = open(os.devnull, 'w')
+    FNULL = open(os.devnull, 'w') # pipe output to null
+    FNULL = None
+    # print(cmd)
     proc = subprocess.Popen(cmd, shell=True, close_fds=True,
                             stdout=FNULL, stderr=subprocess.STDOUT)
     return proc

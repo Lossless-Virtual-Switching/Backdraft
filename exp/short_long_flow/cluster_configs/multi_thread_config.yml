@@ -1,0 +1,31 @@
+# A multi-thread UDP app config
+node0:
+  ip: "192.168.1.1"
+  mac: "1c:34:da:41:ca:bc"
+  instances:
+    - port: 1001
+      ip: "192.168.1.11"
+      app: "udp_app"
+      type: "client"
+      cpus: 20,21,22,23,24,25,26,27
+      flow_config_name: "default_client"
+      destinations:
+        - node1_0
+        - node1_0
+        - node1_0
+        - node1_0
+        - node1_0
+        - node1_0
+        - node1_0
+        - node1_0
+node1:
+  ip: "192.168.1.2"
+  mac: "1c:34:da:41:d0:0c"
+  instances:
+    - port: 2001
+      ip: "192.168.1.21"
+      type: "server"
+      app: "udp_app"
+      cpus: 20,21,22,23,24,25,26,27
+      flow_config_name: "default_server"
+

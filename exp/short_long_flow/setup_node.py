@@ -207,8 +207,6 @@ def setup_container(node_name: str, instance_number: int, config: dict):
             vdev = ('virtio_user{},path={},queues={}'
                    ).format(instance_number, socket, count_queue)
             ips = [ip for ip, _ in ips]
-            if isinstance(cpu, str):
-                cpu = cpu.split(',')[0]
             app_params = {
                'cpu': cpu,
                'vdev':vdev,
@@ -248,9 +246,9 @@ def run_app(config, app=None):
     elif app == 'unidir':
         spin_up_unidir(config)
     elif app == 'udp_app':
-        run_udp_app(config)
-        # p = run_udp_app(config)
-        # p.wait()
+        # run_udp_app(config)
+        p = run_udp_app(config)
+        p.wait()
         # print(p.stdout.read().decode())
         # print(p.stderr.read().decode())
     elif app == 'memcached':

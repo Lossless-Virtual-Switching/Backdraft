@@ -180,7 +180,7 @@ int main(int argc, char *argv[]) {
   uint32_t source_ip;
   int client_port = 5058;
   // TODO: this does not generalize to the count cpu
-  int server_port[16] = {1001, 5001, 6002};
+  int server_port[16] = {1001, 5001, 6002, 2002, 3003, 4004, 7007, 8008};
 
   // how much is the size of udp payload
   // TODO: take message size from arguments
@@ -257,6 +257,8 @@ int main(int argc, char *argv[]) {
 
   // read number of queues
   num_queues = atoi(argv[1]);
+  if (num_queues < 1)
+    rte_exit(EXIT_FAILURE, "At least one queue is needed");
   argv++;
   argc--;
 
@@ -297,6 +299,11 @@ int main(int argc, char *argv[]) {
     }
 
     count_flow = atoi(argv[4 + count_server_ips]);
+    if (count_flow < 1) {
+      rte_exit(EXIT_FAILURE, "number of flows should be at least one");
+    }
+    printf("Count flows: %d\n", count_flow);
+
     if (argc > 5 + count_server_ips)
       duration = atoi(argv[5 + count_server_ips]);
     printf("Experiment duration: %d\n", duration);
@@ -390,30 +397,31 @@ int main(int argc, char *argv[]) {
     cntxs[i].tx_mem_pool = tx_mbuf_pool;
     cntxs[i].ctrl_mem_pool = ctrl_mbuf_pool;
     cntxs[i].port = dpdk_port;
-    cntxs[i].num_queues = num_queues;
     cntxs[i].my_eth = my_eth;
     cntxs[i].default_qid = next_qid++; // poll this queue
     cntxs[i].running = 1;     // this job of this cntx has not finished yet
     cntxs[i].src_ip = source_ip;
     cntxs[i].use_vlan = 0;
     cntxs[i].bidi = 0;
-    if (mode == mode_server) {
-      // TODO: fractions are not counted here
-      assert(num_queues % count_core == 0);
-      int queue_per_core = num_queues / count_core;
+    cntxs[i].num_queues = num_queues; // how many queue port has
 
+    // TODO: fractions are not counted here
+    assert(num_queues % count_core == 0);
+    int queue_per_core = num_queues / count_core;
+    // how many queue the contex is responsible for
+    cntxs[i].count_queues = queue_per_core; 
+
+    if (mode == mode_server) {
       // if it is server application
       cntxs[i].src_port = server_port[0];
-
-      cntxs[i].count_queues = queue_per_core;
       cntxs[i].managed_queues = malloc(queue_per_core * sizeof(uint32_t));
       for (int q = 0; q < queue_per_core; q++) {
         cntxs[i].managed_queues[q] = (findex * queue_per_core) + q;
         if (system_mode == system_bkdrft) {
           cntxs[i].managed_queues[q]++; // zero is reserved
-					if (cntxs[i].managed_queues[q] >= num_queues) 
-						cntxs[i].managed_queues[q] = num_queues - 1;
-					}
+          if (cntxs[i].managed_queues[q] >= num_queues) 
+            cntxs[i].managed_queues[q] = num_queues - 1;
+        }
       }
       findex++;
 
@@ -422,11 +430,12 @@ int main(int argc, char *argv[]) {
 
       cntxs[i].dst_ips = NULL;
     } else {
-      // this is client application
+      // this is a client application
 
       // TODO: fractions are not considered for this division
       int ips = count_server_ips / count_core;
       assert((count_server_ips % count_core) == 0);
+      assert((count_flow % count_core) == 0);
 
       cntxs[i].src_port = client_port;
       cntxs[i].dst_ips = malloc(sizeof(int) * ips);
@@ -449,9 +458,9 @@ int main(int argc, char *argv[]) {
       FILE *fp = fmemopen(output_buffers[i], 2048, "w+");
       assert(fp != NULL);
       cntxs[i].fp = fp;
-      cntxs[i].count_flow = count_flow;
+
+      cntxs[i].count_flow = count_flow / count_core;
       cntxs[i].base_port_number = server_port[i];
-      cntxs[i].count_queues = num_queues;
 
       cntxs[i].duration = duration;
 

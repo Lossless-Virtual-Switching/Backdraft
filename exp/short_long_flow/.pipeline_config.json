@@ -8,6 +8,7 @@
   "overlay": false,
   "buffering": false,
   "interface" : "enp65s0f0",
-  "cluster_config_file": "cluster_configs/memcached_config.yml",
-  "add_vlan": false
+  "cluster_config_file": "cluster_configs/multi_thread_config.yml",
+  "add_vlan": false,
+  "virtual_switch_cores": 16
 }

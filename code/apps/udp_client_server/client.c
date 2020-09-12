@@ -117,14 +117,17 @@ int do_client(void *_cntx) {
     hist[i] = new_p_hist_from_max_value(MAX_EXPECTED_LATENCY);
   }
 
+  printf("sending on queues: ");
   for (i = 0; i < count_dst_ip * count_flow; i++) {
     // sending each destinations packets on different queue
     // in CDQ mode the queue zero is reserved for later use
     if (cdq)
-      flow_q[i] = 1 + (i % (count_queues - 1));
+      flow_q[i] = qid + (i % count_queues);
     else
-      flow_q[i] = (i % count_queues);
+      flow_q[i] = qid + (i % count_queues);
+    printf("%d ", flow_q[i]);
   }
+  printf("\n");
 
   if (rte_eth_dev_socket_id(port) > 0 &&
       rte_eth_dev_socket_id(port) != (int)rte_socket_id()) {
