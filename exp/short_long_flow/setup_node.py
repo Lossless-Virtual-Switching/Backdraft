@@ -154,19 +154,21 @@ def setup_container(node_name: str, instance_number: int, config: dict):
 
         tas_cores = instance.get('tas_cores', 1)
         count_queue = pipeline_config['count_queue']
+        if 'count_queue' in instance:
+            count_queue = instance['count_queue']
         cdq = pipeline_config['cdq']
 
         # define the image to be used in exp.
         if app == 'rpc':
-                container_image_name = 'tas_container'
+            container_image_name = 'tas_container'
         elif app == 'unidir':
-                container_image_name = 'tas_unidir'
+            container_image_name = 'tas_unidir'
         elif app == 'udp_app':
-                container_image_name = 'no-container-should-be-used'
+            container_image_name = 'no-container-should-be-used'
         elif app == 'memcached':
-                container_image_name = 'tas_memcached'
+            container_image_name = 'tas_memcached'
         else:
-                raise ValueError('app field should have one of the {} values'.format(supported_app))
+            raise ValueError('app field should have one of the {} values'.format(supported_app))
 
         config = {
                 'name': container_name,
@@ -246,9 +248,9 @@ def run_app(config, app=None):
     elif app == 'unidir':
         spin_up_unidir(config)
     elif app == 'udp_app':
-        # run_udp_app(config)
-        p = run_udp_app(config)
-        p.wait()
+        run_udp_app(config)
+        # p = run_udp_app(config)
+        # p.wait()
         # print(p.stdout.read().decode())
         # print(p.stderr.read().decode())
     elif app == 'memcached':
@@ -262,7 +264,7 @@ def kill_node(instances):
     killed_udp = False
     for i, instance in enumerate(instances):
         app = instance.get('app', args.app)
-        if app == 'udp_app' and not killed_udp:
+        if app == 'udp_app':
             killed_udp = True
             subprocess.run('sudo pkill udp_app', shell=True)
         else:

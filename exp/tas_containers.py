@@ -117,6 +117,7 @@ def run_udp_app(config):
     * count_flow
     * duration
     * port
+    * delay: processing time for each packet
     """
     here = os.path.dirname(__file__)
     udp_app = os.path.abspath(os.path.join(here,
@@ -152,7 +153,7 @@ def run_udp_app(config):
         cmd = ('sudo {bin} --no-pci -l{cpu} --file-prefix={prefix} '
                 '--vdev="{vdev}" --socket-mem=128 -- '
                 '{ip} {count_queue} {sysmod} {mode} {cnt_ips} {ips} '
-                '{count_flow} {duration} {port}'
+                '{count_flow} {duration} {port} {delay}'
               ).format(bin=udp_app, mode=mode, **conf)
         # params = [conf['ip'], conf['count_queue'], conf['sysmod'], mode,
         #           count_ips, conf['ips'], conf['count_flow'], conf['duration'],
@@ -167,7 +168,7 @@ def run_udp_app(config):
     # print(cmd)
     FNULL = open(os.devnull, 'w') # pipe output to null
     FNULL = None
-    # print(cmd)
+    print(cmd)
     proc = subprocess.Popen(cmd, shell=True, close_fds=True,
                             stdout=FNULL, stderr=subprocess.STDOUT)
     return proc
