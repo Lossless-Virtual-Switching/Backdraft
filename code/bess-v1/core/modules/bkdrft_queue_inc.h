@@ -46,7 +46,7 @@ class BKDRFTQueueInc final : public Module {
   bool CheckQueuedCtrlMessages(Context *ctx, queue_t *qid, uint32_t *burst);
   uint32_t ReadBatch(queue_t qid, bess::PacketBatch *batch, uint32_t burst);
   bool IsQueuePausedInCache(Context *ctx, queue_t qid);
-   
+
 
  private:
   Port *port_;
@@ -56,12 +56,16 @@ class BKDRFTQueueInc final : public Module {
 
   // time stamp until when queue is paused
   // it is a cache for what BKDRFTSwDpCtrl knows
-  // if this array says it should not wait then 
+  // if this array says it should not wait then
   // we should check BKDRFTSwDpCtrl
   queue_pause_status q_status_[MAX_QUEUES];
   bool backpressure_;
   bool cdq_;
   bool overlay_;
+
+  uint16_t count_managed_queues;
+  uint16_t doorbell_queue;
+  queue_t *managed_queues;
 };
 
 #endif  // BESS_MODULES_BKDRFQUEUEINC_H_

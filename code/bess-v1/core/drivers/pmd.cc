@@ -235,7 +235,7 @@ __attribute__((unused)) static const struct rte_eth_conf custom_eth_conf(
   return ret;
 }
 
-static int overlay_rule_setup(dpdk_port_t id) {
+__attribute__((unused)) static int overlay_rule_setup(dpdk_port_t id) {
   int ret;
   struct rte_flow *flow;
   struct rte_flow_error error;
@@ -600,11 +600,11 @@ CommandResponse PMDPort::Init(const bess::pb::PMDPortArg &arg) {
 
   // ----------- overlay rule -------------- //
   if (arg.overlay_rules() || arg.command_queue()) {
-    ret = overlay_rule_setup(ret_port_id);
-    LOG(INFO) << "Setup command queue rule\n";
-    if (ret != 0) {
-      return CommandFailure(-ret, "rule setup for overlay network failed.");
-    }
+    // ret = overlay_rule_setup(ret_port_id);
+    // LOG(INFO) << "Setup command queue rule\n";
+    // if (ret != 0) {
+    //   return CommandFailure(-ret, "rule setup for overlay network failed.");
+    // }
     // ---------- litter --------------- //
     ret = litter_rule_setup(ret_port_id);
     if (ret != 0) {

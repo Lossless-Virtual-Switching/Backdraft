@@ -394,12 +394,17 @@ int main(int argc, char *argv[]) {
   // }
   // end of flow rules ==============================================
 
-  // fill context objects ===========================================
-  int next_qid = system_mode == system_bkdrft ? 1 : 0;
-  int findex = 0;
   // TODO: fractions are not counted here
   assert(num_queues % count_core == 0);
+  // fill context objects ===========================================
+  int next_qid = 0;
   int queue_per_core = num_queues / count_core;
+  if (system_mode == system_bkdrft) {
+    // num_queues -= 1;
+    next_qid = 1;
+    queue_per_core = (num_queues - 1) /count_core;
+  }
+  int findex = 0;
   for (int i = 0; i < count_core; i++) {
     cntxs[i].mode = mode;
     cntxs[i].system_mode = system_mode;
@@ -523,14 +528,14 @@ int main(int argc, char *argv[]) {
       printf("%s\n", output_buffers[i]);
     }
 
-    printf("1001...1008\n");
-    for (int i = 0; i < 16; i++) {
-      printf("flow: %d, src_port: %d, pkts: %ld\n", i, 1001 + i, tmp_array[0][i]);
-    }
-    printf("2002...2009\n");
-    for (int i = 0; i < 8; i++) {
-      printf("flow: %d, src_port: %d, pkts: %ld\n", i, 2002 + i, tmp_array[1][i]);
-    }
+    // printf("1001...1008\n");
+    // for (int i = 0; i < 16; i++) {
+    //   printf("flow: %d, src_port: %d, pkts: %ld\n", i, 1001 + i, tmp_array[0][i]);
+    // }
+    // printf("2002...2009\n");
+    // for (int i = 0; i < 8; i++) {
+    //   printf("flow: %d, src_port: %d, pkts: %ld\n", i, 2002 + i, tmp_array[1][i]);
+    // }
 
   } else {
     RTE_LCORE_FOREACH_SLAVE(lcore_id) {

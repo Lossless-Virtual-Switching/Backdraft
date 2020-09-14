@@ -132,7 +132,7 @@ private:
                              Flow::EqualTo>;
 
   Port *port_;
-  queue_t qid_;
+  // queue_t qid_;
 
   uint16_t count_queues_;
   bool lossless_;
@@ -195,6 +195,9 @@ private:
   // when in lossy mode, from this information we decide
   // if pause or overlay should be emmited
   bess::utils::CuckooMap<Flow, double, Flow::Hash, Flow::EqualTo> flow_drop_est;
+
+  uint16_t doorbell_queue_number_;
+  queue_t *data_queues_;
 
   // A pointer to ProcessBatch context
   // This is used to avoid passing context to other functions

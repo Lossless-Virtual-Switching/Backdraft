@@ -74,6 +74,7 @@ CommandResponse BKDRFTQueueOut::Init(const bess::pb::BKDRFTQueueOutArg &arg) {
     return CommandFailure(EINVAL, "Field 'port' must be specified");
   }
 
+  // Get port
   port_name = arg.port().c_str();
 
   const auto &it = PortBuilder::all_ports().find(port_name);
@@ -84,29 +85,41 @@ CommandResponse BKDRFTQueueOut::Init(const bess::pb::BKDRFTQueueOutArg &arg) {
 
   node_constraints_ = port_->GetNodePlacementConstraint();
 
+  // Get liset of requested queues
+  count_queues_ = arg.qid_size();
+  data_queues_ = new queue_t[count_queues_];
+  for (int i = 0; i < count_queues_; i++)
+    data_queues_[i] = arg.qid(i);
+
+  // Validate the number of requested queues
+  // count_queues_ = arg.count_queues();
+  if (count_queues_ < 1 || (count_queues_ < 2 && cdq_)) {
+    return CommandFailure(EINVAL, "Count queues should be more than 2");
+  } else if (count_queues_ > MAX_QUEUES) {
+    return CommandFailure(EINVAL, "Count queues should not be more than %d, "
+        "it is currently: %d\n", MAX_QUEUES, count_queues_);
+  }
+
+  // Acquire queues
   ret = port_->AcquireQueues(reinterpret_cast<const module *>(this),
-                             PACKET_DIR_OUT, nullptr, 0);
+                             PACKET_DIR_OUT, data_queues_, count_queues_);
   if (ret < 0) {
     return CommandFailure(-ret);
   }
 
-  qid_ = arg.qid();
-
+  // Check if has doorbell queue
   cdq_ = arg.cdq();
-  count_queues_ = arg.count_queues();
-  if (count_queues_ < 1 || (count_queues_ < 2 && cdq_)) {
-    return CommandFailure(EINVAL, "Count queues should be more than 2");
-  } else if (count_queues_ > MAX_QUEUES) {
-    return CommandFailure(EINVAL, "Count queues should not be more than %d, it is currently: %d\n", MAX_QUEUES, count_queues_);
+
+  if (cdq_) {
+    doorbell_queue_number_ = data_queues_[0];
+  } else {
+    doorbell_queue_number_ = -1;
   }
 
   lossless_ = arg.lossless();
   backpressure_ = arg.backpressure();
   overlay_ = arg.overlay();
   log_ = arg.log();
-  if (log_) {
-    LOG(INFO) << "[BKDRFTQueueOut] backpressure: " << backpressure_ << "\n";
-  }
 
   // TODO: this modules is not thread safe yet
   if (lossless_) {
@@ -148,10 +161,12 @@ CommandResponse BKDRFTQueueOut::Init(const bess::pb::BKDRFTQueueOutArg &arg) {
   LOG(INFO) << "BKDRFTQueueOut: name: " << name_
             << " pfq: " << per_flow_buffering_ << " cdq: " << cdq_
             << " lossless: " << lossless_ << " bp: " << backpressure_ << "\n";
+  LOG(INFO) << "name: " << name_ << " doorbell queue id: "
+            << doorbell_queue_number_ << "\n";
 
 #ifdef HOLB
   LOG(INFO) << "HOLB is enabled\n";
-#endif 
+#endif
 
   return CommandSuccess();
 }
@@ -368,7 +383,7 @@ void BKDRFTQueueOut::TrySendBuffer(Context *cntx) {
         auto found = flow_buffer_mapping_.Find(flow);
         if (found == nullptr) {
           burst = i;
-          pkts[i] = nullptr; 
+          pkts[i] = nullptr;
           break;
         }
 #endif
@@ -376,7 +391,7 @@ void BKDRFTQueueOut::TrySendBuffer(Context *cntx) {
 
       // TODO: it is wrong to assume all the batch has the same flow
       // TODO: this might not change during each iteration (may change in for loop but may not in the while)
-      flow = bess::bkdrft::PacketToFlow(*pkts[0]); 
+      flow = bess::bkdrft::PacketToFlow(*pkts[0]);
       fstate = GetFlowState(cntx, flow);
 
       // TODO: the mode which is not perflow_queueing but uses multiple queue
@@ -447,7 +462,10 @@ inline uint16_t BKDRFTQueueOut::SendCtrlPkt(Port *p, queue_t qid,
       return 0;
     }
 
-    sent_ctrl_pkts = p->SendPackets(BKDRFT_CTRL_QUEUE, &pkt, 1);
+    // mark the control packet to sit on the corresponding doorbel queue
+    bess::bkdrft::mark_packet_with_queue_number(pkt, doorbell_queue_number_);
+
+    sent_ctrl_pkts = p->SendPackets(doorbell_queue_number_, &pkt, 1);
     dropped = 1 - sent_ctrl_pkts;
 
     // Ctrl packets are not counted in statistics
@@ -669,11 +687,7 @@ void BKDRFTQueueOut::ProcessBatchLossy(Context *cntx,
   Flow flow = bess::bkdrft::PacketToFlow(*(pkts[0]));
 
   queue_t qid;
-  if (per_flow_buffering_) {
-    qid = GetFlowState(cntx, flow)->qid;
-  } else {
-    qid = qid_;
-  }
+  qid = GetFlowState(cntx, flow)->qid;
 
   if (cdq_ && qid == 0)
     qid = 1; // qid = 0 is reserved for ctrl/command queue
@@ -735,25 +749,27 @@ flow_state *BKDRFTQueueOut::GetFlowState(Context *cntx, Flow &flow) {
 
   // check if the flow is mapped to a queue
   // if it is not find the queue with the LRU policy
-  queue_t i;
+  uint16_t i;
   if (cdq_) {
-    // in cdq mode queue zero is reserved for command packets
+    // in cdq mode queue doorbell is reserved for command packets
     i = 1;
   } else {
     i = 0;
   }
 
   // find a queue which has not been used recently
+  uint16_t iter_q;
   for (; i < count_queues_; i++) {
-    auto q_flow = q_info_[i].flow;
+    iter_q = data_queues_[i];
+    auto q_flow = q_info_[iter_q].flow;
     if (Flow::EqualTo()(q_flow, flow)) {
-      qid = i;
+      qid = iter_q;
       found_qid = true;
       q_info_[qid].last_visit = cntx->current_ns;
       break;
-    } else if (q_info_[i].last_visit < min_flow_ts) {
-      min_flow_ts = q_info_[i].last_visit;
-      mapping_q_candid = i;
+    } else if (q_info_[iter_q].last_visit < min_flow_ts) {
+      min_flow_ts = q_info_[iter_q].last_visit;
+      mapping_q_candid = iter_q;
     }
   }
 
@@ -776,7 +792,6 @@ flow_state *BKDRFTQueueOut::GetFlowState(Context *cntx, Flow &flow) {
     state->buffer = &limited_buffers_[qid];
   }
   flow_buffer_mapping_.Insert(flow, state);
-  // LOG(INFO) << "Map flow: " << FlowToString(flow) << " to q: " << (int)qid << "\n";
 
   return state;
 }

@@ -28,6 +28,7 @@ extern inline int mark_data_queue(struct rte_mbuf *pkt, uint8_t qid) {
 extern inline int send_pkt(int port, uint8_t qid, struct rte_mbuf **tx_pkts,
                            uint16_t nb_pkts, bool send_ctrl_pkt,
                            struct rte_mempool *tx_mbuf_pool) {
+  //TODO: this code needs to be updated to supprt static partioning concept
   uint16_t nb_tx, ctrl_nb_tx;
   struct rte_mbuf *ctrl_pkt;
   uint16_t i;
