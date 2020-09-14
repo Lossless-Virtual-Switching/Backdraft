@@ -12,6 +12,7 @@
 #include "include/exp.h"
 #include "include/percentile.h"
 #include "include/arp.h"
+#include "include/zipf.h"
 
 #define BURST_SIZE (32)
 #define MAX_EXPECTED_LATENCY (10000) // (us)
@@ -42,6 +43,7 @@ int do_client(void *_cntx) {
   uint32_t base_port_number = cntx->base_port_number;
   uint8_t use_vlan = cntx->use_vlan;
   uint8_t bidi = cntx->bidi;
+  uint64_t delay_cycles = cntx->delay_cycles;
   // int num_queues = cntx->num_queues;
   assert(count_dst_ip >= 1);
 
@@ -109,32 +111,46 @@ int do_client(void *_cntx) {
 
   uint8_t cdq = system_mode == system_bkdrft;
 
+  uint32_t tx_pkts = 0;
+  // hardcoded burst size TODO: get from args
+  uint16_t burst_sizes[count_dst_ip];
+  uint16_t burst;
+
+  struct zipfgen *dst_zipf;
+  struct zipfgen *queue_zipf;
+
   hz = rte_get_timer_hz();
 
   // create a latency hist for each ip
   hist = malloc(count_dst_ip * sizeof(struct p_hist *));
   for (i = 0; i < count_dst_ip; i++) {
     hist[i] = new_p_hist_from_max_value(MAX_EXPECTED_LATENCY);
+    burst_sizes[i] = 32;
   }
+  burst = burst_sizes[0];
 
-  printf("sending on queues: ");
+  fprintf(fp, "sending on queues: [%d, %d]\n", qid, qid + count_queues - 1);
   for (i = 0; i < count_dst_ip * count_flow; i++) {
-    // sending each destinations packets on different queue
-    // in CDQ mode the queue zero is reserved for later use
+    /* Try to sending each destinations packets on a different queue.
+     * In CDQ mode the queue zero is reserved for later use.
+     * This mode is only used for uniform queue selection distribution.
+     * */
     if (cdq)
       flow_q[i] = qid + (i % count_queues);
     else
       flow_q[i] = qid + (i % count_queues);
-    printf("%d ", flow_q[i]);
   }
-  printf("\n");
 
   if (rte_eth_dev_socket_id(port) > 0 &&
       rte_eth_dev_socket_id(port) != (int)rte_socket_id()) {
     printf("Warning port is on remote NUMA node\n");
   }
 
-  printf("Client...\n");
+  // Zipf initialization
+  dst_zipf = new_zipfgen(count_dst_ip, 2); // values in range [1, count_dst_ip]
+  queue_zipf = new_zipfgen(count_queues, 2); // values in range [1, 2]
+
+  fprintf(fp, "Client src port %d\n", src_port);
 
   // get dst mac address
   if (bidi) {
@@ -142,7 +158,7 @@ int do_client(void *_cntx) {
     for (int i = 0; i < count_dst_ip; i++) {
       struct rte_ether_addr dst_mac = get_dst_mac(port, qid, src_ip, my_eth,
           dst_ips[i], broadcast_mac, tx_mem_pool, cdq, count_queues);
-      _server_eth[i] = dst_mac; 
+      _server_eth[i] = dst_mac;
       char ip[20];
       ip_to_str(dst_ips[i], ip, 20);
       printf("mac address for server %s received: ", ip);
@@ -153,9 +169,11 @@ int do_client(void *_cntx) {
     printf("ARP requests finished\n");
   } else {
     for (int i = 0; i < count_dst_ip; i++)
-      _server_eth[i] = (struct rte_ether_addr) {{0x98, 0xf2, 0xb3, 0xcc, 0x83, 0x81}};
+      /* 1c:34:da:41:c6:fc */
+      _server_eth[i] = (struct rte_ether_addr) {{0x1c, 0x34, 0xda, 0x41, 0xc6, 0xfc}};
   }
   server_eth = _server_eth[0];
+
 
   for (int i = 0; i < count_dst_ip; i++)
     prio[i] = _prio; // TODO: each destination can have a different prio
@@ -163,6 +181,7 @@ int do_client(void *_cntx) {
   dst_port = base_port_number;
   start_time = rte_get_timer_cycles();
   tp_start_ts = start_time;
+  /* main worker loop */
   for (;;) {
     end_time = rte_get_timer_cycles();
     if (duration > 0 && end_time > start_time + duration) {
@@ -170,15 +189,14 @@ int do_client(void *_cntx) {
         can_send = false;
         start_time = rte_get_timer_cycles();
         duration = 5 * rte_get_timer_hz();
-        // wait 10 sec for packets in the returning path
+        /* wait 10 sec for packets in the returning path */
       } else {
         break;
       }
     }
 
     if (can_send) {
-
-      // rate limit
+      /* rate limit */
       uint64_t ts = end_time;
       if (ts - tp_start_ts > hz) {
         throughput = 0;
@@ -191,35 +209,41 @@ int do_client(void *_cntx) {
         }
       }
 
-      // allocate some packets ! notice they should either be sent or freed
+      /* allocate some packets ! notice they should either be sent or freed */
       if (rte_pktmbuf_alloc_bulk(tx_mem_pool, bufs, BURST_SIZE)) {
-        // allocating failed
+        /* allocating failed */
         continue;
       }
 
+      /* select destination ip, port and ... */
       dst_ip = dst_ips[selected_dst];
-      selected_q = flow_q[flow];
+      if (cntx->queue_selection_distribution == DIST_ZIPF)
+        selected_q = queue_zipf->gen(queue_zipf) - 1;
+      else
+        selected_q = flow_q[flow];
 
       server_eth = _server_eth[selected_dst];
-      // printf("%x:%x:%x:%x:%x:%x\n",
-      //   server_eth.addr_bytes[0],server_eth.addr_bytes[1],server_eth.addr_bytes[2],
-      //   server_eth.addr_bytes[3],server_eth.addr_bytes[4],server_eth.addr_bytes[5]);
-
       tci = get_tci(prio[selected_dst], dei, vlan_id);
       dst_port = dst_port + 1;
       if (dst_port >= base_port_number + count_flow) {
         dst_port = base_port_number;
       }
       k = selected_dst;
-      // printf("dst_port: %u\n", dst_port);
-      // switching flows per-batch in a round robin fashion
-      // TODO: maybe use a stocastic measure for changing the flows
-      selected_dst = (selected_dst + 1) % count_dst_ip; // round robin
-      flow = (flow + 1) % (count_dst_ip * count_flow); // round robin
+      burst = burst_sizes[selected_dst];
+
+      if (cntx->destination_distribution == DIST_ZIPF) {
+        selected_dst = dst_zipf->gen(dst_zipf) - 1;
+      } else if (cntx->destination_distribution == DIST_UNIFORM) {
+        selected_dst = (selected_dst + 1) % count_dst_ip; // round robin
+      }
+
+      // flow = (flow + 1) % (count_dst_ip * count_flow); // round robin
+      flow = (selected_dst * count_flow) + (dst_port - base_port_number);
 
       // create a burst for selected flow
-      for (int i = 0; i < BURST_SIZE; i++) {
+      for (int i = 0; i < burst; i++) {
         buf = bufs[i];
+        tx_pkts++;
         // ether header
         buf_ptr = rte_pktmbuf_append(buf, RTE_ETHER_HDR_LEN);
         eth_hdr = (struct rte_ether_hdr *)buf_ptr;
@@ -260,15 +284,30 @@ int do_client(void *_cntx) {
         buf_ptr = rte_pktmbuf_append(buf, sizeof(struct rte_udp_hdr) +
                                               payload_length);
         udp_hdr = (struct rte_udp_hdr *)buf_ptr;
+
+        /* Just for testing */
+        /*
+        if (src_ip == 0xC0A8010B && cntx->worker_id == 0) {
+          // TODO: this is just for experimenting
+          uint16_t off = queue_zipf->gen(queue_zipf) - 1;
+          udp_hdr->src_port = rte_cpu_to_be_16(1001 + off);
+          udp_hdr->dst_port = rte_cpu_to_be_16(60900);
+        } else {
+          udp_hdr->src_port = rte_cpu_to_be_16(src_port);
+          udp_hdr->dst_port = rte_cpu_to_be_16(dst_port);
+        } */
+
         udp_hdr->src_port = rte_cpu_to_be_16(src_port);
         udp_hdr->dst_port = rte_cpu_to_be_16(dst_port);
         udp_hdr->dgram_len =
             rte_cpu_to_be_16(sizeof(struct rte_udp_hdr) + payload_length);
         udp_hdr->dgram_cksum = 0;
 
-        // payload
-        // add timestamp
+        /* payload */
+        /* add timestamp */
         // TODO: This timestamp is only valid on this machine, not time sycn.
+        // maybe ntp or something similar should be implemented
+        // or just send the base time stamp at the begining.
         timestamp = rte_get_timer_cycles();
         *(uint64_t *)(buf_ptr + (sizeof(struct rte_udp_hdr))) = timestamp;
 
@@ -284,50 +323,64 @@ int do_client(void *_cntx) {
         buf->ol_flags = PKT_TX_IP_CKSUM | PKT_TX_IPV4;
       }
 
-      // send packets
-      if (system_mode == system_bess) {
-        nb_tx = send_pkt(port, selected_q, bufs, BURST_SIZE, false, ctrl_mem_pool);
-      } else {
-        if (selected_q == 0)
-          printf("warning: sending data pkt on queue zero\n");
-        nb_tx =
-            send_pkt(port, selected_q, bufs, BURST_SIZE, true, ctrl_mem_pool);
+      /* send packets */
+      // TODO: this while loop messes with throughput measuring
+      // but we can ignore it now.
+      while (tx_pkts > 0) {
+        if (system_mode == system_bess) {
+          nb_tx = send_pkt(port, selected_q, bufs, tx_pkts, false, ctrl_mem_pool);
+        } else {
+          if (selected_q == 0)
+            printf("warning: sending data pkt on queue zero\n");
+          nb_tx =
+              send_pkt(port, selected_q, bufs, tx_pkts, true, ctrl_mem_pool);
+        }
+
+        if (end_time > start_time + ignore_result_duration * hz) {
+          total_sent_pkts[k] += nb_tx;
+          // nothing is failed
+          // failed_to_push[k] += BURST_SIZE - nb_tx;
+        }
+
+        // do not drop failed to push packets
+        for (i = nb_tx; i < tx_pkts; i++) {
+          bufs[i - nb_tx] = bufs[i];
+        }
+        tx_pkts -= nb_tx;
+        // free packets failed to send
+        // for (i = nb_tx; i < BURST_SIZE; i++)
+        //   rte_pktmbuf_free(bufs[i]);
+
+        throughput += nb_tx;
+
+        // delay between sending each batch
+        if (delay_cycles > 0) {
+          // rte_delay_us_block(delay_us);
+          uint64_t now = rte_get_tsc_cycles();
+          uint64_t end =
+              rte_get_tsc_cycles() + delay_cycles;
+          while (now < end) {
+            now = rte_get_tsc_cycles();
+          }
+        }
+
       }
-
-      if (end_time > start_time + ignore_result_duration * hz) {
-        total_sent_pkts[k] += nb_tx;
-        failed_to_push[k] += BURST_SIZE - nb_tx;
-      }
-
-      // free packets failed to send
-      for (i = nb_tx; i < BURST_SIZE; i++)
-        rte_pktmbuf_free(bufs[i]);
-
-      throughput += nb_tx;
-    } // if (can_send)
+    } /* end if (can_send) */
 
     if (!bidi)
       continue;
 
     // recv packets
 recv:
-   for (rx_q = qid; rx_q < qid + count_queues; rx_q++) {
+    for (rx_q = qid; rx_q < qid + count_queues; rx_q++) {
       while (1) {
         if (system_mode == system_bkdrft) {
-          // sysmod = bkdrft
-          // read ctrl queue (non-blocking)
+          /* read ctrl queue and fetch packets from data queue */
           nb_rx2 = poll_ctrl_queue(port, BKDRFT_CTRL_QUEUE, BURST_SIZE, recv_bufs,
                                    false);
         } else {
-          // bess
+          /* bess */
           nb_rx2 = rte_eth_rx_burst(port, rx_q, recv_bufs, BURST_SIZE);
-          // for (int q = 0; q < 3; q++) {
-          //   nb_rx2 = rte_eth_rx_burst(port, q, recv_bufs, BURST_SIZE);
-          //   if (nb_rx2 > 0) {
-          //    printf("qid: %d\n", q);
-          //    break;
-          //   }
-          // }
         }
 
         if (nb_rx2 == 0)
@@ -336,7 +389,7 @@ recv:
         for (j = 0; j < nb_rx2; j++) {
           buf = recv_bufs[j];
           if (!check_eth_hdr(src_ip, &my_eth, buf, tx_mem_pool, cdq, port, qid)) {
-            rte_pktmbuf_free(buf); // free packet
+            rte_pktmbuf_free(buf);
             continue;
           }
           ptr = rte_pktmbuf_mtod(buf, char *);
@@ -344,32 +397,31 @@ recv:
           eth_hdr = (struct rte_ether_hdr *)ptr;
           if (use_vlan) {
             if (rte_be_to_cpu_16(eth_hdr->ether_type) != RTE_ETHER_TYPE_VLAN) {
-              rte_pktmbuf_free(buf); // free packet
+              rte_pktmbuf_free(buf);
               continue;
             }
           } else {
             if (rte_be_to_cpu_16(eth_hdr->ether_type) != RTE_ETHER_TYPE_IPV4) {
-              rte_pktmbuf_free(buf); // free packet
+              rte_pktmbuf_free(buf);
               continue;
             }
           }
 
-          // skip the first 20 seconds of the experiment, no percentile info.
+          /* skip some seconds of the experiment, and do not record results */
           if (end_time < start_time + ignore_result_duration * hz) {
             rte_pktmbuf_free(buf); // free packet
             continue;
           }
 
-          // check ip
-        if (use_vlan) {
-          ptr = ptr + RTE_ETHER_HDR_LEN + sizeof(struct rte_vlan_hdr);
-        } else  {
+          if (use_vlan) {
+            ptr = ptr + RTE_ETHER_HDR_LEN + sizeof(struct rte_vlan_hdr);
+          } else  {
             ptr = ptr + RTE_ETHER_HDR_LEN;
-        }
+          }
           ipv4_hdr = (struct rte_ipv4_hdr *)ptr;
           recv_ip = rte_be_to_cpu_32(ipv4_hdr->src_addr);
 
-          // find ip index;
+          /* find ip index */
           int found = 0;
           for (k = 0; k < count_dst_ip; k++) {
             if (recv_ip == dst_ips[k]) {
@@ -386,7 +438,7 @@ recv:
             continue;
           }
 
-          // get timestamp
+          /* get timestamp */
           ptr = ptr + sizeof(struct rte_ipv4_hdr) + sizeof(struct rte_udp_hdr);
           timestamp = (*(uint64_t *)ptr);
           latency =
@@ -397,38 +449,31 @@ recv:
         }
       }
     }
-
-    // wait
-    // rte_delay_us_block(1000); // 1 msec
-    // int  t = -1;
-    // for (int i = 0; i< 1000000; i++) {
-    //   t += 1;
-    // }
-    // if (t == 0) {
-    //   printf("here\n");
-    // }
   }
 
-  // write to the output buffer, (it may or may not be stdout)
+  /* write to the output buffer, (it may or may not be stdout) */
   fprintf(fp, "=========================\n");
-  for (k = 0; k < count_dst_ip; k++) {
-    uint32_t ip = rte_be_to_cpu_32(dst_ips[k]);
-    uint8_t *bytes = (uint8_t *)(&ip);
-    fprintf(fp, "Ip: %u.%u.%u.%u\n", bytes[0], bytes[1], bytes[2], bytes[3]);
-    percentile = get_percentile(hist[k], 0.01);
-    fprintf(fp, "%d latency (1.0): %f\n", k, percentile);
-    percentile = get_percentile(hist[k], 0.50);
-    fprintf(fp, "%d latency (50.0): %f\n", k, percentile);
-    percentile = get_percentile(hist[k], 0.90);
-    fprintf(fp, "%d latency (90.0): %f\n", k, percentile);
-    percentile = get_percentile(hist[k], 0.95);
-    fprintf(fp, "%d latency (95.0): %f\n", k, percentile);
-    percentile = get_percentile(hist[k], 0.99);
-    fprintf(fp, "%d latency (99.0): %f\n", k, percentile);
-    percentile = get_percentile(hist[k], 0.999);
-    fprintf(fp, "%d latency (99.9): %f\n", k, percentile);
-    percentile = get_percentile(hist[k], 0.9999);
-    fprintf(fp, "%d latency (99.99): %f\n", k, percentile);
+  if (bidi) {
+    /* latencies are measured by client only in bidi mode */
+    for (k = 0; k < count_dst_ip; k++) {
+      uint32_t ip = rte_be_to_cpu_32(dst_ips[k]);
+      uint8_t *bytes = (uint8_t *)(&ip);
+      fprintf(fp, "Ip: %u.%u.%u.%u\n", bytes[0], bytes[1], bytes[2], bytes[3]);
+      percentile = get_percentile(hist[k], 0.01);
+      fprintf(fp, "%d latency (1.0): %f\n", k, percentile);
+      percentile = get_percentile(hist[k], 0.50);
+      fprintf(fp, "%d latency (50.0): %f\n", k, percentile);
+      percentile = get_percentile(hist[k], 0.90);
+      fprintf(fp, "%d latency (90.0): %f\n", k, percentile);
+      percentile = get_percentile(hist[k], 0.95);
+      fprintf(fp, "%d latency (95.0): %f\n", k, percentile);
+      percentile = get_percentile(hist[k], 0.99);
+      fprintf(fp, "%d latency (99.0): %f\n", k, percentile);
+      percentile = get_percentile(hist[k], 0.999);
+      fprintf(fp, "%d latency (99.9): %f\n", k, percentile);
+      percentile = get_percentile(hist[k], 0.9999);
+      fprintf(fp, "%d latency (99.99): %f\n", k, percentile);
+    }
   }
 
   for (k = 0; k < count_dst_ip; k++) {
@@ -442,6 +487,13 @@ recv:
   fprintf(fp, "Client done\n");
   fflush(fp);
 
+  /* free allocated memory*/
+  for (k = 0; k < count_dst_ip; k++) {
+    free_p_hist(hist[k]);
+  }
+  free(hist);
+  free_zipfgen(dst_zipf);
+  free_zipfgen(queue_zipf);
   cntx->running = 0;
   return 0;
 }

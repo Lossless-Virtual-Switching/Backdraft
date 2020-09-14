@@ -11,29 +11,31 @@
 #define MAX_DURATION (60)             // (sec)
 #define MAX_EXPECTED_LATENCY (100000) // (us)
 
-// void print_stats(uint64_t tp, struct p_hist *hist);
+void print_stats(FILE *fp, uint64_t tp, struct p_hist *hist);
 void print_mac(struct rte_ether_addr *addr);
 
-// void print_stats(uint64_t tp, struct p_hist *hist) {
-//   float percentile;
-//   // printf("\033[2J");
-//   printf("TP: %lu\n", tp);
-//   return;
-//   Print latency statistics
-//   percentile = get_percentile(hist, 0.500);
-//   printf("Latency [@50](us): %f\n", percentile);
-//   percentile = get_percentile(hist, 0.900);
-//   printf("Latency [@90](us): %f\n", percentile);
-//   percentile = get_percentile(hist, 0.950);
-//   printf("Latency [@95](us): %f\n", percentile);
-//   percentile = get_percentile(hist, 0.990);
-//   printf("Latency [@99](us): %f\n", percentile);
-//   percentile = get_percentile(hist, 0.999);
-//   printf("Latency [@99.9](us): %f\n", percentile);
-//   percentile = get_percentile(hist, 0.9999);
-//   printf("Latency [@99.99](us): %f\n", percentile);
-//   printf("====================================\n");
-// }
+void print_stats(FILE *fp, __attribute__((unused)) uint64_t tp, struct p_hist *hist) {
+  float percentile;
+  // printf("\033[2J");
+  // printf("TP: %lu\n", tp);
+  // return;
+  // Print latency statistics
+  percentile = get_percentile(hist, 0.010);
+  fprintf(fp, "Latency [@01](us): %f\n", percentile);
+  percentile = get_percentile(hist, 0.500);
+  fprintf(fp, "Latency [@50](us): %f\n", percentile);
+  percentile = get_percentile(hist, 0.900);
+  fprintf(fp, "Latency [@90](us): %f\n", percentile);
+  percentile = get_percentile(hist, 0.950);
+  fprintf(fp, "Latency [@95](us): %f\n", percentile);
+  percentile = get_percentile(hist, 0.990);
+  fprintf(fp, "Latency [@99](us): %f\n", percentile);
+  percentile = get_percentile(hist, 0.999);
+  fprintf(fp, "Latency [@99.9](us): %f\n", percentile);
+  percentile = get_percentile(hist, 0.9999);
+  fprintf(fp, "Latency [@99.99](us): %f\n", percentile);
+  fprintf(fp, "====================================\n");
+}
 
 void print_mac(struct rte_ether_addr *addr) {
   uint8_t *bytes = addr->addr_bytes;
@@ -45,9 +47,11 @@ int do_server(void *_cntx) {
   struct context *cntx = (struct context *)_cntx;
   uint32_t port = cntx->port;
   // uint16_t num_queues = cntx->num_queues;
-  uint32_t delay_us = cntx->delay_us;
+  // uint32_t delay_us = cntx->delay_us;
+  uint32_t delay_cycles = cntx->delay_cycles;
+  double cycles_error = 0; // EWMA
   int system_mode = cntx->system_mode;
-  struct rte_mempool *tx_mem_pool = cntx->tx_mem_pool; // just for sending arp 
+  struct rte_mempool *tx_mem_pool = cntx->tx_mem_pool; // just for sending arp
   struct rte_mempool *ctrl_mem_pool = cntx->ctrl_mem_pool;
   uint8_t qid = cntx->default_qid;
   uint32_t count_queues = cntx->count_queues;
@@ -65,26 +69,28 @@ int do_server(void *_cntx) {
   uint16_t nb_rx;
   uint16_t nb_tx;
   struct rte_mbuf *rx_bufs[BURST_SIZE];
-  int first_pkt = 0; // has received first packet
+  int first_pkt = 0; // flag indicating if has received the first packet
 
   // int throughput[MAX_DURATION];
   uint64_t throughput = 0;
   uint64_t start_time;
+  uint64_t exp_begin = 0;
   uint64_t current_time;
   uint64_t current_sec = 0;
   uint64_t last_pkt_time = 0;
-  const uint64_t termination_threshold = 5 * rte_get_timer_hz();
+  const uint64_t termination_threshold = 10 * rte_get_timer_hz();
   int run = 1;
   struct rte_ipv4_hdr *ipv4_hdr;
 
   uint64_t failed_to_push = 0;
 
   char *ptr;
-  // struct p_hist *hist;
-  // const uint64_t ts_offset = RTE_ETHER_HDR_LEN + sizeof(struct rte_vlan_hdr)
-  //   + sizeof(struct rte_ipv4_hdr) + sizeof(struct rte_udp_hdr);
-  // uint64_t timestamp;
-  // uint64_t latency;
+
+  struct p_hist *hist;
+  uint64_t ts_offset;
+  uint64_t timestamp;
+  uint64_t latency;
+
   const uint64_t hz = rte_get_timer_hz();
   uint64_t i;
   struct rte_mbuf *tx_buf[64];
@@ -94,7 +100,7 @@ int do_server(void *_cntx) {
   uint64_t k;
   // float percentile;
 
-  // hist = new_p_hist_from_max_value(MAX_EXPECTED_LATENCY);
+  hist = new_p_hist_from_max_value(MAX_EXPECTED_LATENCY);
 
   // for (i = 0; i < MAX_DURATION; i++)
   //   throughput[i] = 0;
@@ -107,12 +113,31 @@ int do_server(void *_cntx) {
     printf("Warining port is on remote NUMA node\n");
   }
 
-  printf("Running server\n");
+  if (use_vlan) {
+    ts_offset = RTE_ETHER_HDR_LEN + sizeof(struct rte_vlan_hdr)
+                    + sizeof(struct rte_ipv4_hdr) + sizeof(struct rte_udp_hdr);
+  } else {
+    ts_offset = RTE_ETHER_HDR_LEN + sizeof(struct rte_ipv4_hdr)
+                    + sizeof(struct rte_udp_hdr);
+  }
 
-  while (run) {
+  fprintf(cntx->fp, "Running server\n");
+
+  exp_begin = rte_get_timer_cycles();
+  /* main worker loop */
+  while (run && cntx->running) {
     // manage the next queue
     qid = cntx->managed_queues[q_index];
     q_index = (q_index + 1) % count_queues;
+
+    current_time = rte_get_timer_cycles();
+    /* if experiment time has passed kill the server
+     * (not all experiments need this)
+     * */
+    if (!first_pkt && current_time - exp_begin > 20 * hz) {
+      run = 0;
+      break;
+    }
 
     if (system_mode == system_bess) {
       // bess
@@ -123,58 +148,57 @@ int do_server(void *_cntx) {
           poll_ctrl_queue(port, BKDRFT_CTRL_QUEUE, BURST_SIZE, rx_bufs, false);
     }
 
+    /* following lines are just for experimenting */
+    // rte_pktmbuf_free_bulk(rx_bufs, nb_rx);
+    // continue;
+
     if (nb_rx == 0) {
       if (first_pkt) {
-        // if client has started sending data
-        // and some amount of time has passed since
-        // last pkt then server is done
-        current_time = rte_get_timer_cycles();
+        /* if client has started sending data
+         * and some amount of time has passed since
+         * last pkt then server is done
+         * */
         if (current_time - last_pkt_time > termination_threshold) {
-          // run = 0;
-          // break;
+          // TODO: commented just for experiment
+          run = 0;
+          break;
         }
       }
       continue;
     }
 
-    // printf("recv: %d\n", nb_rx);
-
-    if (!first_pkt) {
-      printf("Client started!\n");
-      // client started working
-      first_pkt = 1;
-      start_time = rte_get_timer_cycles();
-    }
-
-    // update throughput table
-    current_time = rte_get_timer_cycles();
-    last_pkt_time = current_time;
+    /* update throughput */
     current_sec = (current_time - start_time) / hz;
     if (current_sec > 1) {
       // print_stats(throughput, hist);
-      printf("TP: %lu\n", throughput);
+      // printf("TP: %lu\n", throughput);
       throughput = 0;
       start_time = current_time;
-      printf("failed to push: %ld\n", failed_to_push);
+      // printf("failed to push: %ld\n", failed_to_push);
     }
 
     // spend some time for the whole batch
-    if (delay_us > 0) {
-      // rte_delay_us_block(delay_us);
-      uint64_t now = rte_get_tsc_cycles();
-      uint64_t end =
-          rte_get_tsc_cycles() + (delay_us * (rte_get_tsc_hz() / 1000000l));
-      while (now < end) {
-        now = rte_get_tsc_cycles();
-      }
-    }
+    // if (delay_us > 0) {
+    //   // rte_delay_us_block(delay_us);
+    //   uint64_t now = rte_get_tsc_cycles();
+    //   uint64_t end =
+    //       rte_get_tsc_cycles() + (delay_us * (rte_get_tsc_hz() / 1000000l));
+    //   while (now < end) {
+    //     now = rte_get_tsc_cycles();
+    //   }
+    // }
+    //
 
     /* echo packets */
     k = 0;
     for (i = 0; i < nb_rx; i++) {
       buf = rx_bufs[i];
 
-      if (!check_eth_hdr(my_ip, &my_eth, buf, tx_mem_pool, cdq, port, qid)) {
+      if (bidi &&
+          !check_eth_hdr(my_ip, &my_eth, buf, tx_mem_pool, cdq, port, qid)) {
+        /* in unidirectional mode the arp is not send so destination mac addr
+         * is incorrect
+         * */
         rte_pktmbuf_free(rx_bufs[i]); // free packet
         continue;
       }
@@ -204,67 +228,106 @@ int do_server(void *_cntx) {
         ipv4_hdr = (struct rte_ipv4_hdr *)(ptr + RTE_ETHER_HDR_LEN);
       }
 
-      if (rte_be_to_cpu_32(ipv4_hdr->dst_addr) != my_ip) {
-        // discard the packet (not our packet)
-        rte_pktmbuf_free(rx_bufs[i]); // free packet
-        continue;
+      // if (rte_be_to_cpu_32(ipv4_hdr->dst_addr) != my_ip) {
+      //   // discard the packet (not our packet)
+      //   rte_pktmbuf_free(rx_bufs[i]); // free packet
+      //   continue;
+      // }
+
+      last_pkt_time = current_time;
+      if (!first_pkt) {
+        // printf("Client started!\n");
+        // client started working
+        first_pkt = 1;
+        start_time = current_time;
       }
 
       // update throughput
       throughput += 1;
       // throughput[current_sec] += 1;
 
+      // apply processing cost
+      if (delay_cycles > 0) {
+        // rte_delay_us_block(delay_us);
+        uint64_t now = rte_get_tsc_cycles();
+        uint64_t end =
+            rte_get_tsc_cycles() + delay_cycles;
+        while (now < end) {
+          now = rte_get_tsc_cycles();
+        }
+        cycles_error =(now - end) * 0.5 + 0.5 * (cycles_error);
+      }
+
+      /* apply procesing cost for a specific flow (TODO: just for experiment) */
+      struct rte_udp_hdr *udp_hdr = (struct rte_udp_hdr *)(ipv4_hdr + 1);
+      /*
+      uint16_t src_port = rte_be_to_cpu_16(udp_hdr->src_port);
+      uint16_t dst_port = rte_be_to_cpu_16(udp_hdr->dst_port);
+      if (dst_port == 60900) {
+        uint64_t now = rte_get_tsc_cycles();
+        uint64_t end = rte_get_tsc_cycles() + 100000;
+        while (now < end) {
+          now = rte_get_tsc_cycles();
+        }
+      }
+
+      if (src_port > 1000 && src_port < 1032) {
+        cntx->tmp_array[0][src_port - 1001]++;
+      }
+      */
+
+      // get time stamp
+      ptr = ptr + ts_offset;
+      timestamp = (*(uint64_t *)ptr);
+      // TODO: the following line only works on single node
+      latency = (rte_get_timer_cycles() - timestamp) * 1000 * 1000 / hz; //(us)
+      // printf("%lu\n", latency);
+      add_number_to_p_hist(hist, (float)latency);
+
       if (!bidi) {
-        rte_pktmbuf_free(rx_bufs[i]); // free packet
+        rte_pktmbuf_free(rx_bufs[i]);
         continue;
       }
 
-      // swap mac address
+      /*  swap mac address */
       rte_ether_addr_copy(&eth_hdr->s_addr, &tmp_addr);
       rte_ether_addr_copy(&eth_hdr->d_addr, &eth_hdr->s_addr);
       rte_ether_addr_copy(&tmp_addr, &eth_hdr->d_addr);
 
-      // swap ip address
+      /* swap ip address */
       tmp_ip = ipv4_hdr->src_addr;
       ipv4_hdr->src_addr = ipv4_hdr->dst_addr;
       ipv4_hdr->dst_addr = tmp_ip;
 
-      // swap port
-      struct rte_udp_hdr *udp_hdr; 
-      udp_hdr = (struct rte_udp_hdr *)(ipv4_hdr + 1);
+      /* swap port */
       uint16_t tmp = udp_hdr->src_port;
       udp_hdr->src_port = udp_hdr->dst_port;
       udp_hdr->dst_port = tmp;
 
-      // add to list of echo packets
+      /* add to list of echo packets */
       tx_buf[k] = buf;
       k++;
-
-      // get time stamp
-      // ptr = ptr + ts_offset;
-
-      // timestamp = (*(uint64_t *)ptr);
-      // latency = (rte_get_timer_cycles() - timestamp) * 1000 * 1000 / hz; //
-      // (us) printf("%lu\n", latency); add_number_to_p_hist(hist,
-      // (float)latency); rte_pktmbuf_free(rx_bufs[i]); // free packet
     }
 
     if (!bidi)
       continue;
 
-    if (system_mode == system_bess) {
-      nb_tx = send_pkt(port, qid, tx_buf, k, false, ctrl_mem_pool);
-      // printf("send qid: %d, nb: %d\n", qid, nb_tx);
-    } else {
-      nb_tx = send_pkt(port, 1, tx_buf, k, true, ctrl_mem_pool);
-    }
-    failed_to_push += k - nb_tx;
-    // printf("server echo packet: %d\n", nb_tx);
+    while (k > 0) {
+      if (system_mode == system_bess) {
+        nb_tx = send_pkt(port, qid, tx_buf, k, false, ctrl_mem_pool);
+      } else {
+        nb_tx = send_pkt(port, 1, tx_buf, k, true, ctrl_mem_pool);
+      }
 
-    // free the packets failed to send
-    // rte_pktmbuf_free_bulk(rx_bufs + nb_tx, nb_rx - nb_tx);
-    for (i = nb_tx; i < k; i++)
-      rte_pktmbuf_free(tx_buf[i]);
+      /* move packets failed to send to the front of the queue */
+      for (i = nb_tx; i < k; i++) {
+        tx_buf[i - nb_tx] = tx_buf[i];
+        // rte_pktmbuf_free(tx_buf[i]);
+      }
+      k -= nb_tx;
+    }
+
+    failed_to_push += 0; // nothing is failed
   }
 
   // Print throughput statistics
@@ -272,7 +335,13 @@ int do_server(void *_cntx) {
   // for (i = 0; i < current_sec + 1; i++) {
   //   printf("%ld: %d\n", i, throughput[i]);
   // }
-  printf("=================================\n");
+
+  print_stats(cntx->fp, 0, hist);
+  fprintf(cntx->fp, "average cycles error %f\n", cycles_error);
+  fprintf(cntx->fp, "=================================\n");
+
+  /* free allocated memory */
+  free_p_hist(hist);
   cntx->running = 0;
   return 0;
 }
