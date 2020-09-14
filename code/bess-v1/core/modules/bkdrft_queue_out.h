@@ -22,7 +22,7 @@ const int drop_high_water = 30; // assumming batch size is 32
 // const int buffer_len_low_water = 64;
 // const uint64_t buffer_len_low_water = 6000; // bytes
 
-const int bp_buffer_len_high_water = 10;
+const int bp_buffer_len_high_water = 6;
 
 using bess::bkdrft::Flow;
 struct queue_flow_info {
@@ -79,9 +79,6 @@ private:
   void BufferBatch(bess::bkdrft::Flow &flow, flow_state *fstate,
                              bess::PacketBatch *batch, uint16_t sent_pkt);
 
-  // returns the size of assigned buffer for the given flow
-  uint64_t BufferSize(const Flow &flow);
-
   // try to send packets in the buffer
   void TrySendBuffer(Context *cntx);
 
@@ -126,13 +123,14 @@ private:
   // send an overlay message for the given flow
   // qid: the queue the flow is mapped to
   // (or the queue it is going to be send on)
-  int SendOverlay(const Flow &flow, queue_t qid, OverlayState state, uint64_t *duration=nullptr);
+  int SendOverlay(const Flow &flow, const struct flow_state *fstate,
+                  OverlayState state, uint64_t *duration=nullptr);
 
 private:
   using bufferHashTable =
       bess::utils::CuckooMap<Flow, std::vector<bess::Packet *> *, Flow::Hash,
                              Flow::EqualTo>;
-  
+
   Port *port_;
   queue_t qid_;
 

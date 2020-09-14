@@ -165,7 +165,7 @@ void BKDRFTOverlayCtrl::ApplyOverlayMessage(bess::pb::Overlay &overlay_msg,
   queue_t qid;
   Flow flow;
 
-  BKDRFTOverlayCtrl::ExtractFlow(overlay_msg, flow); 
+  BKDRFTOverlayCtrl::ExtractFlow(overlay_msg, flow);
 
   auto entry = flowBook_.Find(flow);
   if (entry == nullptr) {
@@ -174,7 +174,7 @@ void BKDRFTOverlayCtrl::ApplyOverlayMessage(bess::pb::Overlay &overlay_msg,
   }
 
   qid = entry->second.qid;
-  
+
   // limit pps
   pps = overlay_msg.packet_per_sec();
   if (pps < one_batch)

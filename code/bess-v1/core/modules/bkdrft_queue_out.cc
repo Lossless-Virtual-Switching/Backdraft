@@ -8,8 +8,8 @@
 #include "bkdrft_queue_out.h"
 #include <rte_ethdev.h>
 
-#define MIN_PAUSE_DURATION (10000)
-#define MAX_PAUSE_DURATION (125000) // (31250L) // (93750)// (125000)// (62500L)
+#define MIN_PAUSE_DURATION (1000)
+#define MAX_PAUSE_DURATION (5000000) // (31250L) // (93750)// (125000)// (62500L)
 // (ns)// 93750// 46875
 #define PAUSE_DURATION_GAMMA (2)  // (ns)
 #define MAX_BUFFER_SIZE (4194304) // (5242880) //  (1048576) // 1 mega byte
@@ -313,12 +313,12 @@ void BKDRFTQueueOut::TrySendBufferPFQ(__attribute__((unused)) Context *cntx) {
       }
     }
 
-    if (overlay_ && fstate != nullptr
-        && fstate->byte_in_buffer < buffer_len_low_water
-        && fstate->overlay_state == OverlayState::TRIGGERED) {
-      fstate->overlay_state = OverlayState::SAFE;
-      SendOverlay(iter->first, qid, OverlayState::SAFE);
-    }
+    // if (overlay_ && fstate != nullptr
+    //     && fstate->byte_in_buffer < buffer_len_low_water
+    //     && fstate->overlay_state == OverlayState::TRIGGERED) {
+    //   fstate->overlay_state = OverlayState::SAFE;
+    //   SendOverlay(iter->first, qid, OverlayState::SAFE);
+    // }
   }
 }
 
@@ -415,12 +415,12 @@ void BKDRFTQueueOut::TrySendBuffer(Context *cntx) {
       }
     }
 
-    if (overlay_ && fstate != nullptr
-        && fstate->byte_in_buffer < buffer_len_low_water
-        && fstate->overlay_state == OverlayState::TRIGGERED) {
-      fstate->overlay_state = OverlayState::SAFE;
-      SendOverlay(flow, q, OverlayState::SAFE);
-    }
+    // if (overlay_ && fstate != nullptr
+    //     && fstate->byte_in_buffer < buffer_len_low_water
+    //     && fstate->overlay_state == OverlayState::TRIGGERED) {
+    //   fstate->overlay_state = OverlayState::SAFE;
+    //   SendOverlay(flow, q, OverlayState::SAFE);
+    // }
   }
 }
 
@@ -551,20 +551,23 @@ inline void BKDRFTQueueOut::Pause(Context *cntx, const Flow &flow,
                                   const queue_t qid,
                                   const uint64_t buffer_size) {
   // pause the incoming queue of the flow
-  // TODO: get line rate some how
+  // TODO: get incomming line rate for bandwith-delay estimation
   uint64_t pps;
   uint64_t duration;
   uint64_t ts;
   Port *p = port_;
   pps = p->rate_.pps[PACKET_DIR_OUT][qid];
   if (pps == 0) {
-    duration = MAX_PAUSE_DURATION;
+    // LOG(INFO) << "pps is zero\n";
+    duration = 100000; // 100 us
   } else {
-    duration = ((buffer_size) / pps) + 1;
+    duration = ((buffer_size * 1000000000UL) / pps);
     if (duration > MAX_PAUSE_DURATION) {
+      // LOG(INFO) << "more than max pause durtaion\n";
       duration = MAX_PAUSE_DURATION;
     } else if (duration < MIN_PAUSE_DURATION) {
-      duration = MIN_PAUSE_DURATION;
+      // LOG(INFO) << "less than min pause duration\n";
+      // duration = MIN_PAUSE_DURATION;
     }
   }
 
@@ -576,41 +579,16 @@ inline void BKDRFTQueueOut::Pause(Context *cntx, const Flow &flow,
   pause_call_total += 1;
 
   if (log_)
-    LOG(INFO) << "pause duration: " << duration << " until: " << ts
-              << " bps: " << pps << flow.addr_src.value() << "\n";
+    LOG(INFO) << "pause qid: " << (int)qid << " pause duration: "
+              << duration << " until: " << ts
+              << " pps: " << pps << "\n  flow: " << FlowToString(flow) << "\n";
 }
 
-/*
- * returns number of packets in the same buffer assigned the given flow
- * note: buffer size is available from the flow_state
- * note: this function should not be used any more
- * */
-inline uint64_t BKDRFTQueueOut::BufferSize(const Flow &flow) {
-  uint64_t packets_in_buffer;
-  if (per_flow_buffering_) {
-    auto entry = buffers_.Find(flow);
-    if (entry == nullptr) {
-      packets_in_buffer = 0;
-    } else {
-      packets_in_buffer = entry->second->size();
-    }
-  } else {
-    auto entry = flow_buffer_mapping_.Find(flow);
-    if (entry == nullptr) {
-      packets_in_buffer = 0;
-    } else {
-      queue_t tmp_qid = entry->second->qid;
-      packets_in_buffer = limited_buffers_[tmp_qid].size();
-    }
-  }
-  return packets_in_buffer;
-}
 
 void BKDRFTQueueOut::ProcessBatchWithBuffer(Context *cntx,
                                           bess::PacketBatch *batch) {
   using namespace bess::bkdrft;
   Port *p = port_;
-  uint64_t packets_in_buffer;
   uint16_t sent_pkts = 0;
   const int cnt = batch->cnt();
   bess::Packet **pkts = batch->pkts();
@@ -619,11 +597,10 @@ void BKDRFTQueueOut::ProcessBatchWithBuffer(Context *cntx,
   queue_t qid = fstate->qid;
 
   // find the number of packets in the buffer assigned to this flow
-  packets_in_buffer = fstate->packet_in_buffer;
 
   // Before we give away this batch let's check on our buffer.
   // if (BKDRFTQueueOut::count_packets_in_buffer_ > 0) {
-  if (packets_in_buffer > 0) {
+  if (fstate->packet_in_buffer > 0) {
     // We have some packet in the buffer, to avoid packet
     // reordering I should send the remining packets in
     // buffer first.
@@ -654,23 +631,31 @@ void BKDRFTQueueOut::ProcessBatchWithBuffer(Context *cntx,
   // if we are buffering then we can decide based on the buffer size
   // for each flow
 
-  // update the number of packets in the buffer
-  packets_in_buffer = BufferSize(flow);
+  if (overlay_ && fstate->byte_in_buffer > buffer_len_high_water
+      && cntx->current_ns - fstate->ts_last_overlay > fstate->no_overlay_duration) {
+    fstate->ts_last_overlay = cntx->current_ns;
+    fstate->overlay_state = OverlayState::TRIGGERED;
+    uint64_t duration;
+    SendOverlay(flow, fstate, OverlayState::TRIGGERED, &duration);
+    fstate->no_overlay_duration = duration;
+  }
 
-  // if (BKDRFTQueueOut::count_packets_in_buffer_ > buffer_len_high_water) {
-  if (fstate->byte_in_buffer > buffer_len_high_water) {
-    if (overlay_ && cntx->current_ns - fstate->ts_last_overlay > fstate->no_overlay_duration) {
-      fstate->ts_last_overlay = cntx->current_ns; 
-      fstate->overlay_state = OverlayState::TRIGGERED;
-      uint64_t duration;
-      SendOverlay(flow, qid, OverlayState::TRIGGERED, &duration);
-      fstate->no_overlay_duration = duration;
+  if (backpressure_ && fstate->packet_in_buffer > bp_buffer_len_high_water) {
+    if (!per_flow_buffering_) {
+      // TODO: this code may be better to be placed in some other place
+      // TODO: it might be good to have a data structure for keeping track of
+      // flows on each queue, without needing to iterate over flow to queue map.
+      // pause all flows mapped to this queue
+      auto iter = flow_buffer_mapping_.begin();
+      for (; iter != flow_buffer_mapping_.end(); iter++) {
+        if (iter->second->qid == qid)
+          Pause(cntx, iter->first, qid, iter->second->packet_in_buffer);
+      }
+    } else {
+      // each flow has its own queue
+      Pause(cntx, flow, qid, fstate->packet_in_buffer);
     }
-  } 
-
-  if (backpressure_ && packets_in_buffer > bp_buffer_len_high_water)
-    // TODO: maybe findout how many bytes are in this flow's buffers
-    Pause(cntx, flow, qid, packets_in_buffer);
+  }
 }
 
 void BKDRFTQueueOut::ProcessBatchLossy(Context *cntx,
@@ -847,21 +832,6 @@ void BKDRFTQueueOut::MeasureForPolicy(Context *cntx, queue_t qid,
                                       const Flow &flow, uint16_t sent_pkts,
                                       __attribute__((unused)) uint32_t sent_bytes, uint16_t tx_burst,
                                       __attribute__((unused)) uint32_t total_bytes) {
-  // if (lossless_) {
-  //   // if we are buffering then we can decide based on the buffer size for
-  //   // each flow
-  //   if (BKDRFTQueueOut::count_packets_in_buffer_ > buffer_len_high_water) {
-  //     if (backpressure_) {
-  //       uint64_t buffer_size = BufferSize(flow);
-  //       Pause(cntx, flow, qid, buffer_size);
-  //     }
-
-  //     if (overlay_)
-  //       SendOverlay(flow, qid);
-  //   }
-  //   return;
-  // }
-
   double drop_est = 0;
   auto entry = flow_drop_est.Find(flow);
   if (entry != nullptr) {
@@ -877,12 +847,11 @@ void BKDRFTQueueOut::MeasureForPolicy(Context *cntx, queue_t qid,
   if (drop_est > drop_high_water) {
     // LOG(INFO) << "drop est: " << drop_est << "\n";
     if (backpressure_) {
-      uint64_t buffer_size = BufferSize(flow);
-      Pause(cntx, flow, qid, buffer_size);
+      // TODO: removed buffer_size and placed 0
+      // uint64_t buffer_size = BufferSize(flow);
+      Pause(cntx, flow, qid, 100);
     }
 
-    // if (overlay_)
-    //   SendOverlay(flow, qid);
   }
 }
 
@@ -890,11 +859,9 @@ void BKDRFTQueueOut::MeasureForPolicy(Context *cntx, queue_t qid,
  * flow: indicates the upstream sender which should receive an overlay message
  * qid: this flow is mapped to which queue (used for getting pps estimate)
  * */
-int BKDRFTQueueOut::SendOverlay(const Flow &flow, queue_t qid,
+int BKDRFTQueueOut::SendOverlay(const Flow &flow, const flow_state *fstate,
                                 OverlayState state, uint64_t *duration) {
   // LOG(INFO) << "in SendOverlay function\n";
-  // TODO: pass flow state to this function and maybe to BufferSize
-  // send overlay
   bess::Packet *pkt = current_worker.packet_pool()->Alloc();
   if (pkt == nullptr) {
     LOG(INFO) << "Failed to allocate overlay\n";
@@ -902,12 +869,12 @@ int BKDRFTQueueOut::SendOverlay(const Flow &flow, queue_t qid,
   }
 
   auto &OverlayMan = bess::bkdrft::BKDRFTOverlayCtrl::GetInstance();
-  uint64_t pps = port_->rate_.pps[PACKET_DIR_OUT][qid];
+  uint64_t pps = port_->rate_.pps[PACKET_DIR_OUT][fstate->qid];
   uint64_t buffer_size = 0;
   uint64_t bdp = 0; // bandwidth delay product
   uint64_t dt_lw = 0;
   if (state == OverlayState::TRIGGERED) {
-    buffer_size = BufferSize(flow);
+    buffer_size = fstate->byte_in_buffer;
     if (buffer_size < buffer_len_low_water) {
       dt_lw = 1000;
     } else if  (pps == 0) {
@@ -922,7 +889,7 @@ int BKDRFTQueueOut::SendOverlay(const Flow &flow, queue_t qid,
       dt_lw = ((buffer_size + bdp) - buffer_len_low_water) * 1e9 / pps;
     }
   }
- 
+
   int ret = OverlayMan.SendOverlayMessage(flow, pkt, pps, dt_lw);
   // LOG(INFO) << "SendOverlayMessage return value " << ret << "\n";
   if (ret == 0) {

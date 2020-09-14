@@ -137,10 +137,11 @@ bool BKDRFTQueueInc::IsQueuePausedInCache(Context *ctx, queue_t qid) {
       return true;
   }
 
-  if (backpressure_) {
-    if (q_status_[qid].until > now) {
+  if (backpressure_ && !Flow::EqualTo()(q_status_[qid].flow, empty_flow)) {
+    auto &pause_ctrl = BKDRFTSwDpCtrl::GetInstance();
+    uint64_t wait_until = pause_ctrl.GetFlowStatus(q_status_[qid].flow);
+    if (wait_until > now)
       return true;
-    }
   }
   return false;
 }

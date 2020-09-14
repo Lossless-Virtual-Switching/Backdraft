@@ -263,10 +263,10 @@ int data_mapping_rule_setup(dpdk_port_t port_id, uint16_t count_queue) {
     // NOTE: mlx5 nic had problem with using multiple prio
     // map prio(i) -> queue(i) for i in [1,8)
     // flow = generate_vlan_flow(port_id, i, BKDRFT_OVERLAY_VLAN_ID, i, &error);
-    
+
     // NOTE: mlx5 nic we used did not support raw item used in the function.
     // flow = bkdrft::filter_by_ipv4_bkdrft_opt(port_id, i, i, &error);
-    
+
     // map i * 4 -> queue(i) for i in [1, 8)
     uint8_t tos = i << 2;
     flow = bkdrft::filter_by_ip_tos(port_id, tos, tos_mask, i, &error);
@@ -619,7 +619,19 @@ CommandResponse PMDPort::Init(const bess::pb::PMDPortArg &arg) {
     if (ret != 0) {
       return CommandFailure(-ret, "priority mapping rule setup failed.");
     }
-  } 
+  }
+
+  // just for testing
+  // if ( ptype_ == NIC)
+  //   for (int i = 0; i < 12; i++) {
+  //     struct rte_flow *flow;
+  //     struct rte_flow_error error;
+  //     flow = bkdrft::filter_by_udp_src_port(ret_port_id, 1001 + i, i, &error);
+  //     if (!flow) {
+  //       LOG(INFO) << "Data mapping error message: " << error.message << " \n";
+  //       return CommandFailure(-1, "failed to setup queue rules.");
+  //     }
+  //   }
 
   int offload_mask = 0;
   offload_mask |= arg.vlan_offload_rx_strip() ? ETH_VLAN_STRIP_OFFLOAD : 0;

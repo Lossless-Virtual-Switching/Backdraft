@@ -9,6 +9,9 @@ struct rte_flow *filter_by_ip_proto(uint16_t port_id, uint8_t proto,
                                     uint16_t rx_q,
                                     struct rte_flow_error *error);
 
+struct rte_flow *filter_by_udp_src_port(uint16_t port_id, uint16_t src_port,
+                                  uint16_t rx_q, struct rte_flow_error *error);
+
 struct rte_flow *filter_by_ip_dst(uint16_t port_id, uint32_t dst_addr,
                                   uint32_t dst_mask, uint16_t rx_q,
                                   struct rte_flow_error *error);
