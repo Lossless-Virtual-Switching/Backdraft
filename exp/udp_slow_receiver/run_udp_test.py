@@ -8,6 +8,8 @@ import argparse
 
 sys.path.insert(0, "../")
 from bkdrft_common import *
+# TODO: use run_udp_app instead of run_server and run_client
+# from tas_containers import run_udp_app
 
 
 cur_script_dir = os.path.dirname(os.path.abspath(__file__))
@@ -57,7 +59,7 @@ def run_server(instance):
         Start a server process
     """
     prefix = 'slow_receiver_server_{}'.format(instance)
-    cpu = ['2', '3'][instance]  # on which cpu
+    cpu = ['12', '13'][instance]  # on which cpu
     vdev = ['virtio_user0,path=/tmp/ex_vhost0.sock,queues='+str(count_queue),
             'virtio_user2,path=/tmp/ex_vhost2.sock,queues='+str(count_queue)][instance]
     server_delay = [0, slow][instance]
@@ -72,7 +74,7 @@ def run_server(instance):
             'mode': 'server',
             'inst': instance,
             'delay': server_delay,
-            'source_ip': _server_ip,
+            'source_ip': _server_ips[instance],
             }
     cmd = ('sudo {bin} --no-pci -l{cpu} --file-prefix={file-prefix} '
             '--vdev="{vdev}" --socket-mem=128 -- '
@@ -91,18 +93,19 @@ def run_server(instance):
 def run_client(instance):
     """
         Start a client process
-
-        First 20 seconds of the client runtime is not counted in
-        percentiles report. (Consult the .../apps/.../client.c source code)
     """
     port = [1001, 5001,][instance]
     prefix = 'slow_receiver_exp_client_{}'.format(instance)
-    cpu = [5, 6][instance]
+    cpu = ['15,16', 17][instance]
     vdev = ['virtio_user1,path=/tmp/ex_vhost1.sock,queues='+str(count_queue),
            'virtio_user3,path=/tmp/ex_vhost3.sock,queues='+str(count_queue),][instance]
-    ips = [[_server_ip],[_server_ip]][instance]
+    # TODO: the following line is an example of code that is not suitable!
+    # should switch to run_udp_app instead of this function
+    ips = [[_server_ips[0], _server_ips[1]],
+           [_server_ips[1]]][instance]
     _ips = ' '.join(ips)
-    _cnt_flow = [4, count_flow][instance]
+    _cnt_flow = [count_flow, count_flow][instance]
+    delay = [0000000, 0]
     args = {
             'bin': slow_receiver_exp,
             'cpu': cpu,
@@ -117,11 +120,12 @@ def run_client(instance):
             'duration': duration,
             'source_ip': _client_ip,
             'port': port,
+            'delay': delay[instance],
             }
     cmd = ('sudo {bin} --no-pci -l{cpu} --file-prefix={file-prefix} '
             '--vdev="{vdev}" --socket-mem=128 -- '
             '{source_ip} {count_queue} {sysmod} {mode} {cnt_ips} {ips} '
-            '{count_flow} {duration} {port}').format(**args)
+            '{count_flow} {duration} {port} {delay}').format(**args)
 
     print("===============")
     print("     client")
@@ -159,14 +163,17 @@ def main():
     """
 
     # Kill anything running
+    print('stop any thing running from previous tries')
     subprocess.run('sudo pkill udp_app', shell=True)  # Stop server
-    bessctl_do('daemon stop') # this may show an error it is nothing
+    bessctl_do('daemon stop', stderr=subprocess.PIPE)
+    sleep(1)
 
     # Run bess daemon
     print('start bess daemon')
-    sleep(1)
     ret = bessctl_do('daemon start')
     if ret.returncode != 0:
+        # TODO: this way of checking for failed pipeline does not work
+        # look for the bug or find a better way.
         print('failed to start bess daemon')
         return 1
 
@@ -188,11 +195,10 @@ def main():
 
     # Run server
     server_p1 = run_server(0)
+    server_p2 = run_server(1)
     sleep(3)
-    # server_p2 = run_server(1)
     # Run client
     client_p = run_client(0)
-    sleep(3)
     client_p2 = run_client(1)
 
     # Wait
@@ -201,27 +207,27 @@ def main():
     # subprocess.run('sudo pkill udp_app', shell=True)  # Stop server
     # server_p1.kill()
     server_p1.wait()
-    # server_p2.wait()
+    server_p2.wait()
 
 
     # Get output of processes
-    print('====== client1 ====')
+    print('++++++ client1 ++++')
     txt = str(client_p.stdout.read().decode())
     print(txt)
-    print('====== client2 ====')
+    print('++++++ client2 ++++')
     txt = str(client_p2.stdout.read().decode())
     print(txt)
-    print('====== server ====')
+    print('++++++ server1 ++++')
     txt = str(server_p1.stdout.read().decode())
     print(txt)
     txt = str(server_p1.stderr.read().decode())
     print(txt)
-    print('======')
-    # print('======')
-    # txt = str(server_p2.stdout.read().decode())
-    # print(txt)
-    # print('======')
+    print('++++++ server2 ++++')
+    txt = str(server_p2.stdout.read().decode())
+    print(txt)
+    print('+++++++++++++++++++')
 
+    print('----- switch stats -----')
     print('server1\n')
     p = bessctl_do('show port ex_vhost0', stdout=subprocess.PIPE)
     txt = p.stdout.decode()
@@ -236,11 +242,12 @@ def main():
     p = bessctl_do('show port ex_vhost1', stdout=subprocess.PIPE)
     txt = p.stdout.decode()
     print(txt)
+
     print('client2\n')
     p = bessctl_do('show port ex_vhost3', stdout=subprocess.PIPE)
     txt = p.stdout.decode()
     print(txt)
-    # txt = p.stdout.decode()
+
     # bessctl_do('command module client_qout0 get_pause_calls EmptyArg {}')
     bessctl_do('command module server1_qout get_pause_calls EmptyArg {}')
     bessctl_do('command module server2_qout get_pause_calls EmptyArg {}')
@@ -255,7 +262,8 @@ if __name__ == '__main__':
     parser.add_argument('mode',
       help='define whether bess or bkdrft system should be used')
     parser.add_argument('delay', type=int,
-      help='delay of slow server in micro-seconds for each batch of packets')
+      help='processing cost for each packet in cpu cycles '
+           '(for both client and server)')
     parser.add_argument('--count_flow', type=int, default=1,
       help='number of flows, per each core. used for client app')
     parser.add_argument('--cdq', action='store_true', default=False,
@@ -283,7 +291,7 @@ if __name__ == '__main__':
     duration = args.duration
 
     # TODO: having const ips does not scale
-    _server_ip = '10.10.1.3'
+    _server_ips = ['10.10.1.3', '10.10.1.4']
     _client_ip = '10.10.1.2'
 
     if cdq and sysmod != 'bkdrft':

@@ -29,7 +29,17 @@ Q_SIZE = 64
 Q = max(TX_QUEUE_COUNT, RX_QUEUE_COUNT)
 # ======================================
 
-bess.add_worker(0, 0)
+count_vsw_cores = 1
+for i in range(count_vsw_cores):
+    bess.add_worker(i, i)
+
+_next_wid = -1
+def next_wid():
+    global _next_wid
+    _next_wid += 1
+    _next_wid = _next_wid % count_vsw_cores
+    return _next_wid
+
 
 # Server 1
 #eth_vhost0
@@ -114,6 +124,12 @@ def bkdrft_pipeline():
     if COMMAND_Q:
         loop = 1
 
+
+    # q1 = Queue()
+    # q1.attach_task(wid=next_wid())
+    # q2 = Queue()
+    # q2.attach_task(wid=next_wid())
+
     for i in range(loop):
         client_qin = BKDRFTQueueInc(port=host1,
             qid=i, backpressure=BP, cdq=COMMAND_Q, overlay=False)
@@ -127,14 +143,20 @@ def bkdrft_pipeline():
         server2_qin = BKDRFTQueueInc(port=host2,
             qid=i, backpressure=BP, cdq=COMMAND_Q, overlay=False)
 
-        client_qin -> router
-        client2_qin -> router
-        server1_qin -> receive_side_x
-        server2_qin -> receive_side_x
+        client_qin  -> router         # q1
+        client2_qin -> router         # q1
+        server1_qin -> receive_side_x # q2
+        server2_qin -> receive_side_x # q2
 
+        client_qin.attach_task(wid=next_wid())
+        client2_qin.attach_task(wid=next_wid())
+        server1_qin.attach_task(wid=next_wid())
+        server2_qin.attach_task(wid=next_wid())
+
+    # q1 -> router
+    # q2 -> receive_side_x
     router:1 -> server1_qout
     router:2 -> server2_qout
-
     receive_side_x:1 -> client_qout0
     receive_side_x:2 -> client_qout2
 
