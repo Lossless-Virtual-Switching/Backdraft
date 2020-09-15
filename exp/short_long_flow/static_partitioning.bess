@@ -92,6 +92,17 @@ if host_name is None:
 instances = info.get('instances', [])
 count_instances = len(instances)
 
+# Backdraft related pipeline flags
+bp = config['bp']
+buffering = config['buffering']
+cdq = config['cdq']
+pfq = config['pfq']
+overlay = config['overlay']
+overlay_lw = config['overlay_low_water']
+overlay_hw = config['overlay_high_water']
+
+if not cdq:
+  raise Exception('This pipeline needs backdraft features: CDQ')
 
 # ===========================================#
 #                  Pipeline
@@ -105,10 +116,10 @@ if nic_req_queues > 64:
                   'It is not supported')
 
 nic_port = PMDPort(pci=out_pci, num_inc_q=nic_req_queues,
-                   num_out_q=nic_req_queues, rate_limiting=False, rate=40000,
+                   num_out_q=nic_req_queues, rate_limiting=overlay, rate=40000,
                    size_inc_q=size_q,
                    size_out_q=size_q,
-                   command_queue=False, data_mapping=False)
+                   command_queue=cdq, data_mapping=cdq)
 
 
 # TAS vhost ports
@@ -124,6 +135,13 @@ for i, instance in enumerate(instances):
     subprocess.call('sudo rm {}'.format(tas_socket), shell=True)
     print('previous socket file removed')
 
+  # rate = 40000
+  # rate_limit=False
+  # if host_name == 'node1' and i == 0:
+  #   rate_limit = True
+  #   rate = 40000
+
+
   vdev = 'eth_vhost{},iface={},queues={}'.format(i, tas_socket, count_tas_queues)
   tas_port = PMDPort(name=name,
     vdev=vdev,
@@ -131,7 +149,7 @@ for i, instance in enumerate(instances):
     num_out_q=count_tas_queues,
     size_inc_q=size_q,
     size_out_q=size_q,
-    rate_limiting=False, # rate_limit
+    rate_limiting=overlay, # rate_limit
     rate=40000)
 
   managed_ports = [p for p in
@@ -143,16 +161,34 @@ for i, instance in enumerate(instances):
 for i, (vhost, nic_queues) in enumerate(vhosts):
   vhost_queues = [j for j in range(count_queue)]
   # Tx
-  for vq, nq in zip(vhost_queues, nic_queues):
-    vhost_inc = QueueInc(port=vhost, qid=vq)
-    vhost_inc.attach_task(wid=next_wid())
-    nic_out = QueueOut(port=nic_port, qid=nq)
-    vhost_inc -> nic_out
+  vhost_inc = BKDRFTQueueInc(port=vhost, qid=vhost_queues,
+                             cdq=cdq, backpressure=bp, overlay=overlay)
+  vhost_inc.attach_task(wid=next_wid())
+
+  print(i, nic_queues)
+  nic_out = BKDRFTQueueOut(port=nic_port, qid=nic_queues,
+              count_queues=count_queue, backpressure=bp, lossless=buffering,
+              cdq=cdq, per_flow_buffering=pfq, mname='nic_'+str(i),
+              overlay=overlay)
+  # if buffering:
+  #   nic_out.attach_task(wid=next_wid())
+
+  vhost_inc -> nic_out
 
   # Rx
-  for vq, nq in zip(vhost_queues, nic_queues):
-    nic_inc = QueueInc(port=nic_port, qid=nq)
-    nic_inc.attach_task(wid=next_wid())
-    vhost_out = QueueOut(port=vhost, qid=vq)
-    nic_inc -> vhost_out
+  nic_inc = BKDRFTQueueInc(port=nic_port, qid=nic_queues,
+                           cdq=cdq, backpressure=bp, overlay=overlay)
+  nic_inc.attach_task(wid=next_wid())
+
+  vhost_out =  BKDRFTQueueOut(port=vhost, qid=vhost_queues,
+              count_queues=count_queue, backpressure=bp, lossless=buffering,
+              cdq=cdq, per_flow_buffering=pfq, mname='app_'+str(i),
+              overlay=overlay)
+  # if buffering:
+  #   vhost_out.attach_task(wid=next_wid())
+
+  # set overlay threshold for the vhost port
+  vhost_out.set_overlay_threshold(low_water=overlay_lw, high_water=overlay_hw)
+
+  nic_inc -> vhost_out
 

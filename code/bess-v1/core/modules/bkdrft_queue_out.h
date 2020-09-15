@@ -183,8 +183,8 @@ private:
   std::vector<uint64_t> overlay_per_sec;
   uint64_t stats_begin_ts_;
 
-  uint64_t buffer_len_high_water = 15000; // bytes
-  uint64_t buffer_len_low_water = 6000; // bytes
+  uint64_t buffer_len_high_water = 2500;
+  uint64_t buffer_len_low_water = 2000;
 
   // a  name given to this module. currently used for loggin pause per sec
   // statistics.

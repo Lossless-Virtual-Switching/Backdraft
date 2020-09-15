@@ -649,7 +649,7 @@ void BKDRFTQueueOut::ProcessBatchWithBuffer(Context *cntx,
   // if we are buffering then we can decide based on the buffer size
   // for each flow
 
-  if (overlay_ && fstate->byte_in_buffer > buffer_len_high_water
+  if (overlay_ && fstate->packet_in_buffer > buffer_len_high_water
       && cntx->current_ns - fstate->ts_last_overlay > fstate->no_overlay_duration) {
     fstate->ts_last_overlay = cntx->current_ns;
     fstate->overlay_state = OverlayState::TRIGGERED;
@@ -884,14 +884,14 @@ int BKDRFTQueueOut::SendOverlay(const Flow &flow, const flow_state *fstate,
   }
 
   auto &OverlayMan = bess::bkdrft::BKDRFTOverlayCtrl::GetInstance();
-  // uint64_t rate = port_->rate_.pps[PACKET_DIR_OUT][fstate->qid];
-  uint64_t rate = port_->rate_.bps[PACKET_DIR_OUT][fstate->qid];
+  uint64_t rate = port_->rate_.pps[PACKET_DIR_OUT][fstate->qid];
+  // uint64_t rate = port_->rate_.bps[PACKET_DIR_OUT][fstate->qid];
   uint64_t pps = port_->rate_.pps[PACKET_DIR_OUT][fstate->qid];
   uint64_t buffer_size = 0;
   uint64_t bdp = 0; // bandwidth delay product
   uint64_t dt_lw = 0;
   if (state == OverlayState::TRIGGERED) {
-    buffer_size = fstate->byte_in_buffer;
+    buffer_size = fstate->packet_in_buffer;
     if (buffer_size < buffer_len_low_water) {
       dt_lw = 1000;
     } else if  (rate == 0) {
@@ -900,8 +900,8 @@ int BKDRFTQueueOut::SendOverlay(const Flow &flow, const flow_state *fstate,
       // find out when the low water is reached.
       auto entry = OverlayMan.getOverlayEntry(flow);
       if (entry != nullptr) {
-        uint64_t rtt = 10000000; // us
-        bdp = entry->port->rate_.bps[PACKET_DIR_INC][entry->qid] * rtt / 1e9;
+        // uint64_t rtt = 10000000; // us
+        // bdp = entry->port->rate_.bps[PACKET_DIR_INC][entry->qid] * rtt / 1e9;
       }
       dt_lw = ((buffer_size + bdp) - buffer_len_low_water) * 1e9 / rate;
       if (dt_lw > max_overlay_pause_duration) {
@@ -911,12 +911,14 @@ int BKDRFTQueueOut::SendOverlay(const Flow &flow, const flow_state *fstate,
   }
 
   int ret = OverlayMan.SendOverlayMessage(flow, pkt, pps, dt_lw);
+  // int ret = OverlayMan.SendOverlayMessage(flow, pkt, 100000, dt_lw);
   // LOG(INFO) << "SendOverlayMessage return value " << ret << "\n";
   if (ret == 0) {
     overlay_tp_ += 1;
 
     // LOG(INFO) << "Buffer size: " << buffer_size <<  "\n";
-    // LOG(INFO) << "Sending overlay: name: " << name_ << " pps: " << pps
+    // LOG(INFO) << "Sending overlay: name: " << name_
+    //   << "buffer_size: " << buffer_size << " pps: " << pps
     //   << " pause duration: " << dt_lw << "\n";
   } else {
     bess::Packet::Free(pkt);

@@ -205,6 +205,14 @@ bool BKDRFTQueueInc::CheckQueuedCtrlMessages(Context *ctx, queue_t *qid,
   return false; // did not found a queue
 }
 
+inline bool BKDRFTQueueInc::isManagedQueue(queue_t qid) {
+  for (int i = 0; i < count_managed_queues; i++) {
+    if (qid == managed_queues[i])
+      return true;
+  }
+  return false;
+}
+
 uint32_t BKDRFTQueueInc::CDQ(Context *ctx, bess::PacketBatch *batch, queue_t &_qid) {
   // First check if there are data queues needed to be read from previous
   // control messages
@@ -258,7 +266,8 @@ uint32_t BKDRFTQueueInc::CDQ(Context *ctx, bess::PacketBatch *batch, queue_t &_q
         bess::pb::Ctrl *ctrl_msg = reinterpret_cast<bess::pb::Ctrl *>(pb);
         dqid = static_cast<queue_t>(ctrl_msg->qid());
         nb_pkts = ctrl_msg->nb_pkts();
-        q_status_[dqid].remaining_dpkt += nb_pkts;
+        if (isManagedQueue(dqid))
+          q_status_[dqid].remaining_dpkt += nb_pkts;
         // LOG(INFO) << "Received ctrl message: qid: " << (int)dqid << "\n";
 
         delete ctrl_msg;
@@ -267,8 +276,8 @@ uint32_t BKDRFTQueueInc::CDQ(Context *ctx, bess::PacketBatch *batch, queue_t &_q
             reinterpret_cast<bess::pb::Overlay *>(pb);
 
         if (overlay_) {
-      	  uint64_t pps = overlay_msg->packet_per_sec();
-          LOG(INFO) << "Received overlay message: pps: " << pps << "\n";
+      	  // uint64_t pps = overlay_msg->packet_per_sec();
+          // LOG(INFO) << "Received overlay message: pps: " << pps << "\n";
 
 	        // update port rate limit for queue
           auto &overlay_ctrl = BKDRFTOverlayCtrl::GetInstance();

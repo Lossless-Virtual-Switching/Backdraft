@@ -199,6 +199,7 @@ int do_client(void *_cntx) {
       /* rate limit */
       uint64_t ts = end_time;
       if (ts - tp_start_ts > hz) {
+        // printf("tp: %ld\n", throughput);
         throughput = 0;
         tp_start_ts = ts;
       }

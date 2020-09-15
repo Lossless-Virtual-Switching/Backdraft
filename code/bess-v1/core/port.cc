@@ -311,11 +311,13 @@ void Port::RecordRate(packet_dir_t dir, queue_t qid, bess::Packet **pkts,
 
     rate_.tp[dir][qid] = 0;
     rate_.timestamp[dir][qid] = now;
+    // LOG(INFO) << "name: " << name_ <<
+    //           "qid: " << qid << " estimated rate: "  << rate_.pps[dir][qid];
   }
 
   rate_.packets[dir][qid] += packets;
   rate_.bytes[dir][qid] += total_bytes;
-    
+
   // if (now - rate_.latest_timestamp[dir][qid] > second_ns) {
   //   rate_.latest_timestamp[dir][qid] = now;
   //   if (dir == PACKET_DIR_OUT) {
@@ -356,9 +358,13 @@ uint32_t Port::RateLimit(packet_dir_t dir, queue_t qid) {
   if (now - limiter_.timestamp[dir][qid] > second_ns) {
     limiter_.timestamp[dir][qid] = now;
     limiter_.token[dir][qid] = 0;
-    // TODO: estimate RTT and set may_increase with RTT intervals
-    may_increase = true;
     // LOG(INFO) << "recharging tokens, name: " << name_ << " dir: " << dir << " q: " << (int)qid <<  " limit: " << limit << "\n";
+  }
+
+  // TODO: estimate RTT and set may_increase with RTT intervals
+  if (now - may_increase_ts > 500e3) {
+    may_increase = true;
+    may_increase_ts = now;
   }
 
   if (allowed_to_send > 31 && allowed_to_send < 65 && may_increase) {
@@ -376,14 +382,14 @@ uint32_t Port::RateLimit(packet_dir_t dir, queue_t qid) {
 
 void Port::IncreaseRate(packet_dir_t dir, queue_t qid) {
   // increase the rate
-  // if (limiter_.limit[dir][qid] < 200e3) {
-  //   limiter_.limit[dir][qid] = limiter_.limit[dir][qid] * 10;
-  //   if (limiter_.limit[dir][qid] > 200e3)
-  //     limiter_.limit[dir][qid] = 200e3;
-  // } else {
+  if (limiter_.limit[dir][qid] < 150e3) {
+    limiter_.limit[dir][qid] = limiter_.limit[dir][qid] * 10;
+    if (limiter_.limit[dir][qid] > 200e3)
+      limiter_.limit[dir][qid] = 200e3;
+  } else {
     if (limiter_.limit[dir][qid] < 100e6) // 100 Mpps is the limit
       limiter_.limit[dir][qid] += 128;
-  // }
+  }
 }
 
 void Port::UpdateTokens(packet_dir_t dir, queue_t qid, int recv) {

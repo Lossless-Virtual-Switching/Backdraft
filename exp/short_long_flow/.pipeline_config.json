@@ -1,14 +1,16 @@
 {
   "pci": "41:00.0",
   "count_queue": 2,
-  "queue_size": 64,
-  "bp": true,
-  "cdq": true,
-  "pfq": true,
+  "queue_size": 4096,
+  "bp": false,
+  "cdq": false,
+  "pfq": false,
   "overlay": false,
-  "buffering": true,
+  "buffering": false,
+  "overlay_low_water": 6,
+  "overlay_high_water": 32,
   "interface" : "enp65s0f0",
   "cluster_config_file": "cluster_config.yml",
   "add_vlan": false,
-  "virtual_switch_cores": 1
+  "virtual_switch_cores": 8
 }

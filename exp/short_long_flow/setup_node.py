@@ -214,9 +214,9 @@ def setup_container(node_name: str, instance_number: int, config: dict):
                'vdev':vdev,
                'count_queue': count_queue,
                'sysmod': 'bkdrft' if cdq else 'bess',
-               'delay': flow_conf.get('delay_us', 0),  # no effect on client
+               'delay': flow_conf.get('delay_cycles', 0),  # no effect on client
                'ips': ips,
-               'duration': -1,
+               'duration': 30, # -1,
             }
             config.update(app_params)
         elif app == 'memcached':

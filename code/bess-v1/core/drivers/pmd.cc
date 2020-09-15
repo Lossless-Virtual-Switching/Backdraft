@@ -518,7 +518,7 @@ CommandResponse PMDPort::Init(const bess::pb::PMDPortArg &arg) {
 
   if (arg.rate_limiting()) {
     conf_.rate_limiting = true;
-    uint32_t rate = arg.rate() * 1000000;
+    uint32_t rate = arg.rate() * 1000; // 1000000;
 
     if (!rate)
       return CommandFailure(ENOENT, "rate not found");
@@ -622,16 +622,29 @@ CommandResponse PMDPort::Init(const bess::pb::PMDPortArg &arg) {
   }
 
   // just for testing
-  // if ( ptype_ == NIC)
-  //   for (int i = 0; i < 12; i++) {
-  //     struct rte_flow *flow;
-  //     struct rte_flow_error error;
-  //     flow = bkdrft::filter_by_udp_src_port(ret_port_id, 1001 + i, i, &error);
-  //     if (!flow) {
-  //       LOG(INFO) << "Data mapping error message: " << error.message << " \n";
-  //       return CommandFailure(-1, "failed to setup queue rules.");
-  //     }
-  //   }
+  // if (ptype_ == NIC) {
+  //   // for (int i = 0; i < 12; i++) {
+  //   //   struct rte_flow *flow;
+  //   //   struct rte_flow_error error;
+  //   //   flow = bkdrft::filter_by_udp_src_port(ret_port_id, 1001 + i, i, &error);
+  //   //   if (!flow) {
+  //   //     LOG(INFO) << "Data mapping error message: " << error.message << " \n";
+  //   //     return CommandFailure(-1, "failed to setup queue rules.");
+  //   //   }
+  //   // }
+  //   // struct rte_flow *flow;
+  //   // struct rte_flow_error error;
+  //   // flow = bkdrft::filter_by_udp_src_port(ret_port_id, 1001, 0, &error);
+  //   // if (!flow) {
+  //   //   LOG(INFO) << "Data mapping error message: " << error.message << " \n";
+  //   //   return CommandFailure(-1, "failed to setup queue rules.");
+  //   // }
+  //   // flow = bkdrft::filter_by_udp_src_port(ret_port_id, 1002, 2, &error);
+  //   // if (!flow) {
+  //   //   LOG(INFO) << "Data mapping error message: " << error.message << " \n";
+  //   //   return CommandFailure(-1, "failed to setup queue rules.");
+  //   // }
+  // }
 
   int offload_mask = 0;
   offload_mask |= arg.vlan_offload_rx_strip() ? ETH_VLAN_STRIP_OFFLOAD : 0;

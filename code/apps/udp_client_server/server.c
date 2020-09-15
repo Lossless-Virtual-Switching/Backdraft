@@ -74,7 +74,7 @@ int do_server(void *_cntx) {
   // int throughput[MAX_DURATION];
   uint64_t throughput = 0;
   uint64_t start_time;
-  uint64_t exp_begin = 0;
+  uint64_t exp_begin;
   uint64_t current_time;
   uint64_t current_sec = 0;
   uint64_t last_pkt_time = 0;
@@ -99,6 +99,9 @@ int do_server(void *_cntx) {
   uint32_t tmp_ip;
   uint64_t k;
   // float percentile;
+  //
+
+  uint64_t token_limit = 200000;
 
   hist = new_p_hist_from_max_value(MAX_EXPECTED_LATENCY);
 
@@ -124,6 +127,7 @@ int do_server(void *_cntx) {
   fprintf(cntx->fp, "Running server\n");
 
   exp_begin = rte_get_timer_cycles();
+  start_time = exp_begin;
   /* main worker loop */
   while (run && cntx->running) {
     // manage the next queue
@@ -131,12 +135,29 @@ int do_server(void *_cntx) {
     q_index = (q_index + 1) % count_queues;
 
     current_time = rte_get_timer_cycles();
+
     /* if experiment time has passed kill the server
      * (not all experiments need this)
      * */
     if (!first_pkt && current_time - exp_begin > 20 * hz) {
       run = 0;
       break;
+    }
+
+    /* update throughput */
+    current_sec = (current_time - start_time) / hz;
+    if (current_sec >= 1) {
+      // print_stats(throughput, hist);
+      // if (my_ip == 0xC0A80115)
+      //   printf("TP: %lu\n", throughput);
+      throughput = 0;
+      start_time = current_time;
+      current_sec = 0;
+      // printf("failed to push: %ld\n", failed_to_push);
+    }
+
+    if (my_ip == 0xC0A80115 && throughput >= token_limit) {
+      continue;
     }
 
     if (system_mode == system_bess) {
@@ -146,6 +167,7 @@ int do_server(void *_cntx) {
       // bkdrft
       nb_rx =
           poll_ctrl_queue(port, BKDRFT_CTRL_QUEUE, BURST_SIZE, rx_bufs, false);
+          // poll_ctrl_queue(port, BKDRFT_CTRL_QUEUE, 1, rx_bufs, false);
     }
 
     /* following lines are just for experimenting */
@@ -165,16 +187,6 @@ int do_server(void *_cntx) {
         }
       }
       continue;
-    }
-
-    /* update throughput */
-    current_sec = (current_time - start_time) / hz;
-    if (current_sec > 1) {
-      // print_stats(throughput, hist);
-      // printf("TP: %lu\n", throughput);
-      throughput = 0;
-      start_time = current_time;
-      // printf("failed to push: %ld\n", failed_to_push);
     }
 
     // spend some time for the whole batch

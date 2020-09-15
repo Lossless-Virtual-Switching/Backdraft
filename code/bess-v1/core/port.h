@@ -245,6 +245,7 @@ class Port {
   struct Rates rate_;
   struct RateLimiter limiter_;
   bool may_increase = true;
+  uint64_t may_increase_ts = 0;
 
   // overide this section to create a new driver -----------------------------
   Port()

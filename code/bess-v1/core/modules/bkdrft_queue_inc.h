@@ -46,6 +46,7 @@ class BKDRFTQueueInc final : public Module {
   bool CheckQueuedCtrlMessages(Context *ctx, queue_t *qid, uint32_t *burst);
   uint32_t ReadBatch(queue_t qid, bess::PacketBatch *batch, uint32_t burst);
   bool IsQueuePausedInCache(Context *ctx, queue_t qid);
+  bool isManagedQueue(queue_t qid);
 
 
  private:
