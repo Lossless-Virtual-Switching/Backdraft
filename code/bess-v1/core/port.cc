@@ -356,15 +356,18 @@ uint32_t Port::RateLimit(packet_dir_t dir, queue_t qid) {
   if (now - limiter_.timestamp[dir][qid] > second_ns) {
     limiter_.timestamp[dir][qid] = now;
     limiter_.token[dir][qid] = 0;
+    // TODO: estimate RTT and set may_increase with RTT intervals
+    may_increase = true;
     // LOG(INFO) << "recharging tokens, name: " << name_ << " dir: " << dir << " q: " << (int)qid <<  " limit: " << limit << "\n";
   }
 
-  if (allowed_to_send >= 32) {
-    // If client can send, increase the window
+  if (allowed_to_send > 31 && allowed_to_send < 65 && may_increase) {
+    // If client can send and the limit is about to reach, increase the rate
     // if client can send and if packets are not
     // dropped then we can assume an ack packet happening.
     // if client can not send it is because it has used its link capacity
     //
+    may_increase = false;
     IncreaseRate(dir, qid);
   }
 
@@ -373,13 +376,14 @@ uint32_t Port::RateLimit(packet_dir_t dir, queue_t qid) {
 
 void Port::IncreaseRate(packet_dir_t dir, queue_t qid) {
   // increase the rate
-  if (limiter_.limit[dir][qid] < 500000) {
-    limiter_.limit[dir][qid] = limiter_.limit[dir][qid] * 10;
-    if (limiter_.limit[dir][qid] > 500000)
-      limiter_.limit[dir][qid] = 500000;
-  } else {
-    limiter_.limit[dir][qid] += 1024;
-  }
+  // if (limiter_.limit[dir][qid] < 200e3) {
+  //   limiter_.limit[dir][qid] = limiter_.limit[dir][qid] * 10;
+  //   if (limiter_.limit[dir][qid] > 200e3)
+  //     limiter_.limit[dir][qid] = 200e3;
+  // } else {
+    if (limiter_.limit[dir][qid] < 100e6) // 100 Mpps is the limit
+      limiter_.limit[dir][qid] += 128;
+  // }
 }
 
 void Port::UpdateTokens(packet_dir_t dir, queue_t qid, int recv) {

@@ -889,6 +889,10 @@ message BKDRFTQueueOutCommandGetOverlayTpResponse {
   repeated uint64 throughput = 1; /// number of control packets sent in last second
 }
 
+message BKDRFTQueueOutCommandPauseCallsResponse {
+  repeated uint64 pcps = 1;
+}
+
 /**
  * The BKDRFTQueueOut module has a command `set_overlay_threshold()` that sets
  * low and high water values from parameters. The values are in bytes.

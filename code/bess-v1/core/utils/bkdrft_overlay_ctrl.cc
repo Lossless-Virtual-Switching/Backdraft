@@ -143,9 +143,13 @@ int BKDRFTOverlayCtrl::SendOverlayMessage(const Flow &flow, Packet *pkt,
     // LOG(INFO) << "original flow: " << FlowToString(flow) << "\n";
     // LOG(INFO) << "overlay flow: " << FlowToString(PacketToFlow(*pkt)) << "\n";
 
+    // TODO: find out the doorbell queue for the port using below
     FillOverlayPacket(flow, pkt, pps, pause_duration);
+
+    // bess::bkdrft::mark_packet_with_queue_number(pkt, BKDRFT_CTRL_QUEUE);
     int sent = entry->second.port->SendPackets(BKDRFT_CTRL_QUEUE, &pkt, 1);
     if(sent == 0) {
+      // TODO: do not free packet in this function (maybe caller wants to reuse)
       bess::Packet::Free(pkt);
       LOG(INFO) << "FREED bkdrft overlay packet, failed to send!\n";
       return -1; // failed

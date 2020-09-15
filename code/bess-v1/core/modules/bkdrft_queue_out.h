@@ -22,7 +22,8 @@ const int drop_high_water = 30; // assumming batch size is 32
 // const int buffer_len_low_water = 64;
 // const uint64_t buffer_len_low_water = 6000; // bytes
 
-const int bp_buffer_len_high_water = 6;
+const int bp_buffer_len_high_water = 2700;
+const uint64_t max_overlay_pause_duration = 5000000; // ns
 
 using bess::bkdrft::Flow;
 struct queue_flow_info {

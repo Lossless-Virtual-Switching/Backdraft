@@ -884,6 +884,8 @@ int BKDRFTQueueOut::SendOverlay(const Flow &flow, const flow_state *fstate,
   }
 
   auto &OverlayMan = bess::bkdrft::BKDRFTOverlayCtrl::GetInstance();
+  // uint64_t rate = port_->rate_.pps[PACKET_DIR_OUT][fstate->qid];
+  uint64_t rate = port_->rate_.bps[PACKET_DIR_OUT][fstate->qid];
   uint64_t pps = port_->rate_.pps[PACKET_DIR_OUT][fstate->qid];
   uint64_t buffer_size = 0;
   uint64_t bdp = 0; // bandwidth delay product
@@ -892,16 +894,19 @@ int BKDRFTQueueOut::SendOverlay(const Flow &flow, const flow_state *fstate,
     buffer_size = fstate->byte_in_buffer;
     if (buffer_size < buffer_len_low_water) {
       dt_lw = 1000;
-    } else if  (pps == 0) {
-      dt_lw = 1000000000;
+    } else if  (rate == 0) {
+      dt_lw = 1000000;
     } else {
       // find out when the low water is reached.
       auto entry = OverlayMan.getOverlayEntry(flow);
       if (entry != nullptr) {
         uint64_t rtt = 10000000; // us
-        bdp = entry->port->rate_.pps[PACKET_DIR_INC][entry->qid] * rtt / 1e9;
+        bdp = entry->port->rate_.bps[PACKET_DIR_INC][entry->qid] * rtt / 1e9;
       }
-      dt_lw = ((buffer_size + bdp) - buffer_len_low_water) * 1e9 / pps;
+      dt_lw = ((buffer_size + bdp) - buffer_len_low_water) * 1e9 / rate;
+      if (dt_lw > max_overlay_pause_duration) {
+        dt_lw = max_overlay_pause_duration;
+      }
     }
   }
 
@@ -965,12 +970,14 @@ struct task_result BKDRFTQueueOut::RunTask(Context *ctx,
 
 CommandResponse BKDRFTQueueOut::CommandPauseCalls(const bess::pb::EmptyArg &)
 {
-      for (size_t i = 0; i < pcps.size(); i++) {
-        LOG(INFO) << "pcps: " << pcps.at(i) << " name: " << name_ << "\n";
-      }
-      LOG(INFO) << "===================="
-                << "\n";
-      return CommandSuccess();
+  bess::pb::BKDRFTQueueOutCommandPauseCallsResponse resp;
+  for (size_t i = 0; i < pcps.size(); i++) {
+    LOG(INFO) << "pcps: " << pcps.at(i) << " name: " << name_ << "\n";
+    resp.add_pcps(pcps.at(i));
+  }
+  LOG(INFO) << "===================="
+            << "\n";
+  return CommandSuccess(resp);
 }
 
 CommandResponse BKDRFTQueueOut::CommandGetCtrlMsgTp(const bess::pb::EmptyArg &)

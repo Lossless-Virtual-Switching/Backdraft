@@ -58,7 +58,8 @@ int prepare_packet(bess::Packet *pkt, void *payload, size_t size,
 
   // Ethernet
   // pkt->append(128)
-  uint8_t *ptr = reinterpret_cast<uint8_t *>(pkt->head_data());
+  // uint8_t *ptr = reinterpret_cast<uint8_t *>(pkt->head_data());
+  uint8_t *ptr = reinterpret_cast<uint8_t *>(pkt->append(256));
   assert(ptr != nullptr);
   Ethernet *eth = reinterpret_cast<Ethernet *>(ptr);
   eth->dst_addr = flow->eth_dst_addr;  // s_eth->dst_addr;
@@ -84,9 +85,9 @@ int prepare_packet(bess::Packet *pkt, void *payload, size_t size,
   assert(ptr != nullptr);
   bess::utils::Copy(ptr, payload, size, false);
 
-  pkt->set_total_len(128);
-  pkt->set_data_len(128);
-  return 128;  // successfuly prepared the pkt.
+  pkt->set_total_len(256);
+  pkt->set_data_len(208);
+  return 256;  // successfuly prepared the pkt.
 }
 
 int prepare_ctrl_packet(bess::Packet *pkt, uint8_t qid, uint32_t nb_pkts,
