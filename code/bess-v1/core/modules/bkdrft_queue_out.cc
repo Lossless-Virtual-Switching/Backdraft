@@ -62,6 +62,10 @@ const Commands BKDRFTQueueOut::cmds = {
     MODULE_CMD_FUNC(&BKDRFTQueueOut::CommandGetOverlayTp), Command::THREAD_SAFE},
   {"set_overlay_threshold", "BKDRFTQueueOutCommandSetOverlayThresholdArg",
     MODULE_CMD_FUNC(&BKDRFTQueueOut::CommandSetOverlayThreshold),
+    Command::THREAD_UNSAFE},
+  {"set_backpressure_threshold",
+    "BKDRFTQueueOutCommandSetBackpressureThresholdArg",
+    MODULE_CMD_FUNC(&BKDRFTQueueOut::CommandSetBackpressureThreshold),
     Command::THREAD_UNSAFE}
 };
 
@@ -573,16 +577,19 @@ inline void BKDRFTQueueOut::Pause(Context *cntx, const Flow &flow,
   uint64_t pps;
   uint64_t duration;
   uint64_t ts;
+  uint64_t effect_time = 200000; // TODO: find this variable, rtt + ...
+  uint64_t estimated_buffer_len;
   Port *p = port_;
   pps = p->rate_.pps[PACKET_DIR_OUT][qid];
   if (pps == 0) {
     // LOG(INFO) << "pps is zero\n";
     duration = 100000; // 100 us
   } else {
-    duration = ((buffer_size * 1000000000UL) / pps);
+    estimated_buffer_len = buffer_size + (pps * effect_time / 1000000);
+    duration = ((estimated_buffer_len * 1000000000UL) / pps);
     if (duration > MAX_PAUSE_DURATION) {
       // LOG(INFO) << "more than max pause durtaion\n";
-      duration = MAX_PAUSE_DURATION;
+      // duration = MAX_PAUSE_DURATION;
     } else if (duration < MIN_PAUSE_DURATION) {
       // LOG(INFO) << "less than min pause duration\n";
       // duration = MIN_PAUSE_DURATION;
@@ -1013,6 +1020,14 @@ CommandResponse BKDRFTQueueOut::CommandSetOverlayThreshold(
   LOG(INFO) << "Update Overlay Threshold: name: " << name_
             << " lw: " << buffer_len_low_water
             << " hw: " << buffer_len_high_water << "\n";
+  return CommandSuccess();
+}
+
+CommandResponse BKDRFTQueueOut::CommandSetBackpressureThreshold(
+  const bess::pb::BKDRFTQueueOutCommandSetBackpressureThresholdArg &arg) {
+  bp_buffer_len_high_water = arg.threshold();
+  LOG(INFO) << "Update Backpressure Threshold: Name: " << name_
+            << " threshold: " << bp_buffer_len_high_water << "\n";
   return CommandSuccess();
 }
 

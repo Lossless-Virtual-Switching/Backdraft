@@ -902,6 +902,10 @@ message BKDRFTQueueOutCommandSetOverlayThresholdArg {
   uint64 high_water=2; /// High water value in bytes
 }
 
+message BKDRFTQueueOutCommandSetBackpressureThresholdArg {
+  uint64 threshold = 1; /// Backpressure threshold
+}
+
 /**
  * The Queue module implements a simple packet queue.
  *
