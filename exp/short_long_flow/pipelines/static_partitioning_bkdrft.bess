@@ -1,5 +1,5 @@
 """
-Multi Threading Pipeline Configuration
+Backdraft Static Partitioning Pipeline Configuration
 """
 import os
 import sys
@@ -77,6 +77,7 @@ def get_tci(prio, dei, vlan_id):
   tci = prio << 13 | 0 << 12 | vlan_id
   return tci
 
+
 _next_wid = -1
 def next_wid():
   global _next_wid
@@ -97,6 +98,12 @@ buffering = config['buffering']
 cdq = config['cdq']
 pfq = config['pfq']
 overlay = config['overlay']
+overlay_lw = config['overlay_low_water']
+overlay_hw = config['overlay_high_water']
+bp_threshold = config['backpressure_threshold']
+
+if not cdq:
+  raise Exception('This pipeline needs backdraft features: CDQ')
 
 # ===========================================#
 #                  Pipeline
@@ -104,13 +111,21 @@ overlay = config['overlay']
 
 
 # PCI of port connected to switch
-sw_port = PMDPort(pci=out_pci, num_inc_q=12, num_out_q=12,
-           rate_limiting=overlay, rate=40, command_queue=cdq, data_mapping=cdq)
+nic_req_queues = count_instances * count_queue
+if nic_req_queues > 64:
+  raise Exception('more than 64 queues of the NIC is needed. '
+                  'It is not supported')
+
+nic_port = PMDPort(pci=out_pci, num_inc_q=nic_req_queues,
+                   num_out_q=nic_req_queues, rate_limiting=overlay, rate=40000,
+                   size_inc_q=size_q,
+                   size_out_q=size_q,
+                   command_queue=cdq, data_mapping=cdq)
 
 
 # TAS vhost ports
 vhosts = []
-l2fwd_entries = []
+next_free_port = 0
 for i, instance in enumerate(instances):
   name = 'tas_{}_{}'.format(instance['type'], i)
   tas_socket = '/tmp/{}.sock'.format(name)
@@ -121,63 +136,62 @@ for i, instance in enumerate(instances):
     subprocess.call('sudo rm {}'.format(tas_socket), shell=True)
     print('previous socket file removed')
 
-  if 'count_queue' in instance:
-    tmp_count_queue = instance['count_queue']
-  else:
-    tmp_count_queue = count_tas_queues
+  # rate = 40000
+  # rate_limit=False
+  # if host_name == 'node1' and i == 0:
+  #   rate_limit = True
+  #   rate = 40000
 
-  vdev = 'eth_vhost{},iface={},queues={}'.format(i, tas_socket, tmp_count_queue)
+
+  vdev = 'eth_vhost{},iface={},queues={}'.format(i, tas_socket, count_tas_queues)
   tas_port = PMDPort(name=name,
     vdev=vdev,
-    num_inc_q=tmp_count_queue,
-    num_out_q=tmp_count_queue,
+    num_inc_q=count_tas_queues,
+    num_out_q=count_tas_queues,
     size_inc_q=size_q,
-    size_out_q=size_q * 4,
-    rate_limiting=overlay,
-    rate=40)
+    size_out_q=size_q,
+    rate_limiting=overlay, # rate_limit
+    rate=40000)
 
-  vhosts.append(tas_port)
+  managed_ports = [p for p in
+                         range(next_free_port, next_free_port + count_queue)]
+  next_free_port += count_queue
+  vhosts.append((tas_port, managed_ports))
 
 
+for i, (vhost, nic_queues) in enumerate(vhosts):
+  vhost_queues = [j for j in range(count_queue)]
+  # Tx
+  vhost_inc = BKDRFTQueueInc(port=vhost, qid=vhost_queues,
+                             cdq=cdq, backpressure=bp, overlay=overlay)
+  vhost_inc.attach_task(wid=next_wid())
 
-# RX
-nic_q = 0
-if not cdq and host_name == 'node2':
-  # Only node 2 receives packets so do not allocate cpu for rx on the node1
-  # each queue should be polled
-  print ('setup rx')
-  for i in range(count_queue):
-    sw_q_inc = QueueInc(port=sw_port, qid=nic_q)
-    nic_q += 1
-    sw_q_inc.attach_task(wid=next_wid())
+  print(i, nic_queues)
+  nic_out = BKDRFTQueueOut(port=nic_port, qid=nic_queues,
+              count_queues=count_queue, backpressure=bp, lossless=buffering,
+              cdq=cdq, per_flow_buffering=pfq, mname='nic_'+str(i),
+              overlay=overlay)
+  # if buffering:
+  #   nic_out.attach_task(wid=next_wid())
+  nic_out.set_backpressure_threshold(threshold=bp_threshold)
 
-    vhost_qout = QueueOut(port=vhosts[0], qid=i)
-    sw_q_inc -> vhost_qout
+  vhost_inc -> nic_out
 
-  for i in range(4):
-    sw_q_inc = QueueInc(port=sw_port, qid=nic_q)
-    nic_q += 1
-    sw_q_inc.attach_task(wid=next_wid())
+  # Rx
+  nic_inc = BKDRFTQueueInc(port=nic_port, qid=nic_queues,
+                           cdq=cdq, backpressure=bp, overlay=overlay)
+  nic_inc.attach_task(wid=next_wid())
 
-    vhost_qout = QueueOut(port=vhosts[1], qid=i)
-    sw_q_inc -> vhost_qout
+  vhost_out =  BKDRFTQueueOut(port=vhost, qid=vhost_queues,
+              count_queues=count_queue, backpressure=bp, lossless=buffering,
+              cdq=cdq, per_flow_buffering=pfq, mname='app_'+str(i),
+              overlay=overlay)
+  # if buffering:
+  #   vhost_out.attach_task(wid=next_wid())
 
-# TX
-if not cdq and host_name == 'node1':
-  # each queue should be polled
-  print('setup tx')
-  for j in range(count_queue):
-    qinc =QueueInc(port=vhosts[0], qid=nic_q)
-    qout = QueueOut(port=sw_port, qid=j)
-    qinc -> qout
-    nic_q += 1
-    qinc.attach_task(wid=next_wid())
+  # set overlay threshold for the vhost port
+  vhost_out.set_overlay_threshold(low_water=overlay_lw, high_water=overlay_hw)
+  vhost_out.set_backpressure_threshold(threshold=bp_threshold)
 
-  # each queue should be polled
-  for j in range(4):
-    qinc = QueueInc(port=vhosts[1], qid=j)
-    qout = QueueOut(port=sw_port, qid=nic_q)
-    qinc -> qout
-    nic_q += 1
-    qinc.attach_task(wid=next_wid())
+  nic_inc -> vhost_out
 

@@ -511,14 +511,12 @@ int main(int argc, char *argv[]) {
 
     uint64_t tmp_array[2][32] ={};
     for (int i = 0; i < count_core; i++) {
+      /* stop other wokers from running */
       cntxs[i].running = 0;
       for (int z=0;z<32;z++) {
         tmp_array[0][z] += cntxs[i].tmp_array[0][z];
         tmp_array[1][z] += cntxs[i].tmp_array[1][z];
       }
-      free(cntxs[i].tmp_array[0]);
-      free(cntxs[i].tmp_array[1]);
-      free(cntxs[i].tmp_array);
     }
 
     sleep(4);
@@ -526,6 +524,7 @@ int main(int argc, char *argv[]) {
     for (int i = 0; i < count_core; i++) {
       printf("------ worker %d ------\n", i);
       printf("%s\n", output_buffers[i]);
+      printf("------  end  ---------\n");
     }
 
     // printf("1001...1008\n");
@@ -560,6 +559,9 @@ int main(int argc, char *argv[]) {
   for (int i = 0; i < count_core; i++) {
     if (mode == mode_server) {
       free(cntxs[i].managed_queues);
+      free(cntxs[i].tmp_array[0]);
+      free(cntxs[i].tmp_array[1]);
+      free(cntxs[i].tmp_array);
     } else {
       free(cntxs[i].dst_ips);
     }

@@ -1,5 +1,8 @@
 """
-FlowGen Pipeline Configuration
+General Pipeline Configuration
+
+This pipeline supports all features of Backdraft, But, does not scale well.
+Backdraft static partitioning concept should be added for scalability.
 """
 import os
 import sys

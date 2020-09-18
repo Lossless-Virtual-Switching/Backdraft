@@ -96,7 +96,7 @@ def run_client(instance):
     """
     port = [1001, 5001,][instance]
     prefix = 'slow_receiver_exp_client_{}'.format(instance)
-    cpu = ['15,16', 17][instance]
+    cpu = ['15', 17][instance]
     vdev = ['virtio_user1,path=/tmp/ex_vhost1.sock,queues='+str(count_queue),
            'virtio_user3,path=/tmp/ex_vhost3.sock,queues='+str(count_queue),][instance]
     # TODO: the following line is an example of code that is not suitable!
@@ -104,7 +104,7 @@ def run_client(instance):
     ips = [[_server_ips[0], _server_ips[1]],
            [_server_ips[1]]][instance]
     _ips = ' '.join(ips)
-    _cnt_flow = [count_flow, count_flow][instance]
+    _cnt_flow = [2, count_flow][instance]
     delay = [0000000, 0]
     args = {
             'bin': slow_receiver_exp,
@@ -112,7 +112,7 @@ def run_client(instance):
             'file-prefix': prefix,
             'vdev': vdev,
             'count_queue': count_queue,
-	          'sysmod': 'bess' if sysmod == 'bess-bp' else sysmod,
+            'sysmod': 'bess' if sysmod == 'bess-bp' else sysmod,
             'mode': 'client',
             'cnt_ips': len(ips),
             'ips':  _ips,

@@ -339,7 +339,7 @@ int do_client(void *_cntx) {
 
         if (end_time > start_time + ignore_result_duration * hz) {
           total_sent_pkts[k] += nb_tx;
-          // nothing is failed
+          /* nothing is failed */
           // failed_to_push[k] += BURST_SIZE - nb_tx;
         }
 
@@ -353,8 +353,10 @@ int do_client(void *_cntx) {
         //   rte_pktmbuf_free(bufs[i]);
 
         throughput += nb_tx;
+        // tx_pkts = 0;
+        // break;
 
-        // delay between sending each batch
+        /* delay between sending each batch */
         if (delay_cycles > 0) {
           // rte_delay_us_block(delay_us);
           uint64_t now = rte_get_tsc_cycles();
@@ -365,13 +367,28 @@ int do_client(void *_cntx) {
           }
         }
 
+        /* what if the time of experiment has passed and the client is stuck
+         * in this loop?
+         * */
+        // end_time = rte_get_timer_cycles();
+        // if (duration > 0 && end_time > start_time + duration) {
+        //   if (can_send) {
+        //     can_send = false;
+        //     start_time = rte_get_timer_cycles();
+        //     duration = 5 * rte_get_timer_hz();
+        //     /* wait 10 sec for packets in the returning path */
+        //   } else {
+        //     break;
+        //   }
+        // }
+
       }
     } /* end if (can_send) */
 
     if (!bidi)
       continue;
 
-    // recv packets
+    /* recv packets */
 recv:
     for (rx_q = qid; rx_q < qid + count_queues; rx_q++) {
       while (1) {

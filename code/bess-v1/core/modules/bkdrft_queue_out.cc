@@ -917,16 +917,21 @@ int BKDRFTQueueOut::SendOverlay(const Flow &flow, const flow_state *fstate,
     }
   }
 
+  // do not set rate to less than a batch.
+  if (pps < 32) {
+    pps = 32;
+  }
+
   int ret = OverlayMan.SendOverlayMessage(flow, pkt, pps, dt_lw);
   // int ret = OverlayMan.SendOverlayMessage(flow, pkt, 100000, dt_lw);
   // LOG(INFO) << "SendOverlayMessage return value " << ret << "\n";
   if (ret == 0) {
     overlay_tp_ += 1;
 
-    // LOG(INFO) << "Buffer size: " << buffer_size <<  "\n";
-    // LOG(INFO) << "Sending overlay: name: " << name_
-    //   << "buffer_size: " << buffer_size << " pps: " << pps
-    //   << " pause duration: " << dt_lw << "\n";
+    LOG(INFO) << "Buffer size: " << buffer_size <<  "\n";
+    LOG(INFO) << "Sending overlay: name: " << name_
+      << "buffer_size: " << buffer_size << " pps: " << pps
+      << " pause duration: " << dt_lw << "\n";
   } else {
     bess::Packet::Free(pkt);
   }

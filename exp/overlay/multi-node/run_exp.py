@@ -54,7 +54,8 @@ def run_server(conf):
 
 
 def get_pfc_results():
-    log = subprocess.check_output('ethtool -S eno50 | grep prio3_pause', shell=True)
+    interface = 'enp65s0f0'
+    log = subprocess.check_output('ethtool -S {} | grep prio3_pause'.format(interface), shell=True)
     log = log.decode()
     log = log.strip()
     lines = log.split('\n')

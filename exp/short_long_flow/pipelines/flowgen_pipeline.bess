@@ -1,5 +1,7 @@
 """
 FlowGen Pipeline Configuration
+
+A flowgen module is connected to the NIC.
 """
 
 import scapy.all as scapy

@@ -216,7 +216,7 @@ def setup_container(node_name: str, instance_number: int, config: dict):
                'sysmod': 'bkdrft' if cdq else 'bess',
                'delay': flow_conf.get('delay_cycles', 0),  # no effect on client
                'ips': ips,
-               'duration': 30, # -1,
+               'duration': 30,
             }
             config.update(app_params)
         elif app == 'memcached':
@@ -327,7 +327,8 @@ if __name__ == '__main__':
                 sys.exit(0)
 
         # bring up BESS pipeline
-        server_pipeline = os.path.join(cur_script_dir, 'general_pipeline.bess')
+        pipeline_script_path = pipeline_config['pipeline_script_file']
+        server_pipeline = os.path.join(cur_script_dir, pipeline_script_path)
         res = setup_bess_pipeline(server_pipeline)
         if res < 0:
             sys.exit(res)

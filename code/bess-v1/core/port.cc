@@ -382,13 +382,13 @@ uint32_t Port::RateLimit(packet_dir_t dir, queue_t qid) {
 
 void Port::IncreaseRate(packet_dir_t dir, queue_t qid) {
   // increase the rate
-  if (limiter_.limit[dir][qid] < 150e3) {
+  if (limiter_.limit[dir][qid] < 350e3) {
     limiter_.limit[dir][qid] = limiter_.limit[dir][qid] * 10;
-    if (limiter_.limit[dir][qid] > 200e3)
-      limiter_.limit[dir][qid] = 200e3;
+    if (limiter_.limit[dir][qid] > 350e3)
+      limiter_.limit[dir][qid] = 350e3;
   } else {
     if (limiter_.limit[dir][qid] < 100e6) // 100 Mpps is the limit
-      limiter_.limit[dir][qid] += 128;
+      limiter_.limit[dir][qid] += 1024;
   }
 }
 

@@ -100,22 +100,23 @@ def bkdrft_pipeline():
         {'start': 5000, 'end': 6000, 'gate': 2},
     ])
 
-    client_qout0 = BKDRFTQueueOut(port=host1, qid=0, count_queues=CNT_Q,
+    queue_ids = [i for i in range(CNT_Q)]
+    client_qout0 = BKDRFTQueueOut(port=host1, qid=queue_ids, count_queues=CNT_Q,
         backpressure=BP, lossless=LOSSLESS, cdq=COMMAND_Q, per_flow_buffering=PFQ,
         ecn_threshold=ECNT, overlay=False, mname='client')
 
-    client_qout2 = BKDRFTQueueOut(port=client2, qid=0, count_queues=CNT_Q,
+    client_qout2 = BKDRFTQueueOut(port=client2, qid=queue_ids, count_queues=CNT_Q,
         backpressure=BP, lossless=LOSSLESS, cdq=COMMAND_Q, per_flow_buffering=PFQ,
         ecn_threshold=ECNT, overlay=False, mname='client')
 
     # client_qout0 = QueueOut(port=host1.name, qid=0)
     # client_qout1 = QueueOut(port=host1.name, qid=1)
 
-    server1_qout::BKDRFTQueueOut(port=host0.name, qid=0, count_queues=CNT_Q,
+    server1_qout::BKDRFTQueueOut(port=host0.name, qid=queue_ids, count_queues=CNT_Q,
         backpressure=BP, lossless=LOSSLESS, cdq=COMMAND_Q, per_flow_buffering=PFQ,
         ecn_threshold=ECNT, overlay=False, mname='server1')
 
-    server2_qout::BKDRFTQueueOut(port=host2.name, qid=0, count_queues=CNT_Q,
+    server2_qout::BKDRFTQueueOut(port=host2.name, qid=queue_ids, count_queues=CNT_Q,
         backpressure=BP, lossless=LOSSLESS, cdq=COMMAND_Q, per_flow_buffering=PFQ,
         ecn_threshold=ECNT, overlay=False, mname='server2')
 
@@ -131,17 +132,19 @@ def bkdrft_pipeline():
     # q2.attach_task(wid=next_wid())
 
     for i in range(loop):
+        if not COMMAND_Q:
+          queue_ids = [i]
         client_qin = BKDRFTQueueInc(port=host1,
-            qid=i, backpressure=BP, cdq=COMMAND_Q, overlay=False)
+            qid=queue_ids, backpressure=BP, cdq=COMMAND_Q, overlay=False)
 
         client2_qin = BKDRFTQueueInc(port=client2,
-            qid=i, backpressure=BP, cdq=COMMAND_Q, overlay=False)
+            qid=queue_ids, backpressure=BP, cdq=COMMAND_Q, overlay=False)
 
         server1_qin = BKDRFTQueueInc(port=host0,
-            qid=i, backpressure=BP, cdq=COMMAND_Q, overlay=False)
+            qid=queue_ids, backpressure=BP, cdq=COMMAND_Q, overlay=False)
 
         server2_qin = BKDRFTQueueInc(port=host2,
-            qid=i, backpressure=BP, cdq=COMMAND_Q, overlay=False)
+            qid=queue_ids, backpressure=BP, cdq=COMMAND_Q, overlay=False)
 
         client_qin  -> router         # q1
         client2_qin -> router         # q1
