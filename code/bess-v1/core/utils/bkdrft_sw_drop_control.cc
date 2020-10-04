@@ -18,7 +18,7 @@ namespace bess {
 
 			// now = rdtsc();
 			// now  = tsc_to_ns(now);  // nano seconds
-			
+
 			if (entry == nullptr) {
 				flowBook_.Insert(flow, {
 					.until = ts,

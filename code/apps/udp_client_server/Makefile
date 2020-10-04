@@ -20,6 +20,7 @@ SRCS-y += utils/percentile.c
 SRCS-y += utils/packet.c
 SRCS-y += utils/flow_rules.c
 SRCS-y += utils/arp.c
+SRCS-y += utils/zipf.c
 SRCS-y += include/bkdrft_msg.pb-c.c
 
 CFLAGS += $(WERROR_FLAGS)

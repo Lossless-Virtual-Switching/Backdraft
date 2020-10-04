@@ -1,7 +1,8 @@
 # Short Long Flow Experiment
-For running experiment you can run `setup_node.py`. This scrip reads the 
-cluster config file (default file is cluster\_config.yml) and runs some
-containers and connect them to BESS pipeline.
+For running experiment you can run `setup_node.py`. This scrip reads the
+cluster config file (e.g. file is cluster\_config.yml) and runs some
+containers and connect them to BESS pipeline. The path to the cluster config
+file along other critical values should be provided in `.pipeline_config.json`.
 
 # Configuration
 For running this experiment two configuration files are need.
@@ -69,7 +70,7 @@ by 'test\_1'
 ## Flow Configuration
 Some application can be defined here. They are linked to instances using
 flow\_config\_name value in cluster\_config.yml.
- 
+
 an example of config file is given below:
 
 ```

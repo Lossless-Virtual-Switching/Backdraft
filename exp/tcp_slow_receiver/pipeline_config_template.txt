@@ -69,10 +69,6 @@ client2 = PMDPort(
 
 # plumbing the bidirectional path
 aggregate = Merge()
-# client_side_dmux = Demultiplex(ranges=[
-#   {'start': 1000, 'end': 2000, 'gate': 1},
-#   {'start': 5000, 'end': 6000, 'gate': 2},
-# ])
 client_side_iplookup = IPLookup()
 client_side_iplookup.add(prefix='10.10.0.1', prefix_len=32, gate=1)  # should match with container
 client_side_iplookup.add(prefix='10.10.0.2', prefix_len=32, gate=2)  # should match with container
@@ -86,10 +82,6 @@ server_side_iplookup.add(prefix='0.0.0.0', prefix_len=0, gate=0)  # should match
 srepeater = Replicate(gates=[1, 2])
 
 aggregate_server = Merge()
-# server_side_dmux = Demultiplex(ranges=[
-#   {'start': 1000, 'end': 2000, 'gate': 1},
-#   {'start': 5000, 'end': 6000, 'gate': 2},
-# ])
 
 server_1_out = BKDRFTQueueOut(port=server1, qid=0, count_queues=Q,
   backpressure=bp, lossless=lossless, cdq=cdq, per_flow_buffering=pfq,
@@ -101,19 +93,19 @@ server_2_out = BKDRFTQueueOut(port=server2, qid=0, count_queues=Q,
   mname='server2', overlay=False)
 # server_2_out = QueueOut(port=server2, qid=0)
 
-if cdq:
-    client_1_out = BKDRFTQueueOut(port=client1, qid=0, count_queues=Q,
-      backpressure=bp, lossless=lossless, cdq=cdq, per_flow_buffering=pfq,
-      mname='client1', overlay=False)
-else:
-    client_1_out = QueueOut(port=client1, qid=0)
+# if cdq:
+client_1_out = BKDRFTQueueOut(port=client1, qid=0, count_queues=Q,
+    backpressure=bp, lossless=lossless, cdq=cdq, per_flow_buffering=pfq,
+    mname='client1', overlay=False)
+# else:
+#     client_1_out = QueueOut(port=client1, qid=0)
 
-if cdq:
-    client_2_out = BKDRFTQueueOut(port=client2, qid=0, count_queues=Q,
-      backpressure=bp, lossless=lossless, cdq=cdq, per_flow_buffering=pfq,
-      mname='client2', overlay=False)
-else:
-    client_2_out = QueueOut(port=client2, qid=0)
+# if cdq:
+client_2_out = BKDRFTQueueOut(port=client2, qid=0, count_queues=Q,
+    backpressure=bp, lossless=lossless, cdq=cdq, per_flow_buffering=pfq,
+    mname='client2', overlay=False)
+# else:
+#     client_2_out = QueueOut(port=client2, qid=0)
 
 # client
 BKDRFTQueueInc(port=client1, qid=0, backpressure=bp, cdq=cdq) -> aggregate
@@ -139,7 +131,7 @@ if not cdq:
         BKDRFTQueueInc(port=client1, qid=i, backpressure=bp, cdq=cdq) -> aggregate
         BKDRFTQueueInc(port=client2, qid=i, backpressure=bp, cdq=cdq) -> aggregate
         BKDRFTQueueInc(port=server1, qid=i, backpressure=bp, cdq=cdq) -> aggregate_server
-        BKDRFTQueueInc(port=server2, qid=i, backpressure=bp, cdq=cdq) ->aggregate_server 
+        BKDRFTQueueInc(port=server2, qid=i, backpressure=bp, cdq=cdq) -> aggregate_server
 
 
 aggregate_server -> server_side_iplookup

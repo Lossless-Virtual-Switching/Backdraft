@@ -198,6 +198,8 @@ struct QueueStats {
   BatchHistogram requested_hist;
   BatchHistogram actual_hist;
   BatchHistogram diff_hist;
+  uint64_t overlay_packets;
+  uint64_t overlay_duration;
 };
 
 struct Rates {
@@ -207,6 +209,8 @@ struct Rates {
   uint64_t packets[PACKET_DIRS][MAX_QUEUES_PER_DIR];
   uint64_t timestamp[PACKET_DIRS][MAX_QUEUES_PER_DIR];
   uint64_t latest_timestamp[PACKET_DIRS][MAX_QUEUES_PER_DIR];
+  uint64_t max_rate_no_drop[PACKET_DIRS][MAX_QUEUES_PER_DIR];
+  uint64_t tp[PACKET_DIRS][MAX_QUEUES_PER_DIR];
 };
 
 struct RateLimiter {
@@ -240,6 +244,8 @@ class Port {
 
   struct Rates rate_;
   struct RateLimiter limiter_;
+  bool may_increase = true;
+  uint64_t may_increase_ts = 0;
 
   // overide this section to create a new driver -----------------------------
   Port()
@@ -275,6 +281,10 @@ class Port {
       rate_.timestamp[PACKET_DIR_INC][q] = tsc_to_ns(rdtsc());
       rate_.latest_timestamp[PACKET_DIR_OUT][q] = tsc_to_ns(rdtsc());
       rate_.latest_timestamp[PACKET_DIR_INC][q] = tsc_to_ns(rdtsc());
+      rate_.max_rate_no_drop[PACKET_DIR_OUT][q] = ULONG_MAX;
+      rate_.max_rate_no_drop[PACKET_DIR_INC][q] = ULONG_MAX;
+      rate_.tp[PACKET_DIR_OUT][q] = 0;
+      rate_.tp[PACKET_DIR_INC][q] = 0;
 
       limiter_.timestamp[PACKET_DIR_OUT][q] = tsc_to_ns(rdtsc());
       limiter_.timestamp[PACKET_DIR_INC][q] = tsc_to_ns(rdtsc());
@@ -357,6 +367,9 @@ class Port {
   port_type_t getConnectedPortType() { return ptype_; }
 
   bool isRateLimitingEnabled() { return conf_.rate_limiting; }
+
+ private:
+  inline void IncreaseRate(packet_dir_t dir, queue_t qid);
 
  protected:
   friend class PortBuilder;

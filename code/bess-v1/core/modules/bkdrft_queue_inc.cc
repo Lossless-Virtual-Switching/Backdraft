@@ -47,7 +47,6 @@ CommandResponse BKDRFTQueueInc::Init(const bess::pb::BKDRFTQueueIncArg &arg) {
     return CommandFailure(EINVAL, "Field 'port' must be specified");
   }
   port_name = arg.port().c_str();
-  qid_ = arg.qid();
 
   const auto &it = PortBuilder::all_ports().find(port_name);
   if (it == PortBuilder::all_ports().end()) {
@@ -75,28 +74,47 @@ CommandResponse BKDRFTQueueInc::Init(const bess::pb::BKDRFTQueueIncArg &arg) {
     return CommandFailure(EINVAL, "Overlay is implemented in cdq mode, "
                                    "cdq is not active");
 
-  // acquire queue
-  int ret;
-  if (cdq_) {
-    // acquire all queues because we have command_data_queue mechanism
-    ret = port_->AcquireQueues(reinterpret_cast<const module *>(this),
-                               PACKET_DIR_INC, nullptr, 0);
-  } else {
-    // only acquire the given q
-    ret = port_->AcquireQueues(reinterpret_cast<const module *>(this),
-                               PACKET_DIR_INC, &qid_, 1);
+  // Get requested queues
+  count_managed_queues = arg.qid_size();
+  managed_queues = new queue_t[count_managed_queues];
+  for (int i = 0; i < count_managed_queues; i++)
+    managed_queues[i] = arg.qid(i);
+
+  if (count_managed_queues < 1 || (count_managed_queues < 2 && cdq_)) {
+    return CommandFailure(EINVAL, "Number of queues are insufficient, "
+        "at least one queue is needed. If cdq is enabled there should be a "
+        "minimum of 2 queues.");
   }
 
+  if (count_managed_queues > 1 && !cdq_) {
+    return CommandFailure(EINVAL, "BKDRFTQueueInc needs to have cdq enabled "
+        "in order to manage multiple queues");
+  }
+
+  if (count_managed_queues > MAX_QUEUES) {
+    return CommandFailure(EINVAL, "Maximum supported number of queues are %d. "
+        "%d queues have been requested", MAX_QUEUES, count_managed_queues);
+  }
+
+  // acquire queue
+  int ret = port_->AcquireQueues(reinterpret_cast<const module *>(this),
+                               PACKET_DIR_INC, managed_queues,
+                               count_managed_queues);
   if (ret < 0) {
     return CommandFailure(-ret);
   }
 
-  // register task
-  if (qid_ == BKDRFT_CTRL_QUEUE || !cdq_) {
-    tid = RegisterTask((void *)(uintptr_t)qid_);
-    if (tid == INVALID_TASK_ID)
-      return CommandFailure(ENOMEM, "Context creation failed");
+  if (cdq_) {
+    doorbell_queue = managed_queues[0];
+  } else {
+    doorbell_queue = -1;
   }
+
+  // register task
+  tid = RegisterTask(nullptr);
+  // tid = RegisterTask((void *)(uintptr_t)qid_);
+  if (tid == INVALID_TASK_ID)
+    return CommandFailure(ENOMEM, "Context creation failed");
 
   // initialize q_status
   for (int i = 0; i < MAX_QUEUES; i++) {
@@ -104,8 +122,6 @@ CommandResponse BKDRFTQueueInc::Init(const bess::pb::BKDRFTQueueIncArg &arg) {
       until : 0,
       failed_ctrl : 0,
       remaining_dpkt : 0,
-      overlay_pkts: 0,
-      overlay_pause_duration: 0,
       flow : bess::bkdrft::empty_flow,
     };
   }
@@ -115,18 +131,14 @@ CommandResponse BKDRFTQueueInc::Init(const bess::pb::BKDRFTQueueIncArg &arg) {
 
 void BKDRFTQueueInc::DeInit() {
   if (port_) {
-    if (cdq_) {
       port_->ReleaseQueues(reinterpret_cast<const module *>(this),
-                           PACKET_DIR_INC, nullptr, 0);
-    } else {
-      port_->ReleaseQueues(reinterpret_cast<const module *>(this),
-                           PACKET_DIR_INC, &qid_, 1);
-    }
+                           PACKET_DIR_INC, managed_queues,
+                           count_managed_queues);
   }
 }
 
 std::string BKDRFTQueueInc::GetDesc() const {
-  return bess::utils::Format("%s:%hhu/%s", port_->name().c_str(), qid_,
+  return bess::utils::Format("%s:%s/%s", port_->name().c_str(), "*",
                              port_->port_builder()->class_name().c_str());
 }
 
@@ -139,10 +151,11 @@ bool BKDRFTQueueInc::IsQueuePausedInCache(Context *ctx, queue_t qid) {
       return true;
   }
 
-  if (backpressure_) {
-    if (q_status_[qid].until > now) {
+  if (backpressure_ && !Flow::EqualTo()(q_status_[qid].flow, empty_flow)) {
+    auto &pause_ctrl = BKDRFTSwDpCtrl::GetInstance();
+    uint64_t wait_until = pause_ctrl.GetFlowStatus(q_status_[qid].flow);
+    if (wait_until > now)
       return true;
-    }
   }
   return false;
 }
@@ -176,7 +189,7 @@ bool BKDRFTQueueInc::CheckQueuedCtrlMessages(Context *ctx, queue_t *qid,
     if (q_status_[i].remaining_dpkt > 0) {
 
       if (IsQueuePausedInCache(ctx, i)) {
-        // Only for testing 
+        // Only for testing
         // LOG(INFO) << "q: " << i << " is paused\n";
         continue;
       }
@@ -190,6 +203,14 @@ bool BKDRFTQueueInc::CheckQueuedCtrlMessages(Context *ctx, queue_t *qid,
     }
   }
   return false; // did not found a queue
+}
+
+inline bool BKDRFTQueueInc::isManagedQueue(queue_t qid) {
+  for (int i = 0; i < count_managed_queues; i++) {
+    if (qid == managed_queues[i])
+      return true;
+  }
+  return false;
 }
 
 uint32_t BKDRFTQueueInc::CDQ(Context *ctx, bess::PacketBatch *batch, queue_t &_qid) {
@@ -212,7 +233,7 @@ uint32_t BKDRFTQueueInc::CDQ(Context *ctx, bess::PacketBatch *batch, queue_t &_q
     bess::PacketBatch ctrl_batch;
     ctrl_batch.clear();
     uint32_t cnt;
-    cnt = ReadBatch(BKDRFT_CTRL_QUEUE, &ctrl_batch, 32);
+    cnt = ReadBatch(doorbell_queue, &ctrl_batch, 32);
     // if (cnt == 0) {
       // no ctrl msg. we are done!
       // return 0;
@@ -222,14 +243,6 @@ uint32_t BKDRFTQueueInc::CDQ(Context *ctx, bess::PacketBatch *batch, queue_t &_q
     uint32_t nb_pkts = 0;
     for (uint32_t i = 0; i < cnt; i++) {
       bess::Packet *pkt = ctrl_batch.pkts()[i];
-
-      // arp is allowed on this queue
-      // if (is_arp(pkt)) {
-      //   LOG(INFO) << "ARP !\n";
-      //   EmitPacket(ctx, pkt, 0); // emitting will cause crash
-      //   continue;
-      // }
-
       char message_type = '5'; // Testing: initialize to something invalid
       void *pb; // a pointer to parsed protobuf object
       res = parse_bkdrft_msg(pkt, &message_type, &pb);
@@ -253,7 +266,8 @@ uint32_t BKDRFTQueueInc::CDQ(Context *ctx, bess::PacketBatch *batch, queue_t &_q
         bess::pb::Ctrl *ctrl_msg = reinterpret_cast<bess::pb::Ctrl *>(pb);
         dqid = static_cast<queue_t>(ctrl_msg->qid());
         nb_pkts = ctrl_msg->nb_pkts();
-        q_status_[dqid].remaining_dpkt += nb_pkts;
+        if (isManagedQueue(dqid))
+          q_status_[dqid].remaining_dpkt += nb_pkts;
         // LOG(INFO) << "Received ctrl message: qid: " << (int)dqid << "\n";
 
         delete ctrl_msg;
@@ -266,9 +280,6 @@ uint32_t BKDRFTQueueInc::CDQ(Context *ctx, bess::PacketBatch *batch, queue_t &_q
           // LOG(INFO) << "Received overlay message: pps: " << pps << "\n";
 
 	        // update port rate limit for queue
-          q_status_[dqid].overlay_pkts += 1;
-          q_status_[dqid].overlay_pause_duration +=
-                                                  overlay_msg->pause_duration();
           auto &overlay_ctrl = BKDRFTOverlayCtrl::GetInstance();
           overlay_ctrl.ApplyOverlayMessage(*overlay_msg, ctx->current_ns);
         }
@@ -284,8 +295,10 @@ uint32_t BKDRFTQueueInc::CDQ(Context *ctx, bess::PacketBatch *batch, queue_t &_q
     // send out the unknown packets received on control queue
     if (has_q0_litter) {
       return batch->cnt();
-    } 
+    }
 
+    // if receive control message for queues not managed by this module it will
+    // crash
     found_qid = CheckQueuedCtrlMessages(ctx, &qid, &burst);
   }
 
@@ -354,13 +367,13 @@ BKDRFTQueueInc::RunTask(Context *ctx, bess::PacketBatch *batch, void *arg) {
   }
 
   if (cnt > 0) {
-    // only pause vhost the nic should not be paused (?)
-    if (p->getConnectedPortType() == VHOST && backpressure_) {
+    // (commented out) only pause vhost the nic should not be paused (?)
+    if (backpressure_) { // p->getConnectedPortType() == VHOST &&
       // ! assume all the batch belongs to the same flow
       bess::bkdrft::Flow flow = PacketToFlow(*(batch->pkts()[0]));
 
       // check if the data queue is paused
-      // TODO: check bess shared object class!
+      // TODO: check BESS shared object class!
       BKDRFTSwDpCtrl &dropMan = bess::bkdrft::BKDRFTSwDpCtrl::GetInstance();
       uint64_t wait_until = dropMan.GetFlowStatus(flow);
       q_status_[qid].until = wait_until;
@@ -402,9 +415,9 @@ CommandResponse BKDRFTQueueInc::CommandGetOverlayStats(
                                  const bess::pb::EmptyArg &)
 {
   bess::pb::BKDRFTQueueIncCommandGetOverlayStatsResponse resp;
-  for (size_t i = 0; i < MAX_QUEUES; i++) {
-    resp.add_pkts(q_status_[i].overlay_pkts);
-    resp.add_duration(q_status_[i].overlay_pause_duration);
+  for (size_t i = 0; i < port_->num_rx_queues(); i++) {
+    resp.add_pkts(port_->queue_stats[PACKET_DIR_INC][i].overlay_packets);
+    resp.add_duration(port_->queue_stats[PACKET_DIR_INC][i].overlay_duration);
   }
   // LOG(INFO) << "name: " << name_
   //           << " overlay throughput: " << "?"

@@ -3,6 +3,9 @@
 #include <rte_byteorder.h>
 #include <rte_ethdev.h>
 
+/* This function is used for craeting Backdraft packets.
+ * TODO: change this function to utilize the new create packet function.
+ * */
 void prepare_packet(struct rte_mbuf *buf, unsigned char *payload,
                     struct rte_mbuf *sample_pkt, size_t size) {
   char *buf_ptr;
@@ -157,3 +160,4 @@ size_t get_payload(struct rte_mbuf *pkt, void **payload) {
   *payload = (udp + 1);
   return (rte_be_to_cpu_16(udp->dgram_len) - sizeof(struct rte_udp_hdr));
 }
+

@@ -1,0 +1,284 @@
+TP: total=839.07 mbps  1p=74 us 50p=150 us  90p=207 us  95p=225 us  99p=263 us  99.9p=323 us  99.99p=363 us  flows=1
+flow=0 tp=839.07 mbps tp=209766.82 pps  1p=74 us 50p=150 us  90p=207 us  95p=225 us  99p=263 us  99.9p=323 us  99.99p=363 us
+TP: total=859.24 mbps  1p=74 us 50p=150 us  90p=207 us  95p=225 us  99p=265 us  99.9p=327 us  99.99p=462 us  flows=1
+flow=0 tp=859.24 mbps tp=214810.16 pps  1p=74 us 50p=150 us  90p=207 us  95p=225 us  99p=265 us  99.9p=327 us  99.99p=462 us
+TP: total=855.44 mbps  1p=74 us 50p=150 us  90p=207 us  95p=225 us  99p=266 us  99.9p=329 us  99.99p=435 us  flows=1
+flow=0 tp=855.44 mbps tp=213860.32 pps  1p=74 us 50p=150 us  90p=207 us  95p=225 us  99p=266 us  99.9p=329 us  99.99p=435 us
+TP: total=866.63 mbps  1p=73 us 50p=150 us  90p=206 us  95p=225 us  99p=265 us  99.9p=327 us  99.99p=430 us  flows=1
+flow=0 tp=866.63 mbps tp=216656.58 pps  1p=73 us 50p=150 us  90p=206 us  95p=225 us  99p=265 us  99.9p=327 us  99.99p=430 us
+TP: total=854.79 mbps  1p=74 us 50p=150 us  90p=206 us  95p=225 us  99p=266 us  99.9p=327 us  99.99p=422 us  flows=1
+flow=0 tp=854.79 mbps tp=213698.36 pps  1p=74 us 50p=150 us  90p=206 us  95p=225 us  99p=266 us  99.9p=327 us  99.99p=422 us
+TP: total=862.11 mbps  1p=74 us 50p=150 us  90p=206 us  95p=225 us  99p=266 us  99.9p=326 us  99.99p=407 us  flows=1
+flow=0 tp=862.11 mbps tp=215527.22 pps  1p=74 us 50p=150 us  90p=206 us  95p=225 us  99p=266 us  99.9p=326 us  99.99p=407 us
+TP: total=858.39 mbps  1p=74 us 50p=150 us  90p=206 us  95p=225 us  99p=266 us  99.9p=326 us  99.99p=397 us  flows=1
+flow=0 tp=858.39 mbps tp=214597.92 pps  1p=74 us 50p=150 us  90p=206 us  95p=225 us  99p=266 us  99.9p=326 us  99.99p=397 us
+TP: total=857.69 mbps  1p=74 us 50p=150 us  90p=206 us  95p=225 us  99p=265 us  99.9p=325 us  99.99p=391 us  flows=1
+flow=0 tp=857.69 mbps tp=214421.71 pps  1p=74 us 50p=150 us  90p=206 us  95p=225 us  99p=265 us  99.9p=325 us  99.99p=391 us
+TP: total=857.25 mbps  1p=74 us 50p=150 us  90p=206 us  95p=225 us  99p=266 us  99.9p=324 us  99.99p=388 us  flows=1
+flow=0 tp=857.25 mbps tp=214312.82 pps  1p=74 us 50p=150 us  90p=206 us  95p=225 us  99p=266 us  99.9p=324 us  99.99p=388 us
+TP: total=857.78 mbps  1p=74 us 50p=150 us  90p=206 us  95p=225 us  99p=266 us  99.9p=324 us  99.99p=385 us  flows=1
+flow=0 tp=857.78 mbps tp=214443.86 pps  1p=74 us 50p=150 us  90p=206 us  95p=225 us  99p=266 us  99.9p=324 us  99.99p=385 us
+TP: total=858.44 mbps  1p=74 us 50p=150 us  90p=206 us  95p=225 us  99p=266 us  99.9p=323 us  99.99p=381 us  flows=1
+flow=0 tp=858.44 mbps tp=214609.91 pps  1p=74 us 50p=150 us  90p=206 us  95p=225 us  99p=266 us  99.9p=323 us  99.99p=381 us
+TP: total=849.71 mbps  1p=74 us 50p=150 us  90p=206 us  95p=225 us  99p=266 us  99.9p=323 us  99.99p=392 us  flows=1
+flow=0 tp=849.71 mbps tp=212428.75 pps  1p=74 us 50p=150 us  90p=206 us  95p=225 us  99p=266 us  99.9p=323 us  99.99p=392 us
+TP: total=868.93 mbps  1p=74 us 50p=150 us  90p=206 us  95p=225 us  99p=266 us  99.9p=323 us  99.99p=389 us  flows=1
+flow=0 tp=868.93 mbps tp=217231.45 pps  1p=74 us 50p=150 us  90p=206 us  95p=225 us  99p=266 us  99.9p=323 us  99.99p=389 us
+TP: total=838.28 mbps  1p=74 us 50p=150 us  90p=207 us  95p=226 us  99p=267 us  99.9p=324 us  99.99p=386 us  flows=1
+flow=0 tp=838.28 mbps tp=209569.03 pps  1p=74 us 50p=150 us  90p=207 us  95p=226 us  99p=267 us  99.9p=324 us  99.99p=386 us
+TP: total=850.57 mbps  1p=74 us 50p=150 us  90p=207 us  95p=225 us  99p=267 us  99.9p=324 us  99.99p=392 us  flows=1
+flow=0 tp=850.57 mbps tp=212642.42 pps  1p=74 us 50p=150 us  90p=207 us  95p=225 us  99p=267 us  99.9p=324 us  99.99p=392 us
+TP: total=858.47 mbps  1p=74 us 50p=150 us  90p=206 us  95p=225 us  99p=267 us  99.9p=324 us  99.99p=391 us  flows=1
+flow=0 tp=858.47 mbps tp=214617.29 pps  1p=74 us 50p=150 us  90p=206 us  95p=225 us  99p=267 us  99.9p=324 us  99.99p=391 us
+TP: total=841.13 mbps  1p=74 us 50p=150 us  90p=207 us  95p=226 us  99p=267 us  99.9p=324 us  99.99p=390 us  flows=1
+flow=0 tp=841.13 mbps tp=210283.59 pps  1p=74 us 50p=150 us  90p=207 us  95p=226 us  99p=267 us  99.9p=324 us  99.99p=390 us
+TP: total=824.17 mbps  1p=74 us 50p=151 us  90p=207 us  95p=226 us  99p=268 us  99.9p=325 us  99.99p=394 us  flows=1
+flow=0 tp=824.17 mbps tp=206042.37 pps  1p=74 us 50p=151 us  90p=207 us  95p=226 us  99p=268 us  99.9p=325 us  99.99p=394 us
+TP: total=817.95 mbps  1p=74 us 50p=151 us  90p=208 us  95p=227 us  99p=269 us  99.9p=326 us  99.99p=423 us  flows=1
+flow=0 tp=817.95 mbps tp=204487.58 pps  1p=74 us 50p=151 us  90p=208 us  95p=227 us  99p=269 us  99.9p=326 us  99.99p=423 us
+TP: total=821.00 mbps  1p=74 us 50p=151 us  90p=208 us  95p=227 us  99p=269 us  99.9p=327 us  99.99p=462 us  flows=1
+flow=0 tp=821.00 mbps tp=205249.98 pps  1p=74 us 50p=151 us  90p=208 us  95p=227 us  99p=269 us  99.9p=327 us  99.99p=462 us
+TP: total=841.10 mbps  1p=74 us 50p=151 us  90p=208 us  95p=227 us  99p=269 us  99.9p=328 us  99.99p=831 us  flows=1
+flow=0 tp=841.10 mbps tp=210273.91 pps  1p=74 us 50p=151 us  90p=208 us  95p=227 us  99p=269 us  99.9p=328 us  99.99p=831 us
+TP: total=857.36 mbps  1p=74 us 50p=151 us  90p=208 us  95p=227 us  99p=269 us  99.9p=328 us  99.99p=644 us  flows=1
+flow=0 tp=857.37 mbps tp=214342.13 pps  1p=74 us 50p=151 us  90p=208 us  95p=227 us  99p=269 us  99.9p=328 us  99.99p=644 us
+TP: total=854.34 mbps  1p=74 us 50p=151 us  90p=208 us  95p=227 us  99p=269 us  99.9p=328 us  99.99p=473 us  flows=1
+flow=0 tp=854.34 mbps tp=213584.05 pps  1p=74 us 50p=151 us  90p=208 us  95p=227 us  99p=269 us  99.9p=328 us  99.99p=473 us
+TP: total=852.36 mbps  1p=74 us 50p=151 us  90p=208 us  95p=227 us  99p=269 us  99.9p=328 us  99.99p=458 us  flows=1
+flow=0 tp=852.36 mbps tp=213089.66 pps  1p=74 us 50p=151 us  90p=208 us  95p=227 us  99p=269 us  99.9p=328 us  99.99p=458 us
+TP: total=854.33 mbps  1p=74 us 50p=151 us  90p=208 us  95p=227 us  99p=269 us  99.9p=328 us  99.99p=447 us  flows=1
+flow=0 tp=854.33 mbps tp=213583.66 pps  1p=74 us 50p=151 us  90p=208 us  95p=227 us  99p=269 us  99.9p=328 us  99.99p=447 us
+TP: total=850.59 mbps  1p=74 us 50p=151 us  90p=208 us  95p=227 us  99p=269 us  99.9p=327 us  99.99p=440 us  flows=1
+flow=0 tp=850.59 mbps tp=212646.97 pps  1p=74 us 50p=151 us  90p=208 us  95p=227 us  99p=269 us  99.9p=327 us  99.99p=440 us
+TP: total=853.87 mbps  1p=74 us 50p=151 us  90p=208 us  95p=227 us  99p=269 us  99.9p=327 us  99.99p=432 us  flows=1
+flow=0 tp=853.87 mbps tp=213466.78 pps  1p=74 us 50p=151 us  90p=208 us  95p=227 us  99p=269 us  99.9p=327 us  99.99p=432 us
+TP: total=841.63 mbps  1p=74 us 50p=151 us  90p=208 us  95p=227 us  99p=269 us  99.9p=327 us  99.99p=466 us  flows=1
+flow=0 tp=841.63 mbps tp=210408.63 pps  1p=74 us 50p=151 us  90p=208 us  95p=227 us  99p=269 us  99.9p=327 us  99.99p=466 us
+TP: total=822.05 mbps  1p=74 us 50p=151 us  90p=208 us  95p=228 us  99p=269 us  99.9p=328 us  99.99p=714 us  flows=1
+flow=0 tp=822.05 mbps tp=205512.90 pps  1p=74 us 50p=151 us  90p=208 us  95p=228 us  99p=269 us  99.9p=328 us  99.99p=714 us
+TP: total=841.42 mbps  1p=74 us 50p=151 us  90p=208 us  95p=228 us  99p=270 us  99.9p=329 us  99.99p=983 us  flows=1
+flow=0 tp=841.42 mbps tp=210354.35 pps  1p=74 us 50p=151 us  90p=208 us  95p=228 us  99p=270 us  99.9p=329 us  99.99p=983 us
+TP: total=842.10 mbps  1p=74 us 50p=151 us  90p=208 us  95p=228 us  99p=270 us  99.9p=329 us  99.99p=1445 us  flows=1
+flow=0 tp=842.10 mbps tp=210523.95 pps  1p=74 us 50p=151 us  90p=208 us  95p=228 us  99p=270 us  99.9p=329 us  99.99p=1445 us
+TP: total=854.63 mbps  1p=74 us 50p=151 us  90p=208 us  95p=228 us  99p=270 us  99.9p=329 us  99.99p=999 us  flows=1
+flow=0 tp=854.63 mbps tp=213656.63 pps  1p=74 us 50p=151 us  90p=208 us  95p=228 us  99p=270 us  99.9p=329 us  99.99p=999 us
+
+
+=================
+tas_server_1
+=================
+/root/post-loom/code/tas/tas/tas --dpdk-extra=--vdev --dpdk-extra=virtio_user0,path=/root/vhost/tas_server_1.sock,queues=8 --dpdk-extra=--file-prefix --dpdk-extra=tas_server_1 --dpdk-extra=--no-pci --fp-no-xsumoffload --fp-no-autoscale --fp-no-ints --ip-addr=10.10.0.1 --cc=dctcp-win --fp-cores-max=1 --count-queue=8
+Warning: NIC does not support all requested RSS hash functions.
+==========
+path: /dev/hugepages/tas_memory
+==========
+path: /dev/hugepages/tas_internal
+host ip: a0a0001 MAC: 4073db3e551e
+TAS ready
+stats: drops=0 k_rexmit=0 ecn=0 acks=0
+stats: drops=0 k_rexmit=0 ecn=0 acks=0
+stats: drops=0 k_rexmit=0 ecn=0 acks=0
+TAS Server Is Up
+10.0.0.2:1234
+[0] Starting event loop
+Workers ready
+stats: drops=0 k_rexmit=0 ecn=0 acks=0
+stats: drops=0 k_rexmit=0 ecn=0 acks=0
+stats: drops=0 k_rexmit=0 ecn=0 acks=0
+stats: drops=0 k_rexmit=0 ecn=0 acks=0
+stats: drops=0 k_rexmit=0 ecn=0 acks=0
+stats: drops=20362 k_rexmit=0 ecn=0 acks=32029056
+stats: drops=87524 k_rexmit=0 ecn=0 acks=139500544
+stats: drops=155447 k_rexmit=0 ecn=0 acks=246752384
+stats: drops=222503 k_rexmit=0 ecn=0 acks=353989888
+stats: drops=289483 k_rexmit=0 ecn=0 acks=461736648
+stats: drops=357363 k_rexmit=0 ecn=0 acks=569026840
+stats: drops=425003 k_rexmit=0 ecn=0 acks=676326096
+stats: drops=492725 k_rexmit=0 ecn=0 acks=783491496
+stats: drops=560269 k_rexmit=0 ecn=0 acks=891111424
+stats: drops=628522 k_rexmit=0 ecn=0 acks=998231040
+stats: drops=696456 k_rexmit=0 ecn=0 acks=1105097536
+stats: drops=763843 k_rexmit=0 ecn=0 acks=1212802752
+stats: drops=830630 k_rexmit=0 ecn=0 acks=1318611584
+stats: drops=899282 k_rexmit=0 ecn=0 acks=1427136688
+stats: drops=969772 k_rexmit=0 ecn=0 acks=1532546144
+stats: drops=1035791 k_rexmit=0 ecn=0 acks=1638468864
+stats: drops=1103482 k_rexmit=0 ecn=0 acks=1745560016
+stats: drops=1175114 k_rexmit=0 ecn=0 acks=1850013512
+stats: drops=1244748 k_rexmit=34 ecn=0 acks=1953305984
+stats: drops=1314571 k_rexmit=34 ecn=0 acks=2055530960
+stats: drops=1383771 k_rexmit=47 ecn=0 acks=2157297624
+stats: drops=1452603 k_rexmit=47 ecn=0 acks=2263960960
+stats: drops=1520998 k_rexmit=47 ecn=0 acks=2370591632
+stats: drops=1589224 k_rexmit=47 ecn=0 acks=2477572544
+stats: drops=1657678 k_rexmit=47 ecn=0 acks=2583990680
+stats: drops=1726006 k_rexmit=47 ecn=0 acks=2690650560
+stats: drops=1794460 k_rexmit=47 ecn=0 acks=2796992320
+stats: drops=1862517 k_rexmit=47 ecn=0 acks=2903996704
+stats: drops=1930394 k_rexmit=68 ecn=0 acks=3008197888
+stats: drops=1999365 k_rexmit=91 ecn=0 acks=3109130624
+stats: drops=2067583 k_rexmit=91 ecn=0 acks=3216848584
+stats: drops=2135619 k_rexmit=118 ecn=0 acks=3322102800
+stats: drops=2203399 k_rexmit=118 ecn=0 acks=3428949824
+
+=================
+tas_client_1
+=================
+/root/post-loom/code/tas/tas/tas --dpdk-extra=--vdev --dpdk-extra=virtio_user0,path=/root/vhost/tas_client_1.sock,queues=8 --dpdk-extra=--file-prefix --dpdk-extra=tas_client_1 --dpdk-extra=--no-pci --fp-no-xsumoffload --fp-no-autoscale --fp-no-ints --ip-addr=172.17.0.1 --cc=dctcp-win --fp-cores-max=1 --count-queue=8
+Warning: NIC does not support all requested RSS hash functions.
+==========
+path: /dev/hugepages/tas_memory
+==========
+path: /dev/hugepages/tas_internal
+host ip: ac110001 MAC: c31b4e08a36
+TAS ready
+stats: drops=0 k_rexmit=0 ecn=0 acks=0
+stats: drops=0 k_rexmit=0 ecn=0 acks=0
+stats: drops=0 k_rexmit=0 ecn=0 acks=0
+TAS Server Is Up
+10.10.0.1:1234
+LD_PRELOAD=/root/post-loom/code/tas/lib/libtas_interpose.so /root/post-loom/code/tas-benchmark/micro_rpc_modified/testclient_linux 1 10.10.0.1:1234 1 foo /tmp/log_drop_client.txt 500 64 1 0 -1 0 0
+ip: 10.10.0.1, port: 1234
+Test Client Config Values:
+1) count_address: 1 
+2) (ip:port)+: [not shown] 
+3) cores: [not shown[not shown]]
+4) config (mtcp): [not shown]
+5) [result_file_path]: [not shown]
+6) [message-size]: 500 
+7) [max-pendding]: 64 
+8) [total-connections]: 1 
+9) [flow-duration]: 0 
+10) [max-message-per-sec]: -1 
+11) [open all delay]: [not shown] 
+12) [MAX-MSGS-CONN]: [not shown] 
+13) [MAX-PEND-CONNS]: [not shown] 
+
+stats: drops=14667 k_rexmit=0 ecn=0 acks=32034432
+TP: total=839.07 mbps  1p=74 us 50p=150 us  90p=207 us  95p=225 us  99p=263 us  99.9p=323 us  99.99p=363 us  flows=1
+flow=0 tp=839.07 mbps tp=209766.82 pps  1p=74 us 50p=150 us  90p=207 us  95p=225 us  99p=263 us  99.9p=323 us  99.99p=363 us
+stats: drops=63326 k_rexmit=0 ecn=0 acks=139502112
+TP: total=859.24 mbps  1p=74 us 50p=150 us  90p=207 us  95p=225 us  99p=265 us  99.9p=327 us  99.99p=462 us  flows=1
+flow=0 tp=859.24 mbps tp=214810.16 pps  1p=74 us 50p=150 us  90p=207 us  95p=225 us  99p=265 us  99.9p=327 us  99.99p=462 us
+stats: drops=112608 k_rexmit=0 ecn=0 acks=246757760
+TP: total=855.44 mbps  1p=74 us 50p=150 us  90p=207 us  95p=225 us  99p=266 us  99.9p=329 us  99.99p=435 us  flows=1
+flow=0 tp=855.44 mbps tp=213860.32 pps  1p=74 us 50p=150 us  90p=207 us  95p=225 us  99p=266 us  99.9p=329 us  99.99p=435 us
+stats: drops=161204 k_rexmit=0 ecn=0 acks=353995392
+TP: total=866.63 mbps  1p=73 us 50p=150 us  90p=206 us  95p=225 us  99p=265 us  99.9p=327 us  99.99p=430 us  flows=1
+flow=0 tp=866.63 mbps tp=216656.58 pps  1p=73 us 50p=150 us  90p=206 us  95p=225 us  99p=265 us  99.9p=327 us  99.99p=430 us
+stats: drops=210034 k_rexmit=0 ecn=0 acks=461746584
+TP: total=854.79 mbps  1p=74 us 50p=150 us  90p=206 us  95p=225 us  99p=266 us  99.9p=327 us  99.99p=422 us  flows=1
+flow=0 tp=854.79 mbps tp=213698.36 pps  1p=74 us 50p=150 us  90p=206 us  95p=225 us  99p=266 us  99.9p=327 us  99.99p=422 us
+stats: drops=259954 k_rexmit=0 ecn=0 acks=569041792
+TP: total=862.11 mbps  1p=74 us 50p=150 us  90p=206 us  95p=225 us  99p=266 us  99.9p=326 us  99.99p=407 us  flows=1
+flow=0 tp=862.11 mbps tp=215527.22 pps  1p=74 us 50p=150 us  90p=206 us  95p=225 us  99p=266 us  99.9p=326 us  99.99p=407 us
+stats: drops=309497 k_rexmit=0 ecn=0 acks=676333824
+TP: total=858.39 mbps  1p=74 us 50p=150 us  90p=206 us  95p=225 us  99p=266 us  99.9p=326 us  99.99p=397 us  flows=1
+flow=0 tp=858.39 mbps tp=214597.92 pps  1p=74 us 50p=150 us  90p=206 us  95p=225 us  99p=266 us  99.9p=326 us  99.99p=397 us
+stats: drops=359304 k_rexmit=0 ecn=0 acks=783504512
+TP: total=857.69 mbps  1p=74 us 50p=150 us  90p=206 us  95p=225 us  99p=265 us  99.9p=325 us  99.99p=391 us  flows=1
+flow=0 tp=857.69 mbps tp=214421.71 pps  1p=74 us 50p=150 us  90p=206 us  95p=225 us  99p=265 us  99.9p=325 us  99.99p=391 us
+stats: drops=407953 k_rexmit=0 ecn=0 acks=891115456
+TP: total=857.25 mbps  1p=74 us 50p=150 us  90p=206 us  95p=225 us  99p=266 us  99.9p=324 us  99.99p=388 us  flows=1
+flow=0 tp=857.25 mbps tp=214312.82 pps  1p=74 us 50p=150 us  90p=206 us  95p=225 us  99p=266 us  99.9p=324 us  99.99p=388 us
+stats: drops=457262 k_rexmit=0 ecn=0 acks=998229600
+TP: total=857.78 mbps  1p=74 us 50p=150 us  90p=206 us  95p=225 us  99p=266 us  99.9p=324 us  99.99p=385 us  flows=1
+flow=0 tp=857.78 mbps tp=214443.86 pps  1p=74 us 50p=150 us  90p=206 us  95p=225 us  99p=266 us  99.9p=324 us  99.99p=385 us
+stats: drops=506160 k_rexmit=0 ecn=0 acks=1105103104
+TP: total=858.44 mbps  1p=74 us 50p=150 us  90p=206 us  95p=225 us  99p=266 us  99.9p=323 us  99.99p=381 us  flows=1
+flow=0 tp=858.44 mbps tp=214609.91 pps  1p=74 us 50p=150 us  90p=206 us  95p=225 us  99p=266 us  99.9p=323 us  99.99p=381 us
+stats: drops=555621 k_rexmit=0 ecn=0 acks=1212802560
+TP: total=849.71 mbps  1p=74 us 50p=150 us  90p=206 us  95p=225 us  99p=266 us  99.9p=323 us  99.99p=392 us  flows=1
+flow=0 tp=849.71 mbps tp=212428.75 pps  1p=74 us 50p=150 us  90p=206 us  95p=225 us  99p=266 us  99.9p=323 us  99.99p=392 us
+stats: drops=604296 k_rexmit=16 ecn=0 acks=1318612648
+TP: total=868.93 mbps  1p=74 us 50p=150 us  90p=206 us  95p=225 us  99p=266 us  99.9p=323 us  99.99p=389 us  flows=1
+flow=0 tp=868.93 mbps tp=217231.45 pps  1p=74 us 50p=150 us  90p=206 us  95p=225 us  99p=266 us  99.9p=323 us  99.99p=389 us
+stats: drops=654518 k_rexmit=16 ecn=0 acks=1427140608
+TP: total=838.28 mbps  1p=74 us 50p=150 us  90p=207 us  95p=226 us  99p=267 us  99.9p=324 us  99.99p=386 us  flows=1
+flow=0 tp=838.28 mbps tp=209569.03 pps  1p=74 us 50p=150 us  90p=207 us  95p=226 us  99p=267 us  99.9p=324 us  99.99p=386 us
+stats: drops=704965 k_rexmit=16 ecn=0 acks=1532551104
+TP: total=850.57 mbps  1p=74 us 50p=150 us  90p=207 us  95p=225 us  99p=267 us  99.9p=324 us  99.99p=392 us  flows=1
+flow=0 tp=850.57 mbps tp=212642.42 pps  1p=74 us 50p=150 us  90p=207 us  95p=225 us  99p=267 us  99.9p=324 us  99.99p=392 us
+stats: drops=752850 k_rexmit=30 ecn=0 acks=1638474560
+TP: total=858.47 mbps  1p=74 us 50p=150 us  90p=206 us  95p=225 us  99p=267 us  99.9p=324 us  99.99p=391 us  flows=1
+flow=0 tp=858.47 mbps tp=214617.29 pps  1p=74 us 50p=150 us  90p=206 us  95p=225 us  99p=267 us  99.9p=324 us  99.99p=391 us
+stats: drops=802117 k_rexmit=30 ecn=0 acks=1745563368
+TP: total=841.13 mbps  1p=74 us 50p=150 us  90p=207 us  95p=226 us  99p=267 us  99.9p=324 us  99.99p=390 us  flows=1
+flow=0 tp=841.13 mbps tp=210283.59 pps  1p=74 us 50p=150 us  90p=207 us  95p=226 us  99p=267 us  99.9p=324 us  99.99p=390 us
+stats: drops=853363 k_rexmit=30 ecn=0 acks=1850030264
+TP: total=824.17 mbps  1p=74 us 50p=151 us  90p=207 us  95p=226 us  99p=268 us  99.9p=325 us  99.99p=394 us  flows=1
+flow=0 tp=824.17 mbps tp=206042.37 pps  1p=74 us 50p=151 us  90p=207 us  95p=226 us  99p=268 us  99.9p=325 us  99.99p=394 us
+stats: drops=903152 k_rexmit=58 ecn=0 acks=1953309568
+TP: total=817.95 mbps  1p=74 us 50p=151 us  90p=208 us  95p=227 us  99p=269 us  99.9p=326 us  99.99p=423 us  flows=1
+flow=0 tp=817.95 mbps tp=204487.58 pps  1p=74 us 50p=151 us  90p=208 us  95p=227 us  99p=269 us  99.9p=326 us  99.99p=423 us
+stats: drops=952891 k_rexmit=71 ecn=0 acks=2055537408
+TP: total=821.00 mbps  1p=74 us 50p=151 us  90p=208 us  95p=227 us  99p=269 us  99.9p=327 us  99.99p=462 us  flows=1
+flow=0 tp=821.00 mbps tp=205249.98 pps  1p=74 us 50p=151 us  90p=208 us  95p=227 us  99p=269 us  99.9p=327 us  99.99p=462 us
+stats: drops=1002749 k_rexmit=99 ecn=0 acks=2157307536
+TP: total=841.10 mbps  1p=74 us 50p=151 us  90p=208 us  95p=227 us  99p=269 us  99.9p=328 us  99.99p=831 us  flows=1
+flow=0 tp=841.10 mbps tp=210273.91 pps  1p=74 us 50p=151 us  90p=208 us  95p=227 us  99p=269 us  99.9p=328 us  99.99p=831 us
+stats: drops=1052843 k_rexmit=99 ecn=0 acks=2263969040
+TP: total=857.36 mbps  1p=74 us 50p=151 us  90p=208 us  95p=227 us  99p=269 us  99.9p=328 us  99.99p=644 us  flows=1
+flow=0 tp=857.37 mbps tp=214342.13 pps  1p=74 us 50p=151 us  90p=208 us  95p=227 us  99p=269 us  99.9p=328 us  99.99p=644 us
+stats: drops=1102401 k_rexmit=99 ecn=0 acks=2370601096
+TP: total=854.34 mbps  1p=74 us 50p=151 us  90p=208 us  95p=227 us  99p=269 us  99.9p=328 us  99.99p=473 us  flows=1
+flow=0 tp=854.34 mbps tp=213584.05 pps  1p=74 us 50p=151 us  90p=208 us  95p=227 us  99p=269 us  99.9p=328 us  99.99p=473 us
+stats: drops=1151882 k_rexmit=99 ecn=0 acks=2477572432
+TP: total=852.36 mbps  1p=74 us 50p=151 us  90p=208 us  95p=227 us  99p=269 us  99.9p=328 us  99.99p=458 us  flows=1
+flow=0 tp=852.36 mbps tp=213089.66 pps  1p=74 us 50p=151 us  90p=208 us  95p=227 us  99p=269 us  99.9p=328 us  99.99p=458 us
+stats: drops=1201228 k_rexmit=99 ecn=0 acks=2583995208
+TP: total=854.33 mbps  1p=74 us 50p=151 us  90p=208 us  95p=227 us  99p=269 us  99.9p=328 us  99.99p=447 us  flows=1
+flow=0 tp=854.33 mbps tp=213583.66 pps  1p=74 us 50p=151 us  90p=208 us  95p=227 us  99p=269 us  99.9p=328 us  99.99p=447 us
+stats: drops=1251154 k_rexmit=99 ecn=0 acks=2690662728
+TP: total=850.59 mbps  1p=74 us 50p=151 us  90p=208 us  95p=227 us  99p=269 us  99.9p=327 us  99.99p=440 us  flows=1
+flow=0 tp=850.59 mbps tp=212646.97 pps  1p=74 us 50p=151 us  90p=208 us  95p=227 us  99p=269 us  99.9p=327 us  99.99p=440 us
+stats: drops=1301545 k_rexmit=99 ecn=0 acks=2796999528
+TP: total=853.87 mbps  1p=74 us 50p=151 us  90p=208 us  95p=227 us  99p=269 us  99.9p=327 us  99.99p=432 us  flows=1
+flow=0 tp=853.87 mbps tp=213466.78 pps  1p=74 us 50p=151 us  90p=208 us  95p=227 us  99p=269 us  99.9p=327 us  99.99p=432 us
+stats: drops=1350875 k_rexmit=99 ecn=0 acks=2904008768
+TP: total=841.63 mbps  1p=74 us 50p=151 us  90p=208 us  95p=227 us  99p=269 us  99.9p=327 us  99.99p=466 us  flows=1
+flow=0 tp=841.63 mbps tp=210408.63 pps  1p=74 us 50p=151 us  90p=208 us  95p=227 us  99p=269 us  99.9p=327 us  99.99p=466 us
+stats: drops=1399950 k_rexmit=128 ecn=0 acks=3008200552
+TP: total=822.05 mbps  1p=74 us 50p=151 us  90p=208 us  95p=228 us  99p=269 us  99.9p=328 us  99.99p=714 us  flows=1
+flow=0 tp=822.05 mbps tp=205512.90 pps  1p=74 us 50p=151 us  90p=208 us  95p=228 us  99p=269 us  99.9p=328 us  99.99p=714 us
+stats: drops=1449988 k_rexmit=163 ecn=0 acks=3109138048
+TP: total=841.42 mbps  1p=74 us 50p=151 us  90p=208 us  95p=228 us  99p=270 us  99.9p=329 us  99.99p=983 us  flows=1
+flow=0 tp=841.42 mbps tp=210354.35 pps  1p=74 us 50p=151 us  90p=208 us  95p=228 us  99p=270 us  99.9p=329 us  99.99p=983 us
+stats: drops=1499145 k_rexmit=163 ecn=0 acks=3216854432
+TP: total=842.10 mbps  1p=74 us 50p=151 us  90p=208 us  95p=228 us  99p=270 us  99.9p=329 us  99.99p=1445 us  flows=1
+flow=0 tp=842.10 mbps tp=210523.95 pps  1p=74 us 50p=151 us  90p=208 us  95p=228 us  99p=270 us  99.9p=329 us  99.99p=1445 us
+stats: drops=1549057 k_rexmit=192 ecn=0 acks=3322107600
+TP: total=854.63 mbps  1p=74 us 50p=151 us  90p=208 us  95p=228 us  99p=270 us  99.9p=329 us  99.99p=999 us  flows=1
+flow=0 tp=854.63 mbps tp=213656.63 pps  1p=74 us 50p=151 us  90p=208 us  95p=228 us  99p=270 us  99.9p=329 us  99.99p=999 us
+stats: drops=1598473 k_rexmit=192 ecn=0 acks=3428967552
+
+========= switch ==========
+  tas_server_1 Driver PMDPort    HWaddr 56:48:4f:53:54:02  MTU 1500  
+               Speed 10,000Mbps  Link UP    Duplex FULL  Autoneg OFF  
+       Inc/RX  packets: 19,679,287          bytes: 6,275,455,530       
+               dropped: 0                   
+       Out/TX  packets: 19,075,591          bytes: 5,800,312,938       
+               dropped: 0                   
+
+  tas_client_1 Driver PMDPort    HWaddr 56:48:4f:53:54:03  MTU 1500  
+               Speed 10,000Mbps  Link UP    Duplex FULL  Autoneg OFF  
+       Inc/RX  packets: 19,283,890          bytes: 5,863,317,724       
+               dropped: 0                   
+       Out/TX  packets: 19,893,941          bytes: 6,343,487,870       
+               dropped: 0                   
+
+  tas_client_2 Driver PMDPort    HWaddr 56:48:4f:53:54:04  MTU 1500  
+               Speed 10,000Mbps  Link DOWN  Duplex FULL  Autoneg OFF  
+       Inc/RX  packets: 0                   bytes: 0                   
+               dropped: 0                   
+       Out/TX  packets: 0                   bytes: 0                   
+               dropped: 1                   
+
+
+
+
+client 1 sw
+{'rx': {'packet': 12026938, 'byte': 3831763500, 'drop': 0}, 'tx': {'packet': 11654316, 'byte': 3543059724, 'drop': 0}}
+
+client 1 tas
+{'mbps': 0, 'pps': 0, 'latency@99.9': 0, 'latency@99.99': 0, 'drop': 0}

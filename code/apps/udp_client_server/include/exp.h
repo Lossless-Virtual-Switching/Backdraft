@@ -14,46 +14,57 @@
 #define system_bkdrft (1)
 
 
-#define MAKE_IP_ADDR(a, b, c, d)			\
-	(((uint32_t) a << 24) | ((uint32_t) b << 16) |	\
-	 ((uint32_t) c << 8) | (uint32_t) d)
+#define MAKE_IP_ADDR(a, b, c, d)      \
+  (((uint32_t) a << 24) | ((uint32_t) b << 16) |  \
+   ((uint32_t) c << 8) | (uint32_t) d)
+
+
+/* distributions  */
+#define DIST_UNIFORM 0
+#define DIST_ZIPF    1
 
 struct context {
-	int mode; // client or server
-	int system_mode; // bess or bkdrft
+  int mode; // client or server
+  int system_mode; // bess or bkdrft
 
-	struct rte_mempool *rx_mem_pool;
-	struct rte_mempool *tx_mem_pool;
-	struct rte_mempool *ctrl_mem_pool;
+  struct rte_mempool *rx_mem_pool;
+  struct rte_mempool *tx_mem_pool;
+  struct rte_mempool *ctrl_mem_pool;
 
-	uint32_t port;
-	uint16_t num_queues;
-	uint8_t default_qid;
+  uint32_t worker_id;
+  uint32_t port;
+  uint16_t num_queues;
+  uint8_t default_qid;
 
-	struct rte_ether_addr my_eth;
-	uint32_t src_ip;
-	uint16_t src_port;
-	
-	uint8_t use_vlan;
-	uint8_t bidi;
+  struct rte_ether_addr my_eth;
+  uint32_t src_ip;
+  uint16_t src_port;
+  uint32_t count_queues; // number of queues the managed by the worker
 
-	// server
-	uint32_t delay_us;
-	uint32_t count_queues; // size the managed_queues array
-	uint32_t *managed_queues; // array holding number of queues managed by the server
+  uint8_t use_vlan;
+  uint8_t bidi;
 
-	// client
-	uint32_t duration;
-	uint32_t *dst_ips;
-	int count_dst_ip;
-	uint16_t dst_port;
-	int payload_length;
+  FILE *fp;
 
-	FILE *fp;
-	int running; // this is set to zero when client is done.
+  // server
+  uint32_t delay_us;
+  uint64_t delay_cycles;
+  uint32_t *managed_queues; // array holding number of queues managed by the server
+  uint64_t **tmp_array;
 
-	uint32_t count_flow; // how many flow to generate (each core)
-	uint32_t base_port_number; // generate flows will have port numbers starting x  up to the x + count_flow
+  // client
+  uint32_t duration;
+  uint32_t *dst_ips;
+  int count_dst_ip;
+  uint16_t dst_port;
+  int payload_length;
+
+  int running; // this is set to zero when client is done.
+
+  uint32_t count_flow; // how many flow to generate (each core)
+  uint32_t base_port_number; // generate flows will have port numbers starting x  up to the x + count_flow
+  uint8_t destination_distribution;
+  uint8_t queue_selection_distribution;
 };
 
 static const struct rte_ether_addr broadcast_mac = {

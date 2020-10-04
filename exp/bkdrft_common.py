@@ -37,6 +37,7 @@ def setup_bess_pipeline(pipeline_config_path):
     ret = bessctl_do(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
     print(ret.stdout.decode())
     print(ret.stderr.decode())
+    return 0
 
 
 def load_bess_kmod():
@@ -88,10 +89,40 @@ def delta_dict(before, after):
     res = {}
     for key, value in after.items():
         if isinstance(value, dict):
-            res[key] = delta_dict(before[key], value) 
+            res[key] = delta_dict(before[key], value)
         elif isinstance(value, (int, float)):
             res[key] = value - before[key]
     return res
+
+
+def get_pps_from_info_log():
+    """
+    Go through /tmp/bessd.INFO file and find packet per second reports.
+    Then organize and print them in stdout.
+    """
+    book = dict()
+    with open('/tmp/bessd.INFO') as log_file:
+        for line in log_file:
+            if 'pcps' in line:
+                raw = line.split()
+                value = raw[5]
+                name = raw[7]
+                if name not in book:
+                    book[name] = list()
+                book[name].append(float(value))
+    return book
+
+
+def str_format_pps(book):
+    res = []
+    res.append("=== pause call per sec ===")
+    for name in book:
+        res.append(name)
+        for i, value in enumerate(book[name]):
+            res.append('{} {}'.format(i, value))
+    res.append("=== pause call per sec ===")
+    txt = '\n'.join(res)
+    return txt
 
 
 # ----------- Container --------------

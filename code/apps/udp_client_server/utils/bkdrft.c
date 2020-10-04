@@ -10,9 +10,25 @@
 #include "../include/packet.h"
 #include "../include/protobuf/bkdrft_msg.pb-c.h"
 
+extern inline int mark_data_queue(struct rte_mbuf *pkt, uint8_t qid) {
+  struct rte_ether_hdr *eth = rte_pktmbuf_mtod(pkt, struct rte_ether_hdr *);
+  uint16_t ether_type = rte_be_to_cpu_16(eth->ether_type);
+
+  /* make sure the packet has an ipv4 header */
+  if (ether_type != RTE_ETHER_TYPE_IPV4)
+    return -1;
+
+  struct rte_ipv4_hdr *ip = (struct rte_ipv4_hdr *)(eth + 1);
+  ip->type_of_service = (qid << 2); // ip->type_of_service | (qid << 2);
+  ip->hdr_checksum = 0;
+  ip->hdr_checksum = rte_ipv4_cksum(ip);
+  return 0;
+}
+
 extern inline int send_pkt(int port, uint8_t qid, struct rte_mbuf **tx_pkts,
                            uint16_t nb_pkts, bool send_ctrl_pkt,
                            struct rte_mempool *tx_mbuf_pool) {
+  //TODO: this code needs to be updated to supprt static partioning concept
   uint16_t nb_tx, ctrl_nb_tx;
   struct rte_mbuf *ctrl_pkt;
   uint16_t i;
@@ -20,6 +36,12 @@ extern inline int send_pkt(int port, uint8_t qid, struct rte_mbuf **tx_pkts,
   struct rte_mbuf *sample_pkt;
   size_t packed_size;
   unsigned char *payload = NULL;
+
+  if (send_ctrl_pkt) {
+    /* mark the packets to be placed on the mentioned queue by the recv nic */
+    for (i = 0; i < nb_pkts; i++)
+      mark_data_queue(tx_pkts[i], qid);
+  }
 
   /* send data packet */
   nb_tx = rte_eth_tx_burst(port, qid, tx_pkts, nb_pkts);

@@ -235,7 +235,7 @@ __attribute__((unused)) static const struct rte_eth_conf custom_eth_conf(
   return ret;
 }
 
-static int overlay_rule_setup(dpdk_port_t id) {
+__attribute__((unused)) static int overlay_rule_setup(dpdk_port_t id) {
   int ret;
   struct rte_flow *flow;
   struct rte_flow_error error;
@@ -263,10 +263,10 @@ int data_mapping_rule_setup(dpdk_port_t port_id, uint16_t count_queue) {
     // NOTE: mlx5 nic had problem with using multiple prio
     // map prio(i) -> queue(i) for i in [1,8)
     // flow = generate_vlan_flow(port_id, i, BKDRFT_OVERLAY_VLAN_ID, i, &error);
-    
+
     // NOTE: mlx5 nic we used did not support raw item used in the function.
     // flow = bkdrft::filter_by_ipv4_bkdrft_opt(port_id, i, i, &error);
-    
+
     // map i * 4 -> queue(i) for i in [1, 8)
     uint8_t tos = i << 2;
     flow = bkdrft::filter_by_ip_tos(port_id, tos, tos_mask, i, &error);
@@ -518,7 +518,7 @@ CommandResponse PMDPort::Init(const bess::pb::PMDPortArg &arg) {
 
   if (arg.rate_limiting()) {
     conf_.rate_limiting = true;
-    uint32_t rate = arg.rate() * 1000000;
+    uint32_t rate = arg.rate() * 1000; // 1000000;
 
     if (!rate)
       return CommandFailure(ENOENT, "rate not found");
@@ -600,11 +600,11 @@ CommandResponse PMDPort::Init(const bess::pb::PMDPortArg &arg) {
 
   // ----------- overlay rule -------------- //
   if (arg.overlay_rules() || arg.command_queue()) {
-    ret = overlay_rule_setup(ret_port_id);
-    LOG(INFO) << "Setup command queue rule\n";
-    if (ret != 0) {
-      return CommandFailure(-ret, "rule setup for overlay network failed.");
-    }
+    // ret = overlay_rule_setup(ret_port_id);
+    // LOG(INFO) << "Setup command queue rule\n";
+    // if (ret != 0) {
+    //   return CommandFailure(-ret, "rule setup for overlay network failed.");
+    // }
     // ---------- litter --------------- //
     ret = litter_rule_setup(ret_port_id);
     if (ret != 0) {
@@ -619,7 +619,32 @@ CommandResponse PMDPort::Init(const bess::pb::PMDPortArg &arg) {
     if (ret != 0) {
       return CommandFailure(-ret, "priority mapping rule setup failed.");
     }
-  } 
+  }
+
+  // just for testing
+  // if (ptype_ == NIC) {
+  //   // for (int i = 0; i < 12; i++) {
+  //   //   struct rte_flow *flow;
+  //   //   struct rte_flow_error error;
+  //   //   flow = bkdrft::filter_by_udp_src_port(ret_port_id, 1001 + i, i, &error);
+  //   //   if (!flow) {
+  //   //     LOG(INFO) << "Data mapping error message: " << error.message << " \n";
+  //   //     return CommandFailure(-1, "failed to setup queue rules.");
+  //   //   }
+  //   // }
+  //   // struct rte_flow *flow;
+  //   // struct rte_flow_error error;
+  //   // flow = bkdrft::filter_by_udp_src_port(ret_port_id, 1001, 0, &error);
+  //   // if (!flow) {
+  //   //   LOG(INFO) << "Data mapping error message: " << error.message << " \n";
+  //   //   return CommandFailure(-1, "failed to setup queue rules.");
+  //   // }
+  //   // flow = bkdrft::filter_by_udp_src_port(ret_port_id, 1002, 2, &error);
+  //   // if (!flow) {
+  //   //   LOG(INFO) << "Data mapping error message: " << error.message << " \n";
+  //   //   return CommandFailure(-1, "failed to setup queue rules.");
+  //   // }
+  // }
 
   int offload_mask = 0;
   offload_mask |= arg.vlan_offload_rx_strip() ? ETH_VLAN_STRIP_OFFLOAD : 0;
@@ -830,8 +855,6 @@ int PMDPort::RecvPackets(queue_t qid, bess::Packet **pkts, int cnt) {
 }
 
 int PMDPort::SendPackets(queue_t qid, bess::Packet **pkts, int cnt) {
-  // uint32_t total_bytes = 0;
-
   int sent = rte_eth_tx_burst(dpdk_port_id_, qid,
                               reinterpret_cast<struct rte_mbuf **>(pkts), cnt);
   // int dropped = cnt - sent;
@@ -839,10 +862,6 @@ int PMDPort::SendPackets(queue_t qid, bess::Packet **pkts, int cnt) {
   // queue_stats[PACKET_DIR_OUT][qid].requested_hist[cnt]++;
   // queue_stats[PACKET_DIR_OUT][qid].actual_hist[sent]++;
   // queue_stats[PACKET_DIR_OUT][qid].diff_hist[dropped]++;
-
-  // for (int pkt = 0; pkt < sent; pkt++) {
-  //   total_bytes += pkts[pkt]->total_len();
-  // }
 
   RecordRate(PACKET_DIR_OUT, qid, pkts, sent);
 

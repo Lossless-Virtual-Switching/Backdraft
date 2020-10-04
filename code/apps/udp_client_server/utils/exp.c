@@ -1,4 +1,5 @@
 #include <stdio.h>
+#include <unistd.h>
 #include "../include/exp.h"
 #include "../include/arp.h"
 #include "../include/bkdrft.h"
@@ -65,7 +66,6 @@ int check_eth_hdr(uint32_t my_ip, struct rte_ether_addr *host_mac,
       a_hdr = (struct rte_arp_hdr *)(ipv4_hdr + 1);
       if (a_hdr->arp_opcode == rte_cpu_to_be_16(RTE_ARP_OP_REQUEST)
           && a_hdr->arp_data.arp_tip == rte_cpu_to_be_32(my_ip)) {
-        while (true) {
           /* make sure arp is pushed to network */
           res = send_bkdrft_arp(port, queue, RTE_ARP_OP_REPLY, my_ip,
                                 a_hdr->arp_data.arp_sha,
@@ -73,9 +73,9 @@ int check_eth_hdr(uint32_t my_ip, struct rte_ether_addr *host_mac,
                                 tx_mbuf_pool, cdq);
           if (res == 0) {
             printf("answering arp (cdq: %d) \n", cdq);
-            break;
+          } else {
+            printf("arp response failed (cdq: %d) \n", cdq);
           }
-        }
       }
       return 0;
     }

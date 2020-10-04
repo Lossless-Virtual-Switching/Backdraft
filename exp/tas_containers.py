@@ -8,7 +8,7 @@ def spin_up_tas(conf):
 
     note: path to spin_up_tas_container.sh is set in the global variable
     tas_spinup_script.
-    
+
     conf: dict
     * name:
     * type: server, client
@@ -88,7 +88,7 @@ def spin_up_memcached(conf):
         cmd = ('{cmd} {dst_ip} {duration} {warmup_time} {wait_before_measure} '
                '{threads} {connections}').format(cmd=cmd, **conf)
     elif conf['type'] == 'server':
-        cmd = '{cmd} {memory} {threads}'.format(cmd=cmd, **conf) 
+        cmd = '{cmd} {memory} {threads}'.format(cmd=cmd, **conf)
     else:
         raise Exception('Container miss configuration: '
                         'expecting type to be client or server')
@@ -109,7 +109,7 @@ def run_udp_app(config):
     * ---- app ----
     * ip
     * count queue
-    * system mode (bess, bkdrft) 
+    * system mode (bess, bkdrft)
     * --- server ---
     * delay
     * ---- client ---
@@ -117,6 +117,7 @@ def run_udp_app(config):
     * count_flow
     * duration
     * port
+    * delay: processing time for each packet
     """
     here = os.path.dirname(__file__)
     udp_app = os.path.abspath(os.path.join(here,
@@ -152,7 +153,7 @@ def run_udp_app(config):
         cmd = ('sudo {bin} --no-pci -l{cpu} --file-prefix={prefix} '
                 '--vdev="{vdev}" --socket-mem=128 -- '
                 '{ip} {count_queue} {sysmod} {mode} {cnt_ips} {ips} '
-                '{count_flow} {duration} {port}'
+                '{count_flow} {duration} {port} {delay}'
               ).format(bin=udp_app, mode=mode, **conf)
         # params = [conf['ip'], conf['count_queue'], conf['sysmod'], mode,
         #           count_ips, conf['ips'], conf['count_flow'], conf['duration'],
@@ -160,12 +161,14 @@ def run_udp_app(config):
         # argv += params
     else:
         raise ValueError('type value should be either server or client')
-        
+
     # pid = os.fork()
     # if pid == 0:
     #     os.execvp('sudo', argv)
     # print(cmd)
-    FNULL = open(os.devnull, 'w')
+    FNULL = open(os.devnull, 'w') # pipe output to null
+    FNULL = None
+    print(cmd)
     proc = subprocess.Popen(cmd, shell=True, close_fds=True,
                             stdout=FNULL, stderr=subprocess.STDOUT)
     return proc

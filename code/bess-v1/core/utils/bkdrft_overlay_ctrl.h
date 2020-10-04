@@ -15,6 +15,8 @@ namespace bkdrft {
 #define MAX_TEMPLATE_SIZE 1536
 #define DEFAULT_WINDOW_SIZE 32
 
+const uint64_t one_batch = 32;
+
 struct OverlayEntry {
   Port * port; 
   queue_t qid;

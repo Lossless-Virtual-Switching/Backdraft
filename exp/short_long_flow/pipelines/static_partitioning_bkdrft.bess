@@ -1,0 +1,197 @@
+"""
+Backdraft Static Partitioning Pipeline Configuration
+"""
+import os
+import sys
+import yaml
+import subprocess
+import scapy.all as scapy
+import json
+
+
+# pipeline config
+config = json.load(open('.pipeline_config.json'))
+
+out_pci = config['pci']
+count_queue = config['count_queue']
+count_tas_queues = count_queue
+size_q = config['queue_size']
+add_vlan = config['add_vlan']
+vsw_cores = config['virtual_switch_cores']
+if vsw_cores < 1:
+  print('virtual switch cores can not be less than 1', file=sys.stdout)
+
+
+# Add virtual switch workers
+for i in range(vsw_cores):
+  bess.add_worker(i, i)
+
+# Load cluster config file
+# this configuration defines the shape of the cluster
+# more specificly, how many instance is running on each node and what are
+# their configurations
+config_file = config['cluster_config_file']
+
+
+# Define some function for reading cluster config
+def get_mac_address():
+  """
+  Get current device MAC address
+  """
+  # config is a global variable
+  cmd = 'cat /sys/class/net/%s/address' % config["interface"]
+  p = subprocess.Popen(cmd, shell=True, stdout=subprocess.PIPE)
+  res, _ = p.communicate()
+  add = res.decode().strip()
+  return add
+
+
+def get_pci_address(iface):
+  """
+  Get PCI address for the given interface name
+  """
+  # ethtool -i iface # this should give enough information
+  raise Exception('Not implemented yet')
+
+
+def get_current_node_info(file_path):
+  mac = get_mac_address()
+  found = False
+  host_name = None
+  host_info = None
+  with open(file_path) as f:
+    config = yaml.load(f)
+    for key in config.keys():
+      if key == 'connections':
+        continue
+      item = config[key]
+      if item['mac'] == mac:
+        host_name = key
+        host_info = item
+        found = True
+        break
+  return host_name, host_info
+
+
+def get_tci(prio, dei, vlan_id):
+  tci = prio << 13 | 0 << 12 | vlan_id
+  return tci
+
+
+_next_wid = -1
+def next_wid():
+  global _next_wid
+  _next_wid = (_next_wid + 1) % vsw_cores
+  return _next_wid
+
+
+# Get configuration for the running machine
+host_name, info =  get_current_node_info(config_file)
+if host_name is None:
+  raise Exception('This node has not been configured!')
+instances = info.get('instances', [])
+count_instances = len(instances)
+
+# Backdraft related pipeline flags
+bp = config['bp']
+buffering = config['buffering']
+cdq = config['cdq']
+pfq = config['pfq']
+overlay = config['overlay']
+overlay_lw = config['overlay_low_water']
+overlay_hw = config['overlay_high_water']
+bp_threshold = config['backpressure_threshold']
+
+if not cdq:
+  raise Exception('This pipeline needs backdraft features: CDQ')
+
+# ===========================================#
+#                  Pipeline
+# ===========================================#
+
+
+# PCI of port connected to switch
+nic_req_queues = count_instances * count_queue
+if nic_req_queues > 64:
+  raise Exception('more than 64 queues of the NIC is needed. '
+                  'It is not supported')
+
+nic_port = PMDPort(pci=out_pci, num_inc_q=nic_req_queues,
+                   num_out_q=nic_req_queues, rate_limiting=overlay, rate=40000,
+                   size_inc_q=size_q,
+                   size_out_q=size_q,
+                   command_queue=cdq, data_mapping=cdq)
+
+
+# TAS vhost ports
+vhosts = []
+next_free_port = 0
+for i, instance in enumerate(instances):
+  name = 'tas_{}_{}'.format(instance['type'], i)
+  tas_socket = '/tmp/{}.sock'.format(name)
+
+  # make sure previous socket file is removed
+  if os.path.exists(tas_socket):
+    # os.remove(tas_socket)
+    subprocess.call('sudo rm {}'.format(tas_socket), shell=True)
+    print('previous socket file removed')
+
+  # rate = 40000
+  # rate_limit=False
+  # if host_name == 'node1' and i == 0:
+  #   rate_limit = True
+  #   rate = 40000
+
+
+  vdev = 'eth_vhost{},iface={},queues={}'.format(i, tas_socket, count_tas_queues)
+  tas_port = PMDPort(name=name,
+    vdev=vdev,
+    num_inc_q=count_tas_queues,
+    num_out_q=count_tas_queues,
+    size_inc_q=size_q,
+    size_out_q=size_q,
+    rate_limiting=overlay, # rate_limit
+    rate=40000)
+
+  managed_ports = [p for p in
+                         range(next_free_port, next_free_port + count_queue)]
+  next_free_port += count_queue
+  vhosts.append((tas_port, managed_ports))
+
+
+for i, (vhost, nic_queues) in enumerate(vhosts):
+  vhost_queues = [j for j in range(count_queue)]
+  # Tx
+  vhost_inc = BKDRFTQueueInc(port=vhost, qid=vhost_queues,
+                             cdq=cdq, backpressure=bp, overlay=overlay)
+  vhost_inc.attach_task(wid=next_wid())
+
+  print(i, nic_queues)
+  nic_out = BKDRFTQueueOut(port=nic_port, qid=nic_queues,
+              count_queues=count_queue, backpressure=bp, lossless=buffering,
+              cdq=cdq, per_flow_buffering=pfq, mname='nic_'+str(i),
+              overlay=overlay)
+  # if buffering:
+  #   nic_out.attach_task(wid=next_wid())
+  nic_out.set_backpressure_threshold(threshold=bp_threshold)
+
+  vhost_inc -> nic_out
+
+  # Rx
+  nic_inc = BKDRFTQueueInc(port=nic_port, qid=nic_queues,
+                           cdq=cdq, backpressure=bp, overlay=overlay)
+  nic_inc.attach_task(wid=next_wid())
+
+  vhost_out =  BKDRFTQueueOut(port=vhost, qid=vhost_queues,
+              count_queues=count_queue, backpressure=bp, lossless=buffering,
+              cdq=cdq, per_flow_buffering=pfq, mname='app_'+str(i),
+              overlay=overlay)
+  # if buffering:
+  #   vhost_out.attach_task(wid=next_wid())
+
+  # set overlay threshold for the vhost port
+  vhost_out.set_overlay_threshold(low_water=overlay_lw, high_water=overlay_hw)
+  vhost_out.set_backpressure_threshold(threshold=bp_threshold)
+
+  nic_inc -> vhost_out
+

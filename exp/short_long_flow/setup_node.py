@@ -154,17 +154,21 @@ def setup_container(node_name: str, instance_number: int, config: dict):
 
         tas_cores = instance.get('tas_cores', 1)
         count_queue = pipeline_config['count_queue']
+        if 'count_queue' in instance:
+            count_queue = instance['count_queue']
         cdq = pipeline_config['cdq']
-     
+
         # define the image to be used in exp.
         if app == 'rpc':
-                container_image_name = 'tas_container'
+            container_image_name = 'tas_container'
         elif app == 'unidir':
-                container_image_name = 'tas_unidir'
+            container_image_name = 'tas_unidir'
         elif app == 'udp_app':
-                container_image_name = 'no-container-should-be-used' 
+            container_image_name = 'no-container-should-be-used'
+        elif app == 'memcached':
+            container_image_name = 'tas_memcached'
         else:
-                raise ValueError('app field should have one of the {} values'.format(supported_app))
+            raise ValueError('app field should have one of the {} values'.format(supported_app))
 
         config = {
                 'name': container_name,
@@ -198,25 +202,40 @@ def setup_container(node_name: str, instance_number: int, config: dict):
                 'message_size': message_size,
                 'server_delay_cycles': flow_conf.get('delay_cycles', 0)  # no effect on client
             }
-            config.update(app_params) 
+            config.update(app_params)
         elif app == 'udp_app':
             socket_name = 'tas_{}_{}'.format(instance['type'], instance_number)
             socket = '/tmp/{}.sock'.format(socket_name)
             vdev = ('virtio_user{},path={},queues={}'
                    ).format(instance_number, socket, count_queue)
             ips = [ip for ip, _ in ips]
-            if isinstance(cpu, str):
-                cpu = cpu.split(',')[0]
             app_params = {
                'cpu': cpu,
                'vdev':vdev,
                'count_queue': count_queue,
                'sysmod': 'bkdrft' if cdq else 'bess',
-               'delay': flow_conf.get('delay_us', 0),  # no effect on client
+               'delay': flow_conf.get('delay_cycles', 0),  # no effect on client
                'ips': ips,
-               'duration': -1,
+               'duration': 30,
             }
-            config.update(app_params) 
+            config.update(app_params)
+        elif app == 'memcached':
+            if len(ips) > 1:
+                  print('warning: memcached supports only one destination!', file=sys.stderr)
+            app_params = {
+                # memcached script supports only one destination
+                'dst_ip': ips[0][0],
+                # TODO: take warmup time as argument and implement for other modes
+                'warmup_time': 0,
+                'wait_before_measure': 0,
+                'threads': count_thread,
+                'connections': count_flow,
+                'memory': 500,
+                'duration': 600,
+            }
+            config.update(app_params)
+            print('count threads:', count_thread,
+                  'count connections:', count_flow)
         run_app(config, app=app)
         # pprint(config)
 
@@ -234,6 +253,8 @@ def run_app(config, app=None):
         # p.wait()
         # print(p.stdout.read().decode())
         # print(p.stderr.read().decode())
+    elif app == 'memcached':
+        spin_up_memcached(config)
     else:
         raise ValueError('app type is unknown')
 
@@ -243,7 +264,7 @@ def kill_node(instances):
     killed_udp = False
     for i, instance in enumerate(instances):
         app = instance.get('app', args.app)
-        if app == 'udp_app' and not killed_udp:
+        if app == 'udp_app':
             killed_udp = True
             subprocess.run('sudo pkill udp_app', shell=True)
         else:
@@ -267,11 +288,11 @@ if __name__ == '__main__':
 
 
         # parse arguments
-        supported_app = ('rpc', 'unidir', 'udp_app')
+        supported_app = ('rpc', 'unidir', 'udp_app', 'memcached')
         parser = argparse.ArgumentParser(description='Setup a node for short-long-flow experiment')
-        parser.add_argument('-config',
-                help="path to cluster config file (default: {})".format(default_config_path),
-                default=default_config_path)
+        # parser.add_argument('-config',
+        #         help="path to cluster config file (default: {})".format(default_config_path),
+        #         default=default_config_path)
         parser.add_argument('-flow_config',
                 help="path to flow config file (default: {})".format(default_flow_conf_file),
                 default=default_flow_conf_file)
@@ -283,13 +304,22 @@ if __name__ == '__main__':
                 help='which app should be used for the experiment')
         args = parser.parse_args()
 
-        # read config file 
-        full_config = get_full_config(args.config)
-        node_name, info = get_current_node_info(args.config)
+
+        # read pipeline config
+        with open('.pipeline_config.json', 'r') as pipeline_config_file:
+            pipeline_config = json.load(pipeline_config_file)
+        print('pipeline config:')
+        pprint(pipeline_config)
+        print('')
+
+        # read config file
+        cluster_config_path = pipeline_config['cluster_config_file']
+        full_config = get_full_config(cluster_config_path)
+        node_name, info = get_current_node_info(cluster_config_path)
         if node_name is None:
                 print('Configuration for current node not found (mac address did not match any node)')
                 sys.exit(-1)
-        instances = info['instances']
+        instances = info.get('instances', [])
 
         # kill previous instances
         if args.kill:
@@ -297,20 +327,17 @@ if __name__ == '__main__':
                 sys.exit(0)
 
         # bring up BESS pipeline
-        server_pipeline = os.path.join(cur_script_dir, 'general_pipeline.bess')
-        setup_bess_pipeline(server_pipeline)
+        pipeline_script_path = pipeline_config['pipeline_script_file']
+        server_pipeline = os.path.join(cur_script_dir, pipeline_script_path)
+        res = setup_bess_pipeline(server_pipeline)
+        if res < 0:
+            sys.exit(res)
         if args.bessonly:
                 print('only BESS has been setuped')
                 sys.exit(0)
 
-        # read pipeline config
-        pipeline_config = json.load(open('.pipeline_config.json'))
-        print('pipeline config:')
-        pprint(pipeline_config)
-        print('')
-        
         # setup TAS instances
-        for i, instance in enumerate(instances): 
+        for i, instance in enumerate(instances):
                 print('setting up instance:')
                 pprint(instance)
                 print('')

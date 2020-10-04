@@ -12,8 +12,8 @@
 #include <rte_ring.h>
 #include <rte_lcore.h>
 
-#define MIN_PAUSE_DURATION (10000)
-#define MAX_PAUSE_DURATION (125000) // (31250L) // (93750)// (125000)// (62500L)
+#define MIN_PAUSE_DURATION (1000)
+#define MAX_PAUSE_DURATION (5000000) // (31250L) // (93750)// (125000)// (62500L)
 // (ns)// 93750// 46875
 #define PAUSE_DURATION_GAMMA (2)  // (ns)
 #define MAX_BUFFER_SIZE (4194304) // (5242880) //  (1048576) // 1 mega byte
@@ -66,6 +66,10 @@ const Commands BKDRFTQueueOut::cmds = {
     MODULE_CMD_FUNC(&BKDRFTQueueOut::CommandGetOverlayTp), Command::THREAD_SAFE},
   {"set_overlay_threshold", "BKDRFTQueueOutCommandSetOverlayThresholdArg",
     MODULE_CMD_FUNC(&BKDRFTQueueOut::CommandSetOverlayThreshold),
+    Command::THREAD_UNSAFE},
+  {"set_backpressure_threshold",
+    "BKDRFTQueueOutCommandSetBackpressureThresholdArg",
+    MODULE_CMD_FUNC(&BKDRFTQueueOut::CommandSetBackpressureThreshold),
     Command::THREAD_UNSAFE}
 };
 
@@ -80,6 +84,7 @@ CommandResponse BKDRFTQueueOut::Init(const bess::pb::BKDRFTQueueOutArg &arg) {
     return CommandFailure(EINVAL, "Field 'port' must be specified");
   }
 
+  // Get port
   port_name = arg.port().c_str();
 
   const auto &it = PortBuilder::all_ports().find(port_name);
@@ -90,29 +95,41 @@ CommandResponse BKDRFTQueueOut::Init(const bess::pb::BKDRFTQueueOutArg &arg) {
 
   node_constraints_ = port_->GetNodePlacementConstraint();
 
+  // Get liset of requested queues
+  count_queues_ = arg.qid_size();
+  data_queues_ = new queue_t[count_queues_];
+  for (int i = 0; i < count_queues_; i++)
+    data_queues_[i] = arg.qid(i);
+
+  // Validate the number of requested queues
+  // count_queues_ = arg.count_queues();
+  if (count_queues_ < 1 || (count_queues_ < 2 && cdq_)) {
+    return CommandFailure(EINVAL, "Count queues should be more than 2");
+  } else if (count_queues_ > MAX_QUEUES) {
+    return CommandFailure(EINVAL, "Count queues should not be more than %d, "
+        "it is currently: %d\n", MAX_QUEUES, count_queues_);
+  }
+
+  // Acquire queues
   ret = port_->AcquireQueues(reinterpret_cast<const module *>(this),
-                             PACKET_DIR_OUT, nullptr, 0);
+                             PACKET_DIR_OUT, data_queues_, count_queues_);
   if (ret < 0) {
     return CommandFailure(-ret);
   }
 
-  qid_ = arg.qid();
-
+  // Check if has doorbell queue
   cdq_ = arg.cdq();
-  count_queues_ = arg.count_queues();
-  if (count_queues_ < 1 || (count_queues_ < 2 && cdq_)) {
-    return CommandFailure(EINVAL, "Count queues should be more than 2");
-  } else if (count_queues_ > MAX_QUEUES) {
-    return CommandFailure(EINVAL, "Count queues should not be more than %d, it is currently: %d\n", MAX_QUEUES, count_queues_);
+
+  if (cdq_) {
+    doorbell_queue_number_ = data_queues_[0];
+  } else {
+    doorbell_queue_number_ = -1;
   }
 
   lossless_ = arg.lossless();
   backpressure_ = arg.backpressure();
   overlay_ = arg.overlay();
   log_ = arg.log();
-  if (log_) {
-    LOG(INFO) << "[BKDRFTQueueOut] backpressure: " << backpressure_ << "\n";
-  }
 
   // TODO: this modules is not thread safe yet
   if (lossless_) {
@@ -154,6 +171,8 @@ CommandResponse BKDRFTQueueOut::Init(const bess::pb::BKDRFTQueueOutArg &arg) {
   LOG(INFO) << "BKDRFTQueueOut: name: " << name_
             << " pfq: " << per_flow_buffering_ << " cdq: " << cdq_
             << " lossless: " << lossless_ << " bp: " << backpressure_ << "\n";
+  LOG(INFO) << "name: " << name_ << " doorbell queue id: "
+            << doorbell_queue_number_ << "\n";
 
 #ifdef HOLB
   LOG(INFO) << "HOLB is enabled\n";
@@ -439,8 +458,7 @@ void BKDRFTQueueOut::TrySendBufferPFQ(Context *cntx) {
     }
 
     // if (overlay_ && fstate != nullptr
-    //     // && fstate->byte_in_buffer < buffer_len_low_water
-    //     && fstate->packet_in_buffer < buffer_len_low_water
+    //     && fstate->byte_in_buffer < buffer_len_low_water
     //     && fstate->overlay_state == OverlayState::TRIGGERED) {
     //   fstate->overlay_state = OverlayState::SAFE;
     //   SendOverlay(iter->first, qid, OverlayState::SAFE);
@@ -559,7 +577,7 @@ void BKDRFTQueueOut::TrySendBuffer(Context *cntx) {
     }
 
     // if (overlay_ && fstate != nullptr
-    //     && fstate->packet_in_buffer < buffer_len_low_water
+    //     && fstate->byte_in_buffer < buffer_len_low_water
     //     && fstate->overlay_state == OverlayState::TRIGGERED) {
     //   fstate->overlay_state = OverlayState::SAFE;
     //   SendOverlay(flow, q, OverlayState::SAFE);
@@ -590,7 +608,10 @@ inline uint16_t BKDRFTQueueOut::SendCtrlPkt(Port *p, queue_t qid,
       return 0;
     }
 
-    sent_ctrl_pkts = p->SendPackets(BKDRFT_CTRL_QUEUE, &pkt, 1);
+    // mark the control packet to sit on the corresponding doorbel queue
+    bess::bkdrft::mark_packet_with_queue_number(pkt, doorbell_queue_number_);
+
+    sent_ctrl_pkts = p->SendPackets(doorbell_queue_number_, &pkt, 1);
     dropped = 1 - sent_ctrl_pkts;
 
     // Ctrl packets are not counted in statistics
@@ -694,20 +715,26 @@ inline void BKDRFTQueueOut::Pause(Context *cntx, const Flow &flow,
                                   const queue_t qid,
                                   const uint64_t buffer_size) {
   // pause the incoming queue of the flow
-  // TODO: get line rate some how
+  // TODO: get incomming line rate for bandwith-delay estimation
   uint64_t pps;
   uint64_t duration;
   uint64_t ts;
+  uint64_t effect_time = 200000; // TODO: find this variable, rtt + ...
+  uint64_t estimated_buffer_len;
   Port *p = port_;
   pps = p->rate_.pps[PACKET_DIR_OUT][qid];
   if (pps == 0) {
-    duration = MAX_PAUSE_DURATION;
+    // LOG(INFO) << "pps is zero\n";
+    duration = 100000; // 100 us
   } else {
-    duration = ((buffer_size) / pps) + 1;
+    estimated_buffer_len = buffer_size + (pps * effect_time / 1000000);
+    duration = ((estimated_buffer_len * 1000000000UL) / pps);
     if (duration > MAX_PAUSE_DURATION) {
-      duration = MAX_PAUSE_DURATION;
+      // LOG(INFO) << "more than max pause durtaion\n";
+      // duration = MAX_PAUSE_DURATION;
     } else if (duration < MIN_PAUSE_DURATION) {
-      duration = MIN_PAUSE_DURATION;
+      // LOG(INFO) << "less than min pause duration\n";
+      // duration = MIN_PAUSE_DURATION;
     }
   }
 
@@ -719,15 +746,15 @@ inline void BKDRFTQueueOut::Pause(Context *cntx, const Flow &flow,
   pause_call_total += 1;
 
   if (log_)
-    LOG(INFO) << "pause duration: " << duration << " until: " << ts
-              << " bps: " << pps << flow.addr_src.value() << "\n";
+    LOG(INFO) << "pause qid: " << (int)qid << " pause duration: "
+              << duration << " until: " << ts
+              << " pps: " << pps << "\n  flow: " << FlowToString(flow) << "\n";
 }
 
 void BKDRFTQueueOut::ProcessBatchWithBuffer(Context *cntx,
                                           bess::PacketBatch *batch) {
   using namespace bess::bkdrft;
   Port *p = port_;
-  uint64_t packets_in_buffer;
   uint16_t sent_pkts = 0;
   const int cnt = batch->cnt();
   bess::Packet **pkts = batch->pkts();
@@ -737,11 +764,10 @@ void BKDRFTQueueOut::ProcessBatchWithBuffer(Context *cntx,
   fstate->last_used = cntx->current_ns;
 
   // find the number of packets in the buffer assigned to this flow
-  packets_in_buffer = fstate->packet_in_buffer;
 
   // Before we give away this batch let's check on our buffer.
   // if (BKDRFTQueueOut::count_packets_in_buffer_ > 0) {
-  if (packets_in_buffer > 0) {
+  if (fstate->packet_in_buffer > 0) {
     // We have some packet in the buffer, to avoid packet
     // reordering I should send the remining packets in
     // buffer first.
@@ -772,23 +798,31 @@ void BKDRFTQueueOut::ProcessBatchWithBuffer(Context *cntx,
   // if we are buffering then we can decide based on the buffer size
   // for each flow
 
-  // update the number of packets in the buffer
-  packets_in_buffer = fstate->packet_in_buffer;
-
-  // if (BKDRFTQueueOut::count_packets_in_buffer_ > buffer_len_high_water) {
-  if (packets_in_buffer > buffer_len_high_water) {
-    if (overlay_ && cntx->current_ns - fstate->ts_last_overlay > fstate->no_overlay_duration) {
-      fstate->ts_last_overlay = cntx->current_ns;
-      fstate->overlay_state = OverlayState::TRIGGERED;
-      uint64_t duration;
-      SendOverlay(flow, fstate, OverlayState::TRIGGERED, &duration);
-      fstate->no_overlay_duration = duration;
-    }
+  if (overlay_ && fstate->packet_in_buffer > buffer_len_high_water
+      && cntx->current_ns - fstate->ts_last_overlay > fstate->no_overlay_duration) {
+    fstate->ts_last_overlay = cntx->current_ns;
+    fstate->overlay_state = OverlayState::TRIGGERED;
+    uint64_t duration;
+    SendOverlay(flow, fstate, OverlayState::TRIGGERED, &duration);
+    fstate->no_overlay_duration = duration;
   }
 
-  if (backpressure_ && packets_in_buffer > bp_buffer_len_high_water)
-    // TODO: maybe findout how many bytes are in this flow's buffers
-    Pause(cntx, flow, qid, packets_in_buffer);
+  if (backpressure_ && fstate->packet_in_buffer > bp_buffer_len_high_water) {
+    if (!per_flow_buffering_) {
+      // TODO: this code may be better to be placed in some other place
+      // TODO: it might be good to have a data structure for keeping track of
+      // flows on each queue, without needing to iterate over flow to queue map.
+      // pause all flows mapped to this queue
+      auto iter = flow_buffer_mapping_.begin();
+      for (; iter != flow_buffer_mapping_.end(); iter++) {
+        if (iter->second->qid == qid)
+          Pause(cntx, iter->first, qid, iter->second->packet_in_buffer);
+      }
+    } else {
+      // each flow has its own queue
+      Pause(cntx, flow, qid, fstate->packet_in_buffer);
+    }
+  }
 }
 
 void BKDRFTQueueOut::ProcessBatchLossy(Context *cntx,
@@ -802,11 +836,7 @@ void BKDRFTQueueOut::ProcessBatchLossy(Context *cntx,
   Flow flow = bess::bkdrft::PacketToFlow(*(pkts[0]));
 
   queue_t qid;
-  if (per_flow_buffering_) {
-    qid = GetFlowState(cntx, flow)->qid;
-  } else {
-    qid = qid_;
-  }
+  qid = GetFlowState(cntx, flow)->qid;
 
   if (cdq_ && qid == 0)
     qid = 1; // qid = 0 is reserved for ctrl/command queue
@@ -868,25 +898,27 @@ flow_state *BKDRFTQueueOut::GetFlowState(Context *cntx, Flow &flow) {
 
   // check if the flow is mapped to a queue
   // if it is not find the queue with the LRU policy
-  queue_t i;
+  uint16_t i;
   if (cdq_) {
-    // in cdq mode queue zero is reserved for command packets
+    // in cdq mode queue doorbell is reserved for command packets
     i = 1;
   } else {
     i = 0;
   }
 
   // find a queue which has not been used recently
+  uint16_t iter_q;
   for (; i < count_queues_; i++) {
-    auto q_flow = q_info_[i].flow;
+    iter_q = data_queues_[i];
+    auto q_flow = q_info_[iter_q].flow;
     if (Flow::EqualTo()(q_flow, flow)) {
-      qid = i;
+      qid = iter_q;
       found_qid = true;
       q_info_[qid].last_visit = cntx->current_ns;
       break;
-    } else if (q_info_[i].last_visit < min_flow_ts) {
-      min_flow_ts = q_info_[i].last_visit;
-      mapping_q_candid = i;
+    } else if (q_info_[iter_q].last_visit < min_flow_ts) {
+      min_flow_ts = q_info_[iter_q].last_visit;
+      mapping_q_candid = iter_q;
     }
   }
 
@@ -941,7 +973,6 @@ flow_state *BKDRFTQueueOut::GetFlowState(Context *cntx, Flow &flow) {
     state->buffer = limited_buffers_[qid];
   }
   flow_buffer_mapping_.Insert(flow, state);
-  // LOG(INFO) << "Map flow: " << FlowToString(flow) << " to q: " << (int)qid << "\n";
 
   return state;
 }
@@ -1039,13 +1070,11 @@ void BKDRFTQueueOut::MeasureForPolicy(__attribute__((unused)) Context *cntx,__at
   if (drop_est > drop_high_water) {
     // LOG(INFO) << "drop est: " << drop_est << "\n";
     if (backpressure_) {
-      // TODO: buffer size was replaced with zero
+      // TODO: removed buffer_size and placed 0
       // uint64_t buffer_size = BufferSize(flow);
-      Pause(cntx, flow, qid, 0);
+      Pause(cntx, flow, qid, 100);
     }
 
-    // if (overlay_)
-    //   SendOverlay(flow, qid);
   }
 }
 
@@ -1063,6 +1092,8 @@ int BKDRFTQueueOut::SendOverlay(const Flow &flow, const flow_state *fstate,
   }
 
   auto &OverlayMan = bess::bkdrft::BKDRFTOverlayCtrl::GetInstance();
+  uint64_t rate = port_->rate_.pps[PACKET_DIR_OUT][fstate->qid];
+  // uint64_t rate = port_->rate_.bps[PACKET_DIR_OUT][fstate->qid];
   uint64_t pps = port_->rate_.pps[PACKET_DIR_OUT][fstate->qid];
   uint64_t buffer_size = 0;
   uint64_t bdp = 0; // bandwidth delay product
@@ -1071,31 +1102,37 @@ int BKDRFTQueueOut::SendOverlay(const Flow &flow, const flow_state *fstate,
     buffer_size = fstate->packet_in_buffer;
     if (buffer_size < buffer_len_low_water) {
       dt_lw = 1000;
-    } else if  (pps == 0) {
-      dt_lw = 10000;
+    } else if  (rate == 0) {
+      dt_lw = 1000000;
     } else {
       // find out when the low water is reached.
       auto entry = OverlayMan.getOverlayEntry(flow);
       if (entry != nullptr) {
-        // uint64_t rtt = 50000; // ns (50 us)
-        // bdp = entry->port->rate_.pps[PACKET_DIR_INC][entry->qid] * rtt / 1e9;
+        // uint64_t rtt = 10000000; // us
+        // bdp = entry->port->rate_.bps[PACKET_DIR_INC][entry->qid] * rtt / 1e9;
       }
-      dt_lw = ((buffer_size + bdp) - buffer_len_low_water) * 1e9 / pps;
-      // pause duration should not be more than a value
-      if (dt_lw > overlay_max_pause_duration) {
-        dt_lw = overlay_max_pause_duration;
+      dt_lw = ((buffer_size + bdp) - buffer_len_low_water) * 1e9 / rate;
+      if (dt_lw > max_overlay_pause_duration) {
+        dt_lw = max_overlay_pause_duration;
       }
     }
   }
 
+  // do not set rate to less than a batch.
+  if (pps < 32) {
+    pps = 32;
+  }
+
   int ret = OverlayMan.SendOverlayMessage(flow, pkt, pps, dt_lw);
+  // int ret = OverlayMan.SendOverlayMessage(flow, pkt, 100000, dt_lw);
   // LOG(INFO) << "SendOverlayMessage return value " << ret << "\n";
   if (ret == 0) {
     overlay_tp_ += 1;
 
-    // LOG(INFO) << "Buffer size: " << buffer_size <<  "\n";
-    // LOG(INFO) << "Sending overlay: name: " << name_ << " pps: " << pps
-    //   << " pause duration: " << dt_lw << "\n";
+    LOG(INFO) << "Buffer size: " << buffer_size <<  "\n";
+    LOG(INFO) << "Sending overlay: name: " << name_
+      << "buffer_size: " << buffer_size << " pps: " << pps
+      << " pause duration: " << dt_lw << "\n";
   } else {
     bess::Packet::Free(pkt);
   }
@@ -1148,12 +1185,14 @@ struct task_result BKDRFTQueueOut::RunTask(Context *ctx,
 
 CommandResponse BKDRFTQueueOut::CommandPauseCalls(const bess::pb::EmptyArg &)
 {
-      for (size_t i = 0; i < pcps.size(); i++) {
-        LOG(INFO) << "pcps: " << pcps.at(i) << " name: " << name_ << "\n";
-      }
-      LOG(INFO) << "===================="
-                << "\n";
-      return CommandSuccess();
+  bess::pb::BKDRFTQueueOutCommandPauseCallsResponse resp;
+  for (size_t i = 0; i < pcps.size(); i++) {
+    LOG(INFO) << "pcps: " << pcps.at(i) << " name: " << name_ << "\n";
+    resp.add_pcps(pcps.at(i));
+  }
+  LOG(INFO) << "===================="
+            << "\n";
+  return CommandSuccess(resp);
 }
 
 CommandResponse BKDRFTQueueOut::CommandGetCtrlMsgTp(const bess::pb::EmptyArg &)
@@ -1187,6 +1226,14 @@ CommandResponse BKDRFTQueueOut::CommandSetOverlayThreshold(
   LOG(INFO) << "Update Overlay Threshold: name: " << name_
             << " lw: " << buffer_len_low_water
             << " hw: " << buffer_len_high_water << "\n";
+  return CommandSuccess();
+}
+
+CommandResponse BKDRFTQueueOut::CommandSetBackpressureThreshold(
+  const bess::pb::BKDRFTQueueOutCommandSetBackpressureThresholdArg &arg) {
+  bp_buffer_len_high_water = arg.threshold();
+  LOG(INFO) << "Update Backpressure Threshold: Name: " << name_
+            << " threshold: " << bp_buffer_len_high_water << "\n";
   return CommandSuccess();
 }
 

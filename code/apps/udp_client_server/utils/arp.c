@@ -2,6 +2,7 @@
 
 #include <unistd.h>
 #include <stdbool.h>
+#include <assert.h>
 
 #include <rte_ip.h>
 #include <rte_arp.h>
@@ -70,6 +71,9 @@ int send_bkdrft_arp(uint16_t port, uint16_t queue, uint16_t op, uint32_t src_ip,
   struct rte_arp_hdr *a_hdr;
   int nb_tx;
 
+  if (tx_mbuf_pool == NULL)
+    return -1;
+
   if (cdq && queue == 0)
     printf("warning: sending arp pkt on queue 0\n");
 
@@ -83,6 +87,7 @@ int send_bkdrft_arp(uint16_t port, uint16_t queue, uint16_t op, uint32_t src_ip,
 
   // ethernet header
   buf_ptr = rte_pktmbuf_append(buf, RTE_ETHER_HDR_LEN);
+  assert(buf_ptr != NULL);
   eth_hdr = (struct rte_ether_hdr *) buf_ptr;
 
   rte_ether_addr_copy(&src_mac, &eth_hdr->s_addr);
@@ -91,6 +96,7 @@ int send_bkdrft_arp(uint16_t port, uint16_t queue, uint16_t op, uint32_t src_ip,
 
   // ipv4 header
   buf_ptr = rte_pktmbuf_append(buf, sizeof(struct rte_ipv4_hdr));
+  assert(buf_ptr != NULL);
   ipv4_hdr = (struct rte_ipv4_hdr *)buf_ptr;
   ipv4_hdr->version_ihl = 0x45;
   ipv4_hdr->type_of_service = cdq ? queue << 2 : 0;
@@ -117,6 +123,7 @@ int send_bkdrft_arp(uint16_t port, uint16_t queue, uint16_t op, uint32_t src_ip,
 
   // arp header
   buf_ptr = rte_pktmbuf_append(buf, sizeof(struct rte_arp_hdr));
+  assert(buf_ptr != NULL);
   a_hdr = (struct rte_arp_hdr *) buf_ptr;
   // a_hdr->arp_hrd = rte_cpu_to_be_16(RTE_ARP_HRD_ETHER);
   a_hdr->arp_protocol = rte_cpu_to_be_16(RTE_ETHER_TYPE_IPV4);
@@ -128,6 +135,8 @@ int send_bkdrft_arp(uint16_t port, uint16_t queue, uint16_t op, uint32_t src_ip,
   a_hdr->arp_data.arp_sip = rte_cpu_to_be_32(src_ip);
   rte_ether_addr_copy(&dst_eth, &a_hdr->arp_data.arp_tha);
   a_hdr->arp_data.arp_tip = rte_cpu_to_be_32(dst_ip);
+
+  buf->l2_len = RTE_ETHER_HDR_LEN;
 
   // send pkt
   // nb_tx = rte_eth_tx_burst(0, 0, &buf, 1);

@@ -1,0 +1,186 @@
+"""
+Multi Threading Pipeline Configuration
+
+! This pipeline is hardcoded for the experiment purposes.
+---------------------------------------------------------
+"""
+import os
+import sys
+import yaml
+import subprocess
+import scapy.all as scapy
+import json
+
+
+# pipeline config
+config = json.load(open('.pipeline_config.json'))
+
+out_pci = config['pci']
+count_queue = config['count_queue']
+count_tas_queues = count_queue
+size_q = config['queue_size']
+add_vlan = config['add_vlan']
+vsw_cores = config['virtual_switch_cores']
+if vsw_cores < 1:
+  print('virtual switch cores can not be less than 1', file=sys.stdout)
+
+
+# Add virtual switch workers
+for i in range(vsw_cores):
+  bess.add_worker(i, i)
+
+# Load cluster config file
+# this configuration defines the shape of the cluster
+# more specificly, how many instance is running on each node and what are
+# their configurations
+config_file = config['cluster_config_file']
+
+
+# Define some function for reading cluster config
+def get_mac_address():
+  """
+  Get current device MAC address
+  """
+  # config is a global variable
+  cmd = 'cat /sys/class/net/%s/address' % config["interface"]
+  p = subprocess.Popen(cmd, shell=True, stdout=subprocess.PIPE)
+  res, _ = p.communicate()
+  add = res.decode().strip()
+  return add
+
+
+def get_pci_address(iface):
+  """
+  Get PCI address for the given interface name
+  """
+  # ethtool -i iface # this should give enough information
+  raise Exception('Not implemented yet')
+
+
+def get_current_node_info(file_path):
+  mac = get_mac_address()
+  found = False
+  host_name = None
+  host_info = None
+  with open(file_path) as f:
+    config = yaml.load(f)
+    for key in config.keys():
+      if key == 'connections':
+        continue
+      item = config[key]
+      if item['mac'] == mac:
+        host_name = key
+        host_info = item
+        found = True
+        break
+  return host_name, host_info
+
+
+def get_tci(prio, dei, vlan_id):
+  tci = prio << 13 | 0 << 12 | vlan_id
+  return tci
+
+_next_wid = -1
+def next_wid():
+  global _next_wid
+  _next_wid = (_next_wid + 1) % vsw_cores
+  return _next_wid
+
+
+# Get configuration for the running machine
+host_name, info =  get_current_node_info(config_file)
+if host_name is None:
+  raise Exception('This node has not been configured!')
+instances = info.get('instances', [])
+count_instances = len(instances)
+
+# Backdraft related pipeline flags
+bp = config['bp']
+buffering = config['buffering']
+cdq = config['cdq']
+pfq = config['pfq']
+overlay = config['overlay']
+
+# ===========================================#
+#                  Pipeline
+# ===========================================#
+
+
+# PCI of port connected to switch
+sw_port = PMDPort(pci=out_pci, num_inc_q=12, num_out_q=12,
+           rate_limiting=overlay, rate=40, command_queue=cdq, data_mapping=cdq)
+
+
+# TAS vhost ports
+vhosts = []
+l2fwd_entries = []
+for i, instance in enumerate(instances):
+  name = 'tas_{}_{}'.format(instance['type'], i)
+  tas_socket = '/tmp/{}.sock'.format(name)
+
+  # make sure previous socket file is removed
+  if os.path.exists(tas_socket):
+    # os.remove(tas_socket)
+    subprocess.call('sudo rm {}'.format(tas_socket), shell=True)
+    print('previous socket file removed')
+
+  if 'count_queue' in instance:
+    tmp_count_queue = instance['count_queue']
+  else:
+    tmp_count_queue = count_tas_queues
+
+  vdev = 'eth_vhost{},iface={},queues={}'.format(i, tas_socket, tmp_count_queue)
+  tas_port = PMDPort(name=name,
+    vdev=vdev,
+    num_inc_q=tmp_count_queue,
+    num_out_q=tmp_count_queue,
+    size_inc_q=size_q,
+    size_out_q=size_q * 4,
+    rate_limiting=overlay,
+    rate=40)
+
+  vhosts.append(tas_port)
+
+
+
+# RX
+nic_q = 0
+if not cdq and host_name == 'node2':
+  # Only node 2 receives packets so do not allocate cpu for rx on the node1
+  # each queue should be polled
+  print ('setup rx')
+  for i in range(count_queue):
+    sw_q_inc = QueueInc(port=sw_port, qid=nic_q)
+    nic_q += 1
+    sw_q_inc.attach_task(wid=next_wid())
+
+    vhost_qout = QueueOut(port=vhosts[0], qid=i)
+    sw_q_inc -> vhost_qout
+
+  for i in range(4):
+    sw_q_inc = QueueInc(port=sw_port, qid=nic_q)
+    nic_q += 1
+    sw_q_inc.attach_task(wid=next_wid())
+
+    vhost_qout = QueueOut(port=vhosts[1], qid=i)
+    sw_q_inc -> vhost_qout
+
+# TX
+if not cdq and host_name == 'node1':
+  # each queue should be polled
+  print('setup tx')
+  for j in range(count_queue):
+    qinc =QueueInc(port=vhosts[0], qid=nic_q)
+    qout = QueueOut(port=sw_port, qid=j)
+    qinc -> qout
+    nic_q += 1
+    qinc.attach_task(wid=next_wid())
+
+  # each queue should be polled
+  for j in range(4):
+    qinc = QueueInc(port=vhosts[j], qid=j)
+    qout = QueueOut(port=sw_port, qid=nic_q)
+    qinc -> qout
+    nic_q += 1
+    qinc.attach_task(wid=next_wid())
+

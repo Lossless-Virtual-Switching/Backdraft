@@ -43,6 +43,59 @@ struct rte_flow *filter_by_ip_proto(uint16_t port_id, uint8_t proto,
   return flow;
 }
 
+struct rte_flow *filter_by_udp_src_port(uint16_t port_id, uint16_t src_port,
+                                    uint16_t rx_q,
+                                    struct rte_flow_error *error) {
+  const int pattern_count = 4;
+  const int action_count = 2;
+  struct rte_flow_attr attr;
+  struct rte_flow_item pattern[pattern_count];
+  struct rte_flow_action action[action_count];
+  struct rte_flow *flow = NULL;
+  struct rte_flow_action_queue queue = {.index = rx_q};
+  struct rte_flow_item_ipv4 ip_spec;
+  struct rte_flow_item_ipv4 ip_mask;
+  struct rte_flow_item_udp udp_spec;
+  struct rte_flow_item_udp udp_mask;
+  int res;
+  memset(pattern, 0, sizeof(pattern));
+  memset(action, 0, sizeof(action));
+
+  memset(&attr, 0, sizeof(struct rte_flow_attr));
+  attr.ingress = 1;
+
+  action[0].type = RTE_FLOW_ACTION_TYPE_QUEUE;
+  action[0].conf = &queue;
+  action[1].type = RTE_FLOW_ACTION_TYPE_END;
+
+  pattern[0].type = RTE_FLOW_ITEM_TYPE_ETH;
+  memset(&ip_spec, 0, sizeof(struct rte_flow_item_ipv4));
+  memset(&ip_mask, 0, sizeof(struct rte_flow_item_ipv4));
+  ip_spec.hdr.next_proto_id = IPPROTO_UDP;
+  ip_mask.hdr.next_proto_id = 0xff;   // should be exact match
+  ip_mask.hdr.src_addr = 0x00000000;  // src ip is not important
+  ip_mask.hdr.dst_addr = 0x00000000;  // dst ip is not important
+  pattern[1].type = RTE_FLOW_ITEM_TYPE_IPV4;
+  pattern[1].spec = &ip_spec;
+  pattern[1].mask = &ip_mask;
+
+  memset(&udp_spec, 0, sizeof(struct rte_flow_item_udp));
+  memset(&udp_mask, 0, sizeof(struct rte_flow_item_udp));
+  udp_spec.hdr.src_port = rte_cpu_to_be_16(src_port);
+  udp_mask.hdr.src_port = 0xffff;
+  udp_mask.hdr.dst_port = 0x0000;
+  pattern[2].type = RTE_FLOW_ITEM_TYPE_UDP;
+  pattern[2].spec = &udp_spec;
+  pattern[2].mask = &udp_mask;
+
+  pattern[3].type = RTE_FLOW_ITEM_TYPE_END;
+
+  res = rte_flow_validate(port_id, &attr, pattern, action, error);
+  if (!res)
+    flow = rte_flow_create(port_id, &attr, pattern, action, error);
+  return flow;
+}
+
 struct rte_flow *filter_by_ip_dst(uint16_t port_id, uint32_t dst_addr,
                                   uint32_t dst_mask, uint16_t rx_q,
                                   struct rte_flow_error *error) {

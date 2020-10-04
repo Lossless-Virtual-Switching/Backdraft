@@ -54,7 +54,8 @@ def run_server(conf):
 
 
 def get_pfc_results():
-    log = subprocess.check_output('ethtool -S eno50 | grep prio3_pause', shell=True)
+    interface = 'enp65s0f0'
+    log = subprocess.check_output('ethtool -S {} | grep prio3_pause'.format(interface), shell=True)
     log = log.decode()
     log = log.strip()
     lines = log.split('\n')
@@ -98,6 +99,7 @@ def main():
         app_mode = 'bkdrft'
     else:
         app_mode = 'bess'
+    print(app_mode)
 
     server_conf = {
             'cpuset': cpuset,
@@ -128,6 +130,13 @@ def main():
     # Setup BESS config
     file_path = pipeline_config_file
     ret = bessctl_do('daemon start -- run file {}'.format(file_path))
+    if ret.returncode != 0:
+        print('error: bess pipeline failed')
+        sys.exit(1)
+
+    if args.bessonly:
+        print('bess only mode: only setup bess pipeline')
+        sys.exit(0)
 
     pfc_stats_before = get_pfc_results()
 
@@ -168,6 +177,35 @@ def main():
         print('module:', module_name, 'avg: {:.2f}'.format(avg))
         print(overlay_tp)
     print('')
+
+    print ('overlay Rx per queue:')
+    for i in range(2):
+        module_name = 'bkdrft_queue_inc{0}'.format(i)
+        cmd =  'command module {0} get_overlay_stats EmptyArg {{}}'
+        cmd = cmd.format(module_name)
+        res = bessctl_do(cmd, stdout=subprocess.PIPE)
+        log = res.stdout.decode()
+        log = log.replace('response: ', '')
+        log_lines = log.split('\n')
+        pkt_logs = filter(lambda x: 'pkts' in x, log_lines)
+        duration_logs = filter(lambda x: 'duration' in x, log_lines)
+        pkt_logs = map(lambda x: int(x.strip().split()[1]), pkt_logs)
+        duration_logs = map(lambda x: int(x.strip().split()[1]), duration_logs)
+        print('module:', module_name)
+        for q, (pkt, ov_duration) in enumerate(zip(pkt_logs, duration_logs)):
+            print('q:', q, 'pkts', pkt, 'duration (ns)', ov_duration)
+        print('------------------')
+    print('')
+ 
+
+    # if bp:
+    #     print('pause call per second')
+    #     bessctl_do('command module bkdrft_queue_out0 get_pause_calls EmptyArg {}')
+    #     bessctl_do('command module bkdrft_queue_out1 get_pause_calls EmptyArg {}')
+    #     pps_val = get_pps_from_info_log()
+    #     # pprint(pps_val)
+    #     # pps_log = str_format_pps(pps_val)
+        
 
     _stop_everything()
 
@@ -210,6 +248,8 @@ if __name__ == '__main__':
         help='client destination ip adresses (e.g. "192.168.1.3 192.168.1.4")')
     parser.add_argument('--duration', type=int, default=20,
             help='experiment duration')
+    parser.add_argument('--bessonly', action='store_true', default=False,
+            help='only setup bess pipeline')
     args = parser.parse_args()
 
     source_ip = args.source_ip
@@ -238,6 +278,9 @@ if __name__ == '__main__':
     if overlay and not buffering:
         print('warning: overlay is enabled but buffering is not!')
 
-
-    main()
+    try:
+        main()
+    except Exception as e:
+        print('experiment failed with an exception')
+        print(e)
 

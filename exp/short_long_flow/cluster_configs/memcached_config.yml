@@ -1,0 +1,26 @@
+# A memcached client server config
+node0:
+  ip: "192.168.1.1"
+  mac: "1c:34:da:41:ca:bc"
+  instances:
+    - port: 1001
+      ip: "192.168.1.11"
+      app: "memcached"
+      type: "client"
+      cpus: 5,6,7,8,9,10
+      flow_config_name: "default_client"
+      tas_cores: 1
+      destinations:
+        - node1_0
+node1:
+  ip: "192.168.1.2"
+  mac: "1c:34:da:41:d0:0c"
+  instances:
+    - port: 2001
+      ip: "192.168.1.21"
+      type: "server"
+      app: "memcached"
+      cpus: 5,6,7,8,9,10
+      flow_config_name: "default_server"
+      tas_cores: 1
+

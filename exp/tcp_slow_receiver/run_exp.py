@@ -68,7 +68,7 @@ def get_pps_from_info_log():
     return book
 
 
-def str_format_pps(book): 
+def str_format_pps(book):
     res = []
     res.append("=== pause call per sec ===")
     for name in book:
@@ -94,7 +94,7 @@ def get_port_packets(port_name):
     raw = lines[2].split()
     res['rx']['packet'] = int(raw[2].replace(',',''))
     res['rx']['byte'] = int(raw[4].replace(',',''))
-    raw = lines[3].split() 
+    raw = lines[3].split()
     res['rx']['drop'] = int(raw[1].replace(',',''))
 
 

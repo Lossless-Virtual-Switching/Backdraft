@@ -26,11 +26,12 @@ const int drop_high_water = 30; // assumming batch size is 32
 // const int buffer_len_low_water = 64;
 // const uint64_t buffer_len_low_water = 6000; // bytes
 
-const int bp_buffer_len_high_water = 10;
 const uint64_t overlay_max_pause_duration = 10000000;
 const uint32_t max_availabe_flows = 1024;
 const uint64_t flow_dealloc_limit = 100000000; // ns
 const uint32_t max_buffer_size=4096;
+// const int bp_buffer_len_high_water = 2700;
+const uint64_t max_overlay_pause_duration = 5000000; // ns
 
 using bess::bkdrft::Flow;
 struct queue_flow_info {
@@ -250,14 +251,13 @@ public:
   CommandResponse CommandGetOverlayTp(const bess::pb::EmptyArg &);
   CommandResponse CommandSetOverlayThreshold(
     const bess::pb::BKDRFTQueueOutCommandSetOverlayThresholdArg &args);
+  CommandResponse CommandSetBackpressureThreshold(
+    const bess::pb::BKDRFTQueueOutCommandSetBackpressureThresholdArg &arg);
 
 private:
   // place not sent packets in the buffer for the given flow
   void BufferBatch(bess::bkdrft::Flow &flow, flow_state *fstate,
                              bess::PacketBatch *batch, uint16_t sent_pkt);
-
-  // returns the size of assigned buffer for the given flow
-  // uint64_t BufferSize(const Flow &flow);
 
   // try to send packets in the buffer
   void TrySendBuffer(Context *cntx);
@@ -313,7 +313,7 @@ private:
                              Flow::EqualTo>;
 
   Port *port_;
-  queue_t qid_;
+  // queue_t qid_;
 
   uint16_t count_queues_;
   bool lossless_;
@@ -365,8 +365,9 @@ private:
   std::vector<uint64_t> overlay_per_sec;
   uint64_t stats_begin_ts_;
 
-  uint64_t buffer_len_high_water = 64; // bytes
-  uint64_t buffer_len_low_water = 32; // bytes
+  uint64_t buffer_len_high_water = 6;
+  uint64_t buffer_len_low_water = 16;
+  uint64_t bp_buffer_len_high_water = 32;
 
   // a  name given to this module. currently used for loggin pause per sec
   // statistics.
@@ -378,6 +379,9 @@ private:
   // when in lossy mode, from this information we decide
   // if pause or overlay should be emmited
   bess::utils::CuckooMap<Flow, double, Flow::Hash, Flow::EqualTo> flow_drop_est;
+
+  uint16_t doorbell_queue_number_;
+  queue_t *data_queues_;
 
   // A pointer to ProcessBatch context
   // This is used to avoid passing context to other functions

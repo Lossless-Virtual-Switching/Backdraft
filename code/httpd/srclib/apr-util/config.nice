@@ -1,0 +1,20 @@
+#! /bin/sh
+#
+# Created by configure
+
+"/proj/uic-dcs-PG0/fshahi52/httpd/httpd-trunk/srclib/apr-util/configure" \
+"--disable-option-checking" \
+"--enable-so" \
+"--enable-ssl" \
+"--with-mpm=prefork" \
+"--with-included-apr" \
+"--with-included-apr-util" \
+"--cache-file=/dev/null" \
+"--srcdir=/proj/uic-dcs-PG0/fshahi52/httpd/httpd-trunk/srclib/apr-util" \
+"--with-apr=../apr" \
+"--prefix=/usr/local/apache2" \
+"--exec-prefix=/usr/local/apache2" \
+"--libdir=/usr/local/apache2/lib" \
+"--includedir=/usr/local/apache2/include" \
+"--bindir=/usr/local/apache2/bin" \
+"$@"

@@ -1,3 +1,4 @@
+#include <unistd.h>
 #include <rte_eal.h>
 #include <rte_ethdev.h>
 #include <rte_mbuf.h>
@@ -180,14 +181,14 @@ int main(int argc, char *argv[]) {
   uint32_t source_ip;
   int client_port = 5058;
   // TODO: this does not generalize to the count cpu
-  int server_port[16] = {1001, 5001, 6002};
+  int server_port[16] = {1001, 5001, 6002, 2002, 3003, 4004, 7007, 8008};
 
   // how much is the size of udp payload
   // TODO: take message size from arguments
-  int payload_size = 1450; // 64; // 
+  int payload_size = 1450; // 64; //
 
   // how many queues does the connected Nic/Vhost have
-  int num_queues = 3;
+  uint16_t num_queues = 3;
 
   // client: 0, server: 1
   int mode = mode_client;
@@ -206,6 +207,7 @@ int main(int argc, char *argv[]) {
   // only used in server
   // delay for each burst in server (us)
   unsigned int server_delay = 0;
+  uint64_t delay_cycles = 0;
 
   // contex pointers pass to functions
   struct context cntxs[20];
@@ -247,6 +249,7 @@ int main(int argc, char *argv[]) {
   // * count flow
   // * experiment duration
   // * client port
+  // * client delay cycles
   // [server]
   // * server delay for each batch
 
@@ -257,6 +260,8 @@ int main(int argc, char *argv[]) {
 
   // read number of queues
   num_queues = atoi(argv[1]);
+  if (num_queues < 1)
+    rte_exit(EXIT_FAILURE, "At least one queue is needed");
   argv++;
   argc--;
 
@@ -297,6 +302,11 @@ int main(int argc, char *argv[]) {
     }
 
     count_flow = atoi(argv[4 + count_server_ips]);
+    if (count_flow < 1) {
+      rte_exit(EXIT_FAILURE, "number of flows should be at least one");
+    }
+    printf("Count flows: %d\n", count_flow);
+
     if (argc > 5 + count_server_ips)
       duration = atoi(argv[5 + count_server_ips]);
     printf("Experiment duration: %d\n", duration);
@@ -304,6 +314,10 @@ int main(int argc, char *argv[]) {
     if (argc > 6 + count_server_ips)
       client_port = atoi(argv[6 + count_server_ips]);
     printf("Client port: %d\n", client_port);
+
+    if (argc > 7 + count_server_ips)
+      delay_cycles = atol(argv[7 + count_server_ips]);
+    printf("Client processing between each packet %ld cycles\n", delay_cycles);
 
   } else if (!strcmp(argv[2], "server")) {
     // server
@@ -380,8 +394,16 @@ int main(int argc, char *argv[]) {
   // }
   // end of flow rules ==============================================
 
+  // TODO: fractions are not counted here
+  assert(num_queues % count_core == 0);
   // fill context objects ===========================================
-  int next_qid = system_mode == system_bkdrft ? 1 : 0;
+  int next_qid = 0;
+  int queue_per_core = num_queues / count_core;
+  if (system_mode == system_bkdrft) {
+    // num_queues -= 1;
+    next_qid = 1;
+    queue_per_core = (num_queues - 1) /count_core;
+  }
   int findex = 0;
   for (int i = 0; i < count_core; i++) {
     cntxs[i].mode = mode;
@@ -389,43 +411,58 @@ int main(int argc, char *argv[]) {
     cntxs[i].rx_mem_pool = rx_mbuf_pool;
     cntxs[i].tx_mem_pool = tx_mbuf_pool;
     cntxs[i].ctrl_mem_pool = ctrl_mbuf_pool;
+    cntxs[i].worker_id = i;
     cntxs[i].port = dpdk_port;
-    cntxs[i].num_queues = num_queues;
     cntxs[i].my_eth = my_eth;
-    cntxs[i].default_qid = next_qid++; // poll this queue
+    cntxs[i].default_qid = next_qid; // poll this queue
+    next_qid += queue_per_core;
+    assert(next_qid - 1 < num_queues);
     cntxs[i].running = 1;     // this job of this cntx has not finished yet
-    cntxs[i].src_ip = source_ip;
-    cntxs[i].use_vlan = 1;
-    cntxs[i].bidi = 1;
+    cntxs[i].src_ip = source_ip + i;
+    cntxs[i].use_vlan = 0;
+    cntxs[i].bidi = 0;
+    cntxs[i].num_queues = num_queues; // how many queue port has
+
+    /* how many queue the contex is responsible for */
+    cntxs[i].count_queues = queue_per_core;
+
+    /* allocate output buffer and get a file descriptor for that */
+    output_buffers[i] = malloc(2048);
+    FILE *fp = fmemopen(output_buffers[i], 2048, "w+");
+    assert(fp != NULL);
+    cntxs[i].fp = fp;
+
     if (mode == mode_server) {
-      // TODO: fractions are not counted here
-      assert(num_queues % count_core == 0);
-      int queue_per_core = num_queues / count_core;
-
-      // if it is server application
       cntxs[i].src_port = server_port[0];
-
-      cntxs[i].count_queues = queue_per_core;
       cntxs[i].managed_queues = malloc(queue_per_core * sizeof(uint32_t));
       for (int q = 0; q < queue_per_core; q++) {
         cntxs[i].managed_queues[q] = (findex * queue_per_core) + q;
-        if (system_mode == system_bkdrft)
+        if (system_mode == system_bkdrft) {
           cntxs[i].managed_queues[q]++; // zero is reserved
+          if (cntxs[i].managed_queues[q] >= num_queues)
+            cntxs[i].managed_queues[q] = num_queues - 1;
+        }
       }
       findex++;
 
       cntxs[i].delay_us = server_delay;
+      cntxs[i].delay_cycles = server_delay;
       printf("Server delay: %d\n", server_delay);
 
       cntxs[i].dst_ips = NULL;
+      cntxs[i].tmp_array = malloc(sizeof(uint64_t *) *2);
+      for (int z = 0; z < 2; z++)
+        cntxs[i].tmp_array[z] = calloc(32, sizeof(uint64_t));
+
     } else {
-      // this is client application
+      // this is a client application
 
       // TODO: fractions are not considered for this division
       int ips = count_server_ips / count_core;
       assert((count_server_ips % count_core) == 0);
+      assert((count_flow % count_core) == 0);
 
-      cntxs[i].src_port = client_port;
+      cntxs[i].src_port = client_port + i;
       cntxs[i].dst_ips = malloc(sizeof(int) * ips);
       {
         char ip_str[20];
@@ -441,16 +478,15 @@ int main(int argc, char *argv[]) {
       cntxs[i].dst_port = server_port[i];
       cntxs[i].payload_length = payload_size;
 
-      // allocate output buffer and get a file descriptor for that
-      output_buffers[i] = malloc(2048);
-      FILE *fp = fmemopen(output_buffers[i], 2048, "w+");
-      assert(fp != NULL);
-      cntxs[i].fp = fp;
-      cntxs[i].count_flow = count_flow;
+      cntxs[i].count_flow = count_flow / count_core;
       cntxs[i].base_port_number = server_port[i];
-      cntxs[i].count_queues = num_queues;
 
       cntxs[i].duration = duration;
+      cntxs[i].delay_cycles = delay_cycles;
+
+      /* use zipf for selecting dst ip */
+      cntxs[i].destination_distribution = DIST_ZIPF;
+      cntxs[i].queue_selection_distribution = DIST_UNIFORM;
 
       cntxs[i].managed_queues = NULL;
     }
@@ -467,6 +503,39 @@ int main(int argc, char *argv[]) {
       rte_eal_remote_launch(do_server, (void *)&cntxs[cntxIndex++], lcore_id);
     }
     do_server(&cntxs[0]);
+
+    for (int i = 0; i < count_core; i++) {
+      cntxs[i].running = 0;
+    }
+    sleep(3);
+
+    uint64_t tmp_array[2][32] ={};
+    for (int i = 0; i < count_core; i++) {
+      /* stop other wokers from running */
+      cntxs[i].running = 0;
+      for (int z=0;z<32;z++) {
+        tmp_array[0][z] += cntxs[i].tmp_array[0][z];
+        tmp_array[1][z] += cntxs[i].tmp_array[1][z];
+      }
+    }
+
+    sleep(4);
+
+    for (int i = 0; i < count_core; i++) {
+      printf("------ worker %d ------\n", i);
+      printf("%s\n", output_buffers[i]);
+      printf("------  end  ---------\n");
+    }
+
+    // printf("1001...1008\n");
+    // for (int i = 0; i < 16; i++) {
+    //   printf("flow: %d, src_port: %d, pkts: %ld\n", i, 1001 + i, tmp_array[0][i]);
+    // }
+    // printf("2002...2009\n");
+    // for (int i = 0; i < 8; i++) {
+    //   printf("flow: %d, src_port: %d, pkts: %ld\n", i, 2002 + i, tmp_array[1][i]);
+    // }
+
   } else {
     RTE_LCORE_FOREACH_SLAVE(lcore_id) {
       rte_eal_remote_launch(do_client, (void *)&cntxs[cntxIndex++], lcore_id);
@@ -490,11 +559,14 @@ int main(int argc, char *argv[]) {
   for (int i = 0; i < count_core; i++) {
     if (mode == mode_server) {
       free(cntxs[i].managed_queues);
+      free(cntxs[i].tmp_array[0]);
+      free(cntxs[i].tmp_array[1]);
+      free(cntxs[i].tmp_array);
     } else {
       free(cntxs[i].dst_ips);
-      fclose(cntxs[i].fp);
-      free(output_buffers[i]);
     }
+    fclose(cntxs[i].fp);
+    free(output_buffers[i]);
   }
   for (int q = 0; q < num_queues; q++) {
     rte_eth_tx_done_cleanup(dpdk_port, q, 0);

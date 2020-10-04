@@ -1,0 +1,121 @@
+"""
+FlowGen Pipeline Configuration
+
+A flowgen module is connected to the NIC.
+"""
+
+import scapy.all as scapy
+import sys
+import subprocess
+import yaml
+
+def get_mac_address():
+	"""
+	Get current device MAC address
+	"""
+	p = subprocess.Popen('cat /sys/class/net/eno50/address', shell=True, stdout=subprocess.PIPE)
+	res, _ = p.communicate()
+	print ('hello', res)
+	add = res.decode().strip()
+	return add
+
+
+def get_pci_address(iface):
+	"""
+	Get PCI address for the given interface name
+	"""
+	# ethtool -i iface # this should give enough information	
+	raise Exception('Not implemented yet')
+
+def get_current_node_info(file_path):
+	mac = get_mac_address()
+	destinations = list()
+	with open(file_path) as f:
+		config = yaml.load(f)
+		for key in config.keys():
+			if key == 'connections':
+				continue
+			item = config[key]
+			if item['mac'] == mac:
+				break
+		conns = config['connections']
+		if key in conns:
+			dst_node_names = conns[key]
+			for name in dst_node_names:
+				destinations.append((name, config[name]))
+	return (key, item, destinations)
+
+
+
+def get_related_line():
+	configfile_path = './cluster_config.txt'
+	current_mac = get_mac_address()
+	with open(configfile_path) as f:
+		for line in f:
+			line = line.strip()
+			if line.startswith(current_mac):
+				return line.strip()
+
+
+def get_dst_mac():
+	line = get_related_line()
+	if line is None:
+		print('Not configured!')
+		sys.exit(1)
+	raw = line.split()
+	# TODO: for more than one dst continue from here
+	return raw[3]
+
+
+name, info, dsts =  get_current_node_info('./cluster_config.txt')
+if not dsts:
+	print('no destination was configured')
+	sys.exit(1)
+
+
+
+packet_per_sec = 1000
+flow_duration = 2  # seconds
+pkt_size = 100  # bytes
+
+# build a packet template
+ip_src = info['ip']
+port_src = info['port']
+mac_src = info['mac'] 
+mac_dst = dsts[0][1]['mac']
+
+print(mac_src, mac_dst)
+eth = scapy.Ether(src=mac_src, dst=mac_dst)  # TODO: how to find the mac address?
+ip = scapy.IP(src=ip_src, dst='172.17.8.2')
+
+tcp = scapy.TCP(sport=port_src, dport=10002)
+payload_tcp = ('hello' + '0123456789' * 200)[:pkt_size-len(eth/ip/tcp)]
+pkt_tcp = eth/ip/tcp/payload_tcp
+pkt_data_tcp = bytes(pkt_tcp)
+
+udp = scapy.UDP(sport=10001, dport=10002)
+payload_udp = ('hello' + '0123456789' * 200)[:pkt_size-len(eth/ip/udp)]
+pkt_udp = eth/ip/udp/payload_udp
+pkt_data_udp = bytes(pkt_udp)
+
+# packet_template = pkt_data_tcp
+packet_template = pkt_data_udp
+
+out_pci = '07:00.1' # eno50 # TODO: This is hardcoded. Find a better way. (config parse tools can have a function for this)
+
+
+# PCI of port connected to switch
+sw_port = PMDPort(pci=out_pci)
+
+
+# Pipeline
+# Tx
+flowgen = FlowGen(template=packet_template, pps=packet_per_sec,
+	flow_rate=0, flow_duration=flow_duration, arrival='exponential',
+	duration='pareto', quick_rampup=True)
+
+
+sw_q_out = QueueOut(port=sw_port.name, qid=0)
+
+flowgen ->  Timestamp() ->  sw_q_out
+

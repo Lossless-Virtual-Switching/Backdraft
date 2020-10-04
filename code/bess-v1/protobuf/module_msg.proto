@@ -819,7 +819,7 @@ message TestQueueIncArg {
 
 message BKDRFTQueueIncArg {
   string port = 1; /// The portname to connect to (read from).
-  uint64 qid = 2; /// The queue on that port to read from. qid starts from 0.
+  repeated uint64 qid = 2; /// The queue on that port to read from. qid starts from 0.
   bool prefetch = 3; /// When prefetch is enabled, the module will perform CPU prefetch on the first 64B of each packet onto CPU L1 cache. Default value is false.
   bool backpressure = 5; // When backpressure is enabled the QueueInc is notified about the congestion
   bool cdq = 6; /// When cdq is enabled, virtual switch tries to work more efficiently by not polling over every possible queue.
@@ -856,7 +856,7 @@ message TestQueueOutArg {
 
 message BKDRFTQueueOutArg {
   string port = 1; /// The portname to connect to.
-  uint64 qid = 2; // default qid, it is used only when pfq and multi-queue is off
+  repeated uint64 qid = 2; /// list of queues to be managed (if cdq the first element is the doorbell)
   bool cdq = 3; // consider having a command data queue
   bool lossless = 4; // Do not drop packets, buffer them.
   bool backpressure = 5; // enable pause call mechanisem
@@ -867,7 +867,6 @@ message BKDRFTQueueOutArg {
   bool overlay = 10; // enable sending overlay messages
   string mname = 11; // name of this queue out (used for reporting pause call per second)
   bool log = 12; // enable some logging (only for debug)
-  
 }
 
 /**
@@ -890,6 +889,10 @@ message BKDRFTQueueOutCommandGetOverlayTpResponse {
   repeated uint64 throughput = 1; /// number of control packets sent in last second
 }
 
+message BKDRFTQueueOutCommandPauseCallsResponse {
+  repeated uint64 pcps = 1;
+}
+
 /**
  * The BKDRFTQueueOut module has a command `set_overlay_threshold()` that sets
  * low and high water values from parameters. The values are in bytes.
@@ -897,6 +900,10 @@ message BKDRFTQueueOutCommandGetOverlayTpResponse {
 message BKDRFTQueueOutCommandSetOverlayThresholdArg {
   uint64 low_water=1;  /// Low water value in bytes
   uint64 high_water=2; /// High water value in bytes
+}
+
+message BKDRFTQueueOutCommandSetBackpressureThresholdArg {
+  uint64 threshold = 1; /// Backpressure threshold
 }
 
 /**
