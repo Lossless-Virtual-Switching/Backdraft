@@ -101,7 +101,7 @@ int do_server(void *_cntx) {
   uint64_t k;
 
   uint64_t token_limit = 200000;
-  uint8_t rate_limit = 1;
+  uint8_t rate_limit = 0;
 
   uint8_t cdq = system_mode == system_bkdrft;
 

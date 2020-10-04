@@ -103,11 +103,11 @@ def bkdrft_pipeline():
     queue_ids = [i for i in range(CNT_Q)]
     client_qout0 = BKDRFTQueueOut(port=host1, qid=queue_ids, count_queues=CNT_Q,
         backpressure=BP, lossless=LOSSLESS, cdq=COMMAND_Q, per_flow_buffering=PFQ,
-        ecn_threshold=ECNT, overlay=False, mname='client')
+        ecn_threshold=ECNT, overlay=False, mname='client1')
 
     client_qout2 = BKDRFTQueueOut(port=client2, qid=queue_ids, count_queues=CNT_Q,
         backpressure=BP, lossless=LOSSLESS, cdq=COMMAND_Q, per_flow_buffering=PFQ,
-        ecn_threshold=ECNT, overlay=False, mname='client')
+        ecn_threshold=ECNT, overlay=False, mname='client2')
 
     # client_qout0 = QueueOut(port=host1.name, qid=0)
     # client_qout1 = QueueOut(port=host1.name, qid=1)

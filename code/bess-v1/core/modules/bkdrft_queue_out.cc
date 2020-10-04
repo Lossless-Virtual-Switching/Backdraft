@@ -178,61 +178,77 @@ CommandResponse BKDRFTQueueOut::Init(const bess::pb::BKDRFTQueueOutArg &arg) {
   LOG(INFO) << "HOLB is enabled\n";
 #endif
 
+  ret = SetupFlowControlBlockPool();
+  if (ret != 0)
+    return CommandFailure(ENOMEM, "Failed to setup packet buffers\n");
+
+  initialized_ = true;
+  return CommandSuccess();
+
+}
+
+int BKDRFTQueueOut::SetupFlowControlBlockPool() {
   fsp_top_ = -1;
+
+  // allocate memory for pool of flow control blocks
   flow_state_pool_ = reinterpret_cast<struct flow_state *>(
                         rte_malloc("flow_state_pool",
                           sizeof(struct flow_state) * max_availabe_flows,
-                          64)); // currentyl the size of flow_state is 52B
+                          64));
   assert(flow_state_pool_ != nullptr);
-  LOG(INFO) <<"alloc1\n";
 
+  // allocate memory for an array showing flow of each Flow Control Block
   flow_state_flow_id_ = reinterpret_cast<bess::bkdrft::Flow *> (
                         rte_malloc("flow_id_array",
                           sizeof(bess::bkdrft::Flow) * max_availabe_flows,
-                          0)); // currentyl the size of flow_state is 52B
+                          0));
   assert(flow_staet_flow_id_ != nullptr);
-  LOG(INFO) <<"alloc2\n";
 
-  for (i = 0; i < max_availabe_flows; i++) {
-    // LOG(INFO) << "createing buffers: i: " << i << "\n";
+  // initializing flow control block pool elements
+  for (uint32_t i = 0; i < max_availabe_flows; i++) {
     flow_state_pool_[i].in_use = 0;
     flow_state_pool_[i].qid = 0;
     if (lossless_) {
-      char name[20];
-      snprintf(name, 20, "buffer_%s_%d", name_.c_str(), i);
-      LOG(INFO) << "buffer name: " <<  name << "\n";
       if (per_flow_buffering_) {
-        // flow_state_pool_[i].buffer = new std::vector<bess::Packet *>();
-        // flow_state_pool_[i].buffer = rte_malloc(name,
-        //                     sizeof(bess::Packet *) * max_buffer_size, 0);
+        char name[20];
+        snprintf(name, 20, "buf_%s_%d", name_.c_str(), i);
+        LOG(INFO) << "buffer name: " <<  name << "\n";
+
         flow_state_pool_[i].buffer = new_pktbuffer(name);
         if (flow_state_pool_[i].buffer == nullptr) {
+          LOG(ERROR) << "new_pktbuffer failed\n";
           for (uint32_t j = 0; j < i; j++) {
             free_pktbuffer(flow_state_pool_[j].buffer);
           }
-          LOG(INFO) << "new_pktbuffer failed\n";
-          goto free_pool;
-        }
-      } else {
-        limited_buffers_[i] = new_pktbuffer(name);
-        if (limited_buffers_[i] == nullptr) {
-          for (uint32_t j = 0; j < i; j++) {
-            free_pktbuffer(limited_buffers_[j]);
-          }
-          LOG(INFO) << "new_pktbuffer failed\n";
           goto free_pool;
         }
       }
     }
   }
 
-  initialized_ = true;
-  return CommandSuccess();
+  if (lossless_ && !per_flow_buffering_) {
+    // initialize limited buffers
+    char name[20];
+    for (uint32_t i = 0; i < MAX_QUEUES; i++) {
+      snprintf(name, 20, "buf_%s_%d", name_.c_str(), i);
+      LOG(INFO) << "buffer name: " <<  name << "\n";
+
+      limited_buffers_[i] = new_pktbuffer(name);
+      if (limited_buffers_[i] == nullptr) {
+        LOG(INFO) << "new_pktbuffer failed\n";
+        for (uint32_t j = 0; j < i; j++) {
+          free_pktbuffer(limited_buffers_[j]);
+        }
+        goto free_pool;
+      }
+    }
+  }
+  return 0;
 
 free_pool:
   rte_free(flow_state_pool_);
   rte_free(flow_state_flow_id_);
-  return CommandFailure(ENOMEM, "Failed to setup packet buffers\n");
+  return -1;
 }
 
 void BKDRFTQueueOut::DeInit() {
@@ -548,8 +564,12 @@ void BKDRFTQueueOut::TrySendBuffer(Context *cntx) {
       // rte_ring_dequeue_finish(fstate->buffer, sent_pkts);
 
       dequeue_size = pktbuffer_dequeue(limited_buffers_[q], nullptr, burst);
-      if (dequeue_size != burst)
+      if (dequeue_size != burst) {
+        LOG(ERROR) << "failed to dequeue some packets. requested: " << burst
+                   << " dequeued: " << dequeue_size
+                   << " available pkts: " << limited_buffers_[q]->pkts << "\n";
         throw std::runtime_error("failed to dequeue some packets\n");
+      }
       size -= sent_pkts;
 
       // update stats counters
@@ -995,7 +1015,6 @@ void BKDRFTQueueOut::DeallocateFlowState(__attribute__((unused)) Context *cntx,
     // rte_ring_reset(fstate->buffer);
     rte_ring_reset(fstate->buffer->ring_queue);
     fstate->buffer->tail = 0;
-    fstate->buffer->head = 0;
     fstate->buffer->pkts = 0;
   }
   flow_buffer_mapping_.Remove(flow);

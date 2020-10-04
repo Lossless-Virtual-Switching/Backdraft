@@ -51,7 +51,6 @@ const static int32_t peek_size = 32;
 struct bkdrft_buffer {
   struct rte_ring *ring_queue;
   uint32_t tail; // next index to insert packet
-  uint32_t head; // the index having the first element
   uint32_t pkts; // number of packets in peek and ring
   bess::Packet *peek[peek_size];  // same size as max burst
 };
@@ -76,7 +75,6 @@ pktbuffer_t *new_pktbuffer(char *name)
   }
 
   buf->tail = 0;
-  buf->head = 0;
   buf->pkts = 0;
   return buf;
 }
@@ -97,7 +95,8 @@ int pktbuffer_enqueue(pktbuffer_t *buf, bess::Packet **pkts, uint32_t count)
   uint32_t cur_index = 0; // keep track of index of the external buffer
 
   // find out how many packets are in the peek
-  int32_t peek_pkts = (buf->tail - buf->head) % peek_size;
+  // int32_t peek_pkts = (buf->tail - buf->head) % peek_size;
+  int32_t peek_pkts = buf->tail;
 
   // how many packets should be moved to the peek
   uint32_t to_the_peek = peek_size - peek_pkts;
@@ -105,14 +104,8 @@ int pktbuffer_enqueue(pktbuffer_t *buf, bess::Packet **pkts, uint32_t count)
     to_the_peek = count; // min(count, free_peek_space);
 
   // move packets to peek array if there is space
-  for (;cur_index < to_the_peek; cur_index++) {
-    buf->peek[buf->tail] = pkts[cur_index];
-    // go to next index on peek array
-    // notice no bound checking because we know the number of selected packets
-    // fit into the strucure.
-    buf->tail = (buf->tail + 1) % peek_size;
-    // not checking if the peek is full
-  }
+  for (;cur_index < to_the_peek; cur_index++)
+    buf->peek[buf->tail++] = pkts[cur_index];
   buf->pkts += to_the_peek;
 
   // how many packets should be moved to the ring
@@ -137,14 +130,7 @@ int pktbuffer_dequeue(pktbuffer_t *buf, bess::Packet **pkts, uint32_t count) {
     count = buf->pkts;
 
   // find how many packets are in the peek
-  int32_t peek_pkts = buf->tail - buf->head;
-  if (peek_pkts < 0)
-    peek_pkts += peek_size;
-
-  // check if peek is not full and count is more than pkts in the peek
-  // then we do not have that many packets.
-  if (peek_pkts < peek_size && count > (uint32_t)peek_pkts)
-    count = peek_pkts;
+  int32_t peek_pkts = buf->tail;
 
   // how many to dequeue from peek
   int32_t from_peek = count;
@@ -154,16 +140,15 @@ int pktbuffer_dequeue(pktbuffer_t *buf, bess::Packet **pkts, uint32_t count) {
   // dequeue from peek
   if (pkts != nullptr) {
     // copy pointers from peek to the external buffer
-    int32_t index = buf->head;
-    for (int32_t i = 0; i < from_peek; i++) {
-      pkts[i] = buf->peek[index];
-      index++;
-      if (index > peek_pkts)
-        index = 0;
-      // not checking for head position
-    }
+    for (int32_t i = 0; i < from_peek; i++)
+      pkts[i] = buf->peek[i];
   }
-  buf->head = (buf->head + from_peek) % peek_size;
+
+  // move packet pointers to the 0 index
+  for (int32_t i = 0, j = from_peek; j < peek_pkts; i++, j++)
+    buf->peek[i] = buf->peek[j];
+
+  buf->tail -= from_peek;
   buf->pkts -= from_peek;
 
   // how many to dequeue from ring
@@ -202,11 +187,8 @@ int pktbuffer_dequeue(pktbuffer_t *buf, bess::Packet **pkts, uint32_t count) {
     }
 
     // copy packet pointeres to peek
-    for (int32_t i=0; i < ret; i++) {
-      buf->peek[buf->tail] = tmp_arr[i];
-      buf->tail = (buf->tail + 1) % peek_size;
-      // not checking for head because we have made sure we have enough space.
-    }
+    for (int32_t i=0; i < ret; i++)
+      buf->peek[buf->tail++] = tmp_arr[i];
   }
 
   return from_peek + ret;
@@ -255,6 +237,8 @@ public:
     const bess::pb::BKDRFTQueueOutCommandSetBackpressureThresholdArg &arg);
 
 private:
+  int SetupFlowControlBlockPool();
+
   // place not sent packets in the buffer for the given flow
   void BufferBatch(bess::bkdrft::Flow &flow, flow_state *fstate,
                              bess::PacketBatch *batch, uint16_t sent_pkt);
