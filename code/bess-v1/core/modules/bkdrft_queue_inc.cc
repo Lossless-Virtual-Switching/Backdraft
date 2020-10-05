@@ -183,19 +183,23 @@ uint32_t BKDRFTQueueInc::ReadBatch(queue_t qid, bess::PacketBatch *batch,
 
 bool BKDRFTQueueInc::CheckQueuedCtrlMessages(Context *ctx, queue_t *qid,
                                              uint32_t *burst) {
+  static int i = 0;
+  LOG(INFO) << "Here I: " << i << "\n";
   uint32_t tmp_burst = 0;
+  int begin = i;
   // TODO: this kind of iteration to find dqid has starvation problem!
-  for (int i = 0; i < MAX_QUEUES; i++) {
-    if (q_status_[i].remaining_dpkt > 0) {
+  for (; i != begin; i=(i+1) % count_managed_queues) {
+    uint16_t iter_q = managed_queues[i];
+    if (q_status_[iter_q].remaining_dpkt > 0) {
 
-      if (IsQueuePausedInCache(ctx, i)) {
+      if (IsQueuePausedInCache(ctx, iter_q)) {
         // Only for testing
         // LOG(INFO) << "q: " << i << " is paused\n";
         continue;
       }
 
-      *qid = i;
-      tmp_burst = q_status_[i].remaining_dpkt;
+      *qid = iter_q;
+      tmp_burst = q_status_[iter_q].remaining_dpkt;
       if (tmp_burst > max_burst)
         tmp_burst = max_burst;
       *burst = tmp_burst;
@@ -343,14 +347,14 @@ uint32_t BKDRFTQueueInc::CDQ(Context *ctx, bess::PacketBatch *batch, queue_t &_q
 }
 
 struct task_result
-BKDRFTQueueInc::RunTask(Context *ctx, bess::PacketBatch *batch, void *arg) {
+BKDRFTQueueInc::RunTask(Context *ctx, bess::PacketBatch *batch, void *) {
   Port *p = port_;
 
   if (!p->conf().admin_up) {
     return {.block = true, .packets = 0, .bits = 0};
   }
 
-  queue_t qid = (queue_t)(uintptr_t)arg;
+  queue_t qid = managed_queues[0];
   uint32_t cnt;
   uint64_t received_bytes = 0;
 
