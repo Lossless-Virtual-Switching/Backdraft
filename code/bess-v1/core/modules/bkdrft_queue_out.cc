@@ -102,7 +102,6 @@ CommandResponse BKDRFTQueueOut::Init(const bess::pb::BKDRFTQueueOutArg &arg) {
     data_queues_[i] = arg.qid(i);
 
   // Validate the number of requested queues
-  // count_queues_ = arg.count_queues();
   if (count_queues_ < 1 || (count_queues_ < 2 && cdq_)) {
     return CommandFailure(EINVAL, "Count queues should be more than 2");
   } else if (count_queues_ > MAX_QUEUES) {
@@ -117,6 +116,9 @@ CommandResponse BKDRFTQueueOut::Init(const bess::pb::BKDRFTQueueOutArg &arg) {
     return CommandFailure(-ret);
   }
 
+  // max packets buffered for each queue (for pktbuffer)
+  max_buffer_size_ = port_->tx_queue_size();
+
   // Check if has doorbell queue
   cdq_ = arg.cdq();
 
@@ -126,20 +128,19 @@ CommandResponse BKDRFTQueueOut::Init(const bess::pb::BKDRFTQueueOutArg &arg) {
     doorbell_queue_number_ = -1;
   }
 
-  lossless_ = arg.lossless();
+  buffering_ = arg.lossless();
   backpressure_ = arg.backpressure();
   overlay_ = arg.overlay();
   log_ = arg.log();
 
   // TODO: this modules is not thread safe yet
-  if (lossless_) {
+  if (buffering_) {
     task_id_t tid = RegisterTask(nullptr);
     if (tid == INVALID_TASK_ID)
       return CommandFailure(ENOMEM, "Context creation failed");
   }
 
   per_flow_buffering_ = arg.per_flow_buffering();
-  multiqueue_ = arg.multiqueue();
 
   ecn_threshold_ = 20 * 32;
   if (arg.ecn_threshold())
@@ -170,7 +171,7 @@ CommandResponse BKDRFTQueueOut::Init(const bess::pb::BKDRFTQueueOutArg &arg) {
 
   LOG(INFO) << "BKDRFTQueueOut: name: " << name_
             << " pfq: " << per_flow_buffering_ << " cdq: " << cdq_
-            << " lossless: " << lossless_ << " bp: " << backpressure_ << "\n";
+            << " buffering: " << buffering_ << " bp: " << backpressure_ << "\n";
   LOG(INFO) << "name: " << name_ << " doorbell queue id: "
             << doorbell_queue_number_ << "\n";
 
@@ -208,13 +209,13 @@ int BKDRFTQueueOut::SetupFlowControlBlockPool() {
   for (uint32_t i = 0; i < max_availabe_flows; i++) {
     flow_state_pool_[i].in_use = 0;
     flow_state_pool_[i].qid = 0;
-    if (lossless_) {
+    if (buffering_) {
       if (per_flow_buffering_) {
         char name[20];
         snprintf(name, 20, "buf_%s_%d", name_.c_str(), i);
         LOG(INFO) << "buffer name: " <<  name << "\n";
 
-        flow_state_pool_[i].buffer = new_pktbuffer(name);
+        flow_state_pool_[i].buffer = new_pktbuffer(name, max_buffer_size_);
         if (flow_state_pool_[i].buffer == nullptr) {
           LOG(ERROR) << "new_pktbuffer failed\n";
           for (uint32_t j = 0; j < i; j++) {
@@ -226,14 +227,14 @@ int BKDRFTQueueOut::SetupFlowControlBlockPool() {
     }
   }
 
-  if (lossless_ && !per_flow_buffering_) {
+  if (buffering_ && !per_flow_buffering_) {
     // initialize limited buffers
     char name[20];
     for (uint32_t i = 0; i < MAX_QUEUES; i++) {
       snprintf(name, 20, "buf_%s_%d", name_.c_str(), i);
       LOG(INFO) << "buffer name: " <<  name << "\n";
 
-      limited_buffers_[i] = new_pktbuffer(name);
+      limited_buffers_[i] = new_pktbuffer(name, max_buffer_size_);
       if (limited_buffers_[i] == nullptr) {
         LOG(INFO) << "new_pktbuffer failed\n";
         for (uint32_t j = 0; j < i; j++) {
@@ -315,7 +316,7 @@ void BKDRFTQueueOut::BufferBatch(__attribute__((unused)) Flow &flow,
   // do not buffer more than a certain threshold
   // LOG(INFO) << "bytes in buffre " << bytes_in_buffer_ << "\n";
   // TODO: maybe the rte_ring full function should be used
-  if (unlikely(fstate->packet_in_buffer >= max_buffer_size - 1)) {
+  if (unlikely(fstate->packet_in_buffer >= max_buffer_size_ - 1)) {
     if (log_)
       LOG(INFO) << "Maximum buffer size reached!\n";
 
@@ -851,7 +852,7 @@ void BKDRFTQueueOut::ProcessBatchLossy(Context *cntx,
   int sent_pkts = 0;
   const int cnt = batch->cnt();
   bess::Packet **pkts = batch->pkts();
-  uint32_t total_bytes = total_len(pkts, cnt);
+  // uint32_t total_bytes = total_len(pkts, cnt);
   // TODO: the assumption of the sample packet from a batch is wrong
   Flow flow = bess::bkdrft::PacketToFlow(*(pkts[0]));
 
@@ -869,8 +870,6 @@ void BKDRFTQueueOut::ProcessBatchLossy(Context *cntx,
 
   // update stats
   UpdatePortStats(qid, sent_pkts, cnt - sent_pkts, batch);
-
-  MeasureForPolicy(cntx, qid, flow, sent_pkts, 0, cnt, total_bytes);
 }
 
 void BKDRFTQueueOut::ProcessBatch(Context *cntx, bess::PacketBatch *batch) {
@@ -892,7 +891,7 @@ void BKDRFTQueueOut::ProcessBatch(Context *cntx, bess::PacketBatch *batch) {
     return;
   }
 
-  if (lossless_) {
+  if (buffering_) {
     ProcessBatchWithBuffer(cntx, batch);
   } else {
     ProcessBatchLossy(cntx, batch);
@@ -906,7 +905,6 @@ flow_state *BKDRFTQueueOut::GetFlowState(Context *cntx, Flow &flow) {
   queue_t qid;
   queue_t mapping_q_candid = 0;
   uint64_t min_flow_ts = UINT64_MAX;
-  bool found_qid = false;
 
   // first check if the flow was mapped before
   auto entry = flow_buffer_mapping_.Find(flow);
@@ -930,27 +928,18 @@ flow_state *BKDRFTQueueOut::GetFlowState(Context *cntx, Flow &flow) {
   uint16_t iter_q;
   for (; i < count_queues_; i++) {
     iter_q = data_queues_[i];
-    auto q_flow = q_info_[iter_q].flow;
-    if (Flow::EqualTo()(q_flow, flow)) {
-      qid = iter_q;
-      found_qid = true;
-      q_info_[qid].last_visit = cntx->current_ns;
-      break;
-    } else if (q_info_[iter_q].last_visit < min_flow_ts) {
+    if (q_info_[iter_q].last_visit < min_flow_ts) {
       min_flow_ts = q_info_[iter_q].last_visit;
       mapping_q_candid = iter_q;
     }
   }
 
-  if (unlikely(!found_qid)) {
-    qid = mapping_q_candid;
-    q_info_[qid].flow = flow;
-    q_info_[qid].last_visit = cntx->current_ns;
-  }
+  qid = mapping_q_candid;
+  q_info_[qid].flow = flow;
+  q_info_[qid].last_visit = cntx->current_ns;
 
   // update table
   // struct flow_state *state = new struct flow_state();
-
   struct flow_state *state = nullptr;
   uint32_t index = (fsp_top_ + 1) % max_availabe_flows;
   for (; index != fsp_top_;) {
@@ -987,12 +976,12 @@ flow_state *BKDRFTQueueOut::GetFlowState(Context *cntx, Flow &flow) {
   state->byte_in_buffer = 0;
   state->in_use = 1;
   state->last_used = cntx->current_ns;
-  if (per_flow_buffering_) {
-    // state->buffer = new std::vector<bess::Packet *>();
-  } else {
+  if (!per_flow_buffering_) {
     state->buffer = limited_buffers_[qid];
   }
   flow_buffer_mapping_.Insert(flow, state);
+
+  // LOG(INFO)<< "name: " << name_ << " Flow Mapped: current fsp: " << fsp_top_ << "\n";
 
   return state;
 }
@@ -1068,33 +1057,6 @@ int BKDRFTQueueOut::SendPacket(Port *p, queue_t qid, bess::Packet **pkts,
       *ctrl_pkt_sent = res;
   }
   return sent_pkts;
-}
-
-void BKDRFTQueueOut::MeasureForPolicy(__attribute__((unused)) Context *cntx,__attribute__((unused)) queue_t qid,
-                                      const Flow &flow, uint16_t sent_pkts,
-                                      __attribute__((unused)) uint32_t sent_bytes, uint16_t tx_burst,
-                                      __attribute__((unused)) uint32_t total_bytes) {
-  double drop_est = 0;
-  auto entry = flow_drop_est.Find(flow);
-  if (entry != nullptr) {
-    drop_est = entry->second;
-  }
-  const double g = 0.75; uint16_t dropped = tx_burst - sent_pkts;
-  // __attribute__((unused)) uint32_t remaining_bytes = total_bytes - sent_bytes;
-
-  // update drop estimate
-  drop_est = (g * dropped) + ((1 - g) * drop_est);
-  flow_drop_est.Insert(flow, drop_est);
-
-  if (drop_est > drop_high_water) {
-    // LOG(INFO) << "drop est: " << drop_est << "\n";
-    if (backpressure_) {
-      // TODO: removed buffer_size and placed 0
-      // uint64_t buffer_size = BufferSize(flow);
-      Pause(cntx, flow, qid, 100);
-    }
-
-  }
 }
 
 /*
@@ -1230,9 +1192,6 @@ CommandResponse BKDRFTQueueOut::CommandGetOverlayTp(const bess::pb::EmptyArg &)
   for (size_t i = 0; i < overlay_per_sec.size(); i++) {
     resp.add_throughput(overlay_per_sec[i]);
   }
-  // LOG(INFO) << "name: " << name_
-  //           << " overlay throughput: " << "?"
-  //           << "\n";
   return CommandSuccess(resp);
 }
 

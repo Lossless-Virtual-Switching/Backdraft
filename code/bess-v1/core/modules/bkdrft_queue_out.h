@@ -29,7 +29,6 @@ const int drop_high_water = 30; // assumming batch size is 32
 const uint64_t overlay_max_pause_duration = 10000000;
 const uint32_t max_availabe_flows = 1024;
 const uint64_t flow_dealloc_limit = 100000000; // ns
-const uint32_t max_buffer_size=4096;
 // const int bp_buffer_len_high_water = 2700;
 const uint64_t max_overlay_pause_duration = 5000000; // ns
 
@@ -58,7 +57,7 @@ struct bkdrft_buffer {
 typedef struct bkdrft_buffer pktbuffer_t;
 
 /* create a new buffer for keeping packet pointers */
-pktbuffer_t *new_pktbuffer(char *name)
+pktbuffer_t *new_pktbuffer(char *name, uint32_t max_buffer_size)
 {
   pktbuffer_t *buf = reinterpret_cast<pktbuffer_t *> (
       rte_malloc(NULL, sizeof(pktbuffer_t), 0));
@@ -213,7 +212,7 @@ public:
   static const Commands cmds;
 
   BKDRFTQueueOut()
-      : Module(), port_(), count_queues_(), lossless_(), backpressure_(),
+      : Module(), port_(), count_queues_(), buffering_(), backpressure_(),
         log_(), cdq_(), per_flow_buffering_(), overlay_(),
         pause_call_total() {}
 
@@ -273,10 +272,6 @@ private:
   flow_state *GetFlowState(Context *cntx, Flow &flow);
   void DeallocateFlowState(Context *cntx, Flow &flow);
 
-  void MeasureForPolicy(Context *cntx, queue_t qid, const Flow &flow,
-                        uint16_t sent_pkts, uint32_t sent_bytes,
-                        uint16_t tx_burst, uint32_t total_bytes);
-
   /*
    * returns the number of sent packets
    * the total sent bytes and the status of ctrl packet can be checked from
@@ -298,14 +293,14 @@ private:
 
   Port *port_;
   // queue_t qid_;
+  uint32_t max_buffer_size_; // the size of output discriptors
 
   uint16_t count_queues_;
-  bool lossless_;
+  bool buffering_;
   bool backpressure_;
   bool log_;
   bool cdq_;
   bool per_flow_buffering_;
-  bool multiqueue_;
   bool overlay_;
   uint32_t ecn_threshold_;
 
