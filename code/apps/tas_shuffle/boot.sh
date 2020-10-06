@@ -8,17 +8,15 @@
 # count_queues: number of queues for port
 # prefix: dpdk file prefix
 # command_data_queue
-# === CLIENT  ===
+# ===============
 # type: 'client' or 'server', determine what program to execute
+# === CLIENT  ===
+# size
+# count_flow
 # dst_ip
-# duration
-# warmup_time
-# wait_before_measure
-# threads
-# connections
+# server_port
 # === SERVER ===
-# memory (in mb)
-# threads
+# port
 
 TAS_DIR=/root/post-loom/code/tas
 TAS_BENCH=/root/post-loom/code/tas-benchmark
@@ -51,24 +49,15 @@ echo TAS Server Is Up
 
 # client params
 cores=1
-mtcp_config=foo
-result_file=/tmp/log_drop_client.txt
-if [ -z "$message_size" ]; then
-  message_size=200
-fi
-max_pending_flow=64
-openall_delay=0
-
-dst_ip_port_pair=$(echo "$dst_ip_port_pair" | tr -d '"')
-echo $dst_ip_port_pair
+# dst_ip_port_pair=$(echo "$dst_ip_port_pair" | tr -d '"')
+# echo $dst_ip_port_pair
 
 if [ "$type" = "client" ]; then
   LD_PRELOAD=$TAS_DIR/lib/libtas_interpose.so \
-     /root/mutilate/mutilate -s $dst_ip -t $duration -w $warmup_time \
-     -W $wait_before_measure -T $threads -c $connections
+     /root/shuffle_client $size $count_flow $dst_ip $server_port
 elif [ "$type" = "server" ]; then
   LD_PRELOAD=$TAS_DIR/lib/libtas_interpose.so \
-    memcached -m $memory -u root -l $ip -t $threads\
+    /root/shuffle_server $port
 else
   echo "type variable is not supported (type=$type)"
 fi

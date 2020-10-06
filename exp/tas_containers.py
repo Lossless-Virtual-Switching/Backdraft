@@ -39,7 +39,7 @@ def spin_up_tas(conf):
 
     temp = []
     for x in conf['ips']:
-        x = map(str, x) 
+        x = map(str, x)
         res = ':'.join(x)
         temp.append(res)
     _ips = ' '.join(temp)
@@ -94,6 +94,48 @@ def spin_up_memcached(conf):
                         'expecting type to be client or server')
     # print(cmd)
     return subprocess.run(cmd, shell=True, stdout=subprocess.PIPE)
+
+
+def spin_up_shuffle(conf):
+    """
+    general:
+      1. name
+      2. image
+      3. cpu
+      4. cpus
+      5. socket
+      6. ip
+      7. tas_cores
+      8. tas_queues
+      9. prefix
+      10. cdq
+      11. type
+    client:
+      1. server_req_unit
+      2. count_flow
+      3. dst_ip
+      4. server_port
+    server:
+      1. port
+    """
+    here = os.path.dirname(__file__)
+    tas_spinup_script = os.path.abspath(os.path.join(here,
+        '../code/apps/tas_shuffle/spin_up_tas_container.sh'))
+    # image_name = 'tas_shuffle'
+
+    cmd = ('{tas_script} {name} {image} {cpu} {cpus:.2f} '
+            '{socket} {ip} {tas_cores} {tas_queues} {prefix} {cdq} '
+            '{type} ').format(tas_script=tas_spinup_script, **conf)
+    if conf['type'] == 'client':
+        cmd = ('{cmd} {server_req_unit} {count_flow} {dst_ip} {server_port} '
+               ).format(cmd=cmd, **conf)
+    elif conf['type'] == 'server':
+        cmd = '{cmd} {port}'.format(cmd=cmd, **conf)
+    else:
+        raise Exception('Container miss configuration: '
+                        'expecting type to be client or server')
+    # print(cmd)
+    return subprocess.run(cmd, shell=True, stdout=None) # subprocess.PIPE
 
 
 def run_udp_app(config):

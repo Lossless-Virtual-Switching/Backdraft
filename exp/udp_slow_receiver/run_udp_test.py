@@ -59,7 +59,7 @@ def run_server(instance):
         Start a server process
     """
     prefix = 'slow_receiver_server_{}'.format(instance)
-    cpu = ['12', '13'][instance]  # on which cpu
+    cpu = [6, 4][instance]  # on which cpu
     vdev = ['virtio_user0,path=/tmp/ex_vhost0.sock,queues='+str(count_queue),
             'virtio_user2,path=/tmp/ex_vhost2.sock,queues='+str(count_queue)][instance]
     server_delay = [0, slow][instance]
@@ -96,7 +96,7 @@ def run_client(instance):
     """
     port = [1001, 5001,][instance]
     prefix = 'slow_receiver_exp_client_{}'.format(instance)
-    cpu = ['15', 17][instance]
+    cpu = [10, 8][instance]
     vdev = ['virtio_user1,path=/tmp/ex_vhost1.sock,queues='+str(count_queue),
            'virtio_user3,path=/tmp/ex_vhost3.sock,queues='+str(count_queue),][instance]
     # TODO: the following line is an example of code that is not suitable!

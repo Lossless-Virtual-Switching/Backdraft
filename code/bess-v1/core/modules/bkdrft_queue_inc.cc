@@ -343,14 +343,15 @@ uint32_t BKDRFTQueueInc::CDQ(Context *ctx, bess::PacketBatch *batch, queue_t &_q
 }
 
 struct task_result
-BKDRFTQueueInc::RunTask(Context *ctx, bess::PacketBatch *batch, void *arg) {
+BKDRFTQueueInc::RunTask(Context *ctx, bess::PacketBatch *batch,
+                        __attribute__((unused)) void *arg) {
   Port *p = port_;
 
   if (!p->conf().admin_up) {
     return {.block = true, .packets = 0, .bits = 0};
   }
 
-  queue_t qid = (queue_t)(uintptr_t)arg;
+  queue_t qid = managed_queues[0];
   uint32_t cnt;
   uint64_t received_bytes = 0;
 

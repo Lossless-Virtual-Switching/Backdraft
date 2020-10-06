@@ -46,6 +46,8 @@ def run_container(container):
         return spin_up_memcached(container)
     elif app == 'unidir':
         return spin_up_unidir(container)
+    elif app == 'shuffle':
+        return spin_up_shuffle(container)
     else:
         return spin_up_tas(container)
 
@@ -101,7 +103,7 @@ def get_port_packets(port_name):
     raw = lines[4].split()
     res['tx']['packet'] = int(raw[2].replace(',',''))
     res['tx']['byte'] = int(raw[4].replace(',',''))
-    raw = lines[5].split() 
+    raw = lines[5].split()
     res['tx']['drop'] = int(raw[1].replace(',',''))
     return res
 
@@ -136,11 +138,11 @@ def get_cores(count_instance):
     print('should place cores on even ids: ', only_even)
     # how many core each container have
     # count cpu is one of the arguments to this program
-    
+
     cores =  []
     last_cpu_id = 0
     # this array helps to have better control on number of cores for each
-    # instance. currently all of the containers have the same number of 
+    # instance. currently all of the containers have the same number of
     # cores
     cpus = [count_cpu for i in range(count_instance)]
     for instance_num in range(count_instance):
@@ -157,7 +159,7 @@ def get_cores(count_instance):
                 cpu_id = 2 * cpu_id
             cpu_ids.append(str(cpu_id))
         cpu_ids_str = ','.join(cpu_ids)
-        cores.append(cpu_ids_str) 
+        cores.append(cpu_ids_str)
 
     print('count core for each container:', count_cpu)
     print('allocated cores:', ' | '.join(cores))
@@ -198,7 +200,7 @@ def _get_rpc_containers(containers):
         {   # client 2
             'port': 7788,  # not used for client
             'count_flow': count_flow,
-            'ips': [('10.10.0.1', 1234)],  # ('10.10.0.1', 1234), 
+            'ips': [('10.10.0.1', 1234)],  # ('10.10.0.1', 1234),
             'flow_duration': 0,
             'message_per_sec': -1,
             'message_size': 500,
@@ -239,16 +241,16 @@ def _get_unidir_containers(containers):
     ]
     for container, params in zip(containers, app_params):
         container.update(params)
-     
+
 
 def _get_memcached_containers(containers):
     app_params = [
         {   # server 1
-            'memory': 64,
+            'memory': 1024,
             'threads': 1,
         },
         {   # server 2
-            'memory': 64,   # not used for server
+            'memory': 1024,   # not used for server
             'threads': 1,
         },
         {   # client 1
@@ -271,6 +273,30 @@ def _get_memcached_containers(containers):
     for container, params in zip(containers, app_params):
         container.update(params)
 
+
+def _get_shuffle_containers(containers):
+    app_params = [
+        {   # server 1
+            'port': 1234,
+        },
+        {   # server 2
+            'port': 5678,
+        },
+        {   # client 1
+            'dst_ip': containers[0]['ip'],
+            'server_port': 1234,
+            'server_req_unit': 1000000,
+            'count_flow': count_flow,
+        },
+        {   # client 2
+            'dst_ip': containers[1]['ip'],
+            'server_port': 5678,
+            'server_req_unit': 1000000,
+            'count_flow': count_flow,
+        },
+    ]
+    for container, params in zip(containers, app_params):
+        container.update(params)
 
 def get_containers_config():
     if not os.path.exists('./tmp_vhost/'):
@@ -340,6 +366,8 @@ def get_containers_config():
         _get_memcached_containers(containers)
     elif app == 'unidir':
         _get_unidir_containers(containers)
+    elif app == 'shuffle':
+        _get_shuffle_containers(containers)
     else:
         _get_rpc_containers(containers)
     return containers
@@ -404,13 +432,9 @@ def main():
     """
     About experiment:
         TCP Slow Receiver Test Using Tas (with an app).
-        + BESS
-        + BESS + bp
-        + Per-Flow Input Queueing
-        + PFIQ + bp
     """
     # Get containers config
-    containers = get_containers_config() 
+    containers = get_containers_config()
 
     # Kill anything running
     bessctl_do('daemon stop', stdout=subprocess.PIPE,
@@ -441,7 +465,7 @@ def main():
 
     if args.bessonly:
         print('BESS pipeline ready.')
-        return 
+        return
 
     print('==========================================')
     print('     TCP/Linux Socket App Performance Test')
@@ -464,7 +488,7 @@ def main():
         # Wait for experiment duration to finish
         print('wait {} seconds...'.format(duration))
         sleep(duration)
-    except:
+    except KeyboardInterrupt:
         # catch Ctrl-C
         print('experiment termination process...')
 
@@ -482,7 +506,8 @@ def main():
         subprocess.run(
             'sudo docker cp tas_client_1:/tmp/log_drop_client.txt {}'.format(output_log_file),
             shell=True, stdout=subprocess.PIPE)
-        subprocess.run('sudo chown $USER {}'.format(output_log_file), shell=True, stdout=subprocess.PIPE)
+        subprocess.run('sudo chown $USER {}'.format(output_log_file),
+                       shell=True, stdout=subprocess.PIPE)
     else:
         # craete log file
         output = open(output_log_file, 'w')
@@ -525,9 +550,9 @@ def main():
     # pause call per sec
     bessctl_do('command module bkdrft_queue_out0 get_pause_calls EmptyArg {}')
     bessctl_do('command module bkdrft_queue_out1 get_pause_calls EmptyArg {}')
-    if cdq:
-        bessctl_do('command module bkdrft_queue_out2 get_pause_calls EmptyArg {}')
-        bessctl_do('command module bkdrft_queue_out3 get_pause_calls EmptyArg {}')
+    # if cdq:
+    bessctl_do('command module bkdrft_queue_out2 get_pause_calls EmptyArg {}')
+    bessctl_do('command module bkdrft_queue_out3 get_pause_calls EmptyArg {}')
     pps_val = get_pps_from_info_log()
     pps_log = str_format_pps(pps_val)
     # print(pps_log)
@@ -588,7 +613,7 @@ def main():
 
 
 if __name__ == '__main__':
-    supported_apps = ('memcached', 'rpc', 'unidir')
+    supported_apps = ('memcached', 'rpc', 'unidir', 'shuffle')
     parser = argparse.ArgumentParser()
     parser.add_argument('app', choices=supported_apps)
     parser.add_argument('--slow_by', type=float, required=False, default=0,
@@ -631,23 +656,18 @@ if __name__ == '__main__':
     # select the app
     if app == 'rpc':
         # micro rpc modified
-        tas_spinup_script = os.path.abspath(os.path.join(cur_script_dir,
-            '../../code/apps/tas_container/spin_up_tas_container.sh'))
         image_name = 'tas_container'
     elif app == 'unidir':
         # unidir
-        tas_spinup_script = os.path.abspath(os.path.join(cur_script_dir,
-            '../../code/apps/tas_unidir/spin_up_tas_container.sh'))
         image_name = 'tas_unidir'
     elif app == 'memcached':
         # memcached
-        tas_spinup_script = os.path.abspath(os.path.join(cur_script_dir,
-            '../../code/apps/tas_memcached/spin_up_tas_container.sh'))
         image_name = 'tas_memcached'
+    elif app == 'shuffle':
+        image_name = 'tas_shuffle'
     else:
         print('app name unexpected: {}'.format(app), file=sys.stderr)
         sys.exit(1)
-
 
     # do parameter checks
     if count_cpu < 3:
@@ -657,11 +677,11 @@ if __name__ == '__main__':
         print('command data queue needs at least two queues available')
         sys.exit(1)
 
-
     print('experiment parameters: ')
     print('running app: {}'.format(app))
     print(('count_queue: {}    slow_by: {}   '
            'cdq: {}    pfq: {}    bp: {}    count_flow: {}'
           ).format(count_queue, slow_by, cdq, pfq, bp, count_flow))
+
     main()
 
