@@ -84,3 +84,16 @@ message VPortArg {
   bool loopback = 8;
   repeated string ip_addrs = 9;
 }
+
+message BDVPortArg {
+  bool loopback = 1;
+  string port_name = 2;
+
+  // See http://dpdk.org/doc/dts/test_plans/dual_vlan_test_plan.html
+  bool vlan_offload_rx_strip = 3;
+  bool vlan_offload_rx_filter = 4;
+  bool vlan_offload_rx_qinq = 5;
+  bool rate_limiting = 6;
+  uint32 rate = 7;
+}
+

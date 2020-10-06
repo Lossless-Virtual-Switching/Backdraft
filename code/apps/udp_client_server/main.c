@@ -8,8 +8,8 @@
 #include "include/exp.h"
 #include "include/flow_rules.h"
 
-#define RX_RING_SIZE (64)
-#define TX_RING_SIZE (64)
+#define RX_RING_SIZE (512)
+#define TX_RING_SIZE (512)
 
 #define NUM_MBUFS (8191)
 #define MBUF_CACHE_SIZE (250)
@@ -485,7 +485,7 @@ int main(int argc, char *argv[]) {
       cntxs[i].delay_cycles = delay_cycles;
 
       /* use zipf for selecting dst ip */
-      cntxs[i].destination_distribution = DIST_ZIPF;
+      cntxs[i].destination_distribution = DIST_UNIFORM;
       cntxs[i].queue_selection_distribution = DIST_UNIFORM;
 
       cntxs[i].managed_queues = NULL;

@@ -381,6 +381,14 @@ int do_client(void *_cntx) {
         //     break;
         //   }
         // }
+        // if (dst_ip == 0x0a0a0103) {
+        //   static int cnt1 = 0;
+        //   cnt1++;
+        //   printf("tx_pkts: %d\n", tx_pkts);
+        //   fflush(stdout);
+        //   if (cnt1 > 1000)
+        //     return -1;
+        // }
 
       }
     } /* end if (can_send) */

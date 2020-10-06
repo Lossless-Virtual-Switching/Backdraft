@@ -42,6 +42,7 @@ SRCS-y += utils/bkdrft.c
 SRCS-y += utils/zipf.c
 SRCS-y += utils/percentile.c
 SRCS-y += utils/packet.c
+SRCS-y += utils/vport.c
 SRCS-y += utils/include/bkdrft_msg.pb-c.c
 SRCS-y += data_structure/f_linklist.c
 
@@ -53,7 +54,7 @@ ifeq ($(CONFIG_RTE_TOOLCHAIN_GCC),y)
 CFLAGS_main.o += -Wno-return-type
 endif
 
-EXTRA_CFLAGS += -O3 -g -Wfatal-errors -Wno-format-nonlitera 
-LDLIBS := -lprotobuf-c 
+EXTRA_CFLAGS += -O3 -g -Wfatal-errors -Wno-format-nonlitera
+LDLIBS := -lprotobuf-c
 
 include $(RTE_SDK)/mk/rte.extapp.mk

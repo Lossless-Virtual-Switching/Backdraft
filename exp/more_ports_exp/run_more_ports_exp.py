@@ -54,7 +54,8 @@ def run_netperf_server(cnt_queue):
     """
     Shenango dpdk_netperf server
     """
-    prefix = 'shenango_netperf_server'
+    # prefix = 'shenango_netperf_server'
+    prefix = 'bessd-dpdk-prefix'
     cpu = 4
     vdev = 'virtio_user0,path=/tmp/ex_vhost0.sock,queues=8'
     ip = '192.168.1.2'
@@ -66,7 +67,10 @@ def run_netperf_server(cnt_queue):
             'ip': ip,
             'cnt_q': cnt_queue,
             }
-    cmd = 'sudo {bin} -l{cpu} --file-prefix={file-prefix} --vdev="{vdev}" --socket-mem=128 -- UDP_SERVER {ip} {cnt_q}'.format(**args)
+    # cmd = 'sudo {bin} -l{cpu} --file-prefix={file-prefix} --vdev="{vdev}" --socket-mem=128 -- UDP_SERVER {ip} {cnt_q}'.format(**args)
+    cmd = ('sudo {bin} -l{cpu} --file-prefix={file-prefix} --proc-type=secondary'
+            '--socket-mem=128 -- vport= UDP_SERVER {ip} '
+            '{cnt_q}').format(**args)
     # Run in background
     p = subprocess.Popen(cmd, shell=True)
     return p
@@ -148,6 +152,7 @@ def main():
     #sleep(2)
 
     cnt_prt_q = [(2,2), (4,2), (8, 2), (2, 8), (4, 8), (8, 8), (16, 8)]
+    cnt_prt_q = [(2,2),]
     # cnt_prt_q = [0]
     # Warning: SINGLE_PMD_MULTIPLE_Q is not supported any more. (it needs EXCESS variable to be defined)
     exp_types = ['MULTIPLE_PMD_MULTIPLE_Q',] # 'SINGLE_PMD_MULTIPLE_Q']
@@ -163,7 +168,7 @@ def main():
 
                 # Run a configuration (pipeline)
                 remove_socks()
-                file_path = pipeline_config_file 
+                file_path = pipeline_config_file
                 ret = bessctl_do('daemon start -- run file {}'.format(file_path))
 
                 # Run netperf server
@@ -186,4 +191,4 @@ def main():
 
 if __name__ == '__main__':
     main()
-    
+
