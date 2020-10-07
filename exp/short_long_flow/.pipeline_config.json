@@ -1,6 +1,6 @@
 {
-  "pci": "41:00.0",
-  "interface" : "enp65s0f0",
+  "pci": "81:00.1",
+  "interface" : "eno2",
   "count_queue": 2,
   "queue_size": 4096,
   "bp": true,
@@ -11,8 +11,8 @@
   "overlay_low_water": 500,
   "overlay_high_water": 512,
   "backpressure_threshold": 2700,
-  "cluster_config_file": "cluster_config.yml",
-  "pipeline_script_file": "pipelines/static_partitioning_bkdrft.bess",
+  "cluster_config_file": "cluster_configs/memcached_shuffle_config.yml",
+  "pipeline_script_file": "pipelines/general_pipeline.bess",
   "add_vlan": false,
-  "virtual_switch_cores": 8
+  "virtual_switch_cores": 1
 }

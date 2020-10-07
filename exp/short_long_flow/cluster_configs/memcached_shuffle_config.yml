@@ -1,0 +1,44 @@
+# A memcached client-server (small RPC) running
+# in same network as shuffle (large RPC)
+
+node0:
+  ip: "192.168.1.1"
+  mac: "00:8c:fa:f7:10:0e"
+  instances:
+    - port: 11211  # port does not override mutilate port
+      ip: "192.168.1.11"
+      app: "memcached"
+      type: "client"
+      cpus: 6,8,10
+      flow_config_name: "default_client"
+      tas_cores: 1
+      destinations:
+        - node1_0
+    - port: 1234 # shuffle client
+      ip: "192.168.1.12"
+      app: "shuffle"
+      type: "client"
+      cpus: 12,14,16
+      flow_config_name: "default_client"
+      tas_cores: 1
+      destinations:
+        - node1_1
+node1:
+  ip: "192.168.1.2"
+  mac: "1c:34:da:41:d0:0c"
+  instances:
+    - port: 2001  # port does not overrride memcached port
+      ip: "192.168.1.21"
+      type: "server"
+      app: "memcached"
+      cpus: 6,8,10
+      flow_config_name: "default_server"
+      tas_cores: 1
+    - port: 5678
+      ip: "192.168.1.22"
+      type: "server"
+      app: "shuffle"
+      cpus: 12,14,16
+      flow_config_name: "default_server"
+      tas_cores: 1
+

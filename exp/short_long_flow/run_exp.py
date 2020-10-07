@@ -13,7 +13,6 @@ from bkdrft_common import *
 
 
 """
-This script is writen with this intend to be run by ansible.
 setup_node.py can fully setup the environment of a node.
 The measured values should be gathered by this script and reported.
 """
