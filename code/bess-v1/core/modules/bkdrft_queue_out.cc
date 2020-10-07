@@ -111,6 +111,8 @@ CommandResponse BKDRFTQueueOut::Init(const bess::pb::BKDRFTQueueOutArg &arg) {
     return CommandFailure(-ret);
   }
 
+  max_buffer_size_ = port_->tx_queue_size();
+
   // Check if has doorbell queue
   cdq_ = arg.cdq();
 
@@ -221,7 +223,8 @@ void BKDRFTQueueOut::BufferBatch(__attribute__((unused)) Flow &flow,
 
   // do not buffer more than a certain threshold
   // LOG(INFO) << "bytes in buffre " << bytes_in_buffer_ << "\n";
-  if (unlikely(fstate->byte_in_buffer >= MAX_BUFFER_SIZE)) {
+  // if (unlikely(fstate->byte_in_buffer >= MAX_BUFFER_SIZE)) {
+  if (unlikely(fstate->byte_in_buffer >= max_buffer_size_)) {
     if (log_)
       LOG(INFO) << "Maximum buffer size reached!\n";
 

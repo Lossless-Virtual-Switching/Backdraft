@@ -207,6 +207,8 @@ private:
   // This is used to avoid passing context to other functions
   // TODO: this is no thread safe
   Context *context_;
+
+  size_t max_buffer_size_;
 };
 
 #endif // BESS_MODULES_BKDRFTQUEUEOUT_H_

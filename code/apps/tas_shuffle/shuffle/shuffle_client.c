@@ -30,22 +30,22 @@ static uint8_t write_buf[WRITE_BUF_SIZE];
  */
 struct conn {
     /* Points to the previous connection object in the doubly-linked list. */
-    struct conn *prev;	
+    struct conn *prev;
     /* Points to the next connection object in the doubly-linked list. */
-    struct conn *next;	
+    struct conn *next;
     /* File descriptor associated with this connection. */
-    int fd;			
+    int fd;
     /* Internal buffer to temporarily store the contents of a read. */
-    char buffer[READ_BUF_SIZE];	
+    char buffer[READ_BUF_SIZE];
     /* Size of the data stored in the buffer. */
-    size_t size;			
+    size_t size;
     /* The shuffle that this connection is a part of. */
     struct shuffle *shuffle;
 
     /* Number of bytes requested for the current message. */
-    int request_bytes;
+    size_t request_bytes;
     /* Number of bytes of the current message written. */
-    int written_bytes;
+    size_t written_bytes;
 
     /* The startting time of the connection. */
     struct timespec start;
@@ -63,7 +63,7 @@ struct shuffle {
     /* Points to the next shuffle object in the doubly-linked list. */
     struct shuffle *next;
     /* The server request unit. */
-    uint32_t sru;
+    uint64_t sru;
     /* The total number of requests sent out. */
     uint32_t numreqs;
     /* The number of completed requests so far. */
@@ -81,16 +81,16 @@ struct shuffle {
     struct timespec finish;
 };
 
-/* 
+/*
  * Data structure to keep track of active server connections.
  */
-struct shuffle_pool { 
+struct shuffle_pool {
     /* The epoll file descriptor. */
     int efd;
     /* The epoll events. */
     struct epoll_event events[MAXEVENTS];
     /* Number of ready events returned by epoll. */
-    int nevents;  	  		
+    int nevents;
     /* Doubly-linked list of active server connection objects. */
     struct shuffle *shuffle_head;
     /* Number of active shuffles. */
@@ -98,7 +98,7 @@ struct shuffle_pool {
     /* Number of active connections. */
     unsigned int nr_conns;
 
-}; 
+};
 
 /* Set verbosity to 1 for debugging. */
 static int verbose = 0;
@@ -123,12 +123,12 @@ double get_secs(struct timespec time)
 }
 
 /*
- * open_server - open connection to server at <hostname, port> 
+ * open_server - open connection to server at <hostname, port>
  *   and return a socket descriptor ready for reading and writing.
- *   Returns -1 and sets errno on Unix error. 
+ *   Returns -1 and sets errno on Unix error.
  *   Returns -2 and sets h_errno on DNS (gethostbyname) error.
  */
-int open_server(char *hostname, int port) 
+int open_server(char *hostname, int port)
 {
     int serverfd;
     struct hostent *hp;
@@ -150,7 +150,7 @@ int open_server(char *hostname, int port)
         printf("fcntl set error.\n");
         exit(-1);
     }
-    
+
     /* Set the connection to allow for reuse */
     if (setsockopt(serverfd, SOL_SOCKET, SO_REUSEADDR, &optval, sizeof(optval)) < 0) {
         printf("setsockopt error.\n");
@@ -162,7 +162,7 @@ int open_server(char *hostname, int port)
         return -2; /* check h_errno for cause of error */
     bzero((char *) &serveraddr, sizeof(serveraddr));
     serveraddr.sin_family = AF_INET;
-    //  bcopy((char *)hp->h_addr, 
+    //  bcopy((char *)hp->h_addr,
     //        (char *)&serveraddr.sin_addr.s_addr, hp->h_length);
     serveraddr.sin_addr.s_addr = htonl((unsigned int) str_to_ip(hostname));
     serveraddr.sin_port = htons(port);
@@ -173,7 +173,7 @@ int open_server(char *hostname, int port)
             printf("server connect error");
             perror("");
             return -1;
-        }     
+        }
     }
     return serverfd;
 }
@@ -182,7 +182,7 @@ int open_server(char *hostname, int port)
  * Maintaining Client Connections.
  ******************************************************************************/
 
-/* 
+/*
  * Requires:
  * c should be a connection object and not be NULL.
  * p should be a connection pool and not be NULL.
@@ -199,7 +199,7 @@ add_conn_list(struct conn *c, struct shuffle *i)
 	i->conn_head->next = c;
 }
 
-/* 
+/*
  * Requires:
  * c should be a connection object and not be NULL.
  *
@@ -214,7 +214,7 @@ remove_conn_list(struct conn *c)
 }
 
 
-/* 
+/*
  * Requires:
  * c should be a connection object and not be NULL.
  * inc should be an shuffle and not be NULL.
@@ -233,16 +233,16 @@ remove_server(struct conn *c, struct shuffle_pool *p)
 	/* Get the total number of TCP retransmissions */
 	struct tcp_info info;
 	int infoLen = sizeof(info);
-	getsockopt(c->fd, SOL_TCP, TCP_INFO, (void *)&info, (socklen_t *)&infoLen); 
+	getsockopt(c->fd, SOL_TCP, TCP_INFO, (void *)&info, (socklen_t *)&infoLen);
         long packet_drops = info.tcpi_total_retrans;
-	
+
 	/* Supposedly closing the file descriptor cleans up epoll,
          * but do it first anyways to be nice... */
          XEPOLL_CTL(p->efd, EPOLL_CTL_DEL, c->fd, NULL);
 
 	/* Close the file descriptor. */
-	Close(c->fd); 
-	
+	Close(c->fd);
+
 	/* Decrement the number of connections. */
 	p->nr_conns--;
 
@@ -253,9 +253,9 @@ remove_server(struct conn *c, struct shuffle_pool *p)
         XCLOCK_GETTIME(&c->finish);
         double start = get_secs(c->start);
         double finish = get_secs(c->finish);
-        double tot_time = finish - start; 
+        double tot_time = finish - start;
         double bandwidth = (c->written_bytes * 8.0 * 1e-9)/(tot_time);
-        printf("- [%.30g, %.30g, %.9g, %d, %.9g, %ld, 1]\n", start, finish, tot_time, c->written_bytes, bandwidth, packet_drops);
+        printf("- [%.30g, %.30g, %.9g, %ld, %.9g, %ld, 1]\n", start, finish, tot_time, c->written_bytes, bandwidth, packet_drops);
 
         /* Increment and check the number of finished connections. */
         increment_and_check_shuffle(c->shuffle, p);
@@ -264,7 +264,7 @@ remove_server(struct conn *c, struct shuffle_pool *p)
 	Free(c);
 }
 
-/* 
+/*
  * Requires:
  * connfd should be a valid connection descriptor.
  * inc should be an shuffle and not be NULL.
@@ -273,8 +273,8 @@ remove_server(struct conn *c, struct shuffle_pool *p)
  * Allocates a new connection object and initializes the associated state. Adds
  * it to the doubly-linked list.
  */
-static void 
-add_server(int connfd, struct timespec start, struct shuffle *inc, struct shuffle_pool *p) 
+static void
+add_server(int connfd, struct timespec start, struct shuffle *inc, struct shuffle_pool *p)
 {
     struct conn *new_conn;
     struct epoll_event event;
@@ -304,7 +304,7 @@ add_server(int connfd, struct timespec start, struct shuffle *inc, struct shuffl
     add_conn_list(new_conn, inc);
 }
 
-/* 
+/*
  * Requires:
  * hostname should be a valid hostname
  * port should be a valid port
@@ -346,22 +346,22 @@ start_new_connection(char *hostname, int port, struct shuffle *inc, struct shuff
  * Manage shuffle Events.
  ******************************************************************************/
 
-/* 
+/*
  * Requires:
  * sru should be the server request unit in bytes.
  * numreqs should be the number of requests
  *
  * Effects:
- * Allocates an shuffle object and initializes it. 
+ * Allocates an shuffle object and initializes it.
  */
 static struct shuffle *
-alloc_shuffle(uint32_t sru, uint32_t numreqs, uint32_t slimit, char **hosts)
+alloc_shuffle(uint64_t sru, uint32_t numreqs, uint32_t slimit, char **hosts)
 {
 	struct shuffle *inc;
-	
+
 	if (verbose)
 		printf("Allocating shuffle\n");
-	
+
 	inc = Malloc(sizeof(struct shuffle));
         inc->sru = sru;
         inc->numreqs = numreqs;
@@ -380,7 +380,7 @@ alloc_shuffle(uint32_t sru, uint32_t numreqs, uint32_t slimit, char **hosts)
 	return (inc);
 }
 
-/* 
+/*
  * Requires:
  * inc should be an shuffle object and not be NULL.
  *
@@ -398,7 +398,7 @@ free_shuffle(struct shuffle *inc)
     exit(0);
 }
 
-/* 
+/*
  * Requires:
  * inc should be an shuffle object and not be NULL.
  *
@@ -412,7 +412,7 @@ remove_shuffle_list(struct shuffle *inc)
 	inc->prev->next = inc->next;
 }
 
-/* 
+/*
  * Requires:
  * inc should be an shuffle object and not be NULL.
  *
@@ -429,7 +429,7 @@ add_shuffle_list(struct shuffle *inc, struct shuffle_pool *p)
 }
 
 
-/* 
+/*
  * Requires:
  * sru is the server request unit
  * numreqs is the number of servers to the request from
@@ -441,7 +441,7 @@ add_shuffle_list(struct shuffle *inc, struct shuffle_pool *p)
  * Starts the shuffle event.
  */
 static void
-start_shuffle(uint32_t sru, uint32_t numreqs, uint32_t slimit,char **hosts, struct shuffle_pool *p)
+start_shuffle(uint64_t sru, uint32_t numreqs, uint32_t slimit,char **hosts, struct shuffle_pool *p)
 {
     int i, port;
     char *hostname;
@@ -464,7 +464,7 @@ start_shuffle(uint32_t sru, uint32_t numreqs, uint32_t slimit,char **hosts, stru
     }
 }
 
-/* 
+/*
  * Requires:
  * inc is a valid shuffle object ans is not NULL
  *
@@ -493,7 +493,7 @@ resume_shuffle(struct shuffle *inc, struct shuffle_pool *p)
     }
 }
 
-/* 
+/*
  * Requires:
  * inc is a valid shuffle object ans is not NULL
  * p is a valid shuffle pool and is not NULL
@@ -516,22 +516,22 @@ finish_shuffle(struct shuffle *inc)
     //p->nr_shuffles--;
 
     if (verbose)
-        printf("Finished receiving %d bytes from each of the %d servers\n",
+        printf("Finished receiving %ld bytes from each of the %d servers\n",
             inc->sru, inc->numreqs);
 
     /* Stop Timing and Log. */
     XCLOCK_GETTIME(&inc->finish);
     double start = get_secs(inc->start);
     double finish = get_secs(inc->finish);
-    double tot_time = finish - start; 
+    double tot_time = finish - start;
     double bandwidth = (inc->sru * inc->numreqs * 8.0 * 1e-9)/(tot_time);
-    printf("- [%.30g, %.30g, %.9g, %d, %.9g, -1, %d]\n", start, finish, tot_time, inc->sru * inc->numreqs, bandwidth, inc->numreqs);
+    printf("- [%.30g, %.30g, %.9g, %ld, %.9g, -1, %d]\n", start, finish, tot_time, inc->sru * inc->numreqs, bandwidth, inc->numreqs);
 
     /* Free the shuffle. */
     free_shuffle(inc);
 }
 
-/* 
+/*
  * Requires:
  * inc is a valid shuffle object ans is not NULL
  *
@@ -549,7 +549,7 @@ increment_and_check_shuffle(struct shuffle *inc, struct shuffle_pool *p)
     	resume_shuffle(inc, p);
 }
 
-/* 
+/*
  * Requires:
  * p should be an shuffle pool and not be NULL.
  *
@@ -557,11 +557,11 @@ increment_and_check_shuffle(struct shuffle *inc, struct shuffle_pool *p)
  * Initializes an empty shuffle pool. Allocates and initializes dummy list
  * heads.
  */
-static void 
-init_pool(struct shuffle_pool *p) 
+static void
+init_pool(struct shuffle_pool *p)
 {
     /* Initially, there are no connected descriptors. */
-    //p->nr_shuffles = 0;                   
+    //p->nr_shuffles = 0;
     p->nr_conns = 0;
 
     /* Allocate and initialize the dummy connection head. */
@@ -582,7 +582,7 @@ init_pool(struct shuffle_pool *p)
  * Write Messages.
  ******************************************************************************/
 
-/* 
+/*
  * Requires:
  * p should be a connection pool and not be NULL.
  *
@@ -599,7 +599,7 @@ write_message(struct conn *c, struct shuffle_pool *p)
 
     /* Data written. */
     if (n > 0) {
-        
+
         /* Update the bytes written count. */
         c->written_bytes += n;
 
@@ -622,17 +622,18 @@ write_message(struct conn *c, struct shuffle_pool *p)
     }
     /* Connection closed by server. */
     else
-            remove_server(c, p);	
+            remove_server(c, p);
 }
 
 
-int main(int argc, char **argv) 
+int main(int argc, char **argv)
 {
-    int sru, slimit;
+    uint64_t sru;
+    int slimit;
     struct shuffle_pool pool;
     struct conn *connp;
     int i;
-        
+
     /* initialize random() */
     srandom(time(0));
 
@@ -644,7 +645,7 @@ int main(int argc, char **argv)
         exit(0);
     }
 
-    sru = atoi(argv[1]);
+    sru = atol(argv[1]);
     slimit = atoi(argv[2]);
 
     /* print the command invoked with args */
@@ -662,10 +663,10 @@ int main(int argc, char **argv)
 
     printf("- [startSeconds, endSeconds, totTime, totBytes, bandwidthGbps, numPacketDrop, numSockets]\n");
     while(1)
-    { 
-        /* 
+    {
+        /*
          * Wait until:
-         * 1. Data is available to be read from a socket. 
+         * 1. Data is available to be read from a socket.
          */
         pool.nevents = epoll_wait (pool.efd, pool.events, MAXEVENTS, 0);
         for (i = 0; i < pool.nevents; i++) {
@@ -685,6 +686,6 @@ int main(int argc, char **argv)
             }
         }
     }
-        
+
     return (0);
 }

@@ -52,12 +52,32 @@ cores=1
 # dst_ip_port_pair=$(echo "$dst_ip_port_pair" | tr -d '"')
 # echo $dst_ip_port_pair
 
+instances=4
+echo  count instances $instances
 if [ "$type" = "client" ]; then
-  LD_PRELOAD=$TAS_DIR/lib/libtas_interpose.so \
-     /root/shuffle_client $size $count_flow $dst_ip $server_port
+  # one_gig=1073741824
+  # repeate=`echo $size / $one_gig  | bc`
+  # leftover=`echo $size % $one_gig | bc`
+  # while [ $repeate -gt 0 ]
+  # do
+  # done
+  for i in `seq $instances`
+  do
+    LD_PRELOAD=$TAS_DIR/lib/libtas_interpose.so \
+       /root/shuffle_client $size $count_flow $dst_ip $server_port &
+    echo client connecting to $dst_ip $server_port
+    server_port=$(($server_port + 1))
+  done
+  wait
 elif [ "$type" = "server" ]; then
-  LD_PRELOAD=$TAS_DIR/lib/libtas_interpose.so \
-    /root/shuffle_server $port
+  for i in `seq $instances`
+  do
+    LD_PRELOAD=$TAS_DIR/lib/libtas_interpose.so \
+      /root/shuffle_server $port &
+    echo server listenning on port $port
+    port=$(($port + 1))
+  done
+  wait
 else
   echo "type variable is not supported (type=$type)"
 fi

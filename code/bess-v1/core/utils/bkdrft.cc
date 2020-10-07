@@ -58,10 +58,11 @@ int prepare_packet(bess::Packet *pkt, void *payload, size_t size,
 
   // Ethernet
   // pkt->append(128)
-  // uint8_t *ptr = reinterpret_cast<uint8_t *>(pkt->head_data());
-  uint8_t *ptr = reinterpret_cast<uint8_t *>(pkt->append(256));
-  assert(ptr != nullptr);
-  Ethernet *eth = reinterpret_cast<Ethernet *>(ptr);
+  // uint8_t *ptr = reinterpret_cast<uint8_t *>(pkt->append(256));
+  // assert(ptr != nullptr);
+  // Ethernet *eth = reinterpret_cast<Ethernet *>(ptr);
+  uint8_t *ptr; 
+  Ethernet *eth = reinterpret_cast<Ethernet *>(pkt->head_data());
   eth->dst_addr = flow->eth_dst_addr;  // s_eth->dst_addr;
   eth->src_addr = flow->eth_src_addr;  // s_eth->src_addr;
   eth->ether_type =
@@ -81,9 +82,11 @@ int prepare_packet(bess::Packet *pkt, void *payload, size_t size,
   udp->length = be16_t(sizeof(Udp) + size);
   udp->checksum = 0;
   // Payload
-  ptr = reinterpret_cast<uint8_t *>(udp + 1);
-  assert(ptr != nullptr);
-  bess::utils::Copy(ptr, payload, size, false);
+  if (payload != nullptr) {
+    ptr = reinterpret_cast<uint8_t *>(udp + 1);
+    assert(ptr != nullptr);
+    bess::utils::Copy(ptr, payload, size, false);
+  }
 
   pkt->set_total_len(256);
   pkt->set_data_len(208);
@@ -190,12 +193,13 @@ int parse_bkdrft_msg(bess::Packet *pkt, char *type, void **pb) {
   }
 
   // copy payload to a buffer (from mbuf to char array)
-  char msg[BKDRFT_MAX_MESSAGE_SIZE];
-  bess::utils::Copy(msg, payload, size, true);
-  msg[size] = '\0';
+  // char msg[BKDRFT_MAX_MESSAGE_SIZE];
+  // bess::utils::Copy(msg, payload, size, true);
+  // msg[size] = '\0';
+  char *msg = reinterpret_cast<char *>(payload);
 
   char first_byte = msg[0];             // first byte is for finding the type
-  std::string serialized_msg(msg + 1);  // rest of the message is protobuf data
+  // std::string serialized_msg(msg + 1);  // rest of the message is protobuf data
   *type = first_byte;
 
   // TODO: new key-word is used here. it may have performance hit.
@@ -203,7 +207,8 @@ int parse_bkdrft_msg(bess::Packet *pkt, char *type, void **pb) {
   // more investigations
   if (first_byte == BKDRFT_CTRL_MSG_TYPE) {
     bess::pb::Ctrl *ctrl_msg = new bess::pb::Ctrl();
-    bool parse_res = ctrl_msg->ParseFromString(serialized_msg);
+    // bool parse_res = ctrl_msg->ParseFromString(serialized_msg);
+    bool parse_res = ctrl_msg->ParseFromArray(msg + 1, size - 1);
     if (!parse_res) {
       LOG(WARNING) << "parse_bkdrft_msg: Failed to parse ctrl message\n";
       return -1;  // failed
@@ -212,7 +217,8 @@ int parse_bkdrft_msg(bess::Packet *pkt, char *type, void **pb) {
     return 0;
   } else if (first_byte == BKDRFT_OVERLAY_MSG_TYPE) {
     bess::pb::Overlay *overlay_msg = new bess::pb::Overlay();
-    bool parse_res = overlay_msg->ParseFromString(serialized_msg);
+    // bool parse_res = overlay_msg->ParseFromString(serialized_msg);
+    bool parse_res = overlay_msg->ParseFromArray(msg + 1, size - 1);
     if (!parse_res) {
       LOG(WARNING) << "parse_bkdrft_msg: Failed to parse ctrl message\n";
       return -1;  // failed
