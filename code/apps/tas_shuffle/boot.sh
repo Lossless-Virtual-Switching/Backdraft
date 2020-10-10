@@ -1,4 +1,6 @@
-#!/bin/sh
+#!/bin/bash
+
+# It is important that this is run with bash and not dash
 
 # Note: This script expects following environment variables to be defined
 # === TAS ===
@@ -41,6 +43,7 @@ exec $TAS_DIR/tas/tas --dpdk-extra=--vdev \
   --ip-addr=$ip \
   --cc=dctcp-win \
   --fp-cores-max=$cores \
+  --count-queue=$count_queues \
   ${flags} &
 
 # wait for tas server to be ready
@@ -52,8 +55,10 @@ cores=1
 # dst_ip_port_pair=$(echo "$dst_ip_port_pair" | tr -d '"')
 # echo $dst_ip_port_pair
 
-instances=4
+instances=1
 echo  count instances $instances
+pids=()
+# declare -A pids
 if [ "$type" = "client" ]; then
   # one_gig=1073741824
   # repeate=`echo $size / $one_gig  | bc`
@@ -65,19 +70,29 @@ if [ "$type" = "client" ]; then
   do
     LD_PRELOAD=$TAS_DIR/lib/libtas_interpose.so \
        /root/shuffle_client $size $count_flow $dst_ip $server_port &
+    echo child pid: $!
+    pids+=("$!")
     echo client connecting to $dst_ip $server_port
     server_port=$(($server_port + 1))
   done
-  wait
+  for pid in ${pids[@]}
+  do
+    wait $pid
+  done
 elif [ "$type" = "server" ]; then
   for i in `seq $instances`
   do
     LD_PRELOAD=$TAS_DIR/lib/libtas_interpose.so \
       /root/shuffle_server $port &
+    echo child pid: $!
+    pids+=("$!")
     echo server listenning on port $port
     port=$(($port + 1))
   done
-  wait
+  for pid in ${pids[@]}
+  do
+    wait $pid
+  done
 else
   echo "type variable is not supported (type=$type)"
 fi

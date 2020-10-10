@@ -204,8 +204,9 @@ std::string BKDRFTQueueOut::GetDesc() const {
   return bess::utils::Format("%s/%s(HOLB)", port_->name().c_str(),
                              port_->port_builder()->class_name().c_str());
 #else
-  return bess::utils::Format("%s/%s", port_->name().c_str(),
-                             port_->port_builder()->class_name().c_str());
+  return bess::utils::Format("%s/%s (%ld)", port_->name().c_str(),
+                             port_->port_builder()->class_name().c_str(),
+			     count_packets_in_buffer_);
 #endif
 }
 

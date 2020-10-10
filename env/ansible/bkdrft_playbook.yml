@@ -57,6 +57,7 @@
       shell: 'echo GRUB_CMDLINE_LINUX_DEFAULT=\"default_hugepagesz=1G hugepagesz=1G hugepages=30\" | sudo tee -a /etc/default/grub'
     - name: "update grub"
       shell: "update-grub"
+    # TODO: Turn of hyperthreading
     # TODO: check if using mellanox NICs then install required files.
     # TODO: compile BESS (huge pages should be setup first)
 
@@ -76,12 +77,12 @@
     # - name: "build `tas_container` docker image file"
     #   command: "../../code/apps/tas_container/build.sh"
     # build used applications
-    - name: "building applications (dpdk_netperf)"
-      shell: ./make.sh
-      args:
-        chdir: ../../code/apps/dpdk_netperf/
-    - name: "building applications (udp_client_server)"
-      shell: ./make.sh
-      args:
-        chdir: ../../code/apps/udp_client_server/
+    # - name: "building applications (dpdk_netperf)"
+    #   shell: ./make.sh
+    #   args:
+    #     chdir: ../../code/apps/dpdk_netperf/
+    # - name: "building applications (udp_client_server)"
+    #   shell: ./make.sh
+    #   args:
+    #     chdir: ../../code/apps/udp_client_server/
 

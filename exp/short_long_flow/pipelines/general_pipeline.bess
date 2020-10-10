@@ -101,7 +101,7 @@ cdq = config['cdq']
 pfq = config['pfq']
 overlay = config['overlay']
 
-cpu_queues = 16384
+cpu_queues = size_q
 
 
 # ===========================================#
@@ -179,8 +179,8 @@ else:
 sw_q_out = BKDRFTQueueOut(port=sw_port, qid=[i for i in range(count_queue)],
               count_queues=count_queue, backpressure=bp, lossless=buffering,
               cdq=cdq, per_flow_buffering=pfq, mname='sw', overlay = overlay)
-if buffering:
-  sw_q_out.attach_task(wid=next_wid())
+# if buffering:
+#   sw_q_out.attach_task(wid=next_wid())
 
 merge = Merge() # merge input
 x = IPLookup()
@@ -255,8 +255,8 @@ for i, (vhost, ip) in enumerate(vhosts):
                count_queues=count_queue, backpressure=bp, lossless=buffering,
                cdq=cdq, per_flow_buffering=pfq, mname=vhost.name + '_' + str(i),
                overlay=overlay)
-  if buffering:
-    qout.attach_task(wid=next_wid())
+  # if buffering:
+  #   qout.attach_task(wid=next_wid())
   if ip:
     x:lookup_gate -> qout
     lookup_gate += 1

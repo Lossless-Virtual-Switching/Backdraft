@@ -174,7 +174,7 @@ def setup_container(node_name: str, instance_number: int, config: dict):
         container_image_name = 'no-container-should-be-used'
     elif app == 'memcached':
         container_image_name = 'tas_memcached'
-    elif: app == 'shuffle':
+    elif app == 'shuffle':
         container_image_name = 'tas_shuffle'
     else:
         msg = 'app field should have one of the {} values'.format(supported_app)
@@ -204,13 +204,13 @@ def setup_container(node_name: str, instance_number: int, config: dict):
     # TODO: needs better implementation for supporting different configs
     if app == 'unidir':
         if len(ips) > 1:
-          print('warning: unidir supports only one destination!', file=sys.stderr)
+            print('warning: unidir supports only one destination!', file=sys.stderr)
         app_params = {
-        'server_ip': ips[0][0],  # unidir supports only one destination
-        'threads': count_thread,
-        'connections': count_flow,
-        'message_size': message_size,
-        'server_delay_cycles': flow_conf.get('delay_cycles', 0)  # no effect on client
+            'server_ip': ips[0][0],  # unidir supports only one destination
+            'threads': count_thread,
+            'connections': count_flow,
+            'message_size': message_size,
+            'server_delay_cycles': flow_conf.get('delay_cycles', 0)  # no effect on client
         }
         config.update(app_params)
     elif app == 'udp_app':
@@ -242,10 +242,23 @@ def setup_container(node_name: str, instance_number: int, config: dict):
             'threads': count_thread,
             'connections': count_flow,
             'memory': 500,
-            'duration': 600,
+            'duration': 20,
         }
         config.update(app_params)
         print('count threads:', count_thread, 'count connections:', count_flow)
+    elif app == 'shuffle':
+        if len(ips) > 1:
+            print('warning: shuffle supports only one destination!',
+                  file=sys.stderr)
+        app_params = {
+            # memcached script supports only one destination
+            'dst_ip': ips[0][0],
+            'server_port': ips[0][1],
+            'server_req_unit': shuffle_sru,
+            'count_flow': 1,  # This should be 1, shuffle will crash
+        }
+        config.update(app_params)
+
     run_app(config, app=app)
     # pprint(config)
 
@@ -275,14 +288,14 @@ def kill_node(instances):
     # stop containers
     killed_udp = False
     for i, instance in enumerate(instances):
-    app = instance.get('app', args.app)
-    if app == 'udp_app':
-        killed_udp = True
-        subprocess.run('sudo pkill udp_app', shell=True)
-    else:
-        name = 'tas_{}_{}'.format(instance['type'], i)
-        subprocess.run('sudo docker stop -t 0 {}'.format(name), shell=True, stdout=subprocess.PIPE)
-        subprocess.run('sudo docker rm {}'.format(name), shell=True, stdout=subprocess.PIPE)
+        app = instance.get('app', args.app)
+        if app == 'udp_app':
+            killed_udp = True
+            subprocess.run('sudo pkill udp_app', shell=True)
+        else:
+            name = 'tas_{}_{}'.format(instance['type'], i)
+            subprocess.run('sudo docker stop -t 0 {}'.format(name), shell=True, stdout=subprocess.PIPE)
+            subprocess.run('sudo docker rm {}'.format(name), shell=True, stdout=subprocess.PIPE)
     # stop BESS pipeline
     bessctl_do('daemon stop')
 
@@ -315,6 +328,9 @@ if __name__ == '__main__':
     parser.add_argument('-app', choices=supported_app, default='rpc',
         help='which app should be used for the experiment')
     args = parser.parse_args()
+
+
+    shuffle_sru = 5 * 1024 * 1024 * 1024
 
 
     # read pipeline config

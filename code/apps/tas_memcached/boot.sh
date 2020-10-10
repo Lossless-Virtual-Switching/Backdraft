@@ -43,6 +43,7 @@ exec $TAS_DIR/tas/tas --dpdk-extra=--vdev \
   --ip-addr=$ip \
   --cc=dctcp-win \
   --fp-cores-max=$cores \
+  --count-queue=$count_queues \
   ${flags} &
 
 # wait for tas server to be ready
@@ -66,6 +67,7 @@ if [ "$type" = "client" ]; then
   LD_PRELOAD=$TAS_DIR/lib/libtas_interpose.so \
      /root/mutilate/mutilate -s $dst_ip -t $duration -w $warmup_time \
      -W $wait_before_measure -T $threads -c $connections
+  echo Done!
 elif [ "$type" = "server" ]; then
   LD_PRELOAD=$TAS_DIR/lib/libtas_interpose.so \
     memcached -m $memory -u root -l $ip -t $threads

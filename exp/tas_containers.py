@@ -135,7 +135,7 @@ def spin_up_shuffle(conf):
         raise Exception('Container miss configuration: '
                         'expecting type to be client or server')
     # print(cmd)
-    return subprocess.run(cmd, shell=True, stdout=None) # subprocess.PIPE
+    return subprocess.run(cmd, shell=True, stdout=subprocess.PIPE)
 
 
 def run_udp_app(config):

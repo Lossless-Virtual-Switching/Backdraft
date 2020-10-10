@@ -403,7 +403,7 @@ int Accept(int s, struct sockaddr *addr, socklen_t *addrlen)
 {
     int rc;
 
-    if ((rc = accept(s, addr, addrlen)) < 0)
+    if (((rc = accept(s, addr, addrlen)) < 0) && errno != EAGAIN)
 	unix_error("Accept error");
     return rc;
 }

@@ -5,6 +5,7 @@
 #include <math.h> //for exp()
 #include <sys/time.h> //for gettimeofday()
 #include <sys/epoll.h>
+#include <netinet/tcp.h>
 #include "csapp.h"
 
 #define XCLOCK_GETTIME(tp)   ({  \
@@ -20,7 +21,7 @@
     }})
 
 
-#define WRITE_BUF_SIZE 128	/* Per-connection internal buffer size for writes. */
+#define WRITE_BUF_SIZE 128  /* Per-connection internal buffer size for writes. */
 #define READ_BUF_SIZE (1<<25) /* Read buffer size. 32MB. */
 #define MAXEVENTS 1024  /* Maximum number of epoll events per call */
 
@@ -33,21 +34,21 @@ static uint8_t read_buf[READ_BUF_SIZE];
  * There is a dummy connection head at the beginning of the list.
  */
 struct conn {
-	/* Points to the previous connection object in the doubly-linked list. */
-	struct conn *prev;	
-	/* Points to the next connection object in the doubly-linked list. */
-	struct conn *next;	
-	/* File descriptor associated with this connection. */
-	int fd;			
-	/* Internal buffer to temporarily store the contents of a read. */
-	char buffer[WRITE_BUF_SIZE];	
-	/* Size of the data stored in the buffer. */
-	size_t size;			
+    /* Points to the previous connection object in the doubly-linked list. */
+    struct conn *prev;  
+    /* Points to the next connection object in the doubly-linked list. */
+    struct conn *next;  
+    /* File descriptor associated with this connection. */
+    int fd;         
+    /* Internal buffer to temporarily store the contents of a read. */
+    char buffer[WRITE_BUF_SIZE];    
+    /* Size of the data stored in the buffer. */
+    size_t size;            
 
-	/* Number of bytes requested for the current message. */
+    /* Number of bytes requested for the current message. */
         int request_bytes;
-	/* Number of bytes of the current message (write_msg) written. */
-	int written_bytes;		
+    /* Number of bytes of the current message (write_msg) written. */
+    int written_bytes;      
 };
 
 /* 
@@ -56,16 +57,16 @@ struct conn {
 struct conn_pool { 
         /* The listening fild descriptor. */
         int listenfd;
-	/* The epoll file descriptor. */
+    /* The epoll file descriptor. */
         int efd;
         /* The epoll events. */
         struct epoll_event events[MAXEVENTS];
-	/* Number of ready events returned by epoll. */
-	int nevents;  	  		
-	/* Doubly-linked list of active client connection objects. */
-	struct conn *conn_head;
-	/* Number of active client connections. */
-	unsigned int nr_conns;
+    /* Number of ready events returned by epoll. */
+    int nevents;            
+    /* Doubly-linked list of active client connection objects. */
+    struct conn *conn_head;
+    /* Number of active client connections. */
+    unsigned int nr_conns;
 }; 
 
 /* Set verbosity to 1 for debugging. */
@@ -79,6 +80,7 @@ int open_listen(int port)
 {
     int listenfd, optval=1;
     struct sockaddr_in serveraddr;
+    int opts = 0;
   
     /* Create a socket descriptor */
     if ((listenfd = socket(AF_INET, SOCK_STREAM, 0)) < 0)
@@ -88,6 +90,19 @@ int open_listen(int port)
     if (setsockopt(listenfd, SOL_SOCKET, SO_REUSEADDR, 
                    (const void *)&optval , sizeof(int)) < 0)
         return -1;
+
+    /* Farbod: Set listen socket non-blocking */
+    opts = fcntl(listenfd, F_GETFL);
+    if (opts < 0) {
+        printf("fcntl error.");
+        exit(-1);
+    }
+    opts = (opts | O_NONBLOCK);
+    if (fcntl(listenfd, F_SETFL, opts) < 0) {
+        printf("fcntl set error.");
+        exit(-1);
+    }
+
 
     /* Listenfd will be an endpoint for all requests to port
        on any IP address for this host */
@@ -119,10 +134,10 @@ int open_listen(int port)
 static void
 add_conn_list(struct conn *c, struct conn_pool *p)
 {
-	c->next = p->conn_head->next;
-	c->prev = p->conn_head;
-	p->conn_head->next->prev = c;
-	p->conn_head->next = c;
+    c->next = p->conn_head->next;
+    c->prev = p->conn_head;
+    p->conn_head->next->prev = c;
+    p->conn_head->next = c;
 }
 
 /* 
@@ -135,8 +150,8 @@ add_conn_list(struct conn *c, struct conn_pool *p)
 static void
 remove_conn_list(struct conn *c)
 {
-	c->next->prev = c->prev;
-	c->prev->next = c->next;
+    c->next->prev = c->prev;
+    c->prev->next = c->next;
 }
 
 /* 
@@ -151,24 +166,24 @@ remove_conn_list(struct conn *c)
 void
 remove_client(struct conn *c, struct conn_pool *p)
 {
-	if (verbose)
-		printf("Closing connection fd %d...\n", c->fd);
+    if (verbose)
+        printf("Closing connection fd %d...\n", c->fd);
 
-	/* Supposedly closing the file descriptor cleans up epoll,
+    /* Supposedly closing the file descriptor cleans up epoll,
          * but do it first anyways to be nice... */
          XEPOLL_CTL(p->efd, EPOLL_CTL_DEL, c->fd, NULL);
 
-	/* Close the file descriptor. */
-	Close(c->fd); 
-	
-	/* Decrement the number of connections. */
-	p->nr_conns--;
+    /* Close the file descriptor. */
+    Close(c->fd); 
+    
+    /* Decrement the number of connections. */
+    p->nr_conns--;
 
-	/* Remove the connection from the list. */
-	remove_conn_list(c);
+    /* Remove the connection from the list. */
+    remove_conn_list(c);
 
-	/* Free the connection object. */
-	Free(c);
+    /* Free the connection object. */
+    Free(c);
 }
 
 /* 
@@ -220,38 +235,49 @@ add_client(int connfd, struct conn_pool *p)
 static void
 handle_new_connection(int listenfd, struct conn_pool *p)
 {
-	struct sockaddr_in clientaddr;
-	socklen_t clientlen = sizeof(struct sockaddr_in);
-	struct hostent *hp;
-	char *haddrp;
-	int connfd;
-	int opts = 0;
+    struct sockaddr_in clientaddr;
+    socklen_t clientlen = sizeof(struct sockaddr_in);
+    struct hostent *hp;
+    char *haddrp;
+    int connfd;
+    int opts = 0;
+    int flag = 1;
 
-	/* Accept the new connection. */
-	connfd = Accept(listenfd, (SA *)&clientaddr, &clientlen); 
-			
-	/* Set the connection descriptor to be non-blocking. */
-	opts = fcntl(connfd, F_GETFL);
-	if (opts < 0) {
-		printf("fcntl error.");
-		exit(-1);
-	}
-	opts = (opts | O_NONBLOCK);
-	if (fcntl(connfd, F_SETFL, opts) < 0) {
-		printf("fcntl set error.");
-		exit(-1);
-	}
+    /* Accept the new connection. */
+    connfd = Accept(listenfd, (SA *)&clientaddr, &clientlen); 
 
-	if (verbose) {
-		hp = Gethostbyaddr((const char *)&clientaddr.sin_addr.s_addr,
-		    sizeof(clientaddr.sin_addr.s_addr), AF_INET);
-		haddrp = inet_ntoa(clientaddr.sin_addr);
-		printf("Accepted new connection request from %s (%s) new fd %d...\n",
-		    hp->h_name, haddrp, connfd);
-	}
+    if (connfd == -1 && errno == EAGAIN) {
+        /* Farbod: There is no connection waiting here */
+        return;
+    }
+            
+    /* Set the connection descriptor to be non-blocking. */
+    opts = fcntl(connfd, F_GETFL);
+    if (opts < 0) {
+        printf("fcntl error.");
+        exit(-1);
+    }
+    opts = (opts | O_NONBLOCK);
+    if (fcntl(connfd, F_SETFL, opts) < 0) {
+        printf("fcntl set error.");
+        exit(-1);
+    }
 
-	/* Create new connection object and add it to the connection pool. */
-	add_client(connfd, p);
+    /* Frabod: No Nagle */
+    setsockopt(connfd, IPPROTO_TCP, TCP_NODELAY, &flag, sizeof(flag));
+
+    if (verbose) {
+        /* Farbod: TAS does not support gethostbyaddr */
+        // hp = Gethostbyaddr((const char *)&clientaddr.sin_addr.s_addr,
+        //     sizeof(clientaddr.sin_addr.s_addr), AF_INET);
+        // haddrp = inet_ntoa(clientaddr.sin_addr);
+        printf("Accepted new connection request from %s (%s) new fd %d...\n",
+            "?", "?", connfd);
+           //  hp->h_name, haddrp, connfd);
+    }
+
+    /* Create new connection object and add it to the connection pool. */
+    add_client(connfd, p);
 }
 
 /* 
@@ -268,13 +294,13 @@ init_pool(int listenfd, struct conn_pool *p)
 {
         struct epoll_event event;
 
-	/* Initially, there are no connected descriptors. */
-	p->nr_conns = 0;                   
+    /* Initially, there are no connected descriptors. */
+    p->nr_conns = 0;                   
 
-	/* Allocate and initialize the dummy connection head. */
-	p->conn_head = Malloc(sizeof(struct conn));
-	p->conn_head->next = p->conn_head;
-	p->conn_head->prev = p->conn_head;
+    /* Allocate and initialize the dummy connection head. */
+    p->conn_head = Malloc(sizeof(struct conn));
+    p->conn_head->next = p->conn_head;
+    p->conn_head->prev = p->conn_head;
 
         /* Initialize epoll. */
         p->listenfd = listenfd;
@@ -320,8 +346,10 @@ read_message(struct conn *c, struct conn_pool *p)
     /* Error (possibly). */
     else if (n < 0) {
          /* If errno is EAGAIN, it just means we need to read again. */
-        if (errno != EAGAIN) 
+        if (errno != EAGAIN)  {
+        printf("close connection by error\n");
             remove_client(c, p);
+    }
     }
     /* Connection closed by client. */
     else
@@ -381,10 +409,6 @@ int main(int argc, char **argv)
                     read_message(connp, &pool);
                 }
             }
-
-            }
-
         }
-
-
     }
+}

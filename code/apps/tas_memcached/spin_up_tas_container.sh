@@ -106,11 +106,11 @@ sudo docker run \
 	--env prefix=$tas_dpdk_prefix \
 	--env command_data_queue=$tas_cmd \
 	--env type=$app_type \
-  $app_arguments \
+        $app_arguments \
 	-d \
 	--log-opt mode=non-blocking \
 	--log-opt max-buffer-size=4m \
 	--log-opt max-size="20m" \
-  --network none \
+        --network none \
 	$container_image_name
 
