@@ -13,12 +13,13 @@
 
 using bess::utils::be16_t;
 using bess::utils::be32_t;
+using bess::utils::Ethernet;
+using bess::utils::Vlan;
+using bess::utils::Ipv4;
 using namespace bess::bkdrft;
 
 
 bool is_arp(bess::Packet *pkt) {
-  using bess::utils::Ethernet;
-  using bess::utils::Vlan;
   Ethernet *eth = reinterpret_cast<Ethernet *>(pkt->head_data());
   uint16_t ether_type = eth->ether_type.value();
   if (ether_type == Ethernet::Type::kArp)
@@ -183,24 +184,28 @@ uint32_t BKDRFTQueueInc::ReadBatch(queue_t qid, bess::PacketBatch *batch,
 
 bool BKDRFTQueueInc::CheckQueuedCtrlMessages(Context *ctx, queue_t *qid,
                                              uint32_t *burst) {
+  static int i = 0;
+  int begin = i;
   uint32_t tmp_burst = 0;
   // TODO: this kind of iteration to find dqid has starvation problem!
-  for (int i = 0; i < MAX_QUEUES; i++) {
-    if (q_status_[i].remaining_dpkt > 0) {
-
-      if (IsQueuePausedInCache(ctx, i)) {
+  while (true) {
+    uint16_t iter_q = managed_queues[i];
+    if (q_status_[iter_q].remaining_dpkt > 0) {
+      if (IsQueuePausedInCache(ctx, iter_q)) {
         // Only for testing
         // LOG(INFO) << "q: " << i << " is paused\n";
         continue;
       }
 
-      *qid = i;
-      tmp_burst = q_status_[i].remaining_dpkt;
+      *qid = iter_q;
+      tmp_burst = q_status_[iter_q].remaining_dpkt;
       if (tmp_burst > max_burst)
         tmp_burst = max_burst;
       *burst = tmp_burst;
       return true; // found a queue
     }
+    i=(i+1) % count_managed_queues;
+    if (i == begin) break;
   }
   return false; // did not found a queue
 }
@@ -268,7 +273,11 @@ uint32_t BKDRFTQueueInc::CDQ(Context *ctx, bess::PacketBatch *batch, queue_t &_q
         nb_pkts = ctrl_msg->nb_pkts();
         if (isManagedQueue(dqid))
           q_status_[dqid].remaining_dpkt += nb_pkts;
-        // LOG(INFO) << "Received ctrl message: qid: " << (int)dqid << "\n";
+        // if (port_->getConnectedPortType() == NIC) {
+        //   LOG(INFO) << "Received ctrl message: qid: " << (int)dqid
+        //           << " count: " << nb_pkts
+        //           << " is managed queue: " << isManagedQueue(dqid) << "\n";
+        // }
 
         delete ctrl_msg;
       } else if (message_type == BKDRFT_OVERLAY_MSG_TYPE) {
@@ -276,10 +285,10 @@ uint32_t BKDRFTQueueInc::CDQ(Context *ctx, bess::PacketBatch *batch, queue_t &_q
             reinterpret_cast<bess::pb::Overlay *>(pb);
 
         if (overlay_) {
-      	  // uint64_t pps = overlay_msg->packet_per_sec();
+          // uint64_t pps = overlay_msg->packet_per_sec();
           // LOG(INFO) << "Received overlay message: pps: " << pps << "\n";
 
-	        // update port rate limit for queue
+                // update port rate limit for queue
           auto &overlay_ctrl = BKDRFTOverlayCtrl::GetInstance();
           overlay_ctrl.ApplyOverlayMessage(*overlay_msg, ctx->current_ns);
         }
@@ -288,12 +297,11 @@ uint32_t BKDRFTQueueInc::CDQ(Context *ctx, bess::PacketBatch *batch, queue_t &_q
         LOG(ERROR) << "Wrong message type!\n";
       }
 
-
       bess::Packet::Free(pkt); // free ctrl pkt
     }
 
     // send out the unknown packets received on control queue
-    if (has_q0_litter) {
+    if (unlikely(has_q0_litter)) {
       return batch->cnt();
     }
 
@@ -302,13 +310,13 @@ uint32_t BKDRFTQueueInc::CDQ(Context *ctx, bess::PacketBatch *batch, queue_t &_q
     found_qid = CheckQueuedCtrlMessages(ctx, &qid, &burst);
   }
 
-  if (found_qid) {
+  if (likely(found_qid)) {
     /* important note:
      * if burst is less than a specific number (I guess 4) the packets are note
      * read from the port.
      */
     uint32_t cnt = ReadBatch(qid, batch, max_burst); // burst
-    // if (port_->getConnectedPortType() == NIC) {
+    // if (port_->getConnectedPortType() == NIC && cnt > 0) {
     //   LOG(INFO) << "FOUND qid: " << (int)qid << " burst: " << burst << "\n";
     //   LOG(INFO) << "Read packets: " << cnt << "\n";
     // }
@@ -324,6 +332,24 @@ uint32_t BKDRFTQueueInc::CDQ(Context *ctx, bess::PacketBatch *batch, queue_t &_q
      * network (e.g. in the switches).
      */
     q_status_[qid].remaining_dpkt -= cnt;
+
+    // Go through all packets for finding ARP?!
+    // We can group packets here, like having queues (buffers) here
+    // Now that we are doing this we can do some optimization
+    // We could even merge with queue out for ultimate performance (maybe?)
+    // int ret;
+    // for (uint32_t i = 0; i < cnt; i++) {
+    //   bess::Packet *pkt = batch->pkts()[0];
+    //   Ethernet *eth = pkt->head_data<Ethernet *>();
+    //   Ipv4 *ip_hdr = get_ip_header(eth);
+    //   if (ip_hdr != nullptr && ip_hdr->protocol == BKDRFT_ARP_IP_PROTO) {
+    //     eth->ether_type = be16_t(Ethernet::Type::kArp);
+    //     ret = remove_ip_header(pkt);
+    //     if (ret < 0) {
+    //       // TODO: what to do?
+    //     }
+    //   }
+    // }
 
     // TODO: this code snipt should be here?
     if (cnt && overlay_) {
@@ -380,7 +406,7 @@ BKDRFTQueueInc::RunTask(Context *ctx, bess::PacketBatch *batch,
       q_status_[qid].until = wait_until;
       q_status_[qid].flow = flow;
       // if (wait_until > 0)
-      // 	LOG(INFO) << "a flow is paused:" << (int)dqid << "\n";
+      //        LOG(INFO) << "a flow is paused:" << (int)dqid << "\n";
     }
 
     for (uint32_t i = 0; i < cnt; i++) {

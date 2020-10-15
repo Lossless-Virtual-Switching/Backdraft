@@ -17,28 +17,6 @@ using bess::utils::Tcp;
 using bess::utils::Udp;
 using bess::utils::Vlan;
 
-Ipv4 *get_ip_header(Ethernet *eth) {
-  Ipv4 *ip = nullptr;
-  uint16_t ether_type = eth->ether_type.value();
-  if (ether_type == Ethernet::Type::kVlan) {
-    Vlan *vlan = reinterpret_cast<Vlan *>(eth + 1);
-    if (likely(vlan->ether_type.value() == Ethernet::Type::kIpv4)) {
-      ip = reinterpret_cast<Ipv4 *>(vlan + 1);
-    } else {
-      // LOG(WARNING) << "get_ip_header: packet is not an Ip "
-      //                 "packet\n";
-      return nullptr;  // failed
-    }
-  } else if (ether_type == Ethernet::Type::kIpv4) {
-    ip = reinterpret_cast<Ipv4 *>(eth + 1);
-  } else {
-    // LOG(WARNING) << "get_ip_header: packet is not an Ip "
-    //                 "packet\n";
-    return nullptr;  // failed
-  }
-  return ip;
-}
-
 Udp *get_udp_header(Ipv4 *ip) {
   if (ip->protocol == Ipv4::Proto::kUdp) {
     const uint32_t ihl = ip->header_length * 4;
@@ -61,7 +39,7 @@ int prepare_packet(bess::Packet *pkt, void *payload, size_t size,
   // uint8_t *ptr = reinterpret_cast<uint8_t *>(pkt->append(256));
   // assert(ptr != nullptr);
   // Ethernet *eth = reinterpret_cast<Ethernet *>(ptr);
-  uint8_t *ptr; 
+  uint8_t *ptr;
   Ethernet *eth = reinterpret_cast<Ethernet *>(pkt->head_data());
   eth->dst_addr = flow->eth_dst_addr;  // s_eth->dst_addr;
   eth->src_addr = flow->eth_src_addr;  // s_eth->src_addr;
@@ -125,7 +103,7 @@ int get_packet_payload(bess::Packet *pkt, void **payload,
                        bool only_bkdrft = false) {
   // if function fails the *payload should point to nullptr.
   *payload = nullptr;  // set the *payload to invalid position
-  if (pkt == nullptr) {
+  if (unlikely(pkt == nullptr)) {
     LOG(WARNING) << "get_packet_payload: pkt is null\n";
     return -2;  // failed
   }
@@ -133,11 +111,13 @@ int get_packet_payload(bess::Packet *pkt, void **payload,
   uint8_t *ptr = reinterpret_cast<uint8_t *>(pkt->head_data());
   Ethernet *eth = reinterpret_cast<Ethernet *>(ptr);
   Ipv4 *ip = get_ip_header(eth);
-  if (ip == nullptr) {
+  if (unlikely(ip == nullptr)) {
     return -2;  // failed
   }
 
   if (only_bkdrft && ip->protocol != BKDRFT_PROTO_TYPE) {
+    // LOG(INFO) << "get_packet_payload: ip-proto: " << ip->protocol <<"\n";
+    // LOG(INFO) << "get_packet_payload: ip-tos: " << ip->type_of_service <<"\n";
     return -1;  // failed - not bkdrft packet
   }
 
@@ -166,19 +146,32 @@ int get_packet_payload(bess::Packet *pkt, void **payload,
   return size;
 }
 
-int mark_packet_with_queue_number(bess::Packet *pkt, uint8_t q) {
-  // pkt should be ip
-  Ethernet *eth = reinterpret_cast<Ethernet *>(pkt->head_data());
-  Ipv4 *ip = get_ip_header(eth);
-  if (ip == nullptr) {
-    return -1;  // failed
-  }
-  uint8_t tos = ip->type_of_service;
-  tos = tos & 0x03;  // only keep bottom to bits (ecn)
-  tos = tos | (q << 2);
-  ip->type_of_service = tos;
-  return 0;  // success
-}
+// static inline int _mark_packet_with_bd_vlan(bess::Packet *pkt, uint8_t q) {
+// 	char *new_head;
+//
+// 	if ((new_head = static_cast<char *>(pkt->prepend(4))) != nullptr) {
+//     uint32_t tag = BKDRFT_VLAN_HEADER << 16 | (uint32_t)qid;
+//
+// 		// shift 12 bytes to the left by 4 bytes
+// 		__m128i ethh;
+//
+//     // load 16 byte to register for processing
+// 		ethh = _mm_loadu_si128(reinterpret_cast<__m128i *>(new_head + 4));
+//
+//     // get the current ether_type value (from reg)
+// 		be16_t tpid(be16_t::swap(_mm_extract_epi16(ethh, 6)));
+//
+//     // insert vlan header which is 4 bytes or 32bit at 4 element (in reg)
+// 		ethh = _mm_insert_epi32(ethh, tag, 3);
+//
+//     // sotre new ether net header. new_head is 4 byte before the original
+//     // header position (update memory)
+// 		_mm_storeu_si128(reinterpret_cast<__m128i *>(new_head), ethh);
+//     return 0;
+//   }
+//   LOG(INFO) << "Failed to add bkdrft vlan like header\n";
+//   return -1; //failed
+// }
 
 int parse_bkdrft_msg(bess::Packet *pkt, char *type, void **pb) {
   void *payload;

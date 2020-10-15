@@ -206,7 +206,7 @@ std::string BKDRFTQueueOut::GetDesc() const {
 #else
   return bess::utils::Format("%s/%s (%ld)", port_->name().c_str(),
                              port_->port_builder()->class_name().c_str(),
-			     count_packets_in_buffer_);
+                             count_packets_in_buffer_);
 #endif
 }
 
@@ -721,12 +721,8 @@ void BKDRFTQueueOut::ProcessBatch(Context *cntx, bess::PacketBatch *batch) {
     return;
   }
 
-  // TODO: keeping context pointer is not a good idea (concurrency issues)
-  // keep a pointer to the context, this is for avoiding passing context
-  // to other functions
-  context_ = cntx;
-
   // First check if any ctrl packet is in the queue
+  // TODO: here...
   if (cdq_)
     TryFailedCtrlPackets();
 
@@ -739,9 +735,6 @@ void BKDRFTQueueOut::ProcessBatch(Context *cntx, bess::PacketBatch *batch) {
   } else {
     ProcessBatchLossy(cntx, batch);
   }
-
-  // invalidate the context pointer
-  context_ = nullptr;
 }
 
 flow_state *BKDRFTQueueOut::GetFlowState(Context *cntx, Flow &flow) {
@@ -821,6 +814,7 @@ int BKDRFTQueueOut::SendPacket(Port *p, queue_t qid, bess::Packet **pkts,
                                bool *ctrl_pkt_sent) {
   uint32_t sent_pkts = 0;
   uint64_t sent_bytes = 0;
+  int ret;
 
   if (ctrl_pkt_sent != nullptr)
     *ctrl_pkt_sent = false;
@@ -834,7 +828,12 @@ int BKDRFTQueueOut::SendPacket(Port *p, queue_t qid, bess::Packet **pkts,
 
     // mark destination queue
     for (uint32_t i = 0; i < cnt; i++) {
-      bess::bkdrft::mark_packet_with_queue_number(pkts[i], qid);
+      // bess::bkdrft::mark_packet_with_queue_number(pkts[i], qid);
+      ret = bess::bkdrft::mark_packet_with_queue_number(pkts[i], qid);
+      if (ret < 0) {
+        if (p->getConnectedPortType() == NIC)
+          LOG(ERROR) << "Failed to mark packet with queue number\n";
+      }
     }
   }
 

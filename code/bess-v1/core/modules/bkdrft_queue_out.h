@@ -203,11 +203,6 @@ private:
   uint16_t doorbell_queue_number_;
   queue_t *data_queues_;
 
-  // A pointer to ProcessBatch context
-  // This is used to avoid passing context to other functions
-  // TODO: this is no thread safe
-  Context *context_;
-
   size_t max_buffer_size_;
 };
 
