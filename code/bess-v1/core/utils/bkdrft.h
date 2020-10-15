@@ -63,7 +63,7 @@ static inline bess::utils::Ipv4 *get_ip_header(bess::utils::Ethernet *eth) {
   using bess::utils::Ipv4;
   Ipv4 *ip = nullptr;
   uint16_t ether_type = eth->ether_type.value();
-	// LOG(INFO) << "Ether type: " << ether_type << "\n";
+  // LOG(INFO) << "Ether type: " << ether_type << "\n";
   if (ether_type == Ethernet::Type::kVlan) {
     bess::utils::Vlan *vlan = reinterpret_cast<bess::utils::Vlan *>(eth + 1);
     if (likely(vlan->ether_type.value() == Ethernet::Type::kIpv4)) {
@@ -83,87 +83,28 @@ static inline bess::utils::Ipv4 *get_ip_header(bess::utils::Ethernet *eth) {
   return ip;
 }
 
-static inline int _mark_with_ip_header(bess::Packet *pkt, uint8_t qid) {
-  // TODO: It is realy a pity that we can not use vlan header
-  // for issue with mellanox
-  using bess::utils::Ipv4;
-  using bess::utils::Ethernet;
-	char *new_head;
-  const int new_header_size = 20;
-  const uint16_t new_ether_type = Ethernet::Type::kIpv4;
-  struct Ipv4 *ipv4_hdr;
-
-  new_head = static_cast<char *>(pkt->prepend(new_header_size));
-	if (new_head != nullptr) {
-		// shift 14 bytes to the left by 20 bytes
-		__m128i ethh;
-
-    // load 16 byte to register for processing
-		ethh = _mm_loadu_si128(reinterpret_cast<__m128i *>(new_head + 4));
-
-    // get the current ether_type value (from reg)
-		// uint16_t tpid(_mm_extract_epi16(ethh, 6));
-
-    // insert vlan header which is 4 bytes or 32bit at 4 element (in reg)
-		ethh = _mm_insert_epi16(ethh, new_ether_type, 6);
-
-    // sotre new ether net header. new_head is 4 byte before the original
-    // header position (update memory)
-		_mm_storeu_si128(reinterpret_cast<__m128i *>(new_head), ethh);
-
-    // find the place where ip header will be placed
-    ipv4_hdr = reinterpret_cast<struct Ipv4 *>(new_head + 14);
-
-    // fill new ipv4 header
-    ipv4_hdr->header_length = 5;
-    ipv4_hdr->version = 5;
-    ipv4_hdr->type_of_service = qid << 2;
-    ipv4_hdr->length = be16_t(20);
-    ipv4_hdr->id = be16_t(0);
-    ipv4_hdr->fragment_offset = be16_t(0);
-    ipv4_hdr->ttl = 32;
-    ipv4_hdr->protocol = BKDRFT_ARP_IP_PROTO; // TODO: this is only for arp?
-    ipv4_hdr->checksum = 0;
-    ipv4_hdr->src = be32_t(0);  // TODO: should I ?
-    ipv4_hdr->dst = be32_t(0);  // TODO: ?
-
-    return 0;
-  }
-  LOG(INFO) << "Failed to add bkdrft vlan like header\n";
-  return -1; //failed
-}
-
-static inline int remove_ip_header(bess::Packet *pkt) {
-	char *old_head = pkt->head_data<char *>();
-
-	__m128i eth = _mm_loadu_si128(reinterpret_cast<__m128i *>(old_head));
-
-	if (likely(pkt->adj(20) != NULL)) {
-		eth = _mm_srli_si128(eth, 2);
-		_mm_storeu_si128(reinterpret_cast<__m128i *>(old_head + 18), eth);
-		// old_head + 18 is used because although the new head is at
-		// (old_head + 20) there is 2 bytes of unwanted data in our reg.
-		return 0;
-	}
-	return -1;
-}
-
 static inline int mark_packet_with_queue_number(bess::Packet *pkt, uint8_t q) {
-  // pkt should be ip
   using bess::utils::Ethernet;
-  using bess::utils::Ipv4;
-  Ethernet *eth = reinterpret_cast<Ethernet *>(pkt->head_data());
-  Ipv4 *ip = get_ip_header(eth);
-  if (unlikely(ip == nullptr)) {
-		// LOG(INFO) << "ip header not found\n";
-    // return -1;  // failed
-    // return _mark_packet_with_bd_vlan(eth, q);
-    return _mark_with_ip_header(pkt, q);
+  char *new_head;
+  be32_t tag;
+  uint16_t tci = q << 3 | 0 << 12 | q; // vlan (prio=3, vlan-id=q)
+
+  new_head = static_cast<char *>(pkt->prepend(4));
+  if (unlikely(new_head == nullptr)) {
+    return -1;
   }
-  uint8_t tos = ip->type_of_service;
-  tos = tos & 0x03;  // only keep bottom to bits (ecn)
-  tos = tos | (q << 2);
-  ip->type_of_service = tos;
+
+  __m128i ethh;
+  ethh = _mm_loadu_si128(reinterpret_cast<__m128i *>(new_head + 4));
+  be16_t tpid(be16_t::swap(_mm_extract_epi16(ethh, 6)));
+
+  if (tpid.value() == Ethernet::Type::kVlan) {
+    tag = be32_t((Ethernet::Type::kQinQ << 16) | tci);
+  } else {
+    tag = be32_t((Ethernet::Type::kVlan << 16) | tci);
+  }
+  ethh = _mm_insert_epi32(ethh, tag.raw_value(), 3);
+  _mm_storeu_si128(reinterpret_cast<__m128i *>(new_head), ethh);
   return 0;  // success
 }
 

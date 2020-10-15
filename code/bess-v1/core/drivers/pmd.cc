@@ -82,85 +82,26 @@ static const struct rte_eth_conf default_eth_conf(
   return ret;
 }
 
-__attribute__((unused)) static int overlay_rule_setup(dpdk_port_t id) {
-  int ret;
-  struct rte_flow *flow;
-  struct rte_flow_error error;
-
-  flow = bkdrft::filter_by_ip_proto(id, BKDRFT_PROTO_TYPE, BKDRFT_CTRL_QUEUE,
-			                              &error);
-
-  if (flow) {
-    ret = 0;
-  } else {
-    LOG(INFO) << "Command queue rule error message: " << error.message << " \n";
-    ret = 1;
-  }
-
-  return ret;
-}
-
+/* These rules set which packet should be placed on which queue
+ * */
 int data_mapping_rule_setup(dpdk_port_t port_id, uint16_t count_queue) {
   struct rte_flow *flow;
   struct rte_flow_error error;
-  const uint8_t tos_mask = 0xfc; // does not care about the bottom two fields
+  uint16_t vlan_id;
+  uint16_t prio = 3; // Notice: Only mapping vlan packets with prio=3
+  uint16_t vlan_mask = 0x0fff;
 
+  // mapping vlan_id (i) -> queue (i - 1) for i in [1, count_queue]
   for (int i = 0; i < count_queue; i++) {
-    // NOTE: mlx5 nic had problem with using multiple prio
-    // map prio(i) -> queue(i) for i in [1,8)
-
-    // NOTE: mlx5 nic we used did not support raw item used in the function.
-    // flow = bkdrft::filter_by_ipv4_bkdrft_opt(port_id, i, i, &error);
-
-    // map i * 4 -> queue(i) for i in [1, 8)
-    uint8_t tos = i << 2;
-    flow = bkdrft::filter_by_ip_tos(port_id, tos, tos_mask, i, &error);
-
-    if (!flow) {
-      LOG(INFO) << "Data mapping error message: " << error.message << " \n";
-      return -1;  // failed
-    }
-
-    // also consider ingress packets having vlan
-    // prio: 3, vlan_id: 100
-    flow = bkdrft::filter_by_ip_tos_with_vlan(port_id, tos,
-          tos_mask, 3, 100, 0xefff, i, &error);
-
+    vlan_id = i + 1;
+    flow = bkdrft::filter_by_vlan_id(port_id, prio, vlan_id, vlan_mask,
+                                     i, &error);
     if (!flow) {
       LOG(INFO) << "Data mapping error message: " << error.message << " \n";
       return -1;  // failed
     }
   }
-  // flow = bkdrft::filter_by_ether_type(port_id, rte_cpu_to_be_16(RTE_ETHER_TYPE_ARP), 2, &error);
-
-  // if (!flow) {
-  //   LOG(INFO) << "ARP mapping error message: " << error.message << " \n";
-  //   return -1;  // failed
-  // }
-
   return 0;
-}
-
-__attribute__((unused)) static int litter_rule_setup(dpdk_port_t id) {
-  int ret;
-  struct rte_flow *flow;
-  struct rte_flow_error error;
-
-  flow = bkdrft::filter_by_ether_type(id, bess::utils::Ethernet::Type::kArp, 0,
-                                     &error);
-
-  // flow = bkdrft::filter_by_vlan_type(id, 3, 100, 0xefff,
-  //                                    bess::utils::Ethernet::Type::kArp, 0,
-  //                                    &error);
-
-  if (flow) {
-    ret = 0;
-  } else {
-    LOG(INFO) << "litter rule error message: " << error.message << " \n";
-    ret = 1;
-  }
-
-  return ret;
 }
 
 void PMDPort::InitDriver() {
@@ -376,10 +317,6 @@ CommandResponse PMDPort::Init(const bess::pb::PMDPortArg &arg) {
     LOG(INFO) << "Rate limiting on " << rate << "\n";
   }
 
-  if (arg.dcb()) {
-    conf_.dcb = arg.dcb();
-  }
-
   /* Use defaut rx/tx configuration as provided by PMD drivers,
    * with minor tweaks */
   rte_eth_dev_info_get(ret_port_id, &dev_info);
@@ -438,20 +375,6 @@ CommandResponse PMDPort::Init(const bess::pb::PMDPortArg &arg) {
     }
   }
 
-  // ----------- overlay rule -------------- //
-  if (arg.overlay_rules() || arg.command_queue()) {
-    // ret = overlay_rule_setup(ret_port_id);
-    // LOG(INFO) << "Setup command queue rule\n";
-    // if (ret != 0) {
-    //   return CommandFailure(-ret, "rule setup for overlay network failed.");
-    // }
-    // ---------- litter --------------- //
-    // ret = litter_rule_setup(ret_port_id);
-    if (ret != 0) {
-      return CommandFailure(-ret, "rule setup for litter failed.");
-    }
-  }
-
   // ---------- data mapping ----------- //
   if (arg.data_mapping()) {
     ret = data_mapping_rule_setup(ret_port_id, num_rxq);
@@ -460,31 +383,6 @@ CommandResponse PMDPort::Init(const bess::pb::PMDPortArg &arg) {
       return CommandFailure(-ret, "priority mapping rule setup failed.");
     }
   }
-
-  // just for testing
-  // if (ptype_ == NIC) {
-  //   // for (int i = 0; i < 12; i++) {
-  //   //   struct rte_flow *flow;
-  //   //   struct rte_flow_error error;
-  //   //   flow = bkdrft::filter_by_udp_src_port(ret_port_id, 1001 + i, i, &error);
-  //   //   if (!flow) {
-  //   //     LOG(INFO) << "Data mapping error message: " << error.message << " \n";
-  //   //     return CommandFailure(-1, "failed to setup queue rules.");
-  //   //   }
-  //   // }
-  //   // struct rte_flow *flow;
-  //   // struct rte_flow_error error;
-  //   // flow = bkdrft::filter_by_udp_src_port(ret_port_id, 1001, 0, &error);
-  //   // if (!flow) {
-  //   //   LOG(INFO) << "Data mapping error message: " << error.message << " \n";
-  //   //   return CommandFailure(-1, "failed to setup queue rules.");
-  //   // }
-  //   // flow = bkdrft::filter_by_udp_src_port(ret_port_id, 1002, 2, &error);
-  //   // if (!flow) {
-  //   //   LOG(INFO) << "Data mapping error message: " << error.message << " \n";
-  //   //   return CommandFailure(-1, "failed to setup queue rules.");
-  //   // }
-  // }
 
   int offload_mask = 0;
   offload_mask |= arg.vlan_offload_rx_strip() ? ETH_VLAN_STRIP_OFFLOAD : 0;

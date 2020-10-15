@@ -128,7 +128,7 @@ CommandResponse BKDRFTQueueOut::Init(const bess::pb::BKDRFTQueueOutArg &arg) {
   log_ = arg.log();
 
   // TODO: this modules is not thread safe yet
-  if (lossless_) {
+  if (lossless_ || backpressure_) {
     task_id_t tid = RegisterTask(nullptr);
     if (tid == INVALID_TASK_ID)
       return CommandFailure(ENOMEM, "Context creation failed");
@@ -693,7 +693,6 @@ void BKDRFTQueueOut::ProcessBatchLossy(Context *cntx,
   int sent_pkts = 0;
   const int cnt = batch->cnt();
   bess::Packet **pkts = batch->pkts();
-  uint32_t total_bytes = total_len(pkts, cnt);
   // TODO: the assumption of the sample packet from a batch is wrong
   Flow flow = bess::bkdrft::PacketToFlow(*(pkts[0]));
 
@@ -711,8 +710,6 @@ void BKDRFTQueueOut::ProcessBatchLossy(Context *cntx,
 
   // update stats
   UpdatePortStats(qid, sent_pkts, cnt - sent_pkts, batch);
-
-  MeasureForPolicy(cntx, qid, flow, sent_pkts, 0, cnt, total_bytes);
 }
 
 void BKDRFTQueueOut::ProcessBatch(Context *cntx, bess::PacketBatch *batch) {
@@ -828,11 +825,9 @@ int BKDRFTQueueOut::SendPacket(Port *p, queue_t qid, bess::Packet **pkts,
 
     // mark destination queue
     for (uint32_t i = 0; i < cnt; i++) {
-      // bess::bkdrft::mark_packet_with_queue_number(pkts[i], qid);
       ret = bess::bkdrft::mark_packet_with_queue_number(pkts[i], qid);
-      if (ret < 0) {
-        if (p->getConnectedPortType() == NIC)
-          LOG(ERROR) << "Failed to mark packet with queue number\n";
+      if (unlikely(ret < 0)) {
+        LOG(ERROR) << "Failed to mark packet with queue number\n";
       }
     }
   }
@@ -851,33 +846,6 @@ int BKDRFTQueueOut::SendPacket(Port *p, queue_t qid, bess::Packet **pkts,
       *ctrl_pkt_sent = res;
   }
   return sent_pkts;
-}
-
-void BKDRFTQueueOut::MeasureForPolicy(Context *cntx, queue_t qid,
-                                      const Flow &flow, uint16_t sent_pkts,
-                                      __attribute__((unused)) uint32_t sent_bytes, uint16_t tx_burst,
-                                      __attribute__((unused)) uint32_t total_bytes) {
-  double drop_est = 0;
-  auto entry = flow_drop_est.Find(flow);
-  if (entry != nullptr) {
-    drop_est = entry->second;
-  }
-  const double g = 0.75; uint16_t dropped = tx_burst - sent_pkts;
-  // __attribute__((unused)) uint32_t remaining_bytes = total_bytes - sent_bytes;
-
-  // update drop estimate
-  drop_est = (g * dropped) + ((1 - g) * drop_est);
-  flow_drop_est.Insert(flow, drop_est);
-
-  if (drop_est > drop_high_water) {
-    // LOG(INFO) << "drop est: " << drop_est << "\n";
-    if (backpressure_) {
-      // TODO: removed buffer_size and placed 0
-      // uint64_t buffer_size = BufferSize(flow);
-      Pause(cntx, flow, qid, 100);
-    }
-
-  }
 }
 
 /*

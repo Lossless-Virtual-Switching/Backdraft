@@ -111,10 +111,6 @@ private:
   // map a flow to a queue (or get the queue it was mapped before)
   flow_state *GetFlowState(Context *cntx, Flow &flow);
 
-  void MeasureForPolicy(Context *cntx, queue_t qid, const Flow &flow,
-                        uint16_t sent_pkts, uint32_t sent_bytes,
-                        uint16_t tx_burst, uint32_t total_bytes);
-
   /*
    * returns the number of sent packets
    * the total sent bytes and the status of ctrl packet can be checked from

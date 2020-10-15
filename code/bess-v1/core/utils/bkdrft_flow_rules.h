@@ -44,5 +44,10 @@ struct rte_flow *filter_by_vlan_type(uint16_t port_id, uint16_t prio,
                                       uint16_t vlan_inner_type, uint16_t rx_q,
                                       struct rte_flow_error *error);
 
+struct rte_flow *filter_by_vlan_id(uint16_t port_id, uint16_t prio,
+                                   uint16_t vlan_id, uint16_t vlan_id_mask,
+                                   uint16_t rx_q,
+                                   struct rte_flow_error *error);
+
 }  // namespace bkdrft
 #endif  // _BKDRFT_FLOW_RULE_H
