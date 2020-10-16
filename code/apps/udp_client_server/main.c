@@ -5,8 +5,8 @@
 #include <stdint.h>
 #include <string.h>
 
-#include "include/exp.h"
-#include "include/flow_rules.h"
+#include "exp.h"
+#include "flow_rules.h"
 
 #define RX_RING_SIZE (512)
 #define TX_RING_SIZE (512)
@@ -420,7 +420,7 @@ int main(int argc, char *argv[]) {
     cntxs[i].running = 1;     // this job of this cntx has not finished yet
     cntxs[i].src_ip = source_ip + i;
     cntxs[i].use_vlan = 0;
-    cntxs[i].bidi = 0;
+    cntxs[i].bidi = 1;
     cntxs[i].num_queues = num_queues; // how many queue port has
 
     /* how many queue the contex is responsible for */

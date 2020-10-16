@@ -6,9 +6,9 @@
 #include <rte_ether.h>
 #include <rte_mbuf.h>
 
-#include "../include/bkdrft.h"
-#include "../include/packet.h"
-#include "../include/protobuf/bkdrft_msg.pb-c.h"
+#include "bkdrft.h"
+#include "packet.h"
+#include "protobuf/bkdrft_msg.pb-c.h"
 
 extern inline int mark_data_queue(struct rte_mbuf *pkt, uint8_t qid) {
   struct rte_ether_hdr *eth = rte_pktmbuf_mtod(pkt, struct rte_ether_hdr *);

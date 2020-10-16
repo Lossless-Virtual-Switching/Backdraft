@@ -1,6 +1,6 @@
-#include "include/bkdrft.h"
-#include "include/exp.h"
-#include "include/percentile.h"
+#include "bkdrft.h"
+#include "exp.h"
+#include "percentile.h"
 #include <rte_cycles.h>
 #include <rte_ethdev.h>
 #include <rte_ether.h>
@@ -100,8 +100,9 @@ int do_server(void *_cntx) {
   uint32_t tmp_ip;
   uint64_t k;
 
+  // TODO: take these parameters from command line
   uint64_t token_limit = 200000;
-  uint8_t rate_limit = 1;
+  uint8_t rate_limit = 0;
 
   uint8_t cdq = system_mode == system_bkdrft;
 

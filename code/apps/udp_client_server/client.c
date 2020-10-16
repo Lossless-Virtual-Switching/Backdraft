@@ -8,11 +8,11 @@
 #include <rte_mbuf.h>
 #include <rte_udp.h>
 
-#include "include/bkdrft.h"
-#include "include/exp.h"
-#include "include/percentile.h"
-#include "include/arp.h"
-#include "include/zipf.h"
+#include "bkdrft.h"
+#include "exp.h"
+#include "percentile.h"
+#include "arp.h"
+#include "zipf.h"
 
 #define BURST_SIZE (32)
 #define MAX_EXPECTED_LATENCY (10000) // (us)

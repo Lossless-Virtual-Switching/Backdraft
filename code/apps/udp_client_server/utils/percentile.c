@@ -1,7 +1,7 @@
 #include <stdlib.h>
 #include <math.h>
 #include <stdio.h>
-#include "../include/percentile.h"
+#include "percentile.h"
 
 #define r2 1.4142
 #define inv_log_r2 (2.885390082)

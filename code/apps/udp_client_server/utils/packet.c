@@ -1,5 +1,5 @@
-#include "../include/bkdrft.h"
-#include "../include/packet.h"
+#include "bkdrft.h"
+#include "packet.h"
 #include <rte_byteorder.h>
 #include <rte_ethdev.h>
 

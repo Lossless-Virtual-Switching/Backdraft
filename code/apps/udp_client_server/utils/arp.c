@@ -1,4 +1,5 @@
-#include "../include/arp.h"
+#include "arp.h"
+#include "bkdrft.h"
 
 #include <unistd.h>
 #include <stdbool.h>
@@ -9,7 +10,6 @@
 #include <rte_ether.h>
 #include <rte_ethdev.h>
 
-#include "../include/bkdrft.h"
 
 
 void send_arp(uint16_t op, uint32_t src_ip,

@@ -1,8 +1,8 @@
 #include <stdio.h>
 #include <unistd.h>
-#include "../include/exp.h"
-#include "../include/arp.h"
-#include "../include/bkdrft.h"
+#include "exp.h"
+#include "arp.h"
+#include "bkdrft.h"
 
 #include <rte_ether.h>
 #include <rte_arp.h>
