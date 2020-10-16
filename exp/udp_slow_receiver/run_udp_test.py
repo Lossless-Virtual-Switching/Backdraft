@@ -13,12 +13,10 @@ from bkdrft_common import *
 
 
 cur_script_dir = os.path.dirname(os.path.abspath(__file__))
-bessctl_dir = os.path.abspath(os.path.join(cur_script_dir, '../../code/bess-v1/bessctl'))
-bessctl_bin = os.path.join(bessctl_dir, 'bessctl')
-
-pipeline_config_temp = os.path.join(cur_script_dir, 'pipeline_config_template.txt')
+# TODO: use json config file instead of genrating .bess pipeline files
+pipeline_config_temp = os.path.join(cur_script_dir,
+                                    'pipeline_config_template.txt')
 pipeline_config_file = os.path.join(cur_script_dir, 'slow_receiver.bess')
-
 slow_receiver_exp = os.path.abspath(os.path.join(cur_script_dir,
         '../../code/apps/udp_client_server/build/udp_app'))
 

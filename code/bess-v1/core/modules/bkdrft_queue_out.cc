@@ -24,24 +24,6 @@
 using bess::bkdrft::Flow;
 using bess::bkdrft::total_len;
 
-#ifdef HOLB
-#pragma message "Compiling with HOLB flag"
-// =================================================
-// This buffer is useful when per flow queueing is active
-// we buffer each packet in its seperate queue
-bess::utils::CuckooMap<Flow, std::vector<bess::Packet *> *, Flow::Hash,
-                       Flow::EqualTo>
-    BKDRFTQueueOut::buffers_;
-
-// The limmited_buffers_ are used for buffering packets when
-// per flow queueing is not active.
-std::vector<bess::Packet *> BKDRFTQueueOut::limited_buffers_[MAX_QUEUES];
-
-uint64_t BKDRFTQueueOut::count_packets_in_buffer_ = 0;
-uint64_t BKDRFTQueueOut::bytes_in_buffer_ = 0;
-// =================================================
-#endif
-
 static inline void ecnMark(bess::Packet *pkt) {
   using bess::utils::Ethernet;
   using bess::utils::Ipv4;
@@ -134,7 +116,7 @@ CommandResponse BKDRFTQueueOut::Init(const bess::pb::BKDRFTQueueOutArg &arg) {
   log_ = arg.log();
 
   // TODO: this modules is not thread safe yet
-  if (buffering_) {
+  if (buffering_ || backpressure_) {
     task_id_t tid = RegisterTask(nullptr);
     if (tid == INVALID_TASK_ID)
       return CommandFailure(ENOMEM, "Context creation failed");
@@ -175,10 +157,6 @@ CommandResponse BKDRFTQueueOut::Init(const bess::pb::BKDRFTQueueOutArg &arg) {
   LOG(INFO) << "name: " << name_ << " doorbell queue id: "
             << doorbell_queue_number_ << "\n";
 
-#ifdef HOLB
-  LOG(INFO) << "HOLB is enabled\n";
-#endif
-
   ret = SetupFlowControlBlockPool();
   if (ret != 0)
     return CommandFailure(ENOMEM, "Failed to setup packet buffers\n");
@@ -213,7 +191,7 @@ int BKDRFTQueueOut::SetupFlowControlBlockPool() {
       if (per_flow_buffering_) {
         char name[20];
         snprintf(name, 20, "buf_%s_%d", name_.c_str(), i);
-        LOG(INFO) << "buffer name: " <<  name << "\n";
+        // LOG(INFO) << "buffer name: " <<  name << "\n";
 
         flow_state_pool_[i].buffer = new_pktbuffer(name, max_buffer_size_);
         if (flow_state_pool_[i].buffer == nullptr) {
@@ -232,7 +210,7 @@ int BKDRFTQueueOut::SetupFlowControlBlockPool() {
     char name[20];
     for (uint32_t i = 0; i < MAX_QUEUES; i++) {
       snprintf(name, 20, "buf_%s_%d", name_.c_str(), i);
-      LOG(INFO) << "buffer name: " <<  name << "\n";
+      // LOG(INFO) << "buffer name: " <<  name << "\n";
 
       limited_buffers_[i] = new_pktbuffer(name, max_buffer_size_);
       if (limited_buffers_[i] == nullptr) {
@@ -291,13 +269,8 @@ std::string BKDRFTQueueOut::GetDesc() const {
   // (cdq: %d, bp:%d, lossless: %d, overlay: %d)
   //, cdq_,
   //                             backpressure_, lossless_, overlay_);
-#ifdef HOLB
-  return bess::utils::Format("%s/%s(HOLB)", port_->name().c_str(),
-                             port_->port_builder()->class_name().c_str());
-#else
   return bess::utils::Format("%s/%s", port_->name().c_str(),
                              port_->port_builder()->class_name().c_str());
-#endif
 }
 
 /*
@@ -428,28 +401,20 @@ void BKDRFTQueueOut::TrySendBufferPFQ(Context *cntx) {
       if (k > max_batch_size)
         k = max_batch_size;
 
-      // for (size_t i = 0; i < k; i++)
-      //   pkts[i] = fstate->buffer->at(i);
-      // dequeue_size = rte_ring_dequeue_bulk_start(fstate->buffer, (void **)pkts,
-      //                                            k, nullptr);
-
-      // sent_pkts = SendPacket(p, qid, pkts, dequeue_size, &sent_bytes,
-      //                                                    &sent_ctrl_pkt);
-
-      dequeue_size = k;
-      sent_pkts = SendPacket(p, qid, fstate->buffer->peek, dequeue_size,
-                             &sent_bytes, &sent_ctrl_pkt);
+      sent_pkts = SendPacket(p, qid, fstate->buffer->peek, k, &sent_bytes,
+                             &sent_ctrl_pkt);
 
       // total_bytes = total_len(pkts, k);
       dropped = 0; // no packet is dropped
 
       // Remove sent packets from buffer
-      // fstate->buffer->erase(fstate->buffer->begin(),
-      //                     fstate->buffer->begin() + sent_pkts);
-      // rte_ring_dequeue_finish(fstate->buffer, sent_pkts);
-      dequeue_size = pktbuffer_dequeue(fstate->buffer, nullptr, dequeue_size);
-      if (dequeue_size == k)
-        throw std::runtime_error("dequeueu size does not match\n");
+      dequeue_size = pktbuffer_dequeue(fstate->buffer, nullptr, sent_pkts);
+      if (dequeue_size != sent_pkts) {
+        LOG(ERROR) << "expected dequeue " << sent_pkts << " actual "
+                   << dequeue_size << " queue size "
+                   << fstate->buffer->pkts << "\n";
+        throw std::runtime_error("dequeue size does not match\n");
+      }
 
       if (!(p->GetFlags() & DRIVER_FLAG_SELF_OUT_STATS)) {
         const packet_dir_t dir = PACKET_DIR_OUT;
@@ -514,58 +479,14 @@ void BKDRFTQueueOut::TrySendBuffer(Context *cntx) {
       else
         burst = size;
 
-#ifdef HOLB
-      // = CHeck here!
-      // NOT WORKING!!!
-      Flow flow = bess::bkdrft::PacketToFlow(*limited_buffers_[q].at(0));
-      auto found = flow_buffer_mapping_.Find(flow);
-      if (found == nullptr) {
-        break;
-      }
-#endif
-
-      // for (uint16_t i = 0; i < burst; i++) {
-      //   pkts[i] = limited_buffers_[q].at(i);
-#ifdef HOLB
-        // = CHeck here!
-        // Flow flow = bess::bkdrft::PacketToFlow(*pkts[i]);
-        // auto found = flow_buffer_mapping_.Find(flow);
-        // if (found == nullptr) {
-        //   burst = i;
-        //   pkts[i] = nullptr;
-        //   break;
-        // }
-#endif
-      // }
-
-      // dequeue_size = rte_ring_dequeue_bulk_start(fstate->buffer, (void **)pkts,
-      //                                            burst, nullptr);
-
-      dequeue_size = burst;
-
-      // TODO: it is wrong to assume all the batch has the same flow
-      // TODO: this might not change during each iteration
-      // (may change in for loop but may not in the while loop)
-      // flow = bess::bkdrft::PacketToFlow(*pkts[0]);
       flow = bess::bkdrft::PacketToFlow(*limited_buffers_[q]->peek[0]);
       fstate = GetFlowState(cntx, flow);
 
-      // TODO: the mode which is not perflow_queueing but uses multiple queue
-      // like RSS is not implemented sent_pkts = SendPacket( p, q, pkts, burst,
-      // &sent_bytes, &sent_ctrl_pkt);
-      // sent_pkts = SendPacket(p, q, pkts, burst, &sent_bytes, &sent_ctrl_pkt);
       sent_pkts = SendPacket(p, q, limited_buffers_[q]->peek,
-                             dequeue_size, &sent_bytes, &sent_ctrl_pkt);
-      // LOG(INFO) << "q: " << (int)q << "sent: " << sent_pkts << "\n";
+                             burst, &sent_bytes, &sent_ctrl_pkt);
 
-      // remove sent packets from buffer
-      // limited_buffers_[q].erase(
-      //     limited_buffers_[q].begin(),
-      //     limited_buffers_[q].begin() + sent_pkts);
-      // rte_ring_dequeue_finish(fstate->buffer, sent_pkts);
-
-      dequeue_size = pktbuffer_dequeue(limited_buffers_[q], nullptr, burst);
-      if (dequeue_size != burst) {
+      dequeue_size = pktbuffer_dequeue(limited_buffers_[q], nullptr, sent_pkts);
+      if (dequeue_size != sent_pkts) {
         LOG(ERROR) << "failed to dequeue some packets. requested: " << burst
                    << " dequeued: " << dequeue_size
                    << " available pkts: " << limited_buffers_[q]->pkts << "\n";
@@ -878,11 +799,6 @@ void BKDRFTQueueOut::ProcessBatch(Context *cntx, bess::PacketBatch *batch) {
     return;
   }
 
-  // TODO: keeping context pointer is not a good idea (concurrency issues)
-  // keep a pointer to the context, this is for avoiding passing context
-  // to other functions
-  context_ = cntx;
-
   // First check if any ctrl packet is in the queue
   if (cdq_)
     TryFailedCtrlPackets();
@@ -896,9 +812,6 @@ void BKDRFTQueueOut::ProcessBatch(Context *cntx, bess::PacketBatch *batch) {
   } else {
     ProcessBatchLossy(cntx, batch);
   }
-
-  // invalidate the context pointer
-  context_ = nullptr;
 }
 
 flow_state *BKDRFTQueueOut::GetFlowState(Context *cntx, Flow &flow) {

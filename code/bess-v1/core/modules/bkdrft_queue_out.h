@@ -27,7 +27,7 @@ const int drop_high_water = 30; // assumming batch size is 32
 // const uint64_t buffer_len_low_water = 6000; // bytes
 
 const uint64_t overlay_max_pause_duration = 10000000;
-const uint32_t max_availabe_flows = 1024;
+const uint32_t max_availabe_flows = 512;
 const uint64_t flow_dealloc_limit = 100000000; // ns
 // const int bp_buffer_len_high_water = 2700;
 const uint64_t max_overlay_pause_duration = 5000000; // ns
@@ -181,7 +181,7 @@ int pktbuffer_dequeue(pktbuffer_t *buf, bess::Packet **pkts, uint32_t count) {
     ret = rte_ring_dequeue_bulk(buf->ring_queue, (void **)(tmp_arr),
                                 pull_to_peek, nullptr);
     if (!ret) {
-      // LOG(INFO) << "pktbuffer_dequeue: failed to pull packets to peek\n";
+      LOG(ERROR) << "pktbuffer_dequeue: failed to pull packets to peek\n";
       throw std::runtime_error("pktbuffer_dequeue: failed to pull packets to peek\n");
     }
 
@@ -306,16 +306,6 @@ private:
 
   // This buffer is useful when per flow queueing is active
   // we buffer each packet in its seperate queue
-# ifdef HOLB
-  static bufferHashTable buffers_;
-
-  // The limmited_buffers_ are used for buffering packets when
-  // per flow queueing is not active.
-  static std::vector<bess::Packet *> limited_buffers_[MAX_QUEUES];
-
-  static uint64_t count_packets_in_buffer_;
-  static uint64_t bytes_in_buffer_;
-# else
   bufferHashTable buffers_;
 
   // The limmited_buffers_ are used for buffering packets when
@@ -326,7 +316,6 @@ private:
 
   uint64_t count_packets_in_buffer_;
   uint64_t bytes_in_buffer_;
-# endif
 
   // This map keeps track of which buffer a flow has been assigned to
   bess::utils::CuckooMap<Flow, struct flow_state *, Flow::Hash, Flow::EqualTo>
@@ -361,11 +350,6 @@ private:
 
   uint16_t doorbell_queue_number_;
   queue_t *data_queues_;
-
-  // A pointer to ProcessBatch context
-  // This is used to avoid passing context to other functions
-  // TODO: this is no thread safe
-  Context *context_;
 
   struct flow_state *flow_state_pool_;
   Flow *flow_state_flow_id_;
