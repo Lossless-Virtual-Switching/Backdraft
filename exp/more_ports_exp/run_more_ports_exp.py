@@ -57,7 +57,8 @@ def run_netperf_server(cnt_queue):
     # prefix = 'shenango_netperf_server'
     prefix = 'bessd-dpdk-prefix'
     cpu = 4
-    vdev = 'virtio_user0,path=/tmp/ex_vhost0.sock,queues=8'
+    # vdev = 'virtio_user0,path=/tmp/ex_vhost0.sock,queues=8'
+    vdev = 'ex_vhost0'
     ip = '192.168.1.2'
     args = {
             'bin': shenango_netperf,
@@ -68,9 +69,9 @@ def run_netperf_server(cnt_queue):
             'cnt_q': cnt_queue,
             }
     # cmd = 'sudo {bin} -l{cpu} --file-prefix={file-prefix} --vdev="{vdev}" --socket-mem=128 -- UDP_SERVER {ip} {cnt_q}'.format(**args)
-    cmd = ('sudo {bin} -l{cpu} --file-prefix={file-prefix} --proc-type=secondary'
-            '--socket-mem=128 -- vport= UDP_SERVER {ip} '
-            '{cnt_q}').format(**args)
+    cmd = ('sudo {bin} -l{cpu} --file-prefix={file-prefix} '
+            '--proc-type=secondary --socket-mem=128 -- '
+            'vport={vdev} UDP_SERVER {ip} {cnt_q}').format(**args)
     # Run in background
     p = subprocess.Popen(cmd, shell=True)
     return p
@@ -80,9 +81,11 @@ def run_netperf_client(bkdrft, cnt_queue):
     """
     Shenango dpdk_netperf client 
     """
-    prefix = 'shenango_netperf_client'
+    # prefix = 'shenango_netperf_client'
+    prefix = 'bessd-dpdk-prefix'
     cpu = 5
-    vdev = 'virtio_user1,path=/tmp/ex_vhost1.sock,queues=8'
+    # vdev = 'virtio_user1,path=/tmp/ex_vhost1.sock,queues=8'
+    vdev = 'ex_vhost1'
     client_ip = '192.168.1.3'
     server_ip = '192.168.1.2'
     duration = 10
@@ -99,7 +102,11 @@ def run_netperf_client(bkdrft, cnt_queue):
             'bkdrft': bkdrft,
             'cnt_q': cnt_queue,
             }
-    cmd = 'sudo {bin} -l{cpu} --file-prefix={file-prefix} --vdev="{vdev}" --socket-mem=128 -- UDP_CLIENT {client_ip} {server_ip} 50000 8001 {duration} {payload_size} {bkdrft} {cnt_q}'.format(**args)
+    # cmd = 'sudo {bin} -l{cpu} --file-prefix={file-prefix} --vdev="{vdev}" --socket-mem=128 -- UDP_CLIENT {client_ip} {server_ip} 50000 8001 {duration} {payload_size} {bkdrft} {cnt_q}'.format(**args)
+    cmd = ('sudo {bin} -l{cpu} --file-prefix={file-prefix} --socket-mem=128 '
+           '--proc-type=secondary  -- '
+           'vport={vdev} UDP_CLIENT {client_ip} {server_ip} 50000 8001 '
+           '{duration} {payload_size} {bkdrft} {cnt_q}').format(**args)
     
     # Run in background
     p = subprocess.Popen(cmd, shell=True, stdout=subprocess.PIPE)
@@ -156,7 +163,8 @@ def main():
     # cnt_prt_q = [0]
     # Warning: SINGLE_PMD_MULTIPLE_Q is not supported any more. (it needs EXCESS variable to be defined)
     exp_types = ['MULTIPLE_PMD_MULTIPLE_Q',] # 'SINGLE_PMD_MULTIPLE_Q']
-    agents = ['BKDRFT', 'BESS']
+    # agents = ['BKDRFT', 'BESS']
+    agents = ['BESS']
     for _type in exp_types:
         for agent in agents:
             results = []

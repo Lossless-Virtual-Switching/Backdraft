@@ -130,7 +130,8 @@ void init_eal(int dpdk_mb_per_socket, std::string nonworker_corelist) {
 
     // Unlink mapped hugepage files so that memory can be reclaimed as soon as
     // bessd terminates.
-    rte_args.Append({"--huge-unlink"});
+    // Notice: comment out --huge-unlink because we want to use shared memory
+    // rte_args.Append({"--huge-unlink"});
   }
 
   // reset getopt()

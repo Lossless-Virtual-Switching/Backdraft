@@ -1,11 +1,15 @@
-curdir=$(dirname $0)
-export RTE_SDK=$(realpath $curdir/../../../code/dpdk)
-echo $RTE_SKD
+#!/bin/bash
+
+curdir=`dirname $0`
+# export RTE_SDK=$(realpath $curdir/../../../code/dpdk)
+export RTE_SDK=`realpath "$curdir/../../bess-v1/deps/dpdk-19.11.1/"`
+export RTE_TARGET="build"
 
 cur=`pwd`
 
-if [ ! -d $RTE_SDK/x86_64-native-linuxapp-gcc ]; then
+if [ ! -d $RTE_SDK/$RTE_TARGET ]; then
 	echo "Building DPDK ..."
+  # TODO build folder may not be created!
 	cd $RTE_SDK
 	make config T=x86_64-native-linuxapp-gcc
 	make -j 10 install T=x86_64-native-linuxapp-gcc

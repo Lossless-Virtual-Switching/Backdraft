@@ -11,8 +11,9 @@
 #include <stdbool.h>
 #include <stdint.h>
 #include <unistd.h>
-
+#include <assert.h>
 #include <time.h>
+
 #include "data_structure/f_linklist.h"
 #include "utils/include/bkdrft.h"
 #include "utils/include/percentile.h"
@@ -483,35 +484,42 @@ static int dpdk_init(int argc, char *argv[]) {
   if (args_parsed < 0)
     rte_exit(EXIT_FAILURE, "Error with EAL initialization\n");
 
-  /* Check that there is a port to send/receive on. */
-  if (!rte_eth_dev_is_valid_port(0))
-    rte_exit(EXIT_FAILURE, "Error: no available ports\n");
+  return args_parsed;
+}
+
+static void create_pools(void) {
+  const int namelen = 64;
+  char pool_name[namelen];
+  long int pid = getpid();
+
+  if (port_type == dpdk) {
+    snprintf(pool_name, namelen, "MBUF_RX_POOL_%ld", pid); 
+    /* Creates a new mempool in memory to hold the mbufs. */
+    rx_mbuf_pool =
+        rte_pktmbuf_pool_create(pool_name, NUM_MBUFS, MBUF_CACHE_SIZE, 0,
+                                RTE_MBUF_DEFAULT_BUF_SIZE, rte_socket_id());
+
+    if (rx_mbuf_pool == NULL)
+      rte_exit(EXIT_FAILURE, "Cannot create rx mbuf pool\n");
+  }
 
   /* Creates a new mempool in memory to hold the mbufs. */
-  rx_mbuf_pool =
-      rte_pktmbuf_pool_create("MBUF_RX_POOL", NUM_MBUFS, MBUF_CACHE_SIZE, 0,
-                              RTE_MBUF_DEFAULT_BUF_SIZE, rte_socket_id());
-
-  if (rx_mbuf_pool == NULL)
-    rte_exit(EXIT_FAILURE, "Cannot create rx mbuf pool\n");
-
-  /* Creates a new mempool in memory to hold the mbufs. */
+  snprintf(pool_name, namelen, "MBUF_TX_POOL_%ld", pid); 
   tx_mbuf_pool =
-      rte_pktmbuf_pool_create("MBUF_TX_POOL", NUM_MBUFS, MBUF_CACHE_SIZE, 0,
+      rte_pktmbuf_pool_create(pool_name, NUM_MBUFS, MBUF_CACHE_SIZE, 0,
                               RTE_MBUF_DEFAULT_BUF_SIZE, rte_socket_id());
 
   if (tx_mbuf_pool == NULL)
     rte_exit(EXIT_FAILURE, "Cannot create tx mbuf pool\n");
 
   /* Create a new mempool in memory to hold the mbufs. */
+  snprintf(pool_name, namelen, "MBUF_CTRL_POOL_%ld", pid); 
   ctrl_mbuf_pool =
-      rte_pktmbuf_pool_create("MBUF_CTRL_POOL", NUM_MBUFS, MBUF_CACHE_SIZE, 0,
+      rte_pktmbuf_pool_create(pool_name, NUM_MBUFS, MBUF_CACHE_SIZE, 0,
                               RTE_MBUF_DEFAULT_BUF_SIZE, rte_socket_id());
 
   if (ctrl_mbuf_pool == NULL)
     rte_exit(EXIT_FAILURE, "Cannot crate ctrl mbuf pool\n");
-
-  return args_parsed;
 }
 
 static int parse_args(int argc, char *argv[]) {
@@ -523,7 +531,7 @@ static int parse_args(int argc, char *argv[]) {
     return -EINVAL;
   }
 
-  if (strncmp(argv[1], "vport=", 6)) {
+  if (strncmp(argv[1], "vport=", 6) == 0) {
     // if starts with vport= then we should use vport
     strncpy(port_name, argv[1] + 6, PORT_NAME_LEN);
     port_type = vport;
@@ -596,9 +604,19 @@ int main(int argc, char *argv[]) {
     printf("using vport: %s\n", port_name);
   printf("=======================\n");
 
+  if (port_type == dpdk) {
+    /* Check that there is a port to send/receive on. */
+    if (!rte_eth_dev_is_valid_port(0))
+      rte_exit(EXIT_FAILURE, "Error: no available ports\n");
+    create_pools();
+  } else if (port_type == vport && mode == MODE_UDP_CLIENT) {
+    create_pools();
+  }
+
   /* initialize port */
   if (mode == MODE_UDP_CLIENT && rte_lcore_count() > 1)
     printf("\nWARNING: Too many lcores enabled. Only 1 used.\n");
+
   if (port_init() != 0)
     rte_exit(EXIT_FAILURE, "Cannot init port %" PRIu8 "\n", dpdk_port);
 
