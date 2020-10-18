@@ -1,41 +1,27 @@
-node1:
+earl3:
   ip: "192.168.1.1"
-  mac: "1c:34:da:41:d0:0c"
+  mac: "b4:96:91:31:96:4c"
+  hostname: earl-03-oob
   instances:
     - port: 1001
       ip: "192.168.1.11"
       app: "udp_app"
       type: "client"
-      cpus: 21
+      cpus: 3
       flow_config_name: "default_client"
       tas_cores: 1
       destinations:
-        - node2_0
-          #    - port: 1002
-          #      ip: "192.168.1.12"
-          #      app: "udp_app"
-          #      type: "client"
-          #      cpus: 22
-          #      flow_config_name: "default_client"
-          #      tas_cores: 1
-          #      destinations:
-          #        - node2_1
-node2:
+        - earl4_0
+earl4:
   ip: "192.168.1.2"
-  mac: "1c:34:da:41:c6:fc"
+  mac: "b4:96:91:46:65:bc"
+  hostname: earl-04-oob
   instances:
     - port: 2001
       ip: "192.168.1.21"
       type: "server"
       app: "udp_app"
-      cpus: 21
+      cpus: 5
       flow_config_name: "default_server"
       tas_cores: 1
-      #     - port: 2002
-      #       ip: "192.168.1.22"
-      #       type: "server"
-      #       app: "udp_app"
-      #       cpus: 22
-      #       flow_config_name: "default_server"
-      #       tas_cores: 1
 

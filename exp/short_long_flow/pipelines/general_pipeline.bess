@@ -26,7 +26,7 @@ if vsw_cores < 1:
 
 
 # Add virtual switch workers
-for i in range(vsw_cores):
+for i in range(1, vsw_cores, 2):
   bess.add_worker(i, i)
 
 # Load cluster config file
@@ -36,29 +36,18 @@ for i in range(vsw_cores):
 config_file = config['cluster_config_file']
 
 
-# Define some function for reading cluster config
-def get_mac_address():
-  """
-  Get current device MAC address
-  """
-  # config is a global variable
-  cmd = 'cat /sys/class/net/%s/address' % config["interface"]
-  p = subprocess.Popen(cmd, shell=True, stdout=subprocess.PIPE)
-  res, _ = p.communicate()
-  add = res.decode().strip()
-  return add
-
-
-def get_pci_address(iface):
-  """
-  Get PCI address for the given interface name
-  """
-  # ethtool -i iface # this should give enough information
-  raise Exception('Not implemented yet')
+def get_hostname():
+    cmd = 'cat /etc/hostname'
+    try:
+      res = subprocess.check_output(cmd, shell=True)
+      name = res.decode().strip()
+      return name
+    except:
+        return None
 
 
 def get_current_node_info(file_path):
-  mac = get_mac_address()
+  hostname = get_hostname()
   found = False
   host_name = None
   host_info = None
@@ -68,7 +57,7 @@ def get_current_node_info(file_path):
       if key == 'connections':
         continue
       item = config[key]
-      if item['mac'] == mac:
+      if item['hostname'] == hostname:
         host_name = key
         host_info = item
         found = True
@@ -116,7 +105,7 @@ cpu_queues = size_q
 
 # PCI of port connected to switch
 sw_port = PMDPort(pci=out_pci, num_inc_q=count_queue, num_out_q=count_queue,
-           rate_limiting=overlay, rate=40, command_queue=cdq, data_mapping=cdq)
+                  rate_limiting=overlay, rate=40,  data_mapping=cdq)
 
 
 # TAS vhost ports

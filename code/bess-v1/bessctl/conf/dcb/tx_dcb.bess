@@ -15,40 +15,32 @@ id = 5 # not important
 overlay_rules = False
 dcb = False
 
-mellanox_PCI = '07:00.1'
-mellanox_sender_mac = '98:f2:b3:cb:05:91'
-mellanox_receiver_mac = '98:f2:b3:c4:6b:f1'  
-
-intel_PCI = '81:00.1'
-# intel_sender_mac = '98:f2:b3:c8:49:f5'
-# intel_receiver_mac = '98:f2:b3:ca:c0:91' 
-
-
-def aton(ip):
-     return socket.inet_aton(ip)
+pci = 'af:00.1'
+sender_mac = 'b4:96:91:31:96:4c'
+receiver_mac = 'b4:96:91:46:65:bc'  
 
 
 # Craft a packet with the specified IP addresses
 def gen_packet(proto, src_ip, dst_ip, prio):
-    eth = scapy.Ether(src=mellanox_sender_mac, dst=mellanox_receiver_mac)
+    eth = scapy.Ether(src=sender_mac, dst=receiver_mac)
     # eth = scapy.Ether(src=intel_sender_mac, dst=intel_receiver_mac)
     dot1q1 = scapy.Dot1Q(vlan=our_vlan1, prio=prio, id=id)
     dot1q2 = scapy.Dot1Q(vlan=our_vlan2, prio=prio, id=id)
     ip = scapy.IP(src=src_ip, dst=dst_ip)
     transport = proto(sport=10001, dport=10003)
     payload = 'helloworld'
-    pkt = eth/dot1q1/dot1q2/ip/transport/payload
+    # pkt = eth/dot1q1/dot1q2/ip/transport/payload
     # pkt = eth/dot1q1/ip/transport/payload
-    # pkt = eth/ip/transport/payload
+    pkt = eth/ip/transport/payload
     return str(pkt)
 
 bess.add_worker(0, 1)
 
-packets = [gen_packet(scapy.TCP, '1.1.2.4', '192.168.1.2', prio),
- 	   gen_packet(scapy.TCP, '10.100.120.1', '10.251.2.3', 5),]
+packets = [gen_packet(scapy.TCP, '10.10.2.4', '192.168.1.2', prio),
+ 	   gen_packet(scapy.TCP, '10.10.120.1', '10.151.2.3', 5),]
 
-my_vhost0 = PMDPort(pci=mellanox_PCI, num_inc_q=cnt_queues, num_out_q=cnt_queues,
-		    dcb=dcb, overlay_rules=overlay_rules, data_mapping=False)
+my_vhost0 = PMDPort(pci=pci, num_inc_q=cnt_queues, num_out_q=cnt_queues,
+		                data_mapping=False)
 # my_vhost0 = PMDPort(name='test_interface', vdev='eth_vhost0,iface=/tmp/test.sock,queues=8')
 
 
