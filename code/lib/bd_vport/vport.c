@@ -8,7 +8,7 @@
 
 #include <rte_malloc.h>
 
-#include "include/vport.h"
+#include "vport.h"
 
 #define ROUND_TO_64(x) ((x + 32) & (~0x3f))
 

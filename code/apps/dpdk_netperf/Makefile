@@ -31,6 +31,10 @@ endif
 # Default target, can be overridden by command line or environment
 RTE_TARGET ?= x86_64-native-linuxapp-gcc
 
+# These should be defined before include... because the path will change
+MKFILE_PATH := $(abspath $(lastword $(MAKEFILE_LIST)))
+CURRENT_DIR := $(dir $(MKFILE_PATH))
+
 include $(RTE_SDK)/mk/rte.vars.mk
 
 # binary name
@@ -42,7 +46,7 @@ SRCS-y += utils/bkdrft.c
 SRCS-y += utils/zipf.c
 SRCS-y += utils/percentile.c
 SRCS-y += utils/packet.c
-SRCS-y += utils/vport.c
+# SRCS-y += utils/vport.c
 SRCS-y += utils/include/bkdrft_msg.pb-c.c
 SRCS-y += data_structure/f_linklist.c
 
@@ -54,7 +58,13 @@ ifeq ($(CONFIG_RTE_TOOLCHAIN_GCC),y)
 CFLAGS_main.o += -Wno-return-type
 endif
 
-EXTRA_CFLAGS += -O3 -g -Wfatal-errors -Wno-format-nonlitera
-LDLIBS := -lprotobuf-c
+# VPATH += $(CURRENT_DIR)/utils/include
+# VPATH += $(CURRENT_DIR)/../../lib/bd_vport/include
+
+EXTRA_CFLAGS += -O3 -g -Wfatal-errors -Wno-format-nonlitera \
+								-I $(CURRENT_DIR)/utils/include \
+								-I $(CURRENT_DIR)/../../lib/bd_vport/include	
+
+LDLIBS := -L$(CURRENT_DIR)/../../lib/bd_vport/build/ -lprotobuf-c -lbd_vport
 
 include $(RTE_SDK)/mk/rte.extapp.mk

@@ -8,11 +8,13 @@ export RTE_TARGET="build"
 cur=`pwd`
 
 if [ ! -d $RTE_SDK/$RTE_TARGET ]; then
-	echo "Building DPDK ..."
-  # TODO build folder may not be created!
-	cd $RTE_SDK
-	make config T=x86_64-native-linuxapp-gcc
-	make -j 10 install T=x86_64-native-linuxapp-gcc
+  echo "BESS DPDK dependency not found, has BESS been compiled?"
+  exit 1
+	# echo "Building DPDK ..."
+  # # TODO build folder may not be created!
+	# cd $RTE_SDK
+	# make config T=x86_64-native-linuxapp-gcc
+	# make -j 10 install T=x86_64-native-linuxapp-gcc
 fi
 
 cd $cur

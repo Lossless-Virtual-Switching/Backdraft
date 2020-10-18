@@ -14,11 +14,11 @@
 #include <assert.h>
 #include <time.h>
 
-#include "data_structure/f_linklist.h"
-#include "utils/include/bkdrft.h"
-#include "utils/include/percentile.h"
-#include "utils/include/zipf.h"
-#include "utils/include/vport.h"
+// #include "data_structure/f_linklist.h"
+#include "bkdrft.h"
+#include "percentile.h"
+#include "zipf.h"
+#include "vport.h"
 
 #define RX_RING_SIZE 128
 #define TX_RING_SIZE 128
