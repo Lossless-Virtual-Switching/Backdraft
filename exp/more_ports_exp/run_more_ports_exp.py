@@ -142,12 +142,47 @@ def generate_report_file(results, output_file):
             f.write('==============\n')
 
 
+def run_exp(_type, agent, cnt_ports, cnt_queues):
+    print('==============================')
+    print('TYPE={}\tAGENT={}\tPORTS={}\tQ={}'
+            .format(_type, agent, cnt_ports, cnt_queues))
+    # Update configuration
+    update_config(cnt_ports, cnt_queues, _type, agent)
+
+    # Run a configuration (pipeline)
+    remove_socks()
+    file_path = pipeline_config_file
+    ret = bessctl_do('daemon start -- run file {}'.format(file_path))
+
+    # Run netperf server
+    server_p = run_netperf_server(cnt_queues)
+
+    # Run client
+    client_p = run_netperf_client(agent.lower(), cnt_queues)
+
+    # Wait
+    client_p.wait()
+    txt = str(client_p.stdout.read().decode())
+    subprocess.run('sudo pkill dpdk_netperf', shell=True)  # Stop server
+    res = parse_client_stdout(txt)
+    res.set_excess_ports((cnt_queues * cnt_ports) - 2)
+    add_bess_results(res)
+    # results.append(res)
+    bessctl_do('daemon stop')
+    # generate_report_file(results, './results/{}_{}_results.txt'.format(_type, agent))
+    return res
+
+
 def main():
     """
     About experiment
     This experiment investigates the overhead of adding
     more PMDPorts to bess software switch
     """
+
+    if not os.path.isdir('./results'):
+        # results directory is needed
+        os.mkdir('./results')
 
     # Run bess daemon
     print('start bess daemon')
@@ -159,42 +194,21 @@ def main():
     #sleep(2)
 
     cnt_prt_q = [(2,2), (4,2), (8, 2), (2, 8), (4, 8), (8, 8), (16, 8)]
-    cnt_prt_q = [(2,2),]
+    # cnt_prt_q = [(2,2),]
     # cnt_prt_q = [0]
-    # Warning: SINGLE_PMD_MULTIPLE_Q is not supported any more. (it needs EXCESS variable to be defined)
+    # Warning: SINGLE_PMD_MULTIPLE_Q is not supported any more.
+    # (it needs EXCESS variable to be defined)
     exp_types = ['MULTIPLE_PMD_MULTIPLE_Q',] # 'SINGLE_PMD_MULTIPLE_Q']
-    # agents = ['BKDRFT', 'BESS']
-    agents = ['BESS']
+    agents = ['BKDRFT', 'BESS']
+    # agents = ['BESS']
     for _type in exp_types:
         for agent in agents:
             results = []
             for cnt_ports, cnt_queues in cnt_prt_q:
-                print('==============================')
-                print('TYPE={}\tAGENT={}\tPORTS={}\tQ={}'.format(_type, agent, cnt_ports, cnt_queues))
-                # Update configuration
-                update_config(cnt_ports, cnt_queues, _type, agent)
-
-                # Run a configuration (pipeline)
-                remove_socks()
-                file_path = pipeline_config_file
-                ret = bessctl_do('daemon start -- run file {}'.format(file_path))
-
-                # Run netperf server
-                server_p = run_netperf_server(cnt_queues)
-
-                # Run client
-                client_p = run_netperf_client(agent.lower(), cnt_queues)
-
-                # Wait
-                client_p.wait()
-                txt = str(client_p.stdout.read().decode())
-                subprocess.run('sudo pkill dpdk_netperf', shell=True)  # Stop server
-                res = parse_client_stdout(txt)
-                res.set_excess_ports((cnt_queues * cnt_ports) - 2)
-                add_bess_results(res)
+                res = run_exp(_type, agent, cnt_ports, cnt_queues)
                 results.append(res)
-                bessctl_do('daemon stop')
-                generate_report_file(results, './results/{}_{}_results.txt'.format(_type, agent))
+            generate_report_file(results,
+                    './results/{}_{}_results.txt'.format(_type, agent))
 
 
 if __name__ == '__main__':
