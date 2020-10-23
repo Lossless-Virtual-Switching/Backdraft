@@ -34,7 +34,7 @@
 // VPORT =================================
 #include "../kmod/llring.h"
 
-#define VPORT_MAX_QUEUES_PER_DIR 8
+#define VPORT_MAX_QUEUES_PER_DIR 128
 
 #define SLOTS_PER_LLRING 1024
 #define SLOTS_WATERMARK ((SLOTS_PER_LLRING >> 3) * 7) /* 87.5% */

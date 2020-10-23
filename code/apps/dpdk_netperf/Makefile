@@ -42,12 +42,11 @@ APP = dpdk_netperf
 
 # all source are stored in SRCS-y
 SRCS-y := dpdk_netperf.c
-SRCS-y += utils/bkdrft.c
+# SRCS-y += utils/bkdrft.c
 SRCS-y += utils/zipf.c
 SRCS-y += utils/percentile.c
-SRCS-y += utils/packet.c
-# SRCS-y += utils/vport.c
-SRCS-y += utils/include/bkdrft_msg.pb-c.c
+# SRCS-y += utils/packet.c
+# SRCS-y += utils/include/bkdrft_msg.pb-c.c
 SRCS-y += data_structure/f_linklist.c
 
 CFLAGS += $(WERROR_FLAGS)
@@ -63,8 +62,12 @@ endif
 
 EXTRA_CFLAGS += -O3 -g -Wfatal-errors -Wno-format-nonlitera \
 								-I $(CURRENT_DIR)/utils/include \
-								-I $(CURRENT_DIR)/../../lib/bd_vport/include	
+								-I $(CURRENT_DIR)/../../lib/bd_vport/include \
+								-I $(CURRENT_DIR)/../../lib/bkdrft/include \
+								-I $(CURRENT_DIR)/../../lib/bkdrft/protobuf/_compile
 
-LDLIBS := -L$(CURRENT_DIR)/../../lib/bd_vport/build/ -lprotobuf-c -lbd_vport
+LDLIBS := -L$(CURRENT_DIR)/../../lib/bd_vport/build/ \
+	-L$(CURRENT_DIR)/../../lib/bkdrft/build/ \
+  -lbd_vport -lbkdrft -lprotobuf-c
 
 include $(RTE_SDK)/mk/rte.extapp.mk

@@ -3,7 +3,8 @@
 #include <stdint.h>
 #include "llring.h"
 
-#define MAX_QUEUES_PER_DIR 8
+// #define MAX_QUEUES_PER_DIR 16384
+#define MAX_QUEUES_PER_DIR 128
 
 #define SLOTS_PER_LLRING 1024
 #define SLOTS_WATERMARK ((SLOTS_PER_LLRING >> 3) * 7) /* 87.5% */

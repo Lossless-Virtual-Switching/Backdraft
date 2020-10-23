@@ -184,11 +184,12 @@ uint32_t BKDRFTQueueInc::ReadBatch(queue_t qid, bess::PacketBatch *batch,
 bool BKDRFTQueueInc::CheckQueuedCtrlMessages(Context *ctx, queue_t *qid,
                                              uint32_t *burst) {
   static int i = 0;
-  LOG(INFO) << "Here I: " << i << "\n";
+  // LOG(INFO) << "Here I: " << i << "\n";
   uint32_t tmp_burst = 0;
   int begin = i;
   // TODO: this kind of iteration to find dqid has starvation problem!
-  for (; i != begin; i=(i+1) % count_managed_queues) {
+  // for (; i != begin; i=(i+1) % count_managed_queues) {
+  do {
     uint16_t iter_q = managed_queues[i];
     if (q_status_[iter_q].remaining_dpkt > 0) {
 
@@ -205,7 +206,9 @@ bool BKDRFTQueueInc::CheckQueuedCtrlMessages(Context *ctx, queue_t *qid,
       *burst = tmp_burst;
       return true; // found a queue
     }
-  }
+    // go to next queue
+    i = (i+1) % count_managed_queues;
+  } while(i != begin);
   return false; // did not found a queue
 }
 
@@ -247,22 +250,14 @@ uint32_t BKDRFTQueueInc::CDQ(Context *ctx, bess::PacketBatch *batch, queue_t &_q
     uint32_t nb_pkts = 0;
     for (uint32_t i = 0; i < cnt; i++) {
       bess::Packet *pkt = ctrl_batch.pkts()[i];
+      LOG(INFO) << "Packet is null: " << (pkt == nullptr)
+        << " cnt: " << cnt << " i: " << i << "\n";
       char message_type = '5'; // Testing: initialize to something invalid
       void *pb; // a pointer to parsed protobuf object
       res = parse_bkdrft_msg(pkt, &message_type, &pb);
       if (res != 0) {
         // LOG(WARNING) << "Failed to parse bkdrft msg\n";
         bess::Packet::Free(pkt); // free unknown packet
-
-        // send packet through pipeline it is not ctrl msg
-        // LOG(INFO) << "emiting pkt: data offset: " << pkt->data_off() << "\n";
-        // EmitPacket(ctx, pkt);
-        // if (is_arp(pkt)) {
-        //   batch->add(pkt);
-        //   has_q0_litter = true;
-        //   LOG(INFO) << "is arp\n";
-        // }
-        // cnt_litter++;
         continue;
       }
 
@@ -272,7 +267,8 @@ uint32_t BKDRFTQueueInc::CDQ(Context *ctx, bess::PacketBatch *batch, queue_t &_q
         nb_pkts = ctrl_msg->nb_pkts();
         if (isManagedQueue(dqid))
           q_status_[dqid].remaining_dpkt += nb_pkts;
-        // LOG(INFO) << "Received ctrl message: qid: " << (int)dqid << "\n";
+        // LOG(INFO) << "Received ctrl message: qid: " << (int)dqid
+        //   << " count: " << nb_pkts << "\n";
 
         delete ctrl_msg;
       } else if (message_type == BKDRFT_OVERLAY_MSG_TYPE) {
@@ -291,7 +287,6 @@ uint32_t BKDRFTQueueInc::CDQ(Context *ctx, bess::PacketBatch *batch, queue_t &_q
       } else {
         LOG(ERROR) << "Wrong message type!\n";
       }
-
 
       bess::Packet::Free(pkt); // free ctrl pkt
     }
@@ -362,12 +357,20 @@ BKDRFTQueueInc::RunTask(Context *ctx, bess::PacketBatch *batch, void *) {
   const int pkt_overhead = 24;
 
   if (cdq_) {
+    // LOG(INFO)<<"CDQ is running\n";
     cnt = CDQ(ctx, batch, qid);
   } else {
     if (IsQueuePausedInCache(ctx, qid)) {
       return {.block = true, .packets = 0, .bits = 0};
     }
     cnt = ReadBatch(qid, batch, burst);
+    if (cnt != 0)
+      LOG(INFO)<<"HERE WE are\n";
+    for (uint32_t i =0; i < cnt; i++) {
+      bess::Packet::Free(batch->pkts()[i]);
+      // rte_pktmbuf_free((struct rte_mbuf *)batch->pkts()[i]);
+    }
+    cnt = 0;
   }
 
   if (cnt > 0) {

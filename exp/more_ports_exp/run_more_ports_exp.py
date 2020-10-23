@@ -70,7 +70,7 @@ def run_netperf_server(cnt_queue):
             }
     # cmd = 'sudo {bin} -l{cpu} --file-prefix={file-prefix} --vdev="{vdev}" --socket-mem=128 -- UDP_SERVER {ip} {cnt_q}'.format(**args)
     cmd = ('sudo {bin} -l{cpu} --file-prefix={file-prefix} '
-            '--proc-type=secondary --socket-mem=128 -- '
+            '--proc-type=secondary --socket-mem=1024 -- '
             'vport={vdev} UDP_SERVER {ip} {cnt_q}').format(**args)
     # Run in background
     p = subprocess.Popen(cmd, shell=True)
@@ -89,7 +89,7 @@ def run_netperf_client(bkdrft, cnt_queue):
     client_ip = '192.168.1.3'
     server_ip = '192.168.1.2'
     duration = 10
-    payload_size = 8
+    payload_size = 64
     args = {
             'bin': shenango_netperf,
             'cpu': cpu,
@@ -103,12 +103,13 @@ def run_netperf_client(bkdrft, cnt_queue):
             'cnt_q': cnt_queue,
             }
     # cmd = 'sudo {bin} -l{cpu} --file-prefix={file-prefix} --vdev="{vdev}" --socket-mem=128 -- UDP_CLIENT {client_ip} {server_ip} 50000 8001 {duration} {payload_size} {bkdrft} {cnt_q}'.format(**args)
-    cmd = ('sudo {bin} -l{cpu} --file-prefix={file-prefix} --socket-mem=128 '
+    cmd = ('sudo {bin} -l{cpu} --file-prefix={file-prefix} --socket-mem=1024 '
            '--proc-type=secondary  -- '
            'vport={vdev} UDP_CLIENT {client_ip} {server_ip} 50000 8001 '
            '{duration} {payload_size} {bkdrft} {cnt_q}').format(**args)
     
     # Run in background
+    # p = subprocess.Popen(cmd, shell=True)
     p = subprocess.Popen(cmd, shell=True, stdout=subprocess.PIPE)
     return p
 
@@ -167,6 +168,12 @@ def run_exp(_type, agent, cnt_ports, cnt_queues):
     res = parse_client_stdout(txt)
     res.set_excess_ports((cnt_queues * cnt_ports) - 2)
     add_bess_results(res)
+
+    p = bessctl_do('show port')
+    txt = p.stdout.decode()
+    print(txt)
+
+
     # results.append(res)
     bessctl_do('daemon stop')
     # generate_report_file(results, './results/{}_{}_results.txt'.format(_type, agent))
@@ -194,13 +201,13 @@ def main():
     #sleep(2)
 
     cnt_prt_q = [(2,2), (4,2), (8, 2), (2, 8), (4, 8), (8, 8), (16, 8)]
-    # cnt_prt_q = [(2,2),]
+    cnt_prt_q = [(2,4)]
     # cnt_prt_q = [0]
     # Warning: SINGLE_PMD_MULTIPLE_Q is not supported any more.
     # (it needs EXCESS variable to be defined)
     exp_types = ['MULTIPLE_PMD_MULTIPLE_Q',] # 'SINGLE_PMD_MULTIPLE_Q']
     agents = ['BKDRFT', 'BESS']
-    # agents = ['BESS']
+    agents = ['BESS']
     for _type in exp_types:
         for agent in agents:
             results = []

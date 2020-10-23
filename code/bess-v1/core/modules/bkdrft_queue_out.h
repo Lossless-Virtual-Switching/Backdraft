@@ -19,7 +19,7 @@
 #include "../utils/cuckoo_map.h"
 
 
-const queue_t MAX_QUEUES = 8;
+const queue_t MAX_QUEUES = 128;
 const int drop_high_water = 30; // assumming batch size is 32
 // const int buffer_len_high_water = 256;
 // const uint64_t buffer_len_high_water = 15000; // bytes

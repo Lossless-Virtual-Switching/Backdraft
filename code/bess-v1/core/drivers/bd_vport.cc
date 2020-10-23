@@ -204,16 +204,18 @@ int send_packets_vport(struct vport *port, uint16_t qid, void**pkts, int cnt)
     q = port->bar->inc_qs[qid];
   }
 
-  ret = llring_enqueue_bulk(q, pkts, cnt);
-  if (ret == -LLRING_ERR_NOBUF)
-    return 0;
+  // TODO: use bulk
+  ret = llring_enqueue_burst(q, pkts, cnt);
+  return ret;
+  // if (ret == -LLRING_ERR_NOBUF)
+  //   return 0;
 
-  if (__sync_bool_compare_and_swap(&port->bar->out_regs[qid]->irq_enabled, 1, 0)) {
-    char t[1] = {'F'};
-    ret = write(port->out_irq_fd[qid], (void *)t, 1);
-  }
+  // if (__sync_bool_compare_and_swap(&port->bar->out_regs[qid]->irq_enabled, 1, 0)) {
+  //   char t[1] = {'F'};
+  //   ret = write(port->out_irq_fd[qid], (void *)t, 1);
+  // }
 
-  return cnt;
+  // return cnt;
 }
 
 int recv_packets_vport(struct vport *port, uint16_t qid, void**pkts, int cnt)
@@ -243,6 +245,7 @@ void BDVPort::InitDriver() {
 }
 
 CommandResponse BDVPort::Init(const bess::pb::BDVPortArg &arg) {
+  LOG(INFO) << "packet: " << sizeof(bess::Packet);
   int num_txq = num_queues[PACKET_DIR_OUT];
   int num_rxq = num_queues[PACKET_DIR_INC];
 

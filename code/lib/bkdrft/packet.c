@@ -1,5 +1,5 @@
-#include "bkdrft.h"
 #include "packet.h"
+#include "bkdrft_const.h"
 #include "bkdrft_msg.pb-c.h" /* bkdrft message protobuf */
 #include <rte_byteorder.h>
 #include <rte_ethdev.h>
@@ -9,7 +9,7 @@
  * */
 void prepare_packet(struct rte_mbuf *buf, unsigned char *payload,
                     struct rte_mbuf *sample_pkt, size_t size) {
-  char *buf_ptr;
+  // char *buf_ptr;
   struct rte_ether_hdr *eth_hdr;
   struct rte_ipv4_hdr *ipv4_hdr;
   struct rte_udp_hdr *udp_hdr;
@@ -39,9 +39,11 @@ void prepare_packet(struct rte_mbuf *buf, unsigned char *payload,
   //   return;
   // }
 
+  // TODO: can use with out appending
   /* ethernet header */
-  buf_ptr = rte_pktmbuf_append(buf, RTE_ETHER_HDR_LEN);
-  eth_hdr = (struct rte_ether_hdr *)buf_ptr;
+  // buf_ptr = rte_pktmbuf_append(buf, RTE_ETHER_HDR_LEN);
+  // eth_hdr = (struct rte_ether_hdr *)buf_ptr;
+  eth_hdr = rte_pktmbuf_mtod(buf, struct rte_ether_hdr *);
 
   rte_ether_addr_copy(&s_eth_hdr->s_addr, &eth_hdr->s_addr);
   rte_ether_addr_copy(&s_eth_hdr->d_addr, &eth_hdr->d_addr);
@@ -49,8 +51,9 @@ void prepare_packet(struct rte_mbuf *buf, unsigned char *payload,
       RTE_ETHER_TYPE_IPV4); // rte_cpu_to_be_16(RTE_ETHER_TYPE_VLAN);
 
   /* IPv4 header */
-  buf_ptr = rte_pktmbuf_append(buf, sizeof(struct rte_ipv4_hdr));
-  ipv4_hdr = (struct rte_ipv4_hdr *)buf_ptr;
+  // buf_ptr = rte_pktmbuf_append(buf, sizeof(struct rte_ipv4_hdr));
+  // ipv4_hdr = (struct rte_ipv4_hdr *)buf_ptr;
+  ipv4_hdr = (struct rte_ipv4_hdr *)(eth_hdr + 1);
   ipv4_hdr->version_ihl = 0x45;
   ipv4_hdr->type_of_service = 0x00;
   ipv4_hdr->total_length = rte_cpu_to_be_16(sizeof(struct rte_ipv4_hdr) +
@@ -70,8 +73,9 @@ void prepare_packet(struct rte_mbuf *buf, unsigned char *payload,
   }
 
   /* UDP header + data */
-  buf_ptr = rte_pktmbuf_append(buf, sizeof(struct rte_udp_hdr) + size);
-  udp_hdr = (struct rte_udp_hdr *)buf_ptr;
+  // buf_ptr = rte_pktmbuf_append(buf, sizeof(struct rte_udp_hdr) + size);
+  // udp_hdr = (struct rte_udp_hdr *)buf_ptr;
+  udp_hdr = (struct rte_udp_hdr *)(ipv4_hdr + 1);
   if (likely(s_udp_hdr != NULL)) {
     udp_hdr->src_port = s_udp_hdr->src_port;
     udp_hdr->dst_port = s_udp_hdr->dst_port;
@@ -82,7 +86,8 @@ void prepare_packet(struct rte_mbuf *buf, unsigned char *payload,
   }
   udp_hdr->dgram_len = rte_cpu_to_be_16(sizeof(struct rte_udp_hdr) + size);
   udp_hdr->dgram_cksum = 0;
-  memcpy(buf_ptr + sizeof(struct rte_udp_hdr), payload, size);
+  // memcpy(buf_ptr + sizeof(struct rte_udp_hdr), payload, size);
+  memcpy((udp_hdr + 1), payload, size);
 
   buf->l2_len = RTE_ETHER_HDR_LEN;
   buf->l3_len = sizeof(struct rte_ipv4_hdr);

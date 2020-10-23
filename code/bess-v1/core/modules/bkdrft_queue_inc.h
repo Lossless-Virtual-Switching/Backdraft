@@ -11,7 +11,7 @@
 #include "../utils/flow.h"
 using Flow = bess::bkdrft::Flow;
 
-#define MAX_QUEUES 8
+#define MAX_QUEUES 128
 
 struct queue_pause_status {
 	uint64_t until;

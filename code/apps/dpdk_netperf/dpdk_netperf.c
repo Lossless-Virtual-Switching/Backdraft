@@ -13,9 +13,12 @@
 #include <unistd.h>
 #include <assert.h>
 #include <time.h>
+#include <rte_mempool.h>
 
 // #include "data_structure/f_linklist.h"
 #include "bkdrft.h"
+#include "bkdrft_const.h"
+#include "bkdrft_vport.h"
 #include "percentile.h"
 #include "zipf.h"
 #include "vport.h"
@@ -24,7 +27,8 @@
 #define TX_RING_SIZE 128
 
 #define NUM_MBUFS 8191
-#define MBUF_CACHE_SIZE 250
+#define MBUF_CACHE_SIZE 512 // 250 ...
+#define PRIV_SIZE 256
 #define BURST_SIZE 32
 #define MAX_CORES 64
 #define UDP_MAX_PAYLOAD 1472
@@ -94,8 +98,6 @@ struct rte_ether_addr broadcast_mac = {
 uint16_t next_port = 50000;
 bool bkdrft;
 static uint64_t server_delay = 0;
-
-/* dpdk_netperf.c: simple implementation of netperf on DPDK */
 
 static int str_to_ip(const char *str, uint32_t *addr) {
   uint8_t a, b, c, d;
@@ -215,19 +217,18 @@ static int port_init(void)
 static void do_client(uint8_t port) {
   uint64_t start_time, end_time;
   uint64_t send_failure = 0;
-  uint8_t burst = 32;  // BURST_SIZE;
+  uint8_t burst = BURST_SIZE;
   struct rte_mbuf *buf;
   struct rte_mbuf *batch[burst];
-  char *buf_ptr;
+  // char *buf_ptr;
   struct rte_ether_hdr *eth_hdr;
   struct rte_ipv4_hdr *ipv4_hdr;
-  // struct bkdrft_ipv4_opt *opt;
   struct rte_udp_hdr *udp_hdr;
   uint16_t nb_tx, i;
   uint64_t reqs = 0;
   struct rte_ether_addr server_eth = {{0x52, 0x54, 0x00, 0x12, 0x00, 0x00}};
   bool setup_port = false;
-  /* changing ports */
+  /* changing queue */
   int current_queue = 2;
   struct zipfgen *zipf;
   /* 99.9 latency calculation variables */
@@ -238,13 +239,18 @@ static void do_client(uint8_t port) {
   float pkt_clatency = 0;
   hist = new_p_hist(60);
 #endif
-  zipf = new_zipfgen(num_queues - 1, 1);
+  // zipf = new_zipfgen(num_queues - 1, 1);
+  if (bkdrft) {
+    zipf = new_zipfgen(num_queues - 1, 1);
+  } else {
+    zipf = new_zipfgen(num_queues, 1);
+  }
 
   /*
    * Check that the port is on the same NUMA node as the polling thread
    * for best performance.
    */
-  if (rte_eth_dev_socket_id(port) > 0 &&
+  if (port_type == dpdk && rte_eth_dev_socket_id(port) > 0 &&
       rte_eth_dev_socket_id(port) != (int)rte_socket_id())
     printf(
         "WARNING, port %u is on remote NUMA node to polling thread.\n\t"
@@ -262,17 +268,19 @@ static void do_client(uint8_t port) {
     pkt_start_t = rte_get_timer_cycles();
 #endif
 
+    // printf("before alloc\n");
     if (rte_pktmbuf_alloc_bulk(tx_mbuf_pool, batch, burst)) {
       // failed to allocate packet
       continue;
     }
+    // printf("after alloc\n");
 
     for (i = 0; i < burst; i++) {
       buf = batch[i];
       /* ethernet header */
-      buf_ptr = rte_pktmbuf_append(buf, RTE_ETHER_HDR_LEN);
-      assert(buf_ptr);
-      eth_hdr = (struct rte_ether_hdr *)buf_ptr;
+      // buf_ptr = rte_pktmbuf_append(buf, RTE_ETHER_HDR_LEN);
+      // eth_hdr = (struct rte_ether_hdr *)buf_ptr;
+      eth_hdr = rte_pktmbuf_mtod(buf, struct rte_ether_hdr *);
 
       rte_ether_addr_copy(&my_eth, &eth_hdr->s_addr);
       rte_ether_addr_copy(&server_eth, &eth_hdr->d_addr);
@@ -291,9 +299,10 @@ static void do_client(uint8_t port) {
       // vlan_hdr->eth_proto = vlan_ether_proto_type;
 
       /* IPv4 header */
-      buf_ptr = rte_pktmbuf_append(buf, sizeof(struct rte_ipv4_hdr));
-      assert(buf_ptr);
-      ipv4_hdr = (struct rte_ipv4_hdr *)buf_ptr;
+      // buf_ptr = rte_pktmbuf_append(buf, sizeof(struct rte_ipv4_hdr));
+      // assert(buf_ptr);
+      // ipv4_hdr = (struct rte_ipv4_hdr *)buf_ptr;
+      ipv4_hdr = (struct rte_ipv4_hdr *)(eth_hdr + 1);
       ipv4_hdr->version_ihl = 0x45;
       // ipv4_hdr->version_ihl = 0x46;
       ipv4_hdr->type_of_service = 3 << 2; // place on queue 3
@@ -315,16 +324,18 @@ static void do_client(uint8_t port) {
       // opt->queue_number = 3;
 
       /* UDP header + data */
-      buf_ptr =
-          rte_pktmbuf_append(buf, sizeof(struct rte_udp_hdr) + payload_len);
-      assert(buf_ptr);
-      udp_hdr = (struct rte_udp_hdr *)buf_ptr;
+      // buf_ptr =
+      //     rte_pktmbuf_append(buf, sizeof(struct rte_udp_hdr) + payload_len);
+      // assert(buf_ptr);
+      // udp_hdr = (struct rte_udp_hdr *)buf_ptr;
+      udp_hdr = (struct rte_udp_hdr *)(ipv4_hdr + 1);
       udp_hdr->src_port = rte_cpu_to_be_16(client_port);
       udp_hdr->dst_port = rte_cpu_to_be_16(server_port);
       udp_hdr->dgram_len =
           rte_cpu_to_be_16(sizeof(struct rte_udp_hdr) + payload_len);
       udp_hdr->dgram_cksum = 0;
-      memset(buf_ptr + sizeof(struct rte_udp_hdr), 0xAB, payload_len);
+      // memset(buf_ptr + sizeof(struct rte_udp_hdr), 0xAB, payload_len);
+      memset((void *)(udp_hdr + 1), 0xAB, payload_len);
 
       buf->l2_len = RTE_ETHER_HDR_LEN;
       buf->l3_len = sizeof(struct rte_ipv4_hdr);
@@ -347,10 +358,16 @@ static void do_client(uint8_t port) {
       }
     } else {
       // VPort
-      // current_queue = zipf->gen(zipf);
-      current_queue = 1;
-      nb_tx = send_packets_vport(virt_port, current_queue,
-                                 (void **)batch, burst);
+      if (bkdrft)
+        current_queue = zipf->gen(zipf);
+      else
+        current_queue = zipf->gen(zipf) - 1;
+
+      // current_queue = 1;
+      // nb_tx = send_packets_vport(virt_port, current_queue,
+      //                            (void **)batch, burst);
+      nb_tx = vport_send_pkt(virt_port, current_queue, batch, burst,
+                             bkdrft, 0, ctrl_mbuf_pool);
     }
 
     reqs += nb_tx;
@@ -368,6 +385,14 @@ static void do_client(uint8_t port) {
     pkt_clatency += pkt_latency;
     add_number_to_p_hist(hist, pkt_latency * 1000);
 #endif
+
+  long tmp_v = 0;
+  for (int j = 0; j < 10; j++)
+  for (int i = 0; i < 1000000; i++) {
+    tmp_v = (tmp_v + 3) % 7;
+  }
+  printf("%ld\n", tmp_v);
+
   }
   end_time = rte_get_timer_cycles();
   if (setup_port) reqs--;
@@ -413,7 +438,7 @@ static int do_server(void *arg) {
    * Check that the port is on the same NUMA node as the polling thread
    * for best performance.
    */
-  if (rte_eth_dev_socket_id(port) > 0 &&
+  if (port_type == dpdk && rte_eth_dev_socket_id(port) > 0 &&
       rte_eth_dev_socket_id(port) != (int)rte_socket_id())
     printf(
         "WARNING, port %u is on remote NUMA node to polling thread.\n\t"
@@ -431,7 +456,7 @@ static int do_server(void *arg) {
     curts = rte_get_timer_cycles();
     if (curts - timestamp > hz) {
       for (i = 0; i < num_queues; i++) {
-        // printf("Queue: %d, Throughput: %lu\n", i, tput[i]);
+        printf("Queue: %d, Throughput: %lu\n", i, tput[i]);
         tput[i] = 0;
       }
       // printf("=============\n");
@@ -441,15 +466,21 @@ static int do_server(void *arg) {
     /* receive packets */
     if (port_type == dpdk) {
       if (bkdrft) {
-        nb_rx = poll_ctrl_queue_expose_qid(port, BKDRFT_CTRL_QUEUE, 32, rx_bufs, true, &q);
+        nb_rx = poll_ctrl_queue_expose_qid(port, BKDRFT_CTRL_QUEUE, 32,
+                                           rx_bufs, true, &q);
       } else {
         nb_rx = rte_eth_rx_burst(port, q, rx_bufs, BURST_SIZE);
         q = (q + 1) % num_queues;
       }
     } else {
       // vport
-      nb_rx = recv_packets_vport(virt_port, q, (void**)rx_bufs, BURST_SIZE);
-      q = (q + 1) % num_queues;
+      if (bkdrft) {
+        nb_rx =vport_poll_ctrl_queue_expose_qid (virt_port, BKDRFT_CTRL_QUEUE,
+                                                 BURST_SIZE, rx_bufs, true, &q);
+      } else {
+        nb_rx = recv_packets_vport(virt_port, q, (void**)rx_bufs, BURST_SIZE);
+        q = (q + 1) % num_queues;
+      }
     }
 
     if (timestamp == 0) {
@@ -487,6 +518,15 @@ static int dpdk_init(int argc, char *argv[]) {
   return args_parsed;
 }
 
+// callback function for each packet
+void InitPacket(struct rte_mempool *mp, void *x, void *mbuf, unsigned index) {
+  rte_pktmbuf_init(mp, NULL, mbuf, index);
+
+  // auto *pkt = static_cast<Packet *>(mbuf);
+  // pkt->set_vaddr(pkt);
+  // pkt->set_paddr(rte_mempool_virt2iova(pkt));
+}
+
 static void create_pools(void) {
   const int namelen = 64;
   char pool_name[namelen];
@@ -505,9 +545,18 @@ static void create_pools(void) {
 
   /* Creates a new mempool in memory to hold the mbufs. */
   snprintf(pool_name, namelen, "MBUF_TX_POOL_%ld", pid); 
+// RTE_MBUF_DEFAULT_BUF_SIZE
   tx_mbuf_pool =
-      rte_pktmbuf_pool_create(pool_name, NUM_MBUFS, MBUF_CACHE_SIZE, 0,
-                              RTE_MBUF_DEFAULT_BUF_SIZE, rte_socket_id());
+      rte_pktmbuf_pool_create(pool_name, NUM_MBUFS, MBUF_CACHE_SIZE, PRIV_SIZE,
+                             2048, rte_socket_id());
+  // capacity
+  // tx_mbuf_pool = rte_mempool_create_empty(pool_name, NUM_MBUFS, 2560, 512, 16, rte_socket_id(), 0);
+
+  // struct rte_pktmbuf_pool_private dpdk_priv = {.mbuf_data_room_size = 128 + 2048,
+  //   .mbuf_priv_size = 256,
+  //   .flags = 0};
+  // rte_pktmbuf_pool_init(tx_mbuf_pool, &dpdk_priv);
+  // rte_mempool_obj_iter(tx_mbuf_pool, InitPacket, NULL);
 
   if (tx_mbuf_pool == NULL)
     rte_exit(EXIT_FAILURE, "Cannot create tx mbuf pool\n");
@@ -515,8 +564,19 @@ static void create_pools(void) {
   /* Create a new mempool in memory to hold the mbufs. */
   snprintf(pool_name, namelen, "MBUF_CTRL_POOL_%ld", pid); 
   ctrl_mbuf_pool =
-      rte_pktmbuf_pool_create(pool_name, NUM_MBUFS, MBUF_CACHE_SIZE, 0,
-                              RTE_MBUF_DEFAULT_BUF_SIZE, rte_socket_id());
+      rte_pktmbuf_pool_create(pool_name, NUM_MBUFS, MBUF_CACHE_SIZE, PRIV_SIZE,
+                              2048, rte_socket_id());
+  // ctrl_mbuf_pool = 
+  // rte_mempool_create_empty(pool_name, NUM_MBUFS, 2560, 512, 16, rte_socket_id(), 0);
+
+  // dpdk_priv = (struct rte_pktmbuf_pool_private)
+  // {.mbuf_data_room_size = 128 + 2048,
+  //   .mbuf_priv_size = 256,
+  //   .flags = 0};
+  // rte_mempool_populate_iova(ctrl_mbuf_pool, static_cast<char *>(addr),
+  //                                       RTE_BAD_IOVA, size, DoMunmap, nullptr);
+  // rte_pktmbuf_pool_init(ctrl_mbuf_pool, &dpdk_priv);
+  // rte_mempool_obj_iter(ctrl_mbuf_pool, InitPacket, NULL);
 
   if (ctrl_mbuf_pool == NULL)
     rte_exit(EXIT_FAILURE, "Cannot crate ctrl mbuf pool\n");

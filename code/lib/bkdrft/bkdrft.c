@@ -5,6 +5,7 @@
 #include <rte_mbuf.h>
 
 #include "bkdrft.h"
+#include "bkdrft_const.h"
 #include "packet.h" /* helper functions for creating packets */
 #include "bkdrft_msg.pb-c.h" /* bkdrft message protobuf */
 
@@ -41,7 +42,7 @@ extern inline int send_pkt(int port, uint8_t qid, struct rte_mbuf **tx_pkts,
   //TODO: this code needs to be updated to supprt static partioning concept
   uint16_t nb_tx, ctrl_nb_tx;
   struct rte_mbuf *ctrl_pkt;
-  uint16_t i;
+  // uint16_t i;
   uint32_t bytes = 0;
   struct rte_mbuf *sample_pkt;
   size_t packed_size;

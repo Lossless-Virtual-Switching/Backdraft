@@ -21,13 +21,17 @@ overlay = False
 # == Insert here ==
 # ==     End     ==
 assert (CNT_P % 2 == 0 and CNT_P > 0)
-assert (CNT_Q <= 8 and CNT_Q > 0)
+# assert (CNT_Q <= 8 and CNT_Q > 0)
 
 TX_QUEUE_COUNT = CNT_Q
 RX_QUEUE_COUNT = CNT_Q
 Q_SIZE = 64
 Q = max(TX_QUEUE_COUNT, RX_QUEUE_COUNT)
 # ======================================
+
+
+# worker cpu
+bess.add_worker(0, 0)
 
 
 if TYPE == SINGLE_PMD_MULTIPLE_Q:
@@ -84,10 +88,14 @@ elif TYPE == MULTIPLE_PMD_MULTIPLE_Q:
 
         if AGENT == BESS:
             for k in range(Q):
-                QueueInc(port=host0.name, qid=k) -> \
-                    QueueOut(port=host1.name, qid=k)
-                QueueInc(port=host1.name, qid=k) -> \
-                    QueueOut(port=host0.name, qid=k)
+                # QueueInc(port=host0.name, qid=k) -> \
+                #     QueueOut(port=host1.name, qid=k)
+                # QueueInc(port=host1.name, qid=k) -> \
+                #     QueueOut(port=host0.name, qid=k)
+                BKDRFTQueueInc(port=host0.name, qid=[k]) -> \
+                    BKDRFTQueueOut(port=host1.name, qid=[k], mname=host1.name)
+                BKDRFTQueueInc(port=host1.name, qid=[k]) -> \
+                    BKDRFTQueueOut(port=host0.name, qid=[k], mname=host1.name)
         elif AGENT == BKDRFT:
             # BKDRFT only needs one module per control queue
             queue_ids = [i for i in range(Q)]

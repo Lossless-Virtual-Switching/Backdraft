@@ -72,6 +72,8 @@ PacketPool::PacketPool(size_t capacity, int socket_id) {
   pool_ = rte_mempool_create_empty(name_.c_str(), capacity, sizeof(Packet),
                                    capacity > 1024 ? kMaxCacheSize : 0,
                                    sizeof(PoolPrivate), socket_id, 0);
+
+  LOG(INFO) << "private: " << sizeof(bess::PoolPrivate);
   if (!pool_) {
     LOG(FATAL) << "rte_mempool_create() failed: " << rte_strerror(rte_errno)
                << " (rte_errno=" << rte_errno << ")";

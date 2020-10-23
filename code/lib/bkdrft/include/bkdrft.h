@@ -3,25 +3,15 @@
 
 #include <rte_mbuf.h>
 
-#define BKDRFT_CTRL_QUEUE (0)
-#define BKDRFT_MAX_MESSAGE_SIZE (128)
-#define BKDRFT_OVERLAY_VLAN_ID (100)
-#define BKDRFT_OVERLAY_PRIO (0)
-#define BKDRFT_PROTO_TYPE (253)
-#define BKDRFT_ARP_PROTO_TYPE (252)
+// struct __attribute__((__packed__)) bkdrft_ipv4_opt {
+//   uint8_t cpy_optclass_optnum;  // cpy: 1 bit , opt_class: 2 bit, opt_num: 5 bit
+//   uint8_t opt_length;
+//   uint8_t queue_number;  // currently only this field is used to determine the
+//                          // queues
+//   uint8_t reserved;
+// };
 
-#define BKDRFT_CTRL_MSG_TYPE ('1')
-#define BKDRFT_OVERLAY_MSG_TYPE ('2')
-
-struct __attribute__((__packed__)) bkdrft_ipv4_opt {
-  uint8_t cpy_optclass_optnum;  // cpy: 1 bit , opt_class: 2 bit, opt_num: 5 bit
-  uint8_t opt_length;
-  uint8_t queue_number;  // currently only this field is used to determine the
-                         // queues
-  uint8_t reserved;
-};
-
-#define init_bkdrft_ipv4_opt ((struct bkdrft_ipv4_opt){0x03, 4, 0, 0})
+// #define init_bkdrft_ipv4_opt ((struct bkdrft_ipv4_opt){0x03, 4, 0, 0})
 
 /*
  * Send a packet, aware of control queue mechanism
