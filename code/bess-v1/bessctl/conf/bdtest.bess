@@ -1,0 +1,21 @@
+bess.add_worker(0, 1)
+
+count_queue = 8
+q_size = 1024
+queue_ids = list(range(count_queue))
+
+cdq = False
+overlay = False
+bp = False
+
+port = BDVPort(name='ex_vhost1', port_name='ex_vhost1',
+		num_inc_q=count_queue,
+		num_out_q=count_queue,
+		size_inc_q=q_size,
+		size_out_q=q_size)
+
+
+for i in range(count_queue):
+	BKDRFTQueueInc(port=port.name, qid=[i],
+		   cdq=cdq, overlay=overlay, backpressure=bp) -> \
+		   Sink()

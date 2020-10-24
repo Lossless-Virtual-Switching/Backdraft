@@ -25,8 +25,7 @@ extern inline int vport_send_pkt(struct vport *port, uint16_t qid,
 
   // TODO: not calculating total bytes
 
-  // if (send_ctrl_pkt) {
-  {
+  if (send_ctrl_pkt) {
     ctrl_pkt = rte_pktmbuf_alloc(ctrl_pool);
     if (unlikely(ctrl_pkt == NULL)) {
       // TODO: keep track of failed ctrl packets
@@ -38,13 +37,11 @@ extern inline int vport_send_pkt(struct vport *port, uint16_t qid,
     assert(sample_pkt);
 
     // TODO: can optimize payload copying to packet
-    // assert(qid != 0);
     packed_size = create_bkdraft_ctrl_msg(qid, total_bytes, nb_tx, &payload);
     assert(payload);
     prepare_packet(ctrl_pkt, payload, sample_pkt, packed_size);
     free(payload);
 
-    // assert(doorbell == 0);
     nb_ctrl_tx = send_packets_vport(port, doorbell, (void **)&ctrl_pkt, 1);
     if (nb_ctrl_tx != 1) {
       // sending ctrl pkt failed

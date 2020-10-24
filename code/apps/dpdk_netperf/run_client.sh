@@ -19,7 +19,7 @@ sudo ./build/dpdk_netperf \
 	-l5 \
 	--file-prefix=bessd-dpdk-prefix \
 	--proc-type=auto \
-	-- vport=ex_vhost1 UDP_CLIENT 10.0.0.1 10.0.0.3 10001 10003 10 8 $type $COUNT_QUEUE
+	-- vport=ex_vhost1 $type UDP_CLIENT 10.0.0.1 10.0.0.3 10001 10003 10 8 $COUNT_QUEUE
 # sudo ./build/dpdk_netperf \
 # 	-l5 \
 # 	-w 07:00.1 \

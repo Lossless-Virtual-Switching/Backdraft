@@ -90,7 +90,6 @@ DEPS_DIR = '%s/deps' % BESS_DIR
 
 DPDK_URL = 'https://fast.dpdk.org/rel'
 DPDK_VER = 'dpdk-19.11.1'
-# DPDK_VER = 'dpdk-20.08'
 DPDK_TARGET = 'x86_64-native-linuxapp-gcc'
 
 kernel_release = cmd('uname -r', quiet=True).strip()
@@ -399,8 +398,6 @@ def build_bess():
     cmd('bin/bessctl daemon stop 2> /dev/null || true', shell=True)
     cmd('rm -f core/bessd')  # force relink as DPDK might have been rebuilt
     p = cmd('make -C core bessd modules all_test %s' % makeflags())
-    # p.wait()
-    # print(p.stdout().decode())
     print(p)
 
 

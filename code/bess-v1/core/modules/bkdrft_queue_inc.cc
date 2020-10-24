@@ -250,8 +250,8 @@ uint32_t BKDRFTQueueInc::CDQ(Context *ctx, bess::PacketBatch *batch, queue_t &_q
     uint32_t nb_pkts = 0;
     for (uint32_t i = 0; i < cnt; i++) {
       bess::Packet *pkt = ctrl_batch.pkts()[i];
-      LOG(INFO) << "Packet is null: " << (pkt == nullptr)
-        << " cnt: " << cnt << " i: " << i << "\n";
+      // LOG(INFO) << "Packet is null: " << (pkt == nullptr)
+      //   << " cnt: " << cnt << " i: " << i << "\n";
       char message_type = '5'; // Testing: initialize to something invalid
       void *pb; // a pointer to parsed protobuf object
       res = parse_bkdrft_msg(pkt, &message_type, &pb);
@@ -364,13 +364,13 @@ BKDRFTQueueInc::RunTask(Context *ctx, bess::PacketBatch *batch, void *) {
       return {.block = true, .packets = 0, .bits = 0};
     }
     cnt = ReadBatch(qid, batch, burst);
-    if (cnt != 0)
-      LOG(INFO)<<"HERE WE are\n";
-    for (uint32_t i =0; i < cnt; i++) {
-      bess::Packet::Free(batch->pkts()[i]);
-      // rte_pktmbuf_free((struct rte_mbuf *)batch->pkts()[i]);
-    }
-    cnt = 0;
+    // if (cnt != 0)
+    //   LOG(INFO)<<"HERE WE are\n";
+    // for (uint32_t i =0; i < cnt; i++) {
+    //   bess::Packet::Free(batch->pkts()[i]);
+    //   // rte_pktmbuf_free((struct rte_mbuf *)batch->pkts()[i]);
+    // }
+    // cnt = 0;
   }
 
   if (cnt > 0) {

@@ -1,4 +1,4 @@
-#!/usr/bin/python3 
+#!/usr/bin/python3
 from time import sleep
 
 import os
@@ -22,7 +22,9 @@ shenango_netperf = os.path.abspath(os.path.join(cur_script_dir,
 def bessctl_do(command, stdout=None):
     """
     """
-    cmd = '{} {}'.format(bessctl_bin, command)
+    cpulist = '0-2'
+    taskset = 'taskset --cpu-list {}'.format(cpulist)
+    cmd = '{} {} {}'.format(taskset, bessctl_bin, command)
     ret = subprocess.run(cmd, shell=True, stdout=subprocess.PIPE)
     return ret
 
@@ -50,7 +52,7 @@ def remove_socks():
     subprocess.run('sudo rm /tmp/*.sock -f', shell=True)
 
 
-def run_netperf_server(cnt_queue):
+def run_netperf_server(bkdrft, cnt_queue):
     """
     Shenango dpdk_netperf server
     """
@@ -67,11 +69,12 @@ def run_netperf_server(cnt_queue):
             'vdev': vdev,
             'ip': ip,
             'cnt_q': cnt_queue,
+            'bkdrft': bkdrft,
             }
     # cmd = 'sudo {bin} -l{cpu} --file-prefix={file-prefix} --vdev="{vdev}" --socket-mem=128 -- UDP_SERVER {ip} {cnt_q}'.format(**args)
     cmd = ('sudo {bin} -l{cpu} --file-prefix={file-prefix} '
             '--proc-type=secondary --socket-mem=1024 -- '
-            'vport={vdev} UDP_SERVER {ip} {cnt_q}').format(**args)
+            'vport={vdev} {bkdrft} UDP_SERVER {ip} {cnt_q}').format(**args)
     # Run in background
     p = subprocess.Popen(cmd, shell=True)
     return p
@@ -79,7 +82,7 @@ def run_netperf_server(cnt_queue):
 
 def run_netperf_client(bkdrft, cnt_queue):
     """
-    Shenango dpdk_netperf client 
+    Shenango dpdk_netperf client
     """
     # prefix = 'shenango_netperf_client'
     prefix = 'bessd-dpdk-prefix'
@@ -105,9 +108,9 @@ def run_netperf_client(bkdrft, cnt_queue):
     # cmd = 'sudo {bin} -l{cpu} --file-prefix={file-prefix} --vdev="{vdev}" --socket-mem=128 -- UDP_CLIENT {client_ip} {server_ip} 50000 8001 {duration} {payload_size} {bkdrft} {cnt_q}'.format(**args)
     cmd = ('sudo {bin} -l{cpu} --file-prefix={file-prefix} --socket-mem=1024 '
            '--proc-type=secondary  -- '
-           'vport={vdev} UDP_CLIENT {client_ip} {server_ip} 50000 8001 '
-           '{duration} {payload_size} {bkdrft} {cnt_q}').format(**args)
-    
+           'vport={vdev} {bkdrft} UDP_CLIENT {client_ip} {server_ip} 50000 8001 '
+           '{duration} {payload_size} {cnt_q}').format(**args)
+
     # Run in background
     # p = subprocess.Popen(cmd, shell=True)
     p = subprocess.Popen(cmd, shell=True, stdout=subprocess.PIPE)
@@ -117,7 +120,7 @@ def run_netperf_client(bkdrft, cnt_queue):
 def parse_client_stdout(txt):
     """
     Parse the netperf stdout and create
-    a result object. This object is 
+    a result object. This object is
     used in analysis and report generation
     process.
     """
@@ -132,7 +135,7 @@ def add_bess_results(res):
     x = txt[5].split()[1]
     x = int(x.replace(',',''))
     res.bess_drops = x
-    
+
 
 
 def generate_report_file(results, output_file):
@@ -156,7 +159,7 @@ def run_exp(_type, agent, cnt_ports, cnt_queues):
     ret = bessctl_do('daemon start -- run file {}'.format(file_path))
 
     # Run netperf server
-    server_p = run_netperf_server(cnt_queues)
+    server_p = run_netperf_server(agent.lower(), cnt_queues)
 
     # Run client
     client_p = run_netperf_client(agent.lower(), cnt_queues)
@@ -201,13 +204,13 @@ def main():
     #sleep(2)
 
     cnt_prt_q = [(2,2), (4,2), (8, 2), (2, 8), (4, 8), (8, 8), (16, 8)]
-    cnt_prt_q = [(2,4)]
+    cnt_prt_q = [(2,2)]
     # cnt_prt_q = [0]
     # Warning: SINGLE_PMD_MULTIPLE_Q is not supported any more.
     # (it needs EXCESS variable to be defined)
     exp_types = ['MULTIPLE_PMD_MULTIPLE_Q',] # 'SINGLE_PMD_MULTIPLE_Q']
     agents = ['BKDRFT', 'BESS']
-    agents = ['BESS']
+    agents = ['BKDRFT']
     for _type in exp_types:
         for agent in agents:
             results = []

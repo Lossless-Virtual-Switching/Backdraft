@@ -33,6 +33,8 @@
 #define MAX_CORES 64
 #define UDP_MAX_PAYLOAD 1472
 
+#define SHIFT_ARG {argc--; argv++;}
+
 enum port_type_t {
   dpdk,
   vport
@@ -383,14 +385,6 @@ static void do_client(uint8_t port) {
     pkt_clatency += pkt_latency;
     add_number_to_p_hist(hist, pkt_latency * 1000);
 #endif
-
-  // long tmp_v = 0;
-  // for (int j = 0; j < 10; j++)
-  // for (int i = 0; i < 1000000; i++) {
-  //   tmp_v = (tmp_v + 3) % 7;
-  // }
-  // printf("%ld\n", tmp_v);
-
   }
   end_time = rte_get_timer_cycles();
   if (setup_port) reqs--;
@@ -584,17 +578,26 @@ static int parse_args(int argc, char *argv[]) {
   long tmp;
 
   /* argv[0] is still the program name */
+  if (strncmp(argv[1], "vport=", 6) == 0) {
+    // if starts with vport= then we should use vport
+    strncpy(port_name, argv[1] + 6, PORT_NAME_LEN);
+    port_type = vport;
+    SHIFT_ARG;
+  }
+
   if (argc < 3) {
     printf("not enough arguments left: %d\n", argc);
     return -EINVAL;
   }
 
-  if (strncmp(argv[1], "vport=", 6) == 0) {
-    // if starts with vport= then we should use vport
-    strncpy(port_name, argv[1] + 6, PORT_NAME_LEN);
-    port_type = vport;
-    argc--;
-    argv++;
+  if (strcmp(argv[1], "bkdrft") == 0) {
+    bkdrft = true;
+    SHIFT_ARG;
+  } else if(strcmp(argv[1], "bess") == 0) {
+    bkdrft = false;
+    SHIFT_ARG;
+  } else {
+    bkdrft = false;
   }
 
   str_to_ip(argv[2], &my_ip);
@@ -602,7 +605,7 @@ static int parse_args(int argc, char *argv[]) {
   if (!strcmp(argv[1], "UDP_CLIENT")) {
     mode = MODE_UDP_CLIENT;
     argc -= 3;
-    if (argc < 7) {
+    if (argc < 6) {
       printf("not enough arguments left: %d\n", argc);
       return -EINVAL;
     }
@@ -613,12 +616,7 @@ static int parse_args(int argc, char *argv[]) {
     seconds = tmp;
     str_to_long(argv[7], &tmp);
     payload_len = tmp;
-    if (argc > 5 && !strcmp(argv[8], "bkdrft")) {
-      bkdrft = true;
-    } else {
-      bkdrft = false;
-    }
-    if (sscanf(argv[9], "%u", &num_queues) != 1) return -EINVAL;
+    if (sscanf(argv[8], "%u", &num_queues) != 1) return -EINVAL;
   } else if (!strcmp(argv[1], "UDP_SERVER")) {
     mode = MODE_UDP_SERVER;
     argc -= 3;
@@ -626,10 +624,7 @@ static int parse_args(int argc, char *argv[]) {
       if (sscanf(argv[3], "%u", &num_queues) != 1) return -EINVAL;
     }
     if (argc >= 2) {
-      bkdrft = !strcmp(argv[4], "bkdrft");
-    }
-    if (argc >= 3) {
-      server_delay = atoi(argv[5]);
+      server_delay = atoi(argv[4]);
     }
   } else {
     printf("invalid mode '%s'\n", argv[1]);

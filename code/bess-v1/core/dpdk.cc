@@ -102,12 +102,12 @@ void init_eal(int dpdk_mb_per_socket,
     __attribute__((unused)) std::string nonworker_corelist) {
   CmdLineOpts rte_args{
       "bessd",
-      "--master-lcore",
-      std::to_string(RTE_MAX_LCORE - 1),
+      // "--master-lcore",
+      // std::to_string(RTE_MAX_LCORE - 1),
       "--lcore",
       std::to_string(RTE_MAX_LCORE - 1) + "@" + nonworker_corelist,
-      // "--file-prefix", "bessd-dpdk-prefix",
-      // "--proc-type", "primary",
+      "--file-prefix", "bessd-dpdk-prefix",
+      "--proc-type", "auto",
   };
 
       // Do not bother with /var/run/.rte_config and .rte_hugepage_info,
@@ -131,7 +131,7 @@ void init_eal(int dpdk_mb_per_socket,
 
     // Unlink mapped hugepage files so that memory can be reclaimed as soon as
     // bessd terminates.
-    rte_args.Append({"--huge-unlink"});
+    // rte_args.Append({"--huge-unlink"});
   }
 
   // reset getopt()
@@ -174,6 +174,7 @@ void init_eal(int dpdk_mb_per_socket,
 
 // Returns the current affinity set of the process as a string,
 // in the "corelist" format (e.g., "0-12,16-28")
+__attribute__((unused))
 std::string GetNonWorkerCoreList() {
   std::string corelist;
   cpu_set_t set;
@@ -229,7 +230,8 @@ void InitDpdk(int dpdk_mb_per_socket) {
   if (!is_initialized) {
     is_initialized = true;
     LOG(INFO) << "Initializing DPDK";
-    init_eal(dpdk_mb_per_socket, GetNonWorkerCoreList());
+    // init_eal(dpdk_mb_per_socket, GetNonWorkerCoreList());
+    init_eal(dpdk_mb_per_socket, "0-2");
   }
 }
 
