@@ -166,6 +166,7 @@ int send_packets_vport(struct vport *port, uint16_t qid, void**pkts, int cnt)
 
   // ret = llring_enqueue_bulk(q, pkts, cnt);
   ret = llring_enqueue_burst(q, pkts, cnt);
+  ret &= 0x7fffffff;
   return ret;
   // if (ret == -LLRING_ERR_NOBUF)
   //   return 0;

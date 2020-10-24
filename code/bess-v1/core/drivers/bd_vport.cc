@@ -327,6 +327,7 @@ int BDVPort::RecvPackets(queue_t qid, bess::Packet **pkts, int cnt) {
 int BDVPort::SendPackets(queue_t qid, bess::Packet **pkts, int cnt) {
   int sent;
   sent = send_packets_vport(port_, qid, (void**)pkts, cnt);
+  sent &= 0x7fffffff;
   RecordRate(PACKET_DIR_OUT, qid, pkts, sent);
   return sent;
 }

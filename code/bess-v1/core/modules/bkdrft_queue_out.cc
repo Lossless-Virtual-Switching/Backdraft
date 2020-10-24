@@ -787,7 +787,10 @@ void BKDRFTQueueOut::ProcessBatchLossy(Context *cntx,
   sent_pkts = SendPacket(p, qid, pkts, cnt, nullptr, nullptr);
 
   // drop fialed packets
-  bess::Packet::Free(pkts + sent_pkts, cnt - sent_pkts);
+  if (unlikely(cnt > sent_pkts)) {
+    // LOG(ERROR) << "Sent pkts: " << sent_pkts << " cnt: " << cnt << "\n";
+    bess::Packet::Free(pkts + sent_pkts, cnt - sent_pkts);
+  }
 
   // update stats
   UpdatePortStats(qid, sent_pkts, cnt - sent_pkts, batch);

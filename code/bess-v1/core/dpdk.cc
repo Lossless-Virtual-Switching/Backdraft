@@ -107,7 +107,7 @@ void init_eal(int dpdk_mb_per_socket,
       "--lcore",
       std::to_string(RTE_MAX_LCORE - 1) + "@" + nonworker_corelist,
       "--file-prefix", "bessd-dpdk-prefix",
-      "--proc-type", "auto",
+      "--proc-type", "primary",
   };
 
       // Do not bother with /var/run/.rte_config and .rte_hugepage_info,

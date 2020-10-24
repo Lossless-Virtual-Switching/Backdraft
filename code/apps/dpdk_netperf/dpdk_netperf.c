@@ -510,15 +510,6 @@ static int dpdk_init(int argc, char *argv[]) {
   return args_parsed;
 }
 
-// callback function for each packet
-// void InitPacket(struct rte_mempool *mp, void *x, void *mbuf, unsigned index) {
-//   rte_pktmbuf_init(mp, NULL, mbuf, index);
-//
-//   // auto *pkt = static_cast<Packet *>(mbuf);
-//   // pkt->set_vaddr(pkt);
-//   // pkt->set_paddr(rte_mempool_virt2iova(pkt));
-// }
-
 static void create_pools(void) {
   const int namelen = 64;
   char pool_name[namelen];
@@ -537,19 +528,9 @@ static void create_pools(void) {
 
   /* Creates a new mempool in memory to hold the mbufs. */
   snprintf(pool_name, namelen, "MBUF_TX_POOL_%ld", pid);
-// RTE_MBUF_DEFAULT_BUF_SIZE
   tx_mbuf_pool =
       rte_pktmbuf_pool_create(pool_name, NUM_MBUFS, MBUF_CACHE_SIZE, PRIV_SIZE,
-                             2048, rte_socket_id());
-  // capacity
-  // tx_mbuf_pool = rte_mempool_create_empty(pool_name, NUM_MBUFS, 2560, 512, 16, rte_socket_id(), 0);
-
-  // struct rte_pktmbuf_pool_private dpdk_priv = {.mbuf_data_room_size = 128 + 2048,
-  //   .mbuf_priv_size = 256,
-  //   .flags = 0};
-  // rte_pktmbuf_pool_init(tx_mbuf_pool, &dpdk_priv);
-  // rte_mempool_obj_iter(tx_mbuf_pool, InitPacket, NULL);
-
+                             RTE_MBUF_DEFAULT_BUF_SIZE, rte_socket_id());
   if (tx_mbuf_pool == NULL)
     rte_exit(EXIT_FAILURE, "Cannot create tx mbuf pool\n");
 
@@ -557,19 +538,7 @@ static void create_pools(void) {
   snprintf(pool_name, namelen, "MBUF_CTRL_POOL_%ld", pid);
   ctrl_mbuf_pool =
       rte_pktmbuf_pool_create(pool_name, NUM_MBUFS, MBUF_CACHE_SIZE, PRIV_SIZE,
-                              2048, rte_socket_id());
-  // ctrl_mbuf_pool =
-  // rte_mempool_create_empty(pool_name, NUM_MBUFS, 2560, 512, 16, rte_socket_id(), 0);
-
-  // dpdk_priv = (struct rte_pktmbuf_pool_private)
-  // {.mbuf_data_room_size = 128 + 2048,
-  //   .mbuf_priv_size = 256,
-  //   .flags = 0};
-  // rte_mempool_populate_iova(ctrl_mbuf_pool, static_cast<char *>(addr),
-  //                                       RTE_BAD_IOVA, size, DoMunmap, nullptr);
-  // rte_pktmbuf_pool_init(ctrl_mbuf_pool, &dpdk_priv);
-  // rte_mempool_obj_iter(ctrl_mbuf_pool, InitPacket, NULL);
-
+                              RTE_MBUF_DEFAULT_BUF_SIZE, rte_socket_id());
   if (ctrl_mbuf_pool == NULL)
     rte_exit(EXIT_FAILURE, "Cannot crate ctrl mbuf pool\n");
 }
