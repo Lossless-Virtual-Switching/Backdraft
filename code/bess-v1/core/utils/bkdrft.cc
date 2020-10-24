@@ -58,8 +58,8 @@ int prepare_packet(bess::Packet *pkt, void *payload, size_t size,
 
   // Ethernet
   // pkt->append(128)
-  // uint8_t *ptr = reinterpret_cast<uint8_t *>(pkt->head_data());
-  uint8_t *ptr = reinterpret_cast<uint8_t *>(pkt->append(256));
+  uint8_t *ptr = reinterpret_cast<uint8_t *>(pkt->head_data());
+  // uint8_t *ptr = reinterpret_cast<uint8_t *>(pkt->append(256));
   assert(ptr != nullptr);
   Ethernet *eth = reinterpret_cast<Ethernet *>(ptr);
   eth->dst_addr = flow->eth_dst_addr;  // s_eth->dst_addr;
@@ -81,9 +81,11 @@ int prepare_packet(bess::Packet *pkt, void *payload, size_t size,
   udp->length = be16_t(sizeof(Udp) + size);
   udp->checksum = 0;
   // Payload
-  ptr = reinterpret_cast<uint8_t *>(udp + 1);
-  assert(ptr != nullptr);
-  bess::utils::Copy(ptr, payload, size, false);
+  if (payload != nullptr) {
+    ptr = reinterpret_cast<uint8_t *>(udp + 1);
+    bess::utils::Copy(ptr, payload, size, false);
+    LOG(INFO) << "Copying\n";
+  }
 
   pkt->set_total_len(256);
   pkt->set_data_len(208);
@@ -98,17 +100,24 @@ int prepare_ctrl_packet(bess::Packet *pkt, uint8_t qid, uint32_t nb_pkts,
   ctrl_msg.set_total_bytes(sent_bytes);
   int size = ctrl_msg.ByteSizeLong();
 
-  std::string payload(
-      1, BKDRFT_CTRL_MSG_TYPE);  // first byte is reserved for type of message
-  std::string serialized_msg;
-  bool res = ctrl_msg.SerializeToString(&serialized_msg);
+  // std::string payload(
+  //     1, BKDRFT_CTRL_MSG_TYPE);  // first byte is reserved for type of message
+  // std::string serialized_msg;
+  // bool res = ctrl_msg.SerializeToString(&serialized_msg);
+  size += 2; // one byte for type and one byte for \0
+  // char payload[size];
+  pkt->set_data_off(SNBUF_HEADROOM);
+  char *payload = reinterpret_cast<char *>(pkt->head_data())
+                  + sizeof(Ethernet) + sizeof(Ipv4) + sizeof(Udp);
+  payload[0] = BKDRFT_CTRL_MSG_TYPE;
+  bool res = ctrl_msg.SerializeToArray(payload + 1, size - 2);
   if (!res) {
     LOG(WARNING) << "prepare_ctrl_packet: serializing protobuf failed\n";
     return -1;  // failed
   }
-  payload.append(serialized_msg);
-  size = size + 1; // add one byte for message type tag
-  int pkt_size = prepare_packet(pkt, (void *)payload.c_str(), size, flow);
+  // payload.append(serialized_msg);
+  // int pkt_size = prepare_packet(pkt, (void *)payload.c_str(), size, flow);
+  int pkt_size = prepare_packet(pkt, nullptr, size, flow);
   if (pkt_size < 0) {
     // prepare packet failed
     LOG(WARNING) << "prepare_ctrl_packet: prepare packet failed!\n";
@@ -190,20 +199,25 @@ int parse_bkdrft_msg(bess::Packet *pkt, char *type, void **pb) {
   }
 
   // copy payload to a buffer (from mbuf to char array)
-  char msg[BKDRFT_MAX_MESSAGE_SIZE];
-  bess::utils::Copy(msg, payload, size, true);
-  msg[size] = '\0';
+  // char msg[BKDRFT_MAX_MESSAGE_SIZE];
+  // bess::utils::Copy(msg, payload, size, true);
+  char *msg;
+  msg = reinterpret_cast<char *>(payload);
+  // msg[size] = '\0';
 
   char first_byte = msg[0];             // first byte is for finding the type
-  std::string serialized_msg(msg + 1);  // rest of the message is protobuf data
+  // std::string serialized_msg(msg + 1);  // rest of the message is protobuf data
   *type = first_byte;
 
   // TODO: new key-word is used here. it may have performance hit.
   // maybe I should use a pool. If the effects are noticeable I have to do
   // more investigations
   if (first_byte == BKDRFT_CTRL_MSG_TYPE) {
+    // TODO: use a pool of these objects
+    // TODO: (or if no concurrent call just static object is enough)
     bess::pb::Ctrl *ctrl_msg = new bess::pb::Ctrl();
-    bool parse_res = ctrl_msg->ParseFromString(serialized_msg);
+    // bool parse_res = ctrl_msg->ParseFromString(serialized_msg);
+    bool parse_res = ctrl_msg->ParseFromArray(msg + 1, size - 1);
     if (!parse_res) {
       LOG(WARNING) << "parse_bkdrft_msg: Failed to parse ctrl message\n";
       return -1;  // failed
@@ -212,7 +226,8 @@ int parse_bkdrft_msg(bess::Packet *pkt, char *type, void **pb) {
     return 0;
   } else if (first_byte == BKDRFT_OVERLAY_MSG_TYPE) {
     bess::pb::Overlay *overlay_msg = new bess::pb::Overlay();
-    bool parse_res = overlay_msg->ParseFromString(serialized_msg);
+    // bool parse_res = overlay_msg->ParseFromString(serialized_msg);
+    bool parse_res = overlay_msg->ParseFromArray(msg + 1, size - 1);
     if (!parse_res) {
       LOG(WARNING) << "parse_bkdrft_msg: Failed to parse ctrl message\n";
       return -1;  // failed

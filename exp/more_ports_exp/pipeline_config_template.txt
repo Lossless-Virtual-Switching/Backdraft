@@ -13,7 +13,7 @@ BESS = 0
 BKDRFT = 1
 
 buffering = True
-pfq = False
+pfq = True
 cdq = True
 bp = False
 overlay = False
@@ -25,7 +25,7 @@ assert (CNT_P % 2 == 0 and CNT_P > 0)
 
 TX_QUEUE_COUNT = CNT_Q
 RX_QUEUE_COUNT = CNT_Q
-Q_SIZE = 64
+Q_SIZE = 1024
 Q = max(TX_QUEUE_COUNT, RX_QUEUE_COUNT)
 # ======================================
 

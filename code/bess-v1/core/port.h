@@ -73,6 +73,7 @@ typedef enum {
 typedef enum {
   NIC = 0,
   VHOST = 1,
+  VPORT = 2,
 } port_type_t;
 
 class Port;

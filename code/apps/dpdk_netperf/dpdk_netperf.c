@@ -222,7 +222,6 @@ static void do_client(uint8_t port) {
   uint8_t burst = BURST_SIZE;
   struct rte_mbuf *buf;
   struct rte_mbuf *batch[burst];
-  // char *buf_ptr;
   struct rte_ether_hdr *eth_hdr;
   struct rte_ipv4_hdr *ipv4_hdr;
   struct rte_udp_hdr *udp_hdr;
@@ -241,7 +240,9 @@ static void do_client(uint8_t port) {
   float pkt_clatency = 0;
   hist = new_p_hist(60);
 #endif
-  // zipf = new_zipfgen(num_queues - 1, 1);
+  int flow_id = 0;
+  int count_flow = num_queues; // TODO: count flow could be different
+
   if (bkdrft) {
     zipf = new_zipfgen(num_queues - 1, 1);
   } else {
@@ -272,14 +273,13 @@ static void do_client(uint8_t port) {
 
     if (rte_pktmbuf_alloc_bulk(tx_mbuf_pool, batch, burst)) {
       // failed to allocate packet
+      // printf("failed to allocate\n");
       continue;
     }
 
     for (i = 0; i < burst; i++) {
       buf = batch[i];
       /* ethernet header */
-      // buf_ptr = rte_pktmbuf_append(buf, RTE_ETHER_HDR_LEN);
-      // eth_hdr = (struct rte_ether_hdr *)buf_ptr;
       eth_hdr = rte_pktmbuf_mtod(buf, struct rte_ether_hdr *);
 
       rte_ether_addr_copy(&my_eth, &eth_hdr->s_addr);
@@ -299,13 +299,9 @@ static void do_client(uint8_t port) {
       // vlan_hdr->eth_proto = vlan_ether_proto_type;
 
       /* IPv4 header */
-      // buf_ptr = rte_pktmbuf_append(buf, sizeof(struct rte_ipv4_hdr));
-      // assert(buf_ptr);
-      // ipv4_hdr = (struct rte_ipv4_hdr *)buf_ptr;
       ipv4_hdr = (struct rte_ipv4_hdr *)(eth_hdr + 1);
       ipv4_hdr->version_ihl = 0x45;
-      // ipv4_hdr->version_ihl = 0x46;
-      ipv4_hdr->type_of_service = 3 << 2; // place on queue 3
+      ipv4_hdr->type_of_service = 0;
       ipv4_hdr->total_length =
           rte_cpu_to_be_16(sizeof(struct rte_ipv4_hdr) +
                            sizeof(struct rte_udp_hdr) + payload_len);
@@ -316,25 +312,14 @@ static void do_client(uint8_t port) {
       ipv4_hdr->hdr_checksum = 1000 + 3;
       ipv4_hdr->src_addr = rte_cpu_to_be_32(my_ip);
       ipv4_hdr->dst_addr = rte_cpu_to_be_32(server_ip);
-      // add bkdrft queue option
-      // buf_ptr = rte_pktmbuf_append(buf, sizeof(struct bkdrft_ipv4_opt));
-      // assert(buf_ptr);
-      // opt = (struct bkdrft_ipv4_opt *)buf_ptr;
-      // *opt = init_bkdrft_ipv4_opt; // set some default values
-      // opt->queue_number = 3;
 
       /* UDP header + data */
-      // buf_ptr =
-      //     rte_pktmbuf_append(buf, sizeof(struct rte_udp_hdr) + payload_len);
-      // assert(buf_ptr);
-      // udp_hdr = (struct rte_udp_hdr *)buf_ptr;
       udp_hdr = (struct rte_udp_hdr *)(ipv4_hdr + 1);
       udp_hdr->src_port = rte_cpu_to_be_16(client_port);
-      udp_hdr->dst_port = rte_cpu_to_be_16(server_port);
+      udp_hdr->dst_port = rte_cpu_to_be_16(server_port + flow_id);
       udp_hdr->dgram_len =
           rte_cpu_to_be_16(sizeof(struct rte_udp_hdr) + payload_len);
       udp_hdr->dgram_cksum = 0;
-      // memset(buf_ptr + sizeof(struct rte_udp_hdr), 0xAB, payload_len);
       memset((void *)(udp_hdr + 1), 0xAB, payload_len);
 
       buf->l2_len = RTE_ETHER_HDR_LEN;
@@ -385,6 +370,10 @@ static void do_client(uint8_t port) {
     pkt_clatency += pkt_latency;
     add_number_to_p_hist(hist, pkt_latency * 1000);
 #endif
+
+    // set next flow id
+    flow_id += 1;
+    flow_id %= count_flow;
   }
   end_time = rte_get_timer_cycles();
   if (setup_port) reqs--;
@@ -398,8 +387,9 @@ static void do_client(uint8_t port) {
 #ifdef nnper
   printf("mean latency (us): %f\n", pkt_clatency / reqs);
 #else
-  printf("mean latency (us): %f\n", (float)(end_time - start_time) * 1000 *
-                                        1000 / (reqs * rte_get_timer_hz()));
+  printf("mean latency (us): %d\n", -1);
+  // printf("mean latency (us): %f\n", (float)(end_time - start_time) * 1000 *
+  //                                       1000 / (reqs * rte_get_timer_hz()));
 #endif
   printf("send failures: %" PRIu64 " packets\n", send_failure);
 

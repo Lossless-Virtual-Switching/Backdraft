@@ -23,7 +23,7 @@ cd $cur
 # if [ -d build/ ]; then
 # 	rm -r build/
 # fi
-# make clean
+make clean
 
 # protobuf-c setup
 # protoc-c --c_out=./utils/include/ protobuf/bkdrft_msg.proto

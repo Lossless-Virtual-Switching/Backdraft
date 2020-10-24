@@ -239,7 +239,7 @@ private:
   int SetupFlowControlBlockPool();
 
   // place not sent packets in the buffer for the given flow
-  void BufferBatch(bess::bkdrft::Flow &flow, flow_state *fstate,
+  void BufferBatch(Flow *flow, flow_state *fstate,
                              bess::PacketBatch *batch, uint16_t sent_pkt);
 
   // try to send packets in the buffer
@@ -277,7 +277,7 @@ private:
    * the total sent bytes and the status of ctrl packet can be checked from
    * exposed pointers. Pointers are ignored if they are null.
    */
-  int SendPacket(Port *p, queue_t qid, bess::Packet **pkts, uint32_t cnt,
+  int SendPacket(Port *p, Flow *flow, queue_t qid, bess::Packet **pkts, uint32_t cnt,
                  uint64_t *tx_bytes, bool *ctrl_pkt_sent);
 
   // send an overlay message for the given flow

@@ -91,7 +91,7 @@ def run_netperf_client(bkdrft, cnt_queue):
     vdev = 'ex_vhost1'
     client_ip = '192.168.1.3'
     server_ip = '192.168.1.2'
-    duration = 10
+    duration = 30
     payload_size = 64
     args = {
             'bin': shenango_netperf,
@@ -172,6 +172,10 @@ def run_exp(_type, agent, cnt_ports, cnt_queues):
     res.set_excess_ports((cnt_queues * cnt_ports) - 2)
     add_bess_results(res)
 
+    print('client: ')
+    print(txt)
+    print('client end')
+
     p = bessctl_do('show port')
     txt = p.stdout.decode()
     print(txt)
@@ -204,13 +208,13 @@ def main():
     #sleep(2)
 
     cnt_prt_q = [(2,2), (4,2), (8, 2), (2, 8), (4, 8), (8, 8), (16, 8)]
-    cnt_prt_q = [(2,2)]
+    cnt_prt_q = [(2,4),]
     # cnt_prt_q = [0]
     # Warning: SINGLE_PMD_MULTIPLE_Q is not supported any more.
     # (it needs EXCESS variable to be defined)
     exp_types = ['MULTIPLE_PMD_MULTIPLE_Q',] # 'SINGLE_PMD_MULTIPLE_Q']
     agents = ['BKDRFT', 'BESS']
-    agents = ['BKDRFT']
+    agents = ['BKDRFT',]
     for _type in exp_types:
         for agent in agents:
             results = []
