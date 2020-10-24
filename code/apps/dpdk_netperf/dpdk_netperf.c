@@ -268,12 +268,10 @@ static void do_client(uint8_t port) {
     pkt_start_t = rte_get_timer_cycles();
 #endif
 
-    // printf("before alloc\n");
     if (rte_pktmbuf_alloc_bulk(tx_mbuf_pool, batch, burst)) {
       // failed to allocate packet
       continue;
     }
-    // printf("after alloc\n");
 
     for (i = 0; i < burst; i++) {
       buf = batch[i];
@@ -386,12 +384,12 @@ static void do_client(uint8_t port) {
     add_number_to_p_hist(hist, pkt_latency * 1000);
 #endif
 
-  long tmp_v = 0;
-  for (int j = 0; j < 10; j++)
-  for (int i = 0; i < 1000000; i++) {
-    tmp_v = (tmp_v + 3) % 7;
-  }
-  printf("%ld\n", tmp_v);
+  // long tmp_v = 0;
+  // for (int j = 0; j < 10; j++)
+  // for (int i = 0; i < 1000000; i++) {
+  //   tmp_v = (tmp_v + 3) % 7;
+  // }
+  // printf("%ld\n", tmp_v);
 
   }
   end_time = rte_get_timer_cycles();
@@ -519,13 +517,13 @@ static int dpdk_init(int argc, char *argv[]) {
 }
 
 // callback function for each packet
-void InitPacket(struct rte_mempool *mp, void *x, void *mbuf, unsigned index) {
-  rte_pktmbuf_init(mp, NULL, mbuf, index);
-
-  // auto *pkt = static_cast<Packet *>(mbuf);
-  // pkt->set_vaddr(pkt);
-  // pkt->set_paddr(rte_mempool_virt2iova(pkt));
-}
+// void InitPacket(struct rte_mempool *mp, void *x, void *mbuf, unsigned index) {
+//   rte_pktmbuf_init(mp, NULL, mbuf, index);
+//
+//   // auto *pkt = static_cast<Packet *>(mbuf);
+//   // pkt->set_vaddr(pkt);
+//   // pkt->set_paddr(rte_mempool_virt2iova(pkt));
+// }
 
 static void create_pools(void) {
   const int namelen = 64;
@@ -533,7 +531,7 @@ static void create_pools(void) {
   long int pid = getpid();
 
   if (port_type == dpdk) {
-    snprintf(pool_name, namelen, "MBUF_RX_POOL_%ld", pid); 
+    snprintf(pool_name, namelen, "MBUF_RX_POOL_%ld", pid);
     /* Creates a new mempool in memory to hold the mbufs. */
     rx_mbuf_pool =
         rte_pktmbuf_pool_create(pool_name, NUM_MBUFS, MBUF_CACHE_SIZE, 0,
@@ -544,7 +542,7 @@ static void create_pools(void) {
   }
 
   /* Creates a new mempool in memory to hold the mbufs. */
-  snprintf(pool_name, namelen, "MBUF_TX_POOL_%ld", pid); 
+  snprintf(pool_name, namelen, "MBUF_TX_POOL_%ld", pid);
 // RTE_MBUF_DEFAULT_BUF_SIZE
   tx_mbuf_pool =
       rte_pktmbuf_pool_create(pool_name, NUM_MBUFS, MBUF_CACHE_SIZE, PRIV_SIZE,
@@ -562,11 +560,11 @@ static void create_pools(void) {
     rte_exit(EXIT_FAILURE, "Cannot create tx mbuf pool\n");
 
   /* Create a new mempool in memory to hold the mbufs. */
-  snprintf(pool_name, namelen, "MBUF_CTRL_POOL_%ld", pid); 
+  snprintf(pool_name, namelen, "MBUF_CTRL_POOL_%ld", pid);
   ctrl_mbuf_pool =
       rte_pktmbuf_pool_create(pool_name, NUM_MBUFS, MBUF_CACHE_SIZE, PRIV_SIZE,
                               2048, rte_socket_id());
-  // ctrl_mbuf_pool = 
+  // ctrl_mbuf_pool =
   // rte_mempool_create_empty(pool_name, NUM_MBUFS, 2560, 512, 16, rte_socket_id(), 0);
 
   // dpdk_priv = (struct rte_pktmbuf_pool_private)

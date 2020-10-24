@@ -1,73 +1,82 @@
-#   BSD LICENSE
-# Copyright(c) 2010-2014 Intel Corporation. All rights reserved.  All rights reserved.  
-#   Redistribution and use in source and binary forms, with or without
-#   modification, are permitted provided that the following conditions
-#   are met: * Redistributions of source code must retain the above copyright
-#       notice, this list of conditions and the following disclaimer.
-#     * Redistributions in binary form must reproduce the above copyright
-#       notice, this list of conditions and the following disclaimer in
-#       the documentation and/or other materials provided with the
-#       distribution.
-#     * Neither the name of Intel Corporation nor the names of its
-#       contributors may be used to endorse or promote products derived
-#       from this software without specific prior written permission.
-#
-#   THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
-#   "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
-#   LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
-#   A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
-#   OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
-#   SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
-#   LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
-#   DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
-#   THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
-#   (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
-#   OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
-
 ifeq ($(RTE_SDK),)
 $(error "Please define RTE_SDK environment variable")
 endif
 
-# Default target, can be overridden by command line or environment
-RTE_TARGET ?= x86_64-native-linuxapp-gcc
-
-# These should be defined before include... because the path will change
 MKFILE_PATH := $(abspath $(lastword $(MAKEFILE_LIST)))
 CURRENT_DIR := $(dir $(MKFILE_PATH))
 
-include $(RTE_SDK)/mk/rte.vars.mk
+CC = gcc
+
+# Default target, can be overridden by command line or environment
+RTE_TARGET ?= x86_64-native-linuxapp-gcc
+DPDK_LIB ?= dpdk
+
+DPDK_INC_DIR := $(RTE_SDK)/build/include
+DPDK_LIB_DIR := $(RTE_SDK)/build/lib
+
+# Get include and lib directory for DPDK
+# ifneq ($(wildcard $(RTE_SDK)/$(RTE_TARGET)/*),)
+#   DPDK_INC_DIR := $(RTE_SDK)/$(RTE_TARGET)/include
+#   DPDK_LIB_DIR := $(RTE_SDK)/$(RTE_TARGET)/build/lib
+# else ifneq ($(wildcard $(RTE_SDK)/build/*),)
+#   # if the user didn't do "make install" for DPDK
+#   DPDK_INC_DIR := $(RTE_SDK)/build/include
+#   DPDK_LIB_DIR := $(RTE_SDK)/build/lib
+# else ifneq ($(MAKECMDGOALS),clean)
+#   $(error DPDK is not available. Make sure $(abspath $(RTE_SDK)) is available and built)
+# endif
+
+# $(info $(DPDK_INC_DIR) \n $(DPDK_LIB_DIR))
+
+# Add directories for searching header files
+CDirSearch = -isystem $(DPDK_INC_DIR) \
+	     -iquote $(CURRENT_DIR)/utils/include \
+	     -iquote $(CURRENT_DIR)/../../lib/bd_vport/include \
+             -iquote $(CURRENT_DIR)/../../lib/bkdrft/include \
+             -iquote $(CURRENT_DIR)/../../lib/bkdrft/protobuf/_compile
+
+CWarningFlags = -Werror -Wall -Wextra -Wcast-align -Wno-return-type
+
+# -DNDEBUG
+COptimize = -O3 -g
+
+CFLAGS = -march=native $(CDirSearch) -D_GNU_SOURCE $(CWarningFlags) \
+	 $(COptimize)
+LDFLAGS = -L$(DPDK_LIB_DIR) -Wl,-rpath=$(DPDK_LIB_DIR) \
+	  -L$(CURRENT_DIR)/../../lib/bd_vport/build/ \
+	  -L$(CURRENT_DIR)/../../lib/bkdrft/build/ \
+
+#  -lgflags
+LIBS = -Wl,-non_shared \
+       -Wl,--whole-archive -l$(DPDK_LIB) -Wl,--no-whole-archive \
+       -Wl,-call_shared \
+       -lbd_vport -lbkdrft -lprotobuf-c \
+       -lpcap -lnuma \
+       -lpthread -ldl \
+       -lmlx5 -lmlx4 -libverbs -lm
 
 # binary name
 APP = dpdk_netperf
 
 # all source are stored in SRCS-y
-SRCS-y := dpdk_netperf.c
-# SRCS-y += utils/bkdrft.c
-SRCS-y += utils/zipf.c
-SRCS-y += utils/percentile.c
-# SRCS-y += utils/packet.c
-# SRCS-y += utils/include/bkdrft_msg.pb-c.c
-SRCS-y += data_structure/f_linklist.c
+SRCS := dpdk_netperf.c
+SRCS += utils/zipf.c
+SRCS += utils/percentile.c
+# SRCS-y += data_structure/f_linklist.c
 
-CFLAGS += $(WERROR_FLAGS)
+OBJS = $(patsubst %.c, %.o,$(SRCS))
 
-# workaround for a gcc bug with noreturn attribute
-# http://gcc.gnu.org/bugzilla/show_bug.cgi?id=12603
-ifeq ($(CONFIG_RTE_TOOLCHAIN_GCC),y)
-CFLAGS_main.o += -Wno-return-type
-endif
+default: $(OBJS) $(APP)
 
-# VPATH += $(CURRENT_DIR)/utils/include
-# VPATH += $(CURRENT_DIR)/../../lib/bd_vport/include
+%.o: %.c
+	$(CC) -o $@ -c $< $(CFLAGS)
 
-EXTRA_CFLAGS += -O3 -g -Wfatal-errors -Wno-format-nonlitera \
-								-I $(CURRENT_DIR)/utils/include \
-								-I $(CURRENT_DIR)/../../lib/bd_vport/include \
-								-I $(CURRENT_DIR)/../../lib/bkdrft/include \
-								-I $(CURRENT_DIR)/../../lib/bkdrft/protobuf/_compile
+$(APP): $(OBJS)
+	mkdir -p $(CURRENT_DIR)/build
+	$(CC) -o $(CURRENT_DIR)/build/$@ $^ $(LDFLAGS) $(LIBS)
 
-LDLIBS := -L$(CURRENT_DIR)/../../lib/bd_vport/build/ \
-	-L$(CURRENT_DIR)/../../lib/bkdrft/build/ \
-  -lbd_vport -lbkdrft -lprotobuf-c
+clean:
+	rm $(APP) *.o utils/*.o
 
-include $(RTE_SDK)/mk/rte.extapp.mk
+.PHONY: clean
+

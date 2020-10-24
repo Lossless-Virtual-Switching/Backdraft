@@ -4,6 +4,7 @@ curdir=`dirname $0`
 # export RTE_SDK=$(realpath $curdir/../../../code/dpdk)
 export RTE_SDK=`realpath "$curdir/../../bess-v1/deps/dpdk-19.11.1/"`
 export RTE_TARGET="build"
+# export RTE_TARGET=x86_64-native-linuxapp-gcc
 
 cur=`pwd`
 
@@ -19,13 +20,14 @@ fi
 
 cd $cur
 
-if [ -d build/ ]; then
-	rm -r build/
-fi
+# if [ -d build/ ]; then
+# 	rm -r build/
+# fi
+# make clean
 
 # protobuf-c setup
 # protoc-c --c_out=./utils/include/ protobuf/bkdrft_msg.proto
 
-echo "Start building applications ... " $RTE_SDK
+# echo "Start building applications ... " $RTE_SDK
 
 make
