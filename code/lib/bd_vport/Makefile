@@ -11,7 +11,7 @@ CURRENT_DIR := $(dir $(MKFILE_PATH))
 
 include $(RTE_SDK)/mk/rte.vars.mk
 
-EXTRA_CFLAGS =  -I $(CURRENT_DIR)/include/
+EXTRA_CFLAGS =  -Wall -Werror -I $(CURRENT_DIR)/include/
 LIB = libbd_vport.a
 SRCS-y := vport.c
 

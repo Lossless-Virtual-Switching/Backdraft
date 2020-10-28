@@ -56,12 +56,13 @@ def run_server(instance):
     """
         Start a server process
     """
-    prefix = 'slow_receiver_server_{}'.format(instance)
-    cpu = ['12', '13'][instance]  # on which cpu
-    vdev = ['virtio_user0,path=/tmp/ex_vhost0.sock,queues='+str(count_queue),
-            'virtio_user2,path=/tmp/ex_vhost2.sock,queues='+str(count_queue)][instance]
+    # prefix = 'slow_receiver_server_{}'.format(instance)
+    prefix = 'bessd-dpdk-prefix'
+    cpu = ['4', '5'][instance]  # on which cpu
+    # vdev = ['virtio_user0,path=/tmp/ex_vhost0.sock,queues='+str(count_queue),
+    #         'virtio_user2,path=/tmp/ex_vhost2.sock,queues='+str(count_queue)][instance]
+    vdev = ['ex_vhost0','ex_vhost2'][instance]
     server_delay = [0, slow][instance]
-    # ip = '192.168.1.2'
     args = {
             'bin': slow_receiver_exp,
             'cpu': cpu,
@@ -74,14 +75,18 @@ def run_server(instance):
             'delay': server_delay,
             'source_ip': _server_ips[instance],
             }
+    # cmd = ('sudo {bin} --no-pci -l{cpu} --file-prefix={file-prefix} '
+    #         '--vdev="{vdev}" --socket-mem=128 -- '
+    #         '{source_ip} {count_queue} {sysmod} {mode} {delay}').format(**args)
     cmd = ('sudo {bin} --no-pci -l{cpu} --file-prefix={file-prefix} '
-            '--vdev="{vdev}" --socket-mem=128 -- '
-            '{source_ip} {count_queue} {sysmod} {mode} {delay}').format(**args)
+            '--proc-type=secondary --socket-mem=128 -- '
+            'vport={vdev} {source_ip} {count_queue} '
+            '{sysmod} {mode} {delay}').format(**args)
 
-    print("===============")
-    print("     server    ")
+    print("=" * 32)
+    print(" " * 13 + "server")
     print(cmd)
-    print("===============")
+    print("=" * 32, end='\n\n')
     # Run in background
     p = subprocess.Popen(cmd, shell=True, stdout=subprocess.PIPE,
                          stderr=subprocess.PIPE)
@@ -93,10 +98,12 @@ def run_client(instance):
         Start a client process
     """
     port = [1001, 5001,][instance]
-    prefix = 'slow_receiver_exp_client_{}'.format(instance)
-    cpu = ['15', 17][instance]
-    vdev = ['virtio_user1,path=/tmp/ex_vhost1.sock,queues='+str(count_queue),
-           'virtio_user3,path=/tmp/ex_vhost3.sock,queues='+str(count_queue),][instance]
+    # prefix = 'slow_receiver_exp_client_{}'.format(instance)
+    prefix = 'bessd-dpdk-prefix'
+    cpu = ['9', 8][instance]
+    # vdev = ['virtio_user1,path=/tmp/ex_vhost1.sock,queues='+str(count_queue),
+    #        'virtio_user3,path=/tmp/ex_vhost3.sock,queues='+str(count_queue),][instance]
+    vdev = ['ex_vhost1', 'ex_vhost3',][instance]
     # TODO: the following line is an example of code that is not suitable!
     # should switch to run_udp_app instead of this function
     ips = [[_server_ips[0], _server_ips[1]],
@@ -120,15 +127,20 @@ def run_client(instance):
             'port': port,
             'delay': delay[instance],
             }
+    # cmd = ('sudo {bin} --no-pci -l{cpu} --file-prefix={file-prefix} '
+    #         '--vdev="{vdev}" --socket-mem=128 -- '
+    #         '{source_ip} {count_queue} {sysmod} {mode} {cnt_ips} {ips} '
+    #         '{count_flow} {duration} {port} {delay}').format(**args)
     cmd = ('sudo {bin} --no-pci -l{cpu} --file-prefix={file-prefix} '
-            '--vdev="{vdev}" --socket-mem=128 -- '
-            '{source_ip} {count_queue} {sysmod} {mode} {cnt_ips} {ips} '
+            '--proc-type=secondary --socket-mem=128 -- '
+            'vport={vdev} {source_ip} {count_queue} '
+            '{sysmod} {mode} {cnt_ips} {ips} '
             '{count_flow} {duration} {port} {delay}').format(**args)
 
-    print("===============")
-    print("     client")
+    print("=" * 32)
+    print(" " * 13 + "client")
     print(cmd)
-    print("===============")
+    print("=" * 32, end='\n\n')
 
     # Run in background
     p = subprocess.Popen(cmd, shell=True, stdout=subprocess.PIPE)

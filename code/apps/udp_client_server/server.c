@@ -1,4 +1,7 @@
 #include "bkdrft.h"
+#include "bkdrft_const.h"
+#include "bkdrft_vport.h"
+#include "vport.h"
 #include "exp.h"
 #include "percentile.h"
 #include <rte_cycles.h>
@@ -45,7 +48,9 @@ void print_mac(struct rte_ether_addr *addr) {
 
 int do_server(void *_cntx) {
   struct context *cntx = (struct context *)_cntx;
-  uint32_t port = cntx->port;
+  port_type_t port_type = cntx->ptype;
+  uint32_t dpdk_port = cntx->dpdk_port_id;
+  struct vport *virt_port = cntx->virt_port;
   // uint16_t num_queues = cntx->num_queues;
   // uint32_t delay_us = cntx->delay_us;
   uint32_t delay_cycles = cntx->delay_cycles;
@@ -105,12 +110,13 @@ int do_server(void *_cntx) {
   uint8_t rate_limit = 0;
 
   uint8_t cdq = system_mode == system_bkdrft;
+  int valid_pkt;
 
   hist = new_p_hist_from_max_value(MAX_EXPECTED_LATENCY);
 
   /* check if running on the correct numa node */
-  if (rte_eth_dev_socket_id(port) > 0 &&
-      rte_eth_dev_socket_id(port) != (int)rte_socket_id()) {
+  if (port_type == dpdk && rte_eth_dev_socket_id(dpdk_port) > 0 &&
+      rte_eth_dev_socket_id(dpdk_port) != (int)rte_socket_id()) {
     printf("Warining port is on remote NUMA node\n");
   }
 
@@ -171,12 +177,22 @@ int do_server(void *_cntx) {
       continue;
     }
 
-    if (system_mode == system_bess) {
-      nb_rx = rte_eth_rx_burst(port, qid, rx_bufs, BURST_SIZE);
+    if (port_type == dpdk) {
+      if (system_mode == system_bess) {
+        nb_rx = rte_eth_rx_burst(dpdk_port, qid, rx_bufs, BURST_SIZE);
+      } else {
+        /* send control message on doorbell queue */
+        nb_rx =
+            poll_ctrl_queue(dpdk_port, BKDRFT_CTRL_QUEUE, BURST_SIZE, rx_bufs, 0);
+      }
     } else {
-      /* send control message on doorbell queue */
-      nb_rx =
-          poll_ctrl_queue(port, BKDRFT_CTRL_QUEUE, BURST_SIZE, rx_bufs, false);
+      if (system_mode == system_bkdrft) {
+        nb_rx = vport_poll_ctrl_queue(virt_port, BKDRFT_CTRL_QUEUE,
+            BURST_SIZE, rx_bufs, 0);
+      } else {
+        nb_rx = recv_packets_vport(virt_port, qid, (void **)rx_bufs,
+                                   BURST_SIZE);
+      }
     }
 
     if (nb_rx == 0) {
@@ -215,10 +231,18 @@ int do_server(void *_cntx) {
       /* in unidirectional mode the arp is not send so destination mac addr
        * is incorrect
        * */
-      if (bidi &&
-          !check_eth_hdr(my_ip, &my_eth, buf, tx_mem_pool, cdq, port, qid)) {
-        rte_pktmbuf_free(rx_bufs[i]); // free packet
-        continue;
+      if (bidi) {
+        if (port_type == dpdk) {
+          valid_pkt = check_eth_hdr(my_ip, &my_eth, buf, tx_mem_pool, cdq,
+                                    dpdk_port, qid);
+        } else {
+          valid_pkt = check_eth_hdr_vport(my_ip, &my_eth, buf, tx_mem_pool, cdq,
+                                          virt_port, qid);
+        }
+        if (!valid_pkt) {
+          rte_pktmbuf_free(rx_bufs[i]); // free packet
+          continue;
+        }
       }
 
       ptr = rte_pktmbuf_mtod_offset(buf, char *, 0);
@@ -329,10 +353,16 @@ int do_server(void *_cntx) {
       continue;
 
     while (k > 0) {
-      if (system_mode == system_bess) {
-        nb_tx = send_pkt(port, qid, tx_buf, k, false, ctrl_mem_pool);
+      if (port_type == dpdk) {
+        if (system_mode == system_bess) {
+          nb_tx = send_pkt(dpdk_port, qid, tx_buf, k, 0, ctrl_mem_pool);
+        } else {
+          nb_tx = send_pkt(dpdk_port, 1, tx_buf, k, 1, ctrl_mem_pool);
+        }
       } else {
-        nb_tx = send_pkt(port, 1, tx_buf, k, true, ctrl_mem_pool);
+        int cdq = system_mode == system_bkdrft;
+        nb_tx = vport_send_pkt(virt_port, qid, tx_buf, k, cdq,
+                               BKDRFT_CTRL_QUEUE, ctrl_mem_pool);
       }
 
       /* move packets failed to send to the front of the queue */

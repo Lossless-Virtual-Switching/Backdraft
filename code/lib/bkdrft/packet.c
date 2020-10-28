@@ -86,8 +86,10 @@ void prepare_packet(struct rte_mbuf *buf, unsigned char *payload,
   }
   udp_hdr->dgram_len = rte_cpu_to_be_16(sizeof(struct rte_udp_hdr) + size);
   udp_hdr->dgram_cksum = 0;
-  // memcpy(buf_ptr + sizeof(struct rte_udp_hdr), payload, size);
-  memcpy((udp_hdr + 1), payload, size);
+  if (unlikely(payload != NULL)) {
+    // memcpy(buf_ptr + sizeof(struct rte_udp_hdr), payload, size);
+    memcpy((udp_hdr + 1), payload, size);
+  }
 
   buf->l2_len = RTE_ETHER_HDR_LEN;
   buf->l3_len = sizeof(struct rte_ipv4_hdr);
@@ -174,7 +176,7 @@ extern inline size_t create_bkdraft_ctrl_msg(uint8_t qid, uint32_t nb_bytes,
 {
   size_t size = 0;
   // size_t packed_size = 0;
-  unsigned char *payload;
+  unsigned char *payload = *buf;
 
   // memset(ctrl_msg, 0, sizeof(DpdkNetPerf__Ctrl));
 
@@ -187,15 +189,17 @@ extern inline size_t create_bkdraft_ctrl_msg(uint8_t qid, uint32_t nb_bytes,
   size = dpdk_net_perf__ctrl__get_packed_size(&ctrl_msg);
   size = size + 1; // one byte for adding message type tag
 
-  // TODO: check if malloc has performance hit.
-  payload = malloc(size);
-  assert(payload);
+  if (unlikely(payload == NULL)) {
+    // TODO: check if malloc has performance hit.
+    payload = malloc(size);
+    assert(payload);
+    *buf = payload;
+  }
 
   // first byte defines the bkdrft message type
   payload[0] = BKDRFT_CTRL_MSG_TYPE;
   dpdk_net_perf__ctrl__pack(&ctrl_msg, payload + 1);
 
-  *buf = payload;
   return size;
 }
 

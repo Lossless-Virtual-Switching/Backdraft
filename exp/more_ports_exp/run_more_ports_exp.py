@@ -214,7 +214,7 @@ def main():
     # (it needs EXCESS variable to be defined)
     exp_types = ['MULTIPLE_PMD_MULTIPLE_Q',] # 'SINGLE_PMD_MULTIPLE_Q']
     agents = ['BKDRFT', 'BESS']
-    agents = ['BKDRFT',]
+    agents = ['BESS',]
     for _type in exp_types:
         for agent in agents:
             results = []

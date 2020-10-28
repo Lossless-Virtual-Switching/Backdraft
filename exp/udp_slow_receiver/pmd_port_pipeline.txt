@@ -43,35 +43,36 @@ def next_wid():
 
 # Server 1
 #eth_vhost0
-host0 = BDVPort(
+print('eth_vhost0,iface=/tmp/ex_vhost0.sock,queues={}'.format(Q))
+host0 = PMDPort(
   name='ex_vhost0',
-  port_name='ex_vhost0',
+  vdev='eth_vhost0,iface=/tmp/ex_vhost0.sock,queues={}'.format(Q),
   num_inc_q=TX_QUEUE_COUNT,
   num_out_q=RX_QUEUE_COUNT,
   size_inc_q=Q_SIZE,
   size_out_q=Q_SIZE)
 
 # Client
-host1 = BDVPort(
+host1 = PMDPort(
   name='ex_vhost1',
-  port_name='ex_vhost1',
+  vdev='eth_vhost1,iface=/tmp/ex_vhost1.sock,queues={}'.format(Q),
   num_inc_q=TX_QUEUE_COUNT,
   num_out_q=RX_QUEUE_COUNT,
   size_inc_q=Q_SIZE,
   size_out_q=Q_SIZE)
 
-client2 = BDVPort(
+client2 = PMDPort(
   name='ex_vhost3',
-  port_name='ex_vhost3',
+  vdev='eth_vhost3,iface=/tmp/ex_vhost3.sock,queues={}'.format(Q),
   num_inc_q=TX_QUEUE_COUNT,
   num_out_q=RX_QUEUE_COUNT,
   size_inc_q=Q_SIZE,
   size_out_q=Q_SIZE)
 
 # Server 2
-host2 = BDVPort(
-  name='ex_vhost2',
-  port_name='ex_vhost2',
+host2 = PMDPort(
+    name='ex_vhost2',
+    vdev='eth_vhost2,iface=/tmp/ex_vhost2.sock,queues={}'.format(Q),
   num_inc_q=TX_QUEUE_COUNT,
   num_out_q=RX_QUEUE_COUNT,
   size_inc_q=Q_SIZE,

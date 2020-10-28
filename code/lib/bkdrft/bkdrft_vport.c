@@ -17,7 +17,9 @@ extern inline int vport_send_pkt(struct vport *port, uint16_t qid,
   struct rte_mbuf *sample_pkt;
   size_t packed_size;
   uint8_t *payload = NULL;
-
+  const size_t payload_offset = sizeof(struct rte_ether_hdr) + \
+                                sizeof(struct rte_ipv4_hdr) + \
+                                sizeof(struct rte_udp_hdr);
 
   nb_tx = send_packets_vport(port, qid, (void **)pkts, nb_pkts);
 
@@ -37,10 +39,12 @@ extern inline int vport_send_pkt(struct vport *port, uint16_t qid,
     assert(sample_pkt);
 
     // TODO: can optimize payload copying to packet
+    payload = rte_pktmbuf_mtod_offset(ctrl_pkt, uint8_t *, payload_offset);
     packed_size = create_bkdraft_ctrl_msg(qid, total_bytes, nb_tx, &payload);
-    assert(payload);
-    prepare_packet(ctrl_pkt, payload, sample_pkt, packed_size);
-    free(payload);
+    // assert(payload);
+    // prepare_packet(ctrl_pkt, payload, sample_pkt, packed_size);
+    prepare_packet(ctrl_pkt, NULL, sample_pkt, packed_size);
+    // free(payload);
 
     nb_ctrl_tx = send_packets_vport(port, doorbell, (void **)&ctrl_pkt, 1);
     if (unlikely(nb_ctrl_tx != 1)) {

@@ -219,7 +219,7 @@ static int port_init(void)
 static void do_client(uint8_t port) {
   uint64_t start_time, end_time;
   uint64_t send_failure = 0;
-  uint8_t burst = BURST_SIZE;
+  const uint8_t burst = BURST_SIZE;
   struct rte_mbuf *buf;
   struct rte_mbuf *batch[burst];
   struct rte_ether_hdr *eth_hdr;
@@ -352,7 +352,7 @@ static void do_client(uint8_t port) {
       // nb_tx = send_packets_vport(virt_port, current_queue,
       //                            (void **)batch, burst);
       nb_tx = vport_send_pkt(virt_port, current_queue, batch, burst,
-                             bkdrft, 0, ctrl_mbuf_pool);
+                             bkdrft, 0, tx_mbuf_pool);
     }
 
     reqs += nb_tx;

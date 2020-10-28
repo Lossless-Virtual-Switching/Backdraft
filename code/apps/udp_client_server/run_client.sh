@@ -24,16 +24,18 @@ echo one flow
 # run clinet
 echo here
 sudo ./build/udp_app \
-	-l 16 \
+	-l 2 \
 	-w $pci \
 	--file-prefix=m2 \
-	-- $source_ip $count_queue $type client 1 192.168.1.3 $count_flow $duration $port
+	-- $source_ip $count_queue $type client 1 192.168.1.3 \
+  $count_flow $duration $port
 else
 # run clinet
 sudo ./build/udp_app \
 	-l 14,16 \
 	-w $pci \
 	--file-prefix=m2 \
-	-- $source_ip $count_queue $type client 2 192.168.2.10 10.0.1.2 $count_flow $duration $port
+	-- $source_ip $count_queue $type client 2 192.168.2.10 10.0.1.2 \
+  $count_flow $duration $port
 fi
 

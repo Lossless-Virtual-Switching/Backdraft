@@ -15,7 +15,7 @@ BKDRFT = 1
 buffering = True
 pfq = True
 cdq = True
-bp = False
+bp = True
 overlay = False
 
 # == Insert here ==

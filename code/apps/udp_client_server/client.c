@@ -9,6 +9,9 @@
 #include <rte_udp.h>
 
 #include "bkdrft.h"
+#include "bkdrft_const.h"
+#include "bkdrft_vport.h"
+#include "vport.h"
 #include "exp.h"
 #include "percentile.h"
 #include "arp.h"
@@ -17,15 +20,16 @@
 #define BURST_SIZE (32)
 #define MAX_EXPECTED_LATENCY (10000) // (us)
 
-inline uint16_t get_tci(uint16_t prio, uint16_t dei, uint16_t vlan_id) {
+static inline uint16_t get_tci(uint16_t prio, uint16_t dei, uint16_t vlan_id) {
   return prio << 13 | dei << 12 | vlan_id;
 }
 
-// int do_client(struct context *cntx) {
 int do_client(void *_cntx) {
   struct context *cntx = (struct context *)_cntx;
   int system_mode = cntx->system_mode;
-  int port = cntx->port;
+  port_type_t port_type = cntx->ptype;
+  int dpdk_port = cntx->dpdk_port_id;
+  struct vport *virt_port = cntx->virt_port;
   uint8_t qid = cntx->default_qid;
   uint16_t count_queues = cntx->count_queues;
   struct rte_mempool *tx_mem_pool = cntx->tx_mem_pool;
@@ -75,9 +79,6 @@ int do_client(void *_cntx) {
   uint16_t selected_q = 0;
   uint16_t rx_q = qid;
 
-  // struct rte_ether_addr _server_eth[2] = {
-  //     {{0x98, 0xf2, 0xb3, 0xcc, 0x83, 0x81}},
-  //     {{0x98, 0xf2, 0xb3, 0xcc, 0x02, 0xc1}}};
   struct rte_ether_addr _server_eth[count_dst_ip];
   struct rte_ether_addr server_eth;
 
@@ -110,6 +111,7 @@ int do_client(void *_cntx) {
   memset(failed_to_push, 0, sizeof(uint64_t) * count_dst_ip);
 
   uint8_t cdq = system_mode == system_bkdrft;
+  int valid_pkt;
 
   uint32_t tx_pkts = 0;
   // hardcoded burst size TODO: get from args
@@ -141,8 +143,8 @@ int do_client(void *_cntx) {
       flow_q[i] = qid + (i % count_queues);
   }
 
-  if (rte_eth_dev_socket_id(port) > 0 &&
-      rte_eth_dev_socket_id(port) != (int)rte_socket_id()) {
+  if (port_type == dpdk && rte_eth_dev_socket_id(dpdk_port) > 0 &&
+      rte_eth_dev_socket_id(dpdk_port) != (int)rte_socket_id()) {
     printf("Warning port is on remote NUMA node\n");
   }
 
@@ -156,8 +158,15 @@ int do_client(void *_cntx) {
   if (bidi) {
     printf("sending ARP requests\n");
     for (int i = 0; i < count_dst_ip; i++) {
-      struct rte_ether_addr dst_mac = get_dst_mac(port, qid, src_ip, my_eth,
-          dst_ips[i], broadcast_mac, tx_mem_pool, cdq, count_queues);
+      struct rte_ether_addr dst_mac;
+      if (port_type == dpdk) {
+         dst_mac = get_dst_mac(dpdk_port, qid, src_ip, my_eth,
+            dst_ips[i], broadcast_mac, tx_mem_pool, cdq, count_queues);
+      } else {
+        dst_mac =
+            get_dst_mac_vport(virt_port, qid, src_ip, my_eth, dst_ips[i],
+                              broadcast_mac, tx_mem_pool, cdq, count_queues);
+      }
       _server_eth[i] = dst_mac;
       char ip[20];
       ip_to_str(dst_ips[i], ip, 20);
@@ -168,9 +177,11 @@ int do_client(void *_cntx) {
     }
     printf("ARP requests finished\n");
   } else {
+    // set fake destination mac address
     for (int i = 0; i < count_dst_ip; i++)
       /* 1c:34:da:41:c6:fc */
-      _server_eth[i] = (struct rte_ether_addr) {{0x1c, 0x34, 0xda, 0x41, 0xc6, 0xfc}};
+      _server_eth[i] = (struct rte_ether_addr)
+                              {{0x1c, 0x34, 0xda, 0x41, 0xc6, 0xfc}};
   }
   server_eth = _server_eth[0];
 
@@ -186,7 +197,7 @@ int do_client(void *_cntx) {
     end_time = rte_get_timer_cycles();
     if (duration > 0 && end_time > start_time + duration) {
       if (can_send) {
-        can_send = false;
+        can_send = 0;
         start_time = rte_get_timer_cycles();
         duration = 5 * rte_get_timer_hz();
         /* wait 10 sec for packets in the returning path */
@@ -328,13 +339,19 @@ int do_client(void *_cntx) {
       // TODO: this while loop messes with throughput measuring
       // but we can ignore it now.
       while (tx_pkts > 0) {
-        if (system_mode == system_bess) {
-          nb_tx = send_pkt(port, selected_q, bufs, tx_pkts, false, ctrl_mem_pool);
+        if (port_type == dpdk) {
+          if (system_mode == system_bess) {
+            nb_tx = send_pkt(dpdk_port, selected_q, bufs, tx_pkts, 0, ctrl_mem_pool);
+          } else {
+            if (selected_q == 0)
+              printf("warning: sending data pkt on queue zero\n");
+            nb_tx =
+                send_pkt(dpdk_port, selected_q, bufs, tx_pkts, 1, ctrl_mem_pool);
+          }
         } else {
-          if (selected_q == 0)
-            printf("warning: sending data pkt on queue zero\n");
-          nb_tx =
-              send_pkt(port, selected_q, bufs, tx_pkts, true, ctrl_mem_pool);
+          int cdq = system_mode == system_bkdrft;
+          nb_tx = vport_send_pkt(virt_port, selected_q, bufs, tx_pkts, cdq,
+                                 BKDRFT_CTRL_QUEUE, ctrl_mem_pool);
         }
 
         if (end_time > start_time + ignore_result_duration * hz) {
@@ -360,8 +377,7 @@ int do_client(void *_cntx) {
         if (delay_cycles > 0) {
           // rte_delay_us_block(delay_us);
           uint64_t now = rte_get_tsc_cycles();
-          uint64_t end =
-              rte_get_tsc_cycles() + delay_cycles;
+          uint64_t end = rte_get_tsc_cycles() + delay_cycles;
           while (now < end) {
             now = rte_get_tsc_cycles();
           }
@@ -373,7 +389,7 @@ int do_client(void *_cntx) {
         // end_time = rte_get_timer_cycles();
         // if (duration > 0 && end_time > start_time + duration) {
         //   if (can_send) {
-        //     can_send = false;
+        //     can_send = 0;
         //     start_time = rte_get_timer_cycles();
         //     duration = 5 * rte_get_timer_hz();
         //     /* wait 10 sec for packets in the returning path */
@@ -400,13 +416,23 @@ int do_client(void *_cntx) {
 recv:
     for (rx_q = qid; rx_q < qid + count_queues; rx_q++) {
       while (1) {
-        if (system_mode == system_bkdrft) {
-          /* read ctrl queue and fetch packets from data queue */
-          nb_rx2 = poll_ctrl_queue(port, BKDRFT_CTRL_QUEUE, BURST_SIZE, recv_bufs,
-                                   false);
+        if (port_type == dpdk) {
+          if (system_mode == system_bkdrft) {
+            /* read ctrl queue and fetch packets from data queue */
+            nb_rx2 = poll_ctrl_queue(dpdk_port, BKDRFT_CTRL_QUEUE, BURST_SIZE,
+                                     recv_bufs, 0);
+          } else {
+            /* bess */
+            nb_rx2 = rte_eth_rx_burst(dpdk_port, rx_q, recv_bufs, BURST_SIZE);
+          }
         } else {
-          /* bess */
-          nb_rx2 = rte_eth_rx_burst(port, rx_q, recv_bufs, BURST_SIZE);
+          if (system_mode == system_bkdrft) {
+            nb_rx2 = vport_poll_ctrl_queue(virt_port, BKDRFT_CTRL_QUEUE,
+                                           BURST_SIZE, recv_bufs, 0);
+          } else {
+            nb_rx2 = recv_packets_vport(virt_port, rx_q, (void **)recv_bufs,
+                                        BURST_SIZE);
+          }
         }
 
         if (nb_rx2 == 0)
@@ -414,10 +440,18 @@ recv:
 
         for (j = 0; j < nb_rx2; j++) {
           buf = recv_bufs[j];
-          if (!check_eth_hdr(src_ip, &my_eth, buf, tx_mem_pool, cdq, port, qid)) {
+          if (port_type == dpdk) {
+            valid_pkt = check_eth_hdr(src_ip, &my_eth, buf, tx_mem_pool, cdq,
+                                      dpdk_port, qid);
+          } else {
+            valid_pkt = check_eth_hdr_vport(src_ip, &my_eth, buf, tx_mem_pool,
+                                            cdq, virt_port, qid);
+          }
+          if (!valid_pkt) {
             rte_pktmbuf_free(buf);
             continue;
           }
+
           ptr = rte_pktmbuf_mtod(buf, char *);
 
           eth_hdr = (struct rte_ether_hdr *)ptr;

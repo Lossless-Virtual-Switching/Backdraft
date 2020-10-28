@@ -2,42 +2,71 @@ ifeq ($(RTE_SDK),)
 $(error "Please define RTE_SDK environment variable")
 endif
 
-# Default target, can be overridden by command line or environment
-RTE_TARGET ?= x86_64-native-linuxapp-gcc
-
-# These should be defined before include... because the path will change
 MKFILE_PATH := $(abspath $(lastword $(MAKEFILE_LIST)))
 CURRENT_DIR := $(dir $(MKFILE_PATH))
 
-include $(RTE_SDK)/mk/rte.vars.mk
+CC = gcc
+
+# Default target, can be overridden by command line or environment
+RTE_TARGET ?= x86_64-native-linuxapp-gcc
+DPDK_LIB ?= dpdk
+
+DPDK_INC_DIR := $(RTE_SDK)/build/include
+DPDK_LIB_DIR := $(RTE_SDK)/build/lib
+
+# Add directories for searching header files
+CDirSearch = -isystem $(DPDK_INC_DIR) \
+       -iquote $(CURRENT_DIR)/include \
+       -iquote $(CURRENT_DIR)/../../lib/bd_vport/include \
+       -iquote $(CURRENT_DIR)/../../lib/bkdrft/include \
+       -iquote $(CURRENT_DIR)/../../lib/bkdrft/protobuf/_compile
+
+CWarningFlags = -Werror -Wall -Wextra -Wcast-align -Wno-return-type
+
+# -DNDEBUG
+COptimize = -O3 -g
+
+CFLAGS = -march=native $(CDirSearch) -D_GNU_SOURCE $(CWarningFlags) \
+   $(COptimize)
+LDFLAGS = -L$(DPDK_LIB_DIR) -Wl,-rpath=$(DPDK_LIB_DIR) \
+    -L$(CURRENT_DIR)/../../lib/bd_vport/build/ \
+    -L$(CURRENT_DIR)/../../lib/bkdrft/build/ \
+
+#  -lgflags
+LIBS = -Wl,-non_shared \
+       -Wl,--whole-archive -l$(DPDK_LIB) -Wl,--no-whole-archive \
+       -Wl,-call_shared \
+       -lbd_vport -lbkdrft -lprotobuf-c \
+       -lpcap -lnuma \
+       -lpthread -ldl \
+       -lmlx5 -lmlx4 -libverbs -lm
 
 # binary name
 APP = udp_app
 
 # all source are stored in SRCS-y
-SRCS-y := main.c
-SRCS-y += server.c
-SRCS-y += client.c
-SRCS-y += utils/bkdrft.c
-SRCS-y += utils/exp.c
-SRCS-y += utils/percentile.c
-SRCS-y += utils/packet.c
-SRCS-y += utils/flow_rules.c
-SRCS-y += utils/arp.c
-SRCS-y += utils/zipf.c
-SRCS-y += include/bkdrft_msg.pb-c.c
+SRCS := main.c
+SRCS += server.c
+SRCS += client.c
+SRCS += utils/exp.c
+SRCS += utils/percentile.c
+SRCS += utils/flow_rules.c
+SRCS += utils/arp.c
+SRCS += utils/zipf.c
 
-CFLAGS += $(WERROR_FLAGS)
+OBJS = $(patsubst %.c, %.o,$(SRCS))
 
-# workaround for a gcc bug with noreturn attribute
-# http://gcc.gnu.org/bugzilla/show_bug.cgi?id=12603
-ifeq ($(CONFIG_RTE_TOOLCHAIN_GCC),y)
-CFLAGS_main.o += -Wno-return-type
-endif
+default: $(OBJS) $(APP)
 
-EXTRA_CFLAGS += -O3 -g -Wfatal-errors -Wno-format-nonliteral \
-                -I $(CURRENT_DIR)/include/
-LDLIBS := -lprotobuf-c 
+%.o: %.c
+	$(CC) -o $@ -c $< $(CFLAGS)
 
-include $(RTE_SDK)/mk/rte.extapp.mk
+$(APP): $(OBJS)
+	mkdir -p $(CURRENT_DIR)/build
+	$(CC) -o $(CURRENT_DIR)/build/$@ $^ $(LDFLAGS) $(LIBS)
+
+clean:
+	rm $(APP) *.o utils/*.o
+
+.PHONY: clean
 

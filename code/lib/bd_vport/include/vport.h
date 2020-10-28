@@ -41,9 +41,11 @@ struct vport_bar {
 struct vport {
   int _main;
   struct vport_bar *bar;
+  uint8_t mac_addr[6];
   int out_irq_fd[MAX_QUEUES_PER_DIR];
 };
 
+struct vport *from_vport_name(char *port_name);
 struct vport *from_vbar_addr(size_t bar_address);
 struct vport *new_vport(const char *name, uint16_t num_inc_q,
                         uint16_t num_out_q);

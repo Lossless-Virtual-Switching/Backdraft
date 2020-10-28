@@ -1,0 +1,43 @@
+ifeq ($(RTE_SDK),)
+$(error "Please define RTE_SDK environment variable")
+endif
+
+# Default target, can be overridden by command line or environment
+RTE_TARGET ?= x86_64-native-linuxapp-gcc
+
+# These should be defined before include... because the path will change
+MKFILE_PATH := $(abspath $(lastword $(MAKEFILE_LIST)))
+CURRENT_DIR := $(dir $(MKFILE_PATH))
+
+include $(RTE_SDK)/mk/rte.vars.mk
+
+# binary name
+APP = udp_app
+
+# all source are stored in SRCS-y
+SRCS-y := main.c
+SRCS-y += server.c
+SRCS-y += client.c
+# SRCS-y += utils/bkdrft.c
+SRCS-y += utils/exp.c
+SRCS-y += utils/percentile.c
+# SRCS-y += utils/packet.c
+SRCS-y += utils/flow_rules.c
+SRCS-y += utils/arp.c
+SRCS-y += utils/zipf.c
+# SRCS-y += include/bkdrft_msg.pb-c.c
+
+CFLAGS += $(WERROR_FLAGS)
+
+# workaround for a gcc bug with noreturn attribute
+# http://gcc.gnu.org/bugzilla/show_bug.cgi?id=12603
+ifeq ($(CONFIG_RTE_TOOLCHAIN_GCC),y)
+CFLAGS_main.o += -Wno-return-type
+endif
+
+EXTRA_CFLAGS += -O3 -g -Wfatal-errors -Wno-format-nonliteral \
+                -I $(CURRENT_DIR)/include/
+LDLIBS := -lprotobuf-c 
+
+include $(RTE_SDK)/mk/rte.extapp.mk
+

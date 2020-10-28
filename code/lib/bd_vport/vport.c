@@ -1,5 +1,7 @@
 // TODO: add license of VPORT
+#include <x86intrin.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 #include <sys/stat.h>
 #include <assert.h>
@@ -12,6 +14,28 @@
 
 #define ROUND_TO_64(x) ((x + 32) & (~0x3f))
 
+/* Connect to an existing vport_bar
+ * */
+struct vport *from_vport_name(char *port_name)
+{
+  int res;
+  size_t bar_address;
+  FILE *fp;
+  char port_path[PORT_DIR_LEN];
+  res = snprintf(port_path, PORT_DIR_LEN, "%s/%s/%s", TMP_DIR, VPORT_DIR_PREFIX,
+                 port_name);
+  if (res >= PORT_DIR_LEN) return NULL;
+
+  fp = fopen(port_path, "r");
+  if (fp == NULL) return NULL;
+
+  res = fread(&bar_address, 8, 1, fp);
+  if (res == 0) return NULL;
+
+  fclose(fp);
+
+  return from_vbar_addr(bar_address);
+}
 
 /* Connect to an existing vport_bar
  * */
@@ -28,9 +52,11 @@ struct vport *from_vbar_addr(size_t bar_address)
 /* Allocate a new vport and vport_bar
  * Setup pipes
  * */
-struct vport *new_vport(const char *name, uint16_t num_inc_q, uint16_t num_out_q)
+struct vport *new_vport(const char *name, uint16_t num_inc_q,
+                        uint16_t num_out_q)
 {
   uint32_t i;
+  uint32_t seed;
 
   uint32_t bytes_per_llring;
   uint32_t total_memory_needed;
@@ -117,6 +143,17 @@ struct vport *new_vport(const char *name, uint16_t num_inc_q, uint16_t num_out_q
     port->out_irq_fd[i] = open(file_name, O_RDWR);
   }
 
+  // set port mac address
+  seed = __rdtsc();
+  srand(seed);
+  for (i = 0; i < 6; i++) {
+    port->mac_addr[i] = rand() & 0xff;
+  }
+  port->mac_addr[0] &= 0xfe; // not broadcast/multicast
+  port->mac_addr[0] |= 0x02; // locally administered
+
+
+
   snprintf(file_name, PORT_DIR_LEN, "%s/%s/%s", TMP_DIR,
            VPORT_DIR_PREFIX, name);
   printf("Writing port information to %s\n", file_name);
@@ -194,4 +231,3 @@ int recv_packets_vport(struct vport *port, uint16_t qid, void**pkts, int cnt)
   ret = llring_dequeue_burst(q, pkts, cnt);
   return ret;
 }
-
