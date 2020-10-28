@@ -32,11 +32,13 @@
 #define BESS_DRIVERS_BDVPORT_H_
 
 // VPORT =================================
+#include <stdint.h>
 #include "../kmod/llring.h"
 
-#define VPORT_MAX_QUEUES_PER_DIR 128
+// #define MAX_QUEUES_PER_DIR 16384
+#define MAX_QUEUES_PER_DIR 128
 
-#define SLOTS_PER_LLRING 8192
+#define SLOTS_PER_LLRING 1024
 #define SLOTS_WATERMARK ((SLOTS_PER_LLRING >> 3) * 7) /* 87.5% */
 
 #define SINGLE_PRODUCER 0
@@ -61,26 +63,27 @@ struct vport_bar {
   int num_inc_q;
   int num_out_q;
 
-  struct vport_inc_regs *inc_regs[VPORT_MAX_QUEUES_PER_DIR];
-  struct llring *inc_qs[VPORT_MAX_QUEUES_PER_DIR];
+  struct vport_inc_regs *inc_regs[MAX_QUEUES_PER_DIR];
+  struct llring *inc_qs[MAX_QUEUES_PER_DIR];
 
-  struct vport_out_regs *out_regs[VPORT_MAX_QUEUES_PER_DIR];
-  struct llring *out_qs[VPORT_MAX_QUEUES_PER_DIR];
+  struct vport_out_regs *out_regs[MAX_QUEUES_PER_DIR];
+  struct llring *out_qs[MAX_QUEUES_PER_DIR];
 };
 
 struct vport {
   int _main;
   struct vport_bar *bar;
-  int out_irq_fd[VPORT_MAX_QUEUES_PER_DIR];
+  uint8_t mac_addr[6];
+  int out_irq_fd[MAX_QUEUES_PER_DIR];
 };
 
+struct vport *from_vport_name(char *port_name);
 struct vport *from_vbar_addr(size_t bar_address);
 struct vport *new_vport(const char *name, uint16_t num_inc_q,
                         uint16_t num_out_q);
 int free_vport(struct vport *port);
 int send_packets_vport(struct vport *port, uint16_t qid, void**pkts, int cnt);
 int recv_packets_vport(struct vport *port, uint16_t qid, void**pkts, int cnt);
-
 // VPORT =================================
 
 #include <string>

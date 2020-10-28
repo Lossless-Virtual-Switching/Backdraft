@@ -447,7 +447,7 @@ recv:
             valid_pkt = check_eth_hdr_vport(src_ip, &my_eth, buf, tx_mem_pool,
                                             cdq, virt_port, qid);
           }
-          if (!valid_pkt) {
+          if (unlikely(!valid_pkt)) {
             rte_pktmbuf_free(buf);
             continue;
           }
@@ -468,7 +468,7 @@ recv:
           }
 
           /* skip some seconds of the experiment, and do not record results */
-          if (end_time < start_time + ignore_result_duration * hz) {
+          if (unlikely(end_time < start_time + ignore_result_duration * hz)) {
             rte_pktmbuf_free(buf); // free packet
             continue;
           }
@@ -489,7 +489,7 @@ recv:
               break;
             }
           }
-          if (found == 0) {
+          if (unlikely(found == 0)) {
             uint32_t ip = rte_be_to_cpu_32(recv_ip);
             uint8_t *bytes = (uint8_t *)(&ip);
             printf("Ip: %u.%u.%u.%u\n", bytes[0], bytes[1], bytes[2], bytes[3]);

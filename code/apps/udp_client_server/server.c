@@ -177,6 +177,7 @@ int do_server(void *_cntx) {
       continue;
     }
 
+    // receive some packets
     if (port_type == dpdk) {
       if (system_mode == system_bess) {
         nb_rx = rte_eth_rx_burst(dpdk_port, qid, rx_bufs, BURST_SIZE);
@@ -210,6 +211,7 @@ int do_server(void *_cntx) {
       continue;
     }
 
+    // The cycles spent should be after getting timestamp of all packets
     /*
     spend some time for the whole batch
     if (delay_us > 0) {
@@ -286,17 +288,18 @@ int do_server(void *_cntx) {
       throughput += 1;
       // throughput[current_sec] += 1;
 
+      // TODO: processing const should be applied after calculating latencies
       /* apply processing cost */
-      if (delay_cycles > 0) {
-        // rte_delay_us_block(delay_us);
-        uint64_t now = rte_get_tsc_cycles();
-        uint64_t end =
-            rte_get_tsc_cycles() + delay_cycles;
-        while (now < end) {
-          now = rte_get_tsc_cycles();
-        }
-        cycles_error =(now - end) * 0.5 + 0.5 * (cycles_error);
-      }
+      // if (delay_cycles > 0) {
+      //   // rte_delay_us_block(delay_us);
+      //   uint64_t now = rte_get_tsc_cycles();
+      //   uint64_t end =
+      //       rte_get_tsc_cycles() + delay_cycles;
+      //   while (now < end) {
+      //     now = rte_get_tsc_cycles();
+      //   }
+      //   cycles_error =(now - end) * 0.5 + 0.5 * (cycles_error);
+      // }
 
       udp_hdr = (struct rte_udp_hdr *)(ipv4_hdr + 1);
 
@@ -352,6 +355,21 @@ int do_server(void *_cntx) {
     if (!bidi)
       continue;
 
+
+    /* apply processing cost */
+    if (delay_cycles > 0) {
+      for (i = 0; i < k; i++) {
+        // rte_delay_us_block(delay_us);
+        uint64_t now = rte_get_tsc_cycles();
+        uint64_t end =
+          rte_get_tsc_cycles() + delay_cycles;
+        while (now < end) {
+          now = rte_get_tsc_cycles();
+        }
+        cycles_error =(now - end) * 0.5 + 0.5 * (cycles_error);
+      }
+    }
+
     while (k > 0) {
       if (port_type == dpdk) {
         if (system_mode == system_bess) {
@@ -382,7 +400,8 @@ int do_server(void *_cntx) {
   //   printf("%ld: %d\n", i, throughput[i]);
   // }
 
-  print_stats(fp, 0, hist);
+  if (!bidi)
+    print_stats(fp, 0, hist);
   fprintf(fp, "average cycles error %f\n", cycles_error);
   fprintf(fp, "=================================\n");
   fflush(fp);

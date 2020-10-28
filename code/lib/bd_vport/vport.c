@@ -14,6 +14,19 @@
 
 #define ROUND_TO_64(x) ((x + 32) & (~0x3f))
 
+void _rand_set_port_mac_address(struct vport *port)
+{
+  uint32_t i;
+  uint32_t seed;
+  seed = __rdtsc();
+  srand(seed);
+  for (i = 0; i < 6; i++) {
+    port->mac_addr[i] = rand() & 0xff;
+  }
+  port->mac_addr[0] &= 0xfe; // not broadcast/multicast
+  port->mac_addr[0] |= 0x02; // locally administered
+}
+
 /* Connect to an existing vport_bar
  * */
 struct vport *from_vport_name(char *port_name)
@@ -46,6 +59,8 @@ struct vport *from_vbar_addr(size_t bar_address)
   assert(port);
   port->_main = 0; // this is connected to someone elses vport_bar
   port->bar = (struct vport_bar *)bar_address;
+  // set port mac address
+  _rand_set_port_mac_address(port);
   return port;
 }
 
@@ -56,7 +71,6 @@ struct vport *new_vport(const char *name, uint16_t num_inc_q,
                         uint16_t num_out_q)
 {
   uint32_t i;
-  uint32_t seed;
 
   uint32_t bytes_per_llring;
   uint32_t total_memory_needed;
@@ -144,13 +158,7 @@ struct vport *new_vport(const char *name, uint16_t num_inc_q,
   }
 
   // set port mac address
-  seed = __rdtsc();
-  srand(seed);
-  for (i = 0; i < 6; i++) {
-    port->mac_addr[i] = rand() & 0xff;
-  }
-  port->mac_addr[0] &= 0xfe; // not broadcast/multicast
-  port->mac_addr[0] |= 0x02; // locally administered
+  _rand_set_port_mac_address(port);
 
 
 

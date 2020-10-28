@@ -90,6 +90,7 @@ def run_server(instance):
     # Run in background
     p = subprocess.Popen(cmd, shell=True, stdout=subprocess.PIPE,
                          stderr=subprocess.PIPE)
+    # p = subprocess.Popen(cmd, shell=True)
     return p
 
 
@@ -144,6 +145,7 @@ def run_client(instance):
 
     # Run in background
     p = subprocess.Popen(cmd, shell=True, stdout=subprocess.PIPE)
+    # p = subprocess.Popen(cmd, shell=True)
     return p
 
 

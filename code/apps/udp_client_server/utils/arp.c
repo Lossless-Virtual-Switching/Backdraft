@@ -346,6 +346,7 @@ struct rte_ether_addr get_dst_mac_vport(struct vport *port, uint16_t queue,
   uint16_t rx_q;
 
   while (!found_res) {
+    // printf("sending arp\n");
     send_bkdrft_arp_vport(port, queue, RTE_ARP_OP_REQUEST, src_ip,
                           broadcast_mac, dst_ip, tx_mbuf_pool, cdq);
     sleep(1);
@@ -361,6 +362,8 @@ struct rte_ether_addr get_dst_mac_vport(struct vport *port, uint16_t queue,
       if (nb_rx == 0)
         continue;
 
+      // printf("some packets possibly arp response\n");
+
       for (uint32_t i = 0; i < nb_rx; i++) {
         buf = bufs[i];
 
@@ -371,6 +374,12 @@ struct rte_ether_addr get_dst_mac_vport(struct vport *port, uint16_t queue,
 
         ptr_mac_hdr = rte_pktmbuf_mtod(buf, struct rte_ether_hdr *);
         if (!rte_is_same_ether_addr(&ptr_mac_hdr->d_addr, &src_mac)) {
+          // printf("not same ether address\n");
+          // printf("expecting %.2x:%.2x:%.2x:%.2x:%.2x:%.2x "
+          //        "recv: %.2x:%.2x:%.2x:%.2x:%.2x:%.2x\n",
+          //        ptr_mac_hdr->d_addr.addr_bytes[0],ptr_mac_hdr->d_addr.addr_bytes[1],ptr_mac_hdr->d_addr.addr_bytes[2],ptr_mac_hdr->d_addr.addr_bytes[3],ptr_mac_hdr->d_addr.addr_bytes[4],ptr_mac_hdr->d_addr.addr_bytes[5],
+          //        src_mac.addr_bytes[0],src_mac.addr_bytes[1],src_mac.addr_bytes[2],src_mac.addr_bytes[3],src_mac.addr_bytes[4],src_mac.addr_bytes[5]
+          //        );
           /* packet not to our ethernet addr */
           rte_pktmbuf_free(buf);
           continue;

@@ -399,6 +399,12 @@ int main(int argc, char *argv[]) {
     if (vport_init(port_name, &virt_port)) {
       rte_exit(EXIT_FAILURE, "Failed to init vport\n");
     }
+    // read port mac address
+    for (int i = 0; i < 6; i++){
+      // printf("%.2x:", virt_port->mac_addr[i]);
+      my_eth.addr_bytes[i] = virt_port->mac_addr[i];
+    }
+    // printf("\n");
   }
 
 //   int res;
@@ -610,8 +616,10 @@ int main(int argc, char *argv[]) {
     fclose(cntxs[i].fp);
     free(output_buffers[i]);
   }
-  for (int q = 0; q < num_queues; q++) {
-    rte_eth_tx_done_cleanup(dpdk_port, q, 0);
+  if (port_type == dpdk) {
+    for (int q = 0; q < num_queues; q++) {
+      rte_eth_tx_done_cleanup(dpdk_port, q, 0);
+    }
   }
   return 0;
 }
