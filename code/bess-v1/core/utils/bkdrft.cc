@@ -189,11 +189,11 @@ int mark_packet_with_queue_number(bess::Packet *pkt, uint8_t q) {
 int parse_bkdrft_msg(bess::Packet *pkt, char *type, void **pb) {
   void *payload;
   size_t size = get_packet_payload(pkt, &payload, true);
-  if (payload == nullptr) {
+  if (unlikely(payload == nullptr)) {
     // LOG(WARNING) << "parse_bkdrft_msg: could not find payload of the pkt.";
     return -1;  // failed
   }
-  if (size >= BKDRFT_MAX_MESSAGE_SIZE) {
+  if (unlikely(size >= BKDRFT_MAX_MESSAGE_SIZE)) {
     LOG(WARNING) << "parse_bkdrft_msg: payload size is greater than expected.";
     return -1;  // failed
   }
@@ -215,10 +215,14 @@ int parse_bkdrft_msg(bess::Packet *pkt, char *type, void **pb) {
   if (first_byte == BKDRFT_CTRL_MSG_TYPE) {
     // TODO: use a pool of these objects
     // TODO: (or if no concurrent call just static object is enough)
-    bess::pb::Ctrl *ctrl_msg = new bess::pb::Ctrl();
-    // bool parse_res = ctrl_msg->ParseFromString(serialized_msg);
+    // or just ask caller to allocate memory
+    bess::pb::Ctrl *ctrl_msg;
+    if (unlikely(*pb == nullptr))
+      ctrl_msg = new bess::pb::Ctrl();
+    else
+      ctrl_msg = reinterpret_cast<bess::pb::Ctrl *>(*pb);
     bool parse_res = ctrl_msg->ParseFromArray(msg + 1, size - 1);
-    if (!parse_res) {
+    if (unlikely(!parse_res)) {
       LOG(WARNING) << "parse_bkdrft_msg: Failed to parse ctrl message\n";
       return -1;  // failed
     }

@@ -5,6 +5,7 @@
 #include "../utils/bkdrft_sw_drop_control.h"
 #include "../utils/flow.h"
 #include "../utils/format.h"
+#include "../utils/random.h"
 #include "bkdrft_queue_out.h"
 
 #include <rte_malloc.h>
@@ -12,8 +13,8 @@
 #include <rte_ring.h>
 #include <rte_lcore.h>
 
-#define MIN_PAUSE_DURATION (1000)
-#define MAX_PAUSE_DURATION (5000000) // (31250L) // (93750)// (125000)// (62500L)
+#define MIN_PAUSE_DURATION (10000L)
+#define MAX_PAUSE_DURATION (10000000L) // (31250L) // (93750)// (125000)// (62500L)
 // (ns)// 93750// 46875
 #define PAUSE_DURATION_GAMMA (2)  // (ns)
 #define MAX_BUFFER_SIZE (4194304) // (5242880) //  (1048576) // 1 mega byte
@@ -491,10 +492,9 @@ void BKDRFTQueueOut::TrySendBuffer(Context *cntx) {
 
       dequeue_size = pktbuffer_dequeue(limited_buffers_[q], nullptr, sent_pkts);
       if (dequeue_size != sent_pkts) {
-        LOG(FATAL) << "failed to dequeue some packets. requested: " << burst
+        LOG(FATAL) << "failed to dequeue some packets. requested: " << sent_pkts
                    << " dequeued: " << dequeue_size
                    << " available pkts: " << limited_buffers_[q]->pkts << "\n";
-        throw std::runtime_error("failed to dequeue some packets\n");
       }
       size -= sent_pkts;
 
@@ -662,33 +662,35 @@ inline void BKDRFTQueueOut::Pause(Context *cntx, const Flow &flow,
                                   const uint64_t buffer_size) {
   // pause the incoming queue of the flow
   // TODO: get incomming line rate for bandwith-delay estimation
+  Random rng;
   uint64_t pps;
   uint64_t duration;
   uint64_t ts;
-  uint64_t effect_time = 200000; // TODO: find this variable, rtt + ...
+  uint64_t jitter = rng.GetRange(10000);
+  uint64_t effect_time = 0; // 200000; // TODO: find this variable, rtt + ...
   uint64_t estimated_buffer_len;
   Port *p = port_;
   pps = p->rate_.pps[PACKET_DIR_OUT][qid];
   if (pps == 0) {
     // LOG(INFO) << "pps is zero\n";
-    duration = 100000; // 100 us
+    duration = MIN_PAUSE_DURATION; // 10 us
   } else {
     estimated_buffer_len = buffer_size + (pps * effect_time / 1000000);
     duration = ((estimated_buffer_len * 1000000000UL) / pps);
     if (duration > MAX_PAUSE_DURATION) {
       // LOG(INFO) << "more than max pause durtaion\n";
-      // duration = MAX_PAUSE_DURATION;
+      duration = MAX_PAUSE_DURATION;
     } else if (duration < MIN_PAUSE_DURATION) {
       // LOG(INFO) << "less than min pause duration\n";
-      // duration = MIN_PAUSE_DURATION;
+      duration = MIN_PAUSE_DURATION;
     }
   }
 
-  ts = cntx->current_ns + duration;
+  ts = cntx->current_ns + duration + jitter;
 
   bess::bkdrft::BKDRFTSwDpCtrl &dropMan =
       bess::bkdrft::BKDRFTSwDpCtrl::GetInstance();
-  dropMan.PauseFlow(ts, flow);
+  dropMan.PauseFlow(ts, pps, flow);
   pause_call_total += 1;
 
   if (log_)
@@ -759,8 +761,10 @@ void BKDRFTQueueOut::ProcessBatchWithBuffer(Context *cntx,
       // pause all flows mapped to this queue
       auto iter = flow_buffer_mapping_.begin();
       for (; iter != flow_buffer_mapping_.end(); iter++) {
-        if (iter->second->qid == qid)
+        if (iter->second->qid == qid) {
           Pause(cntx, iter->first, qid, iter->second->packet_in_buffer);
+          // LOG(INFO) << "pause: " << FlowToString(iter->first) << "\n";
+        }
       }
     } else {
       // each flow has its own queue

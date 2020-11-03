@@ -1,4 +1,6 @@
 #include "bkdrft_queue_inc.h"
+#include <rte_cycles.h>
+#include <rte_malloc.h>
 
 #include "../port.h"
 #include "../utils/bkdrft.h"
@@ -66,7 +68,7 @@ CommandResponse BKDRFTQueueInc::Init(const bess::pb::BKDRFTQueueIncArg &arg) {
   cdq_ = arg.cdq();
 
   // Check if port supports rate limiting, it is needed for overlay
-  if (overlay_ && (!port_->isRateLimitingEnabled()))
+  if ((overlay_ || backpressure_) && (!port_->isRateLimitingEnabled()))
     return CommandFailure(EINVAL, "Port does not support rate limmiting, it is "
                                   "needed for overlay to work.");
 
@@ -122,9 +124,13 @@ CommandResponse BKDRFTQueueInc::Init(const bess::pb::BKDRFTQueueIncArg &arg) {
       until : 0,
       failed_ctrl : 0,
       remaining_dpkt : 0,
-      flow : bess::bkdrft::empty_flow,
     };
   }
+
+  int number_of_8bytes = MAX_QUEUES / 64;
+  if (count_managed_queues  % 64 != 0) number_of_8bytes++;
+  overview_mask_ = reinterpret_cast<uint64_t *>(rte_zmalloc(nullptr, number_of_8bytes, 0));
+  count_overview_seg_ = number_of_8bytes;
 
   return CommandSuccess();
 }
@@ -142,19 +148,19 @@ std::string BKDRFTQueueInc::GetDesc() const {
                              port_->port_builder()->class_name().c_str());
 }
 
-bool BKDRFTQueueInc::IsQueuePausedInCache(Context *ctx, queue_t qid) {
+inline bool BKDRFTQueueInc::IsQueuePausedInCache(Context *ctx, queue_t qid) {
   uint64_t now = ctx->current_ns;
-  if (overlay_ && !Flow::EqualTo()(q_status_[qid].flow, empty_flow)) {
+  if (overlay_ && !Flow::EqualTo()(q_status_flows_[qid], empty_flow)) {
     auto &overlay_ctrl = BKDRFTOverlayCtrl::GetInstance();
-    auto entry = overlay_ctrl.getOverlayEntry(q_status_[qid].flow);
+    auto entry = overlay_ctrl.getOverlayEntry(q_status_flows_[qid]);
     if (entry != nullptr && entry->pause_until_ts > now)
       return true;
   }
 
-  if (backpressure_ && !Flow::EqualTo()(q_status_[qid].flow, empty_flow)) {
+  if (backpressure_ && !Flow::EqualTo()(q_status_flows_[qid], empty_flow)) {
     auto &pause_ctrl = BKDRFTSwDpCtrl::GetInstance();
-    uint64_t wait_until = pause_ctrl.GetFlowStatus(q_status_[qid].flow);
-    if (wait_until > now)
+    DpTblEntry entry = pause_ctrl.GetFlowStatus(q_status_flows_[qid]);
+    if (entry.until > now)
       return true;
   }
   return false;
@@ -183,33 +189,34 @@ uint32_t BKDRFTQueueInc::ReadBatch(queue_t qid, bess::PacketBatch *batch,
 
 bool BKDRFTQueueInc::CheckQueuedCtrlMessages(Context *ctx, queue_t *qid,
                                              uint32_t *burst) {
-  static int i = 0;
-  // LOG(INFO) << "Here I: " << i << "\n";
-  uint32_t tmp_burst = 0;
-  int begin = i;
-  // TODO: this kind of iteration to find dqid has starvation problem!
-  // for (; i != begin; i=(i+1) % count_managed_queues) {
+  int selected_bit = 0;
+  int selected_queue = 0;
+  uint64_t temp_mask;
+  static int j = 0;
+  int begin = j;
   do {
-    uint16_t iter_q = managed_queues[i];
-    if (q_status_[iter_q].remaining_dpkt > 0) {
-
-      if (IsQueuePausedInCache(ctx, iter_q)) {
-        // Only for testing
-        // LOG(INFO) << "q: " << i << " is paused\n";
-        continue;
+    if (overview_mask_[j] > 0) {
+      temp_mask = overview_mask_[j];
+      while (true) {
+        selected_bit = __builtin_ffsl(temp_mask) - 1;
+        if (selected_bit < 0) break;
+        selected_queue = selected_bit + (j * 64);
+        if (IsQueuePausedInCache(ctx, selected_queue)) {
+          temp_mask ^= 1L << selected_bit; // turn off selected_queue
+          continue;
+        }
+        *qid = selected_queue;
+        *burst = q_status_[selected_queue].remaining_dpkt;
+        // LOG(INFO) << "selected_queue: " << selected_queue
+        //           << " mask: " << overview_mask_[j] << "\n";
+        return true; // found a queue
       }
-
-      *qid = iter_q;
-      tmp_burst = q_status_[iter_q].remaining_dpkt;
-      if (tmp_burst > max_burst)
-        tmp_burst = max_burst;
-      *burst = tmp_burst;
-      return true; // found a queue
     }
-    // go to next queue
-    i = (i+1) % count_managed_queues;
-  } while(i != begin);
-  return false; // did not found a queue
+
+    j++;
+    j %= count_overview_seg_;
+  } while (j != begin);
+  return false;
 }
 
 inline bool BKDRFTQueueInc::isManagedQueue(queue_t qid) {
@@ -230,16 +237,15 @@ uint32_t BKDRFTQueueInc::CDQ(Context *ctx,
   // Else if the command/ctrl queue has some packets update the list of data
   // queues to be read and process one of them.
 
-  static bess::PacketBatch ctrl_batch;
+  bess::PacketBatch ctrl_batch;
   int res;
+  uint32_t cnt;
   queue_t qid = 0;
   uint32_t burst = 0;
-  // bool found_qid = false;
-  bool found_qid = CheckQueuedCtrlMessages(ctx, &qid, &burst);
+  bool found_qid = false;
+  // bool found_qid = CheckQueuedCtrlMessages(ctx, &qid, &burst);
 
   if (!found_qid) {
-    ctrl_batch.clear();
-    uint32_t cnt;
     cnt = ReadBatch(doorbell_queue, &ctrl_batch, 32); // 32 is kMaxBurst
     if (cnt == 0) {
       // no ctrl msg. we are done!
@@ -252,13 +258,17 @@ uint32_t BKDRFTQueueInc::CDQ(Context *ctx,
       queue_t dqid = 0;
       uint32_t nb_pkts = 0;
       char message_type;
-      void *pb; // a pointer to parsed protobuf object
-      bess::Packet **pkts = ctrl_batch.pkts();
+
+      // a pointer to parsed protobuf object
+      // static void *pb = rte_malloc(nullptr, sizeof(bess::pb::Ctrl), 0);
+      //  TODO: for Overlay messages we should do something else!
+      static void *pb = new bess::pb::Ctrl();
+
       bess::Packet *pkt;
       for (uint32_t i = 0; i < cnt; i++) {
-        pkt = pkts[i];
+        pkt = ctrl_batch.pkts()[i];
         res = parse_bkdrft_msg(pkt, &message_type, &pb);
-        if (res != 0) {
+        if (unlikely(res != 0)) {
           // LOG(WARNING) << "Failed to parse bkdrft msg\n";
           bess::Packet::Free(pkt); // free unknown packet
           continue;
@@ -268,12 +278,22 @@ uint32_t BKDRFTQueueInc::CDQ(Context *ctx,
           bess::pb::Ctrl *ctrl_msg = reinterpret_cast<bess::pb::Ctrl *>(pb);
           dqid = static_cast<queue_t>(ctrl_msg->qid());
           nb_pkts = ctrl_msg->nb_pkts();
-          if (isManagedQueue(dqid))
-            q_status_[dqid].remaining_dpkt += nb_pkts;
+          // TODO: not checking isManagedQueue for performance testing
+          // if (isManagedQueue(dqid))
+          q_status_[dqid].remaining_dpkt += nb_pkts;
+          if (likely(q_status_[dqid].remaining_dpkt > 0)) {
+            int index = dqid / 64;
+            int bit = dqid % 64;
+            overview_mask_[index] |= 1L << bit;
+            // LOG(INFO) << "add q: " << (int)dqid << " index " << index << " bit "
+            //           << bit << " mask " << overview_mask_[index] << "\n";
+          }
+          //
           // LOG(INFO) << "Received ctrl message: qid: " << (int)dqid
           //   << " count: " << nb_pkts << "\n";
 
-          delete ctrl_msg;
+          // not freeing ctrl_msg because we want it to be reused
+          // delete ctrl_msg;
         } else if (message_type == BKDRFT_OVERLAY_MSG_TYPE) {
           bess::pb::Overlay *overlay_msg =
             reinterpret_cast<bess::pb::Overlay *>(pb);
@@ -293,7 +313,6 @@ uint32_t BKDRFTQueueInc::CDQ(Context *ctx,
 
         bess::Packet::Free(pkt); // free ctrl pkt
       }
-
     }
 check_queue_table:
     found_qid = CheckQueuedCtrlMessages(ctx, &qid, &burst);
@@ -315,22 +334,28 @@ check_queue_table:
      * ! if we do not read all the packets in the queue (I mean if we
      * simply forget about the packets we tried to read but failed).
      * very quickly (but not always) the data queue gets field with packets
-     * and sender cant send any packet and hence no ctrl message is send either.
-     * as a result a dead lock (live lock) happens.
-     * But what if the sender misinformed us or the packets were dropped in the
-     * network (e.g. in the switches).
+     * and sender can not send any packet and hence no ctrl message is send
+     * either. as a result a dead lock (live lock) happens. But what if the
+     * sender misinformed us or the packets were dropped in the network (e.g. in
+     * the switches).
      */
     q_status_[qid].remaining_dpkt -= cnt;
+    if (q_status_[qid].remaining_dpkt <= 0) {
+      int index = qid / 64;
+      int bit = qid % 64;
+      overview_mask_[index] &= ~(1L << bit);
+      // LOG(INFO) << "del q: " << (int)qid << " index " << index << " bit " <<
+      // bit << " mask " << overview_mask_[index] << "\n";
+    }
 
     // TODO: this code snipt should be here?
     if (cnt && overlay_) {
       // TODO: sampling is not the correct way (but what about flow caching?)
       auto &OverlayMan = bess::bkdrft::BKDRFTOverlayCtrl::GetInstance();
       bess::Packet *pkt = batch->pkts()[0];
-      bess::bkdrft::Flow f = bess::bkdrft::PacketToFlow(*pkt);
-      uint64_t pause_ts = OverlayMan.FillBook(port_, qid, f);
+      q_status_flows_[qid] = bess::bkdrft::PacketToFlow(*pkt);
+      uint64_t pause_ts = OverlayMan.FillBook(port_, qid, q_status_flows_[qid]);
       q_status_[qid].until = pause_ts;
-      q_status_[qid].flow = f;
     }
 
     _qid = qid;
@@ -354,37 +379,46 @@ BKDRFTQueueInc::RunTask(Context *ctx, bess::PacketBatch *batch, void *) {
   const int burst = ACCESS_ONCE(burst_);
   const int pkt_overhead = 24;
 
+  // static uint64_t last_print= 0;
+  // uint64_t before = rte_get_timer_cycles();
+  // uint64_t after;
+
   if (cdq_) {
-    // LOG(INFO)<<"CDQ is running\n";
     cnt = CDQ(ctx, batch, qid);
   } else {
     if (IsQueuePausedInCache(ctx, qid)) {
       return {.block = true, .packets = 0, .bits = 0};
     }
     cnt = ReadBatch(qid, batch, burst);
-    // if (cnt != 0)
-    //   LOG(INFO)<<"HERE WE are\n";
-    // for (uint32_t i =0; i < cnt; i++) {
-    //   bess::Packet::Free(batch->pkts()[i]);
-    //   // rte_pktmbuf_free((struct rte_mbuf *)batch->pkts()[i]);
-    // }
-    // cnt = 0;
   }
+
+  // after = rte_get_timer_cycles();
+  // if (after - last_print >= rte_get_timer_hz()) {
+  //   LOG(INFO) << "read packet cycles: " << after - before << "\n";
+  //   last_print = after;
+  // }
 
   if (cnt > 0) {
     // (commented out) only pause vhost the nic should not be paused (?)
-    if (backpressure_) { // p->getConnectedPortType() == VHOST &&
+    if (backpressure_) {
       // ! assume all the batch belongs to the same flow
-      bess::bkdrft::Flow flow = PacketToFlow(*(batch->pkts()[0]));
+      q_status_flows_[qid] = PacketToFlow(*(batch->pkts()[0]));
 
       // check if the data queue is paused
       // TODO: check BESS shared object class!
       BKDRFTSwDpCtrl &dropMan = bess::bkdrft::BKDRFTSwDpCtrl::GetInstance();
-      uint64_t wait_until = dropMan.GetFlowStatus(flow);
-      q_status_[qid].until = wait_until;
-      q_status_[qid].flow = flow;
-      // if (wait_until > 0)
-      // 	LOG(INFO) << "a flow is paused:" << (int)dqid << "\n";
+      DpTblEntry entry = dropMan.GetFlowStatus(q_status_flows_[qid]);
+      q_status_[qid].until = entry.until;
+      if (entry.until != 0)  {
+        // if (wait_until > 0)
+        // 	LOG(INFO) << "a flow is paused:" << (int)dqid << "\n";
+        uint32_t rate = entry.rate;
+        if (rate < 32)
+          rate = 32;
+
+        p->limiter_.limit[PACKET_DIR_OUT][qid] = rate;
+        p->limiter_.limit[PACKET_DIR_INC][qid] = rate;
+      }
     }
 
     for (uint32_t i = 0; i < cnt; i++) {

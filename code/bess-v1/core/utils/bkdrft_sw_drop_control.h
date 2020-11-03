@@ -8,48 +8,49 @@
 #include "flow_cache.h"
 
 namespace bess {
-	namespace bkdrft {
+  namespace bkdrft {
 
-		struct DpTblEntry {
-			uint64_t until;  // pause until this timestamp
-		};
+    struct DpTblEntry {
+      uint64_t until;  // pause until this timestamp
+      uint64_t rate; // limit input rate
+    };
 
-		static_assert(sizeof(DpTblEntry) == 8, "Size of DpTblEntry is wrong");
+    // static_assert(sizeof(DpTblEntry) == 8, "Size of DpTblEntry is wrong");
 
-		class BKDRFTSwDpCtrl final
-		{
-			// This class is a singleton
-			private:
-				BKDRFTSwDpCtrl() {}
+    class BKDRFTSwDpCtrl final
+    {
+      // This class is a singleton
+      private:
+        BKDRFTSwDpCtrl() {}
 
-			public:
-				// Access to the class instance with this method	
-				static BKDRFTSwDpCtrl& GetInstance()
-				{
-					static BKDRFTSwDpCtrl s_instance_;
-					return s_instance_;
-				}
+      public:
+        // Access to the class instance with this method  
+        static BKDRFTSwDpCtrl& GetInstance()
+        {
+          static BKDRFTSwDpCtrl s_instance_;
+          return s_instance_;
+        }
 
-				BKDRFTSwDpCtrl(BKDRFTSwDpCtrl const&) = delete;
+        BKDRFTSwDpCtrl(BKDRFTSwDpCtrl const&) = delete;
 
-				void operator=(BKDRFTSwDpCtrl const&) = delete;
+        void operator=(BKDRFTSwDpCtrl const&) = delete;
 
-			private:
-				using HashTable = bess::utils::CuckooMap<Flow,
-					DpTblEntry, Flow::Hash, Flow::EqualTo>;
-				HashTable flowBook_;
-				FlowCache flowCache_;
+      private:
+        using HashTable = bess::utils::CuckooMap<Flow,
+          DpTblEntry, Flow::Hash, Flow::EqualTo>;
+        HashTable flowBook_;
+        FlowCache flowCache_;
 
-			public:
-				void PauseFlow(uint64_t ts, const Flow &flow);
+      public:
+        void PauseFlow(uint64_t ts, uint64_t rate, const Flow &flow);
 
-				// uint64_t GetIncQueueStatus(uint16_t qid);
+        // uint64_t GetIncQueueStatus(uint16_t qid);
 
-				uint64_t GetFlowStatus(Flow &flow);
+        DpTblEntry GetFlowStatus(Flow &flow);
 
-				// void ObserveIncFlow(uint16_t qid, const Flow &flow);
-		};
+        // void ObserveIncFlow(uint16_t qid, const Flow &flow);
+    };
 
-	}  // bkdrft namespace
+  }  // bkdrft namespace
 } // bess namesapce
 #endif  // _BKDRFT_SW_DROP_CONTROL_

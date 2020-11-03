@@ -17,8 +17,7 @@ struct queue_pause_status {
 	uint64_t until;
 	uint64_t failed_ctrl;
   int64_t remaining_dpkt;
-	Flow flow;
-};
+}__attribute__((__aligned__(32)));
 
 class BKDRFTQueueInc final : public Module {
  public:
@@ -60,6 +59,9 @@ class BKDRFTQueueInc final : public Module {
   // if this array says it should not wait then
   // we should check BKDRFTSwDpCtrl
   queue_pause_status q_status_[MAX_QUEUES];
+  Flow q_status_flows_[MAX_QUEUES];
+  int count_overview_seg_;
+  uint64_t *overview_mask_;
   bool backpressure_;
   bool cdq_;
   bool overlay_;

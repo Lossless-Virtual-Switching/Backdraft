@@ -122,7 +122,7 @@ class PMDPort final : public Port {
   int SendPackets(queue_t qid, bess::Packet **pkts, int cnt) override;
 
   uint64_t GetFlags() const override {
-    return DRIVER_FLAG_SELF_INC_STATS; //  | DRIVER_FLAG_SELF_OUT_STATS;
+    return 0; //DRIVER_FLAG_SELF_INC_STATS; //  | DRIVER_FLAG_SELF_OUT_STATS;
   }
 
   LinkStatus GetLinkStatus() override;

@@ -20,14 +20,13 @@
 
 
 const queue_t MAX_QUEUES = 128;
-const int drop_high_water = 30; // assumming batch size is 32
 // const int buffer_len_high_water = 256;
 // const uint64_t buffer_len_high_water = 15000; // bytes
 // const int buffer_len_low_water = 64;
 // const uint64_t buffer_len_low_water = 6000; // bytes
 
 const uint64_t overlay_max_pause_duration = 10000000;
-const uint32_t max_availabe_flows = 512;
+const uint32_t max_availabe_flows = 256;
 const uint64_t flow_dealloc_limit = 100000000; // ns
 // const int bp_buffer_len_high_water = 2700;
 const uint64_t max_overlay_pause_duration = 5000000; // ns
@@ -109,12 +108,13 @@ int pktbuffer_enqueue(pktbuffer_t *buf, bess::Packet **pkts, uint32_t count)
 
   // how many packets should be moved to the ring
   uint32_t to_the_ring = count - to_the_peek;
-  if (!to_the_ring)
+  if (to_the_ring == 0)
     return to_the_peek;
 
   // move packets to ring
   ret = rte_ring_enqueue_bulk(buf->ring_queue, (void **)(pkts + cur_index),
                               to_the_ring, NULL);
+  // if ret == 0 then failed to enqueue
   buf->pkts += ret;
   return ret + to_the_peek;
 }
@@ -125,7 +125,7 @@ int pktbuffer_enqueue(pktbuffer_t *buf, bess::Packet **pkts, uint32_t count)
  * */
 int pktbuffer_dequeue(pktbuffer_t *buf, bess::Packet **pkts, uint32_t count) {
   // count should not be more than pkts available
-  if (count > buf->pkts)
+  if (unlikely(count > buf->pkts))
     count = buf->pkts;
 
   // find how many packets are in the peek
@@ -133,11 +133,11 @@ int pktbuffer_dequeue(pktbuffer_t *buf, bess::Packet **pkts, uint32_t count) {
 
   // how many to dequeue from peek
   int32_t from_peek = count;
-  if (from_peek > peek_pkts)
+  if (unlikely(from_peek > peek_pkts))
     from_peek = peek_pkts;
 
   // dequeue from peek
-  if (pkts != nullptr) {
+  if (unlikely(pkts != nullptr)) {
     // copy pointers from peek to the external buffer
     for (int32_t i = 0; i < from_peek; i++)
       pkts[i] = buf->peek[i];
@@ -150,23 +150,24 @@ int pktbuffer_dequeue(pktbuffer_t *buf, bess::Packet **pkts, uint32_t count) {
   buf->tail -= from_peek;
   buf->pkts -= from_peek;
 
-  // how many to dequeue from ring
-  int32_t from_ring = count - from_peek;
-  if (from_ring == 0)
-    return from_peek;
-
   // dequeue from ring
   int32_t ret;
   bess::Packet *tmp_arr[peek_size];
-
-  if (pkts != nullptr) {
-    ret = rte_ring_dequeue_bulk(buf->ring_queue, (void **)(pkts + from_peek),
-                                from_ring, nullptr);
-  } else {
-    ret = rte_ring_dequeue_bulk(buf->ring_queue, (void **)(tmp_arr), from_ring,
-                                nullptr);
+  // how many to dequeue from ring
+  int32_t from_ring = count - from_peek;
+  if (unlikely(from_ring != 0)) {
+    if (unlikely(pkts != nullptr)) {
+      ret = rte_ring_dequeue_bulk(buf->ring_queue, (void **)(pkts + from_peek),
+                                  from_ring, nullptr);
+    } else {
+      ret = rte_ring_dequeue_bulk(buf->ring_queue, (void **)(tmp_arr),
+                                  from_ring, nullptr);
+    }
+    if (unlikely(!ret)) {
+      LOG(FATAL) << "pktbuffer_dequeue: failed to dequee from ring\n";
+    }
+    buf->pkts -= from_ring;
   }
-  buf->pkts -= ret;
 
   // update number of packets in the peek
   peek_pkts = peek_pkts - from_peek;
@@ -180,9 +181,8 @@ int pktbuffer_dequeue(pktbuffer_t *buf, bess::Packet **pkts, uint32_t count) {
   if (pull_to_peek > 0) {
     ret = rte_ring_dequeue_bulk(buf->ring_queue, (void **)(tmp_arr),
                                 pull_to_peek, nullptr);
-    if (!ret) {
-      LOG(ERROR) << "pktbuffer_dequeue: failed to pull packets to peek\n";
-      throw std::runtime_error("pktbuffer_dequeue: failed to pull packets to peek\n");
+    if (unlikely(!ret)) {
+      LOG(FATAL) << "pktbuffer_dequeue: failed to pull packets to peek\n";
     }
 
     // copy packet pointeres to peek
@@ -190,7 +190,7 @@ int pktbuffer_dequeue(pktbuffer_t *buf, bess::Packet **pkts, uint32_t count) {
       buf->peek[buf->tail++] = tmp_arr[i];
   }
 
-  return from_peek + ret;
+  return from_peek + from_ring;
 }
 /* pktbuffer_t ====================== */
 
@@ -335,7 +335,7 @@ private:
 
   uint64_t buffer_len_high_water = 6;
   uint64_t buffer_len_low_water = 16;
-  uint64_t bp_buffer_len_high_water = 32;
+  uint64_t bp_buffer_len_high_water = 6;
 
   // a  name given to this module. currently used for loggin pause per sec
   // statistics.
