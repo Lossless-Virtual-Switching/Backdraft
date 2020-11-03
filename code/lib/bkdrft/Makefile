@@ -14,7 +14,7 @@ include $(RTE_SDK)/mk/rte.vars.mk
 EXTRA_CFLAGS = -I $(CURRENT_DIR)/include/ \
 								-I $(CURRENT_DIR)/protobuf/_compile \
 								-I $(CURRENT_DIR)/../bd_vport/include \
-								-Wall
+								-Wall -march=native -O3
 
 LDLIBS = -L$(CURRENT_DIR)/../bd_vport/build/ -lbd_vport -lprotobuf-c
 

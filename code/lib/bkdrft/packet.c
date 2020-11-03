@@ -15,18 +15,24 @@ void prepare_packet(struct rte_mbuf *buf, unsigned char *payload,
   struct rte_udp_hdr *udp_hdr;
 
   if (!sample_pkt) {
+#ifdef DEBUG
     printf("sample pkt is null\n");
+#endif
     return;
   }
 
-  struct rte_ether_hdr *s_eth_hdr = get_ethernet_header(sample_pkt);
-  if (!s_eth_hdr) {
+  // struct rte_ether_hdr *s_eth_hdr = get_ethernet_header(sample_pkt);
+  struct rte_ether_hdr *s_eth_hdr =
+      rte_pktmbuf_mtod_offset(sample_pkt, struct rte_ether_hdr *, 0);
+  if (unlikely(s_eth_hdr == NULL)) {
+#ifdef DEBUG
     printf("s_eth_hdr is null\n");
+#endif
     return;
   }
 
   struct rte_ipv4_hdr *s_ipv4_hdr = get_ipv4_header(s_eth_hdr);
-  // if (!s_ipv4_hdr) {
+  // if (unlikely(s_ipv4_hdr == NULL)) {
   //   printf("s_ipv4_hdr is null\n");
   //   return;
   // }
@@ -87,7 +93,10 @@ void prepare_packet(struct rte_mbuf *buf, unsigned char *payload,
   udp_hdr->dgram_len = rte_cpu_to_be_16(sizeof(struct rte_udp_hdr) + size);
   udp_hdr->dgram_cksum = 0;
   if (unlikely(payload != NULL)) {
-    // memcpy(buf_ptr + sizeof(struct rte_udp_hdr), payload, size);
+
+#ifdef DEBUG
+    printf("warning: prepare packet: payload is not null\n");
+#endif
     memcpy((udp_hdr + 1), payload, size);
   }
 
@@ -111,7 +120,7 @@ struct rte_vlan_hdr *get_vlan_header(struct rte_ether_hdr *eth_hdr) {
   return vlan_hdr;
 }
 
-struct rte_ipv4_hdr *get_ipv4_header(struct rte_ether_hdr *eth_hdr) {
+inline struct rte_ipv4_hdr *get_ipv4_header(struct rte_ether_hdr *eth_hdr) {
   struct rte_ipv4_hdr *ipv4_hdr = NULL;
   uint16_t ether_type = rte_be_to_cpu_16(eth_hdr->ether_type);
   if (ether_type == RTE_ETHER_TYPE_IPV4) {
@@ -151,18 +160,25 @@ struct rte_tcp_hdr *get_tcp_header(struct rte_ipv4_hdr *ipv4_hdr) {
 size_t get_payload(struct rte_mbuf *pkt, void **payload) {
   struct rte_ether_hdr *eth = get_ethernet_header(pkt);
   *payload = NULL;
-  if (!eth) {
+  if (unlikely(eth == NULL)) {
+#ifdef DEBUG
     printf("eth is null\n");
+#endif
     return 0;
   }
+
   struct rte_ipv4_hdr *ip = get_ipv4_header(eth);
-  if (!ip) {
+  if (unlikely(ip == NULL)) {
+#ifdef DEBUG
     printf("ip is null\n");
+#endif
     return 0;
   }
   struct rte_udp_hdr *udp = get_udp_header(ip);
-  if (!udp) {
+  if (unlikely(udp == NULL)) {
+#ifdef DEBUG
     printf("udp is null\n");
+#endif
     return 0;
   }
   *payload = (udp + 1);
@@ -191,6 +207,9 @@ extern inline size_t create_bkdraft_ctrl_msg(uint8_t qid, uint32_t nb_bytes,
 
   if (unlikely(payload == NULL)) {
     // TODO: check if malloc has performance hit.
+#ifdef DEBUG
+    printf("warning: create_bkdrft_ctrl_msg: allocating payload failed\n");
+#endif
     payload = malloc(size);
     assert(payload);
     *buf = payload;

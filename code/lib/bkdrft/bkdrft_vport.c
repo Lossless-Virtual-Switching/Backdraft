@@ -10,8 +10,8 @@ extern inline int vport_send_pkt(struct vport *port, uint16_t qid,
                             uint16_t doorbell,
                             struct rte_mempool *ctrl_pool)
 {
-  uint16_t nb_tx; // number of packets successfully transmitted
-  uint16_t nb_ctrl_tx;
+  register uint32_t nb_tx; // number of packets successfully transmitted
+  uint32_t nb_ctrl_tx;
   uint32_t total_bytes = 0;
   struct rte_mbuf *ctrl_pkt;
   struct rte_mbuf *sample_pkt;
@@ -31,17 +31,20 @@ extern inline int vport_send_pkt(struct vport *port, uint16_t qid,
     ctrl_pkt = rte_pktmbuf_alloc(ctrl_pool);
     if (unlikely(ctrl_pkt == NULL)) {
       // TODO: keep track of failed ctrl packets
+#ifdef DEBUG
       printf("(bkdrft) send_pkt: Failed to allocate mbuf for ctrl pkt\n");
+#endif
       return nb_tx;
     }
-
-    sample_pkt = pkts[0];
-    assert(sample_pkt);
 
     // TODO: can optimize payload copying to packet
     payload = rte_pktmbuf_mtod_offset(ctrl_pkt, uint8_t *, payload_offset);
     packed_size = create_bkdraft_ctrl_msg(qid, total_bytes, nb_tx, &payload);
     // assert(payload);
+
+    sample_pkt = pkts[0];
+    // assert(sample_pkt);
+
     // prepare_packet(ctrl_pkt, payload, sample_pkt, packed_size);
     prepare_packet(ctrl_pkt, NULL, sample_pkt, packed_size);
     // free(payload);
@@ -50,7 +53,9 @@ extern inline int vport_send_pkt(struct vport *port, uint16_t qid,
     if (unlikely(nb_ctrl_tx != 1)) {
       // sending ctrl pkt failed
       rte_pktmbuf_free(ctrl_pkt);
+#ifdef DEBUG
       printf("failed to send ctrl_pkt\n");
+#endif
     }
   }
 
@@ -71,7 +76,8 @@ static inline int _select_queue(const int32_t queue_status[], int count_queue,
                                 uint16_t *selected_q, uint32_t *cnt_pkt)
 {
   static int i = 0;
-  int begin = i;
+  // register int i = 0;
+  register int begin = i;
   do {
     if (queue_status[i] > 0) {
       // there are some packets
@@ -93,7 +99,7 @@ int vport_poll_ctrl_queue_expose_qid(struct vport *port, uint16_t ctrl_qid,
   // TODO: implement ffs priority queue
   // TODO: move queue_status to the vport struct (maybe)
   static int32_t queue_status[MAX_QUEUES_PER_DIR] = {}; // from vport.h
-  const int ctrl_burst = 32;
+  const int ctrl_burst = 512;
   uint16_t nb_ctrl_rx;
   uint16_t nb_data_rx;
   struct rte_mbuf *ctrl_rx_bufs[ctrl_burst];
@@ -109,8 +115,10 @@ int vport_poll_ctrl_queue_expose_qid(struct vport *port, uint16_t ctrl_qid,
   int queue_found;
 
 poll_doorbell:
-  queue_found = _select_queue(queue_status, MAX_QUEUES_PER_DIR,
-                              &dqid, &dq_burst);
+  // queue_found = _select_queue(queue_status, MAX_QUEUES_PER_DIR,
+  //                             &dqid, &dq_burst);
+  queue_found = 0;
+
   if (queue_found)
     goto fetch_packets;
 
@@ -129,8 +137,10 @@ poll_doorbell:
     for (i = 0; i < nb_ctrl_rx; i++) {
       buf = ctrl_rx_bufs[i];
       size = get_payload(buf, &data);
-      if (data == NULL) {
+      if (unlikely(data == NULL)) {
+#ifdef DEBUG
         printf("bkdrft.c: payload is null\n");
+#endif
         // assume it was a corrupt packet
         rte_pktmbuf_free(buf); // free ctrl_pkt
         continue;
@@ -144,7 +154,9 @@ poll_doorbell:
       // first byte defines the bkdrft message type
       msg_type = msg[0];
       if (unlikely(msg_type == BKDRFT_OVERLAY_MSG_TYPE)) {
+#ifdef DEBUG
         printf("We found overlay message\n");
+#endif
       }
       if (unlikely(msg_type != BKDRFT_CTRL_MSG_TYPE)) {
         // not a ctrl message
@@ -158,7 +170,9 @@ poll_doorbell:
       if (unlikely(ctrl_msg == NULL)) {
         // printf("Failed to parse ctrl message\n");
         // assume it was a corrupt packet
-        // printf("poll_ctrl_queue...: corrupt ctrl message!\n");
+#ifdef DEBUG
+        printf("poll_ctrl_queue...: corrupt ctrl message!\n");
+#endif
         rte_pktmbuf_free(buf); // free ctrl_pkt
         continue;
       }
@@ -187,7 +201,9 @@ fetch_packets:
   // read data queue
   nb_data_rx = recv_packets_vport(port, dqid, (void **)recv_bufs, burst);
   if (unlikely(nb_data_rx == 0)) {
+#ifdef DEBUG
     printf("Read data queue %d but no data\n", 1);
+#endif
     // Warning: chance of infinite loop if corupted ctrl packet notify
     // wrong number of packets in a queue.
     goto poll_doorbell;
