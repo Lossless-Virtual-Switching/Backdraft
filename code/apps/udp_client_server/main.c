@@ -13,7 +13,7 @@
 #define RX_RING_SIZE (512)
 #define TX_RING_SIZE (512)
 
-#define NUM_MBUFS (8191)
+#define NUM_MBUFS (1024)
 #define MBUF_CACHE_SIZE (512)
 #define PRIV_SIZE 256
 
@@ -38,6 +38,7 @@ static void print_usage(void)
   "    * experiment duration\n"
   "    * client port\n"
   "    * client delay cycles\n"
+  "    * rate=<value\n"
   "[server]\n"
   "    * server delay for each batch\n");
 }
@@ -127,7 +128,7 @@ static inline int dpdk_port_init(uint8_t port, struct rte_mempool *mbuf_pool,
 static int vport_init(char *port_name, struct vport **virt_port)
 {
   *virt_port = from_vport_name(port_name);
-  return virt_port == NULL;
+  return *virt_port == NULL;
 }
 
 static int dpdk_init(int argc, char *argv[]) {
@@ -249,6 +250,10 @@ int main(int argc, char *argv[]) {
   unsigned int server_delay = 0;
   uint64_t delay_cycles = 0;
 
+  // rate limit args
+  uint8_t rate_limit = 0; // default off
+  uint64_t rate = UINT64_MAX; // default no limit
+
   // contex pointers pass to functions
   struct context cntxs[20];
   char *output_buffers[20] = {};
@@ -351,6 +356,15 @@ int main(int argc, char *argv[]) {
       delay_cycles = atol(argv[7 + count_server_ips]);
     printf("Client processing between each packet %ld cycles\n", delay_cycles);
 
+    if (argc > 8 + count_server_ips) {
+      rate_limit = 1;
+      rate = atol(argv[8 + count_server_ips]);
+    }
+    if (rate_limit)
+      printf("Client rate limit is on rate: %ld\n", rate);
+    else
+      printf("Client rate limit is off\n");
+
   } else if (!strcmp(argv[2], "server")) {
     // server
     mode = mode_server;
@@ -366,7 +380,14 @@ int main(int argc, char *argv[]) {
     return -1;
   }
 
-  count_core = rte_lcore_count();
+  if (mode == mode_client) {
+    // client does not support multi-processing (need to be investigated and
+    // tested again) there are so many changes since the multiprocess feature
+    // was added.
+    count_core = 1;
+  } else {
+    count_core = rte_lcore_count();
+  }
   printf("Count core: %d\n", count_core);
 
   if (count_core > num_queues) {
@@ -488,6 +509,9 @@ int main(int argc, char *argv[]) {
     assert(fp != NULL);
     cntxs[i].fp = fp;
 
+    cntxs[i].rate_limit = rate_limit;
+    cntxs[i].rate = rate;
+
     if (mode == mode_server) {
       cntxs[i].src_port = server_port[0];
       cntxs[i].managed_queues = malloc(queue_per_core * sizeof(uint32_t));
@@ -541,7 +565,7 @@ int main(int argc, char *argv[]) {
       cntxs[i].delay_cycles = delay_cycles;
 
       /* use zipf for selecting dst ip */
-      cntxs[i].destination_distribution = DIST_UNIFORM;
+      cntxs[i].destination_distribution = DIST_ZIPF; // DIST_UNIFORM;
       cntxs[i].queue_selection_distribution = DIST_UNIFORM;
 
       cntxs[i].managed_queues = NULL;
@@ -590,12 +614,12 @@ int main(int argc, char *argv[]) {
     // }
 
   } else {
-    RTE_LCORE_FOREACH_SLAVE(lcore_id) {
-      rte_eal_remote_launch(do_client, (void *)&cntxs[cntxIndex++], lcore_id);
-    }
+    // RTE_LCORE_FOREACH_SLAVE(lcore_id) {
+    //   rte_eal_remote_launch(do_client, (void *)&cntxs[cntxIndex++], lcore_id);
+    // }
     do_client(&cntxs[0]);
 
-    rte_eal_mp_wait_lcore();
+    // rte_eal_mp_wait_lcore();
 
     // print client results to stdout
     for (int i = 0; i < count_core; i++) {

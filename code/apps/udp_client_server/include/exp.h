@@ -75,6 +75,9 @@ struct context {
   uint32_t base_port_number; // generate flows will have port numbers starting x  up to the x + count_flow
   uint8_t destination_distribution;
   uint8_t queue_selection_distribution;
+
+  uint8_t rate_limit; // true or false
+  uint64_t rate; // pps
 };
 
 static const struct rte_ether_addr broadcast_mac = {
