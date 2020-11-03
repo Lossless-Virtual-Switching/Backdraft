@@ -1,5 +1,6 @@
 *.pdf
 *results*/
+*result*.txt
 client_server_src/build/
 slow_receiver.bess
 

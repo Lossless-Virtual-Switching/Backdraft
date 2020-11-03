@@ -2,10 +2,10 @@
 
 count_flow=8
 count_queue=8
-duration=60
+duration=30
 
 
-for name in "bp" # "lossy"
+for name in  "lossy" "bp" "pfq" "cdq" "bkdrft" # "lossy"
 do
   # config flags
   if [ "$name" = "lossy" ]
@@ -14,10 +14,19 @@ do
   elif [ "$name" = "bp" ]
   then
     flags="--bp --buffering"
+  elif [ "$name" = "pfq" ]
+  then
+    flags="--buffering --pfq"
+  elif [ "$name" = "cdq" ]
+  then
+    flags="--buffering --cdq --pfq"
+  elif [ "$name" = "bkdrft" ]
+  then
+    flags="--buffering --cdq --pfq --bp"
   fi
 
   file_name="${name}_result.txt"
-  for delay in 0 1000 2000 5000 10000 20000 100000 200000 # 0 20 100 500 1000
+  for delay in 0 500 1000 2000 5000 #  10000 20000 100000 200000 # 0 20 100 500 1000
   do
 
     echo "*************************************************************************" >> $file_name

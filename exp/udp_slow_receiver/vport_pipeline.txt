@@ -17,15 +17,18 @@ PFQ = 0
 COMMAND_Q = 0
 ECNT=32000
 LOSSLESS = 0
+RATE =  100000
 
 CNT_Q = 8
 
 # == Insert here ==
 # ==     End     ==
 
+RATE_LIMIT = BP # BP or OVerlay
+
 TX_QUEUE_COUNT = CNT_Q
 RX_QUEUE_COUNT = CNT_Q
-Q_SIZE = 512
+Q_SIZE = 1024
 Q = max(TX_QUEUE_COUNT, RX_QUEUE_COUNT)
 # ======================================
 
@@ -49,7 +52,9 @@ host0 = BDVPort(
   num_inc_q=TX_QUEUE_COUNT,
   num_out_q=RX_QUEUE_COUNT,
   size_inc_q=Q_SIZE,
-  size_out_q=Q_SIZE)
+  size_out_q=Q_SIZE,
+  rate_limiting=RATE_LIMIT,
+  rate=RATE)
 
 # Client
 host1 = BDVPort(
@@ -58,7 +63,9 @@ host1 = BDVPort(
   num_inc_q=TX_QUEUE_COUNT,
   num_out_q=RX_QUEUE_COUNT,
   size_inc_q=Q_SIZE,
-  size_out_q=Q_SIZE)
+  size_out_q=Q_SIZE,
+  rate_limiting=RATE_LIMIT,
+  rate=RATE)
 
 client2 = BDVPort(
   name='ex_vhost3',
@@ -66,7 +73,19 @@ client2 = BDVPort(
   num_inc_q=TX_QUEUE_COUNT,
   num_out_q=RX_QUEUE_COUNT,
   size_inc_q=Q_SIZE,
-  size_out_q=Q_SIZE)
+  size_out_q=Q_SIZE,
+  rate_limiting=RATE_LIMIT,
+  rate=RATE)
+
+client3 = BDVPort(
+  name='ex_vhost4',
+  port_name='ex_vhost4',
+  num_inc_q=TX_QUEUE_COUNT,
+  num_out_q=RX_QUEUE_COUNT,
+  size_inc_q=Q_SIZE,
+  size_out_q=Q_SIZE,
+  rate_limiting=RATE_LIMIT,
+  rate=RATE)
 
 # Server 2
 host2 = BDVPort(
@@ -75,7 +94,9 @@ host2 = BDVPort(
   num_inc_q=TX_QUEUE_COUNT,
   num_out_q=RX_QUEUE_COUNT,
   size_inc_q=Q_SIZE,
-  size_out_q=Q_SIZE)
+  size_out_q=Q_SIZE,
+  rate_limiting=RATE_LIMIT,
+  rate=RATE)
 
 
 def bkdrft_pipeline():
@@ -96,7 +117,8 @@ def bkdrft_pipeline():
 
     receive_side_x = Demultiplex(ranges=[
         {'start': 1000, 'end': 2000, 'gate': 1},
-        {'start': 5000, 'end': 6000, 'gate': 2},
+        {'start': 8000, 'end': 9000, 'gate': 2},
+        {'start': 9001, 'end': 9090, 'gate': 3},
     ])
 
     queue_ids = [i for i in range(CNT_Q)]
@@ -107,6 +129,10 @@ def bkdrft_pipeline():
     client_qout2 = BKDRFTQueueOut(port=client2, qid=queue_ids,
         backpressure=BP, lossless=LOSSLESS, cdq=COMMAND_Q, per_flow_buffering=PFQ,
         ecn_threshold=ECNT, overlay=False, mname='client2')
+
+    client_qout3 = BKDRFTQueueOut(port=client3, qid=queue_ids,
+        backpressure=BP, lossless=LOSSLESS, cdq=COMMAND_Q, per_flow_buffering=PFQ,
+        ecn_threshold=ECNT, overlay=False, mname='client3')
 
     # client_qout0 = QueueOut(port=host1.name, qid=0)
     # client_qout1 = QueueOut(port=host1.name, qid=1)
@@ -140,6 +166,9 @@ def bkdrft_pipeline():
         client2_qin = BKDRFTQueueInc(port=client2,
             qid=queue_ids, backpressure=BP, cdq=COMMAND_Q, overlay=False)
 
+        client3_qin = BKDRFTQueueInc(port=client3,
+            qid=queue_ids, backpressure=BP, cdq=COMMAND_Q, overlay=False)
+
         server1_qin = BKDRFTQueueInc(port=host0,
             qid=queue_ids, backpressure=BP, cdq=COMMAND_Q, overlay=False)
 
@@ -148,11 +177,13 @@ def bkdrft_pipeline():
 
         client_qin  -> router         # q1
         client2_qin -> router         # q1
+        client3_qin -> router         # q1
         server1_qin -> receive_side_x # q2
         server2_qin -> receive_side_x # q2
 
         client_qin.attach_task(wid=next_wid())
         client2_qin.attach_task(wid=next_wid())
+        client3_qin.attach_task(wid=next_wid())
         server1_qin.attach_task(wid=next_wid())
         server2_qin.attach_task(wid=next_wid())
 
@@ -162,6 +193,7 @@ def bkdrft_pipeline():
     router:2 -> server2_qout
     receive_side_x:1 -> client_qout0
     receive_side_x:2 -> client_qout2
+    receive_side_x:3 -> client_qout3
 
 
 # router = IPLookup()
