@@ -3,7 +3,7 @@ import subprocess
 
 
 def get_container_pid(container_name):
-    cmd = "sudo docker inspect --format '{{.State.Pid}}' " + container_name 
+    cmd = "sudo docker inspect --format '{{.State.Pid}}' " + container_name
     pid = int(subprocess.check_output(cmd, shell=True))
     return pid
 
@@ -19,8 +19,8 @@ def update_container_mac_address(container_name, ifname, mac):
   # interface up
   cmd = nsenter + ' ip link set dev %s up' % ifname
   subprocess.check_call(cmd, shell=True)
-  
-  
+
+
 
 config = json.load(open('.pipeline_config.json'))
 server_docker_name = config[0]['name']
@@ -38,7 +38,7 @@ client_mac = config[1]['mac']
 
 count_queue = 1
 cdq = False
-buffering = True
+buffering = False
 bp = False
 pfq = False
 
@@ -75,30 +75,31 @@ server_side_arp_resp2 = ArpResponder()  # anser slow_server arp request
 
 # server_inc = PortInc(port=server_port)
 # server_out = PortOut(port=server_port)
-# 
+#
 # slow_server_inc = PortInc(port=slow_server_port)
 # slow_server_out = PortOut(port=slow_server_port)
-#  
+#
 # client_inc = PortInc(port=client_port)
 # client_out = PortOut(port=client_port)
 
-server_inc = BKDRFTQueueInc(port=server_port, qid=0)
-server_out = BKDRFTQueueOut(port=server_port, qid=0, cdq=cdq, per_flow_buffering=pfq,
-                           count_queues=count_queue, backpressure=bp,
+queue_ids = list(range(count_queue))
+server_inc = BKDRFTQueueInc(port=server_port, qid=queue_ids)
+server_out = BKDRFTQueueOut(port=server_port, qid=queue_ids, cdq=cdq, per_flow_buffering=pfq,
+                           backpressure=bp,
                            lossless=buffering)
 
-slow_server_inc = BKDRFTQueueInc(port=slow_server_port, qid=0)
-slow_server_out = BKDRFTQueueOut(port=slow_server_port, qid=0, cdq=cdq, per_flow_buffering=pfq,
-                           count_queues=count_queue, backpressure=bp,
+slow_server_inc = BKDRFTQueueInc(port=slow_server_port, qid=queue_ids)
+slow_server_out = BKDRFTQueueOut(port=slow_server_port, qid=queue_ids, cdq=cdq, per_flow_buffering=pfq,
+                           backpressure=bp,
                            lossless=buffering)
- 
-client_inc = BKDRFTQueueInc(port=client_port, qid=0)
+
+client_inc = BKDRFTQueueInc(port=client_port, qid=queue_ids)
 client_out = QueueOut(port=client_port, qid=0)
-# client_out = BKDRFTQueueOut(port=client_port, qid=0, cdq=cdq, per_flow_buffering=pfq,
-#                            count_queues=count_queue, backpressure=bp,
+# client_out = BKDRFTQueueOut(port=client_port, qid=queue_ids, cdq=cdq, per_flow_buffering=pfq,
+#                            backpressure=bp,
 #                            lossless=buffering)
- 
- 
+
+
 server_inc -> server_side_arp_resp
 server_side_arp_resp:0 -> server_out
 server_side_arp_resp:1 -> client_out

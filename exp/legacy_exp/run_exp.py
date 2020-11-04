@@ -39,7 +39,7 @@ def run_docker_container(container):
 
 def main():
     # Load config file
-    containers = json.load(open(exp_config_path)) 
+    containers = json.load(open(exp_config_path))
     if cpus is not None:
         containers[2]['cpu_share'] = cpus
 
@@ -59,7 +59,7 @@ def main():
     load_bess_kmod()
 
     # Check BESS kernel module is loaded
-    cmd = 'lsmod | grep bess'  # this is not reliable 
+    cmd = 'lsmod | grep bess'  # this is not reliable
     p = subprocess.run(cmd, shell=True, stdout=subprocess.PIPE)
     result = p.stdout.decode()
     print(result)
@@ -68,9 +68,17 @@ def main():
       return 1
 
     # Run containers
+    # first run servers
     for container in containers:
-        run_docker_container(container)
-    
+        if container['type'] == 'server':
+            run_docker_container(container)
+    # wait some time
+    sleep(1)
+    # run cliecnts
+    for container in containers:
+        if container['type'] == 'client':
+            run_docker_container(container)
+
     # Setup BESS config
     file_path = pipeline_config_file
     ret = bessctl_do('daemon start -- run file {}'.format(file_path))
@@ -98,13 +106,17 @@ def main():
 
     ## mutilate logs
     logs = get_docker_container_logs(client_container_name)
-    
-    logs = '\n'.join([logs, '=== iperf ===', tmp_txt])
+
+    logs = '\n'.join(['===  client ===', logs, '=== iperf ===', tmp_txt])
     if args.output:
         output_file = open(args.output, 'w')
-        output.write(logs)
+        output_file.write(logs)
     else:
         print(logs)
+
+    logs = get_docker_container_logs(containers[0]['name'])
+    logs = '\n'.join(['===  server ===', logs])
+    print(logs)
 
     p = bessctl_do('show port', subprocess.PIPE)
     print(p.stdout.decode())
@@ -123,7 +135,7 @@ if __name__ == '__main__':
     parser.add_argument('--cpus', type=float, default=None)
     args = parser.parse_args()
 
-    exp = args.experiment 
+    exp = args.experiment
     exp_config_path = 'exp_configs/{}.json'.format(exp)
     cpus = args.cpus
     main()
