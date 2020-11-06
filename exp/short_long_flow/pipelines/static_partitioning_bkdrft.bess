@@ -20,6 +20,7 @@ add_vlan = config['add_vlan']
 vsw_cores = config['virtual_switch_cores']
 if vsw_cores < 1:
   print('virtual switch cores can not be less than 1', file=sys.stdout)
+  sys.exit(-1)
 
 
 # Add virtual switch workers
@@ -105,10 +106,10 @@ bp_threshold = config['backpressure_threshold']
 if not cdq:
   raise Exception('This pipeline needs backdraft features: CDQ')
 
+
 # ===========================================#
 #                  Pipeline
 # ===========================================#
-
 
 # PCI of port connected to switch
 nic_req_queues = count_instances * count_queue

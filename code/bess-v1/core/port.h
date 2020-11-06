@@ -235,7 +235,6 @@ class Port {
     uint32_t mtu;
     bool admin_up;
     bool rate_limiting;
-    bool dcb;
   };
 
   struct PortStats {
@@ -264,7 +263,6 @@ class Port {
     conf_.mtu = kDefaultMtu;
     conf_.admin_up = true;
     conf_.rate_limiting = false;
-    conf_.dcb = false;
 
     // Init rates and limiters per queue
     // This is a shitty long for loop, there should be some easy way of

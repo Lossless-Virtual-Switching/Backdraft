@@ -3,7 +3,7 @@
 curdir=$(dirname $0)
 curdir=$(realpath $curdir)
 
-if [ $# -lt 13 ]; then
+if [ $# -lt 12 ]; then
 	echo "useage $(basename $0): '< expecting 20 params as below >'"
 	echo "== docker config ==:"
 	echo "* param1: container-name"
@@ -20,15 +20,12 @@ if [ $# -lt 13 ]; then
   echo " ============"
 	echo "* param11: type: 'client' or 'server'"
 	echo " == Client ==:"
-	echo "* param12: dst_ip"
-	echo "* param13: duration"
-	echo "* param14: warm up"
-	echo "* param15: wait before measure"
-  echo "* param16: threads"
-  echo "* parma17: connections"
+	echo "* param12: size"
+	echo "* param13: count_flow"
+	echo "* param14: dst_ip"
+	echo "* param15: server_port"
 	echo " == Server ==:"
-	echo "* param12: memory"
-	echo "* param13: threads"
+	echo "* param12: port"
   exit 1
 fi
 
@@ -51,31 +48,25 @@ app_arguments=""
 if [ "$app_type" = "client" ]
 then
   # Client
-  dst_ip=${12}
-  duration=${13}
-  warmup_time=${14}
-  wait_before_measure=${15}
-  mutilate_threads=${16}
-  connections=${17}
+  size=${12}
+  count_flow=${13}
+  dst_ip=${14}
+  server_port=${15}
 
-  app_arguments="--env dst_ip=$dst_ip \
-	--env duration=$duration \
-	--env warmup_time=$warmup_time \
-	--env wait_before_measure=$wait_before_measure \
-	--env threads=$mutilate_threads \
-	--env connections=$connections"
+  app_arguments="--env size=$size \
+	--env count_flow=$count_flow \
+	--env dst_ip=$dst_ip \
+	--env server_port=$server_port"
 elif [ "$app_type" = "server" ]
 then
   # Server
-  memcached_memory=${12}
-  memcached_workers=${13}
+  port=${12}
 
-  app_arguments="--env memory=$memcached_memory \
-	--env threads=$memcached_workers"
+  app_arguments="--env port=$port"
 else
   echo "expecting client or server for the type (arg 11)"
   echo "got: $app_type"
-  exit 1
+  exit -1
 fi
 
 # make sure there is a sub directory for sharing hugepage file system  with container
@@ -85,7 +76,7 @@ fi
 
 # Expecting socket file path to be an absolute path
 if [ ! "${socket_file:0:1}" = "/" ]; then  # TODO: this check fails under (sh) it is not POSIX
-	echo "Expecting an absolute path for the socket file path (arg4)." 
+	echo "Expecting an absolute path for the socket file path (arg4)."
 	echo Received a relative path.
 	echo path: $socket_file
 	exit 1
@@ -106,11 +97,11 @@ sudo docker run \
 	--env prefix=$tas_dpdk_prefix \
 	--env command_data_queue=$tas_cmd \
 	--env type=$app_type \
-        $app_arguments \
+  $app_arguments \
 	-d \
 	--log-opt mode=non-blocking \
 	--log-opt max-buffer-size=4m \
 	--log-opt max-size="20m" \
-        --network none \
+  --network none \
 	$container_image_name
 

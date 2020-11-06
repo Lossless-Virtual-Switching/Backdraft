@@ -55,122 +55,6 @@
 #define FULL_MASK 0xffffffff                 /* full mask */
 #define EMPTY_MASK 0x0                       /* empty mask */
 
-struct rte_flow *generate_ipv4_flow(uint16_t port_id, uint16_t rx_q,
-                                    uint32_t src_ip, uint32_t src_mask,
-                                    uint32_t dest_ip, uint32_t dest_mask,
-                                    struct rte_flow_error *error) {
-  struct rte_flow_attr attr;
-  struct rte_flow_item pattern[MAX_PATTERN_NUM];
-  struct rte_flow_action action[MAX_ACTION_NUM];
-  struct rte_flow *flow = NULL;
-  struct rte_flow_action_queue queue = {.index = rx_q};
-  struct rte_flow_item_ipv4 ip_spec;
-  struct rte_flow_item_ipv4 ip_mask;
-  int res;
-  memset(pattern, 0, sizeof(pattern));
-  memset(action, 0, sizeof(action));
-  /*
-   * set the rule attribute.
-   * in this case only ingress packets will be checked.
-   */
-  memset(&attr, 0, sizeof(struct rte_flow_attr));
-  attr.ingress = 1;
-  /*
-   * create the action sequence.
-   * one action only,  move packet to queue
-   */
-  action[0].type = RTE_FLOW_ACTION_TYPE_QUEUE;
-  action[0].conf = &queue;
-  action[1].type = RTE_FLOW_ACTION_TYPE_END;
-  /*
-   * set the first level of the pattern (ETH).
-   * since in this example we just want to get the
-   * ipv4 we set this level to allow all.
-   */
-  pattern[0].type = RTE_FLOW_ITEM_TYPE_ETH;
-  /*
-   * setting the second level of the pattern (IP).
-   * in this example this is the level we care about
-   * so we set it according to the parameters.
-   */
-  memset(&ip_spec, 0, sizeof(struct rte_flow_item_ipv4));
-  memset(&ip_mask, 0, sizeof(struct rte_flow_item_ipv4));
-  ip_spec.hdr.dst_addr = htonl(dest_ip);
-  ip_mask.hdr.dst_addr = dest_mask;
-  ip_spec.hdr.src_addr = htonl(src_ip);
-  ip_mask.hdr.src_addr = src_mask;
-  pattern[1].type = RTE_FLOW_ITEM_TYPE_IPV4;
-  pattern[1].spec = &ip_spec;
-  pattern[1].mask = &ip_mask;
-  /* the final level must be always type end */
-  pattern[2].type = RTE_FLOW_ITEM_TYPE_END;
-  res = rte_flow_validate(port_id, &attr, pattern, action, error);
-  if (!res)
-    flow = rte_flow_create(port_id, &attr, pattern, action, error);
-  return flow;
-}
-
-__attribute__((unused)) static struct rte_flow *generate_vlan_flow(uint16_t port_id, uint16_t prio,
-                                           uint16_t vlan_id, uint16_t rx_q,
-                                           struct rte_flow_error *error) {
-  assert (prio < 1 << 3);
-  assert (vlan_id < 1 << 12);
-
-  struct rte_flow_attr attr;
-  struct rte_flow_item pattern[MAX_PATTERN_NUM];
-  struct rte_flow_action action[MAX_ACTION_NUM];
-  struct rte_flow *flow = NULL;
-  struct rte_flow_action_queue queue = {.index = rx_q};
-  struct rte_flow_item_vlan vlan;
-  struct rte_flow_item_vlan vlan_mask;
-
-  int res;
-  memset(pattern, 0, sizeof(pattern));
-  memset(action, 0, sizeof(action));
-  /*
-   * set the rule attribute.
-   * in this case only ingress packets will be checked.
-   */
-  memset(&attr, 0, sizeof(struct rte_flow_attr));
-  attr.ingress = 1;
-  /*
-   * create the action sequence.
-   * one action only,  move packet to queue
-   */
-  action[0].type = RTE_FLOW_ACTION_TYPE_QUEUE;
-  action[0].conf = &queue;
-  action[1].type = RTE_FLOW_ACTION_TYPE_END;
-  /*
-   * set the first level of the pattern (ETH).
-   * since in this example we just want to get the
-   * ipv4 we set this level to allow all.
-   */
-  pattern[0].type = RTE_FLOW_ITEM_TYPE_ETH;
-  /*
-   * setting the second level of the pattern (IP).
-   * in this example this is the level we care about
-   * so we set it according to the parameters.
-   */
-  memset(&vlan, 0, sizeof(struct rte_flow_item_vlan));
-  memset(&vlan_mask, 0, sizeof(struct rte_flow_item_vlan));
-
-  /* set the vlan to pas all packets */
-  // vlan.tci = RTE_BE16(0x2064);
-  vlan.tci = RTE_BE16(prio << 13 | 0 << 12 | vlan_id);
-  vlan_mask.tci = RTE_BE16(0xEFFF);  // priority and vlan id are important
-  vlan_mask.inner_type = RTE_BE16(0x0000);  // iner type is not important
-  pattern[1].type = RTE_FLOW_ITEM_TYPE_VLAN;
-  pattern[1].spec = &vlan;
-  pattern[1].mask = &vlan_mask;
-
-  /* the final level must be always type end */
-  pattern[2].type = RTE_FLOW_ITEM_TYPE_END;
-  res = rte_flow_validate(port_id, &attr, pattern, action, error);
-  if (!res)
-    flow = rte_flow_create(port_id, &attr, pattern, action, error);
-  return flow;
-}
-
 static const struct rte_eth_conf default_eth_conf(
     struct rte_eth_dev_info dev_info, int num_rxq) {
   struct rte_eth_conf ret = rte_eth_conf();
@@ -198,124 +82,26 @@ static const struct rte_eth_conf default_eth_conf(
   return ret;
 }
 
-__attribute__((unused)) static const struct rte_eth_conf custom_eth_conf(
-    struct rte_eth_dev_info dev_info, int num_rxq) {
-  struct rte_eth_conf ret = rte_eth_conf();
-  struct rte_eth_dcb_rx_conf *rx_conf = &ret.rx_adv_conf.dcb_rx_conf;
-  uint64_t rss_hf = ETH_RSS_IP | ETH_RSS_UDP | ETH_RSS_TCP | ETH_RSS_SCTP;
-  enum rte_eth_nb_tcs num_tcs = ETH_8_TCS;
-
-  if (num_rxq <= 1) {
-    rss_hf = 0x0;
-  } else if (dev_info.flow_type_rss_offloads) {
-    rss_hf = dev_info.flow_type_rss_offloads;
-  } else {
-    rss_hf = 0x0;
-  }
-
-  ret.link_speeds = ETH_LINK_SPEED_AUTONEG;
-  ret.rxmode.mq_mode = ETH_MQ_RX_DCB;
-
-  rx_conf->nb_tcs = num_tcs;
-
-  for (int i = 0; i < ETH_DCB_NUM_USER_PRIORITIES; i++) {
-    rx_conf->dcb_tc[i] = i % num_tcs;
-  }
-
-  ret.dcb_capability_en = ETH_DCB_PG_SUPPORT;
-
-  ret.rxmode.offloads |= (SN_HW_RXCSUM ? DEV_RX_OFFLOAD_CHECKSUM : 0x0);
-
-  ret.rx_adv_conf.rss_conf = {
-      .rss_key = nullptr,
-      .rss_key_len = 40,
-      .rss_hf = rss_hf,
-  };
-
-  return ret;
-}
-
-__attribute__((unused)) static int overlay_rule_setup(dpdk_port_t id) {
-  int ret;
-  struct rte_flow *flow;
-  struct rte_flow_error error;
-
-  // flow = generate_vlan_flow(id, BKDRFT_OVERLAY_PRIO, BKDRFT_OVERLAY_VLAN_ID,
-  //                           BKDRFT_CTRL_QUEUE, &error);
-  flow = bkdrft::filter_by_ip_proto(id, BKDRFT_PROTO_TYPE, BKDRFT_CTRL_QUEUE, &error);
-
-  if (flow) {
-    ret = 0;
-  } else {
-    LOG(INFO) << "Command queue rule error message: " << error.message << " \n";
-    ret = 1;
-  }
-
-  return ret;
-}
-
+/* These rules set which packet should be placed on which queue
+ * */
 int data_mapping_rule_setup(dpdk_port_t port_id, uint16_t count_queue) {
   struct rte_flow *flow;
   struct rte_flow_error error;
-  const uint8_t tos_mask = 0xfc; // does not care about the bottom two fields
+  uint16_t vlan_id;
+  uint16_t prio = 3; // Notice: Only mapping vlan packets with prio=3
+  uint16_t vlan_mask = 0x0fff;
 
+  // mapping vlan_id (i) -> queue (i - 1) for i in [1, count_queue]
   for (int i = 0; i < count_queue; i++) {
-    // NOTE: mlx5 nic had problem with using multiple prio
-    // map prio(i) -> queue(i) for i in [1,8)
-    // flow = generate_vlan_flow(port_id, i, BKDRFT_OVERLAY_VLAN_ID, i, &error);
-
-    // NOTE: mlx5 nic we used did not support raw item used in the function.
-    // flow = bkdrft::filter_by_ipv4_bkdrft_opt(port_id, i, i, &error);
-
-    // map i * 4 -> queue(i) for i in [1, 8)
-    uint8_t tos = i << 2;
-    flow = bkdrft::filter_by_ip_tos(port_id, tos, tos_mask, i, &error);
-
-    if (!flow) {
-      LOG(INFO) << "Data mapping error message: " << error.message << " \n";
-      return -1;  // failed
-    }
-
-    // also consider ingress packets having vlan
-    // prio: 3, vlan_id: 100
-    flow = bkdrft::filter_by_ip_tos_with_vlan(port_id, tos,
-          tos_mask, 3, 100, 0xefff, i, &error);
-
+    vlan_id = i + 1;
+    flow = bkdrft::filter_by_vlan_id(port_id, prio, vlan_id, vlan_mask,
+                                     i, &error);
     if (!flow) {
       LOG(INFO) << "Data mapping error message: " << error.message << " \n";
       return -1;  // failed
     }
   }
-  // flow = bkdrft::filter_by_ether_type(port_id, rte_cpu_to_be_16(RTE_ETHER_TYPE_ARP), 2, &error);
-
-  // if (!flow) {
-  //   LOG(INFO) << "ARP mapping error message: " << error.message << " \n";
-  //   return -1;  // failed
-  // }
-  
   return 0;
-}
-
-static int litter_rule_setup(dpdk_port_t id) {
-  int ret;
-  struct rte_flow *flow;
-  struct rte_flow_error error;
-
-  flow = bkdrft::filter_by_ether_type(id, bess::utils::Ethernet::Type::kArp, 0,
-                                     &error);
-
-  // flow = bkdrft::filter_by_vlan_type(id, 3, 100, 0xefff,
-  //                                    bess::utils::Ethernet::Type::kArp, 0,
-  //                                    &error);
-
-  if (flow) {
-    ret = 0;
-  } else {
-    LOG(INFO) << "litter rule error message: " << error.message << " \n";
-    ret = 1;
-  }
-
-  return ret;
 }
 
 void PMDPort::InitDriver() {
@@ -531,18 +317,9 @@ CommandResponse PMDPort::Init(const bess::pb::PMDPortArg &arg) {
     LOG(INFO) << "Rate limiting on " << rate << "\n";
   }
 
-  if (arg.dcb()) {
-    conf_.dcb = arg.dcb();
-  }
-
   /* Use defaut rx/tx configuration as provided by PMD drivers,
    * with minor tweaks */
   rte_eth_dev_info_get(ret_port_id, &dev_info);
-
-  // if(conf_.dcb) {
-  //   eth_conf = custom_eth_conf(dev_info, num_rxq);
-  // } else
-  //   eth_conf = default_eth_conf(dev_info, num_rxq);
 
   eth_conf = default_eth_conf(dev_info, num_rxq);
 
@@ -598,20 +375,6 @@ CommandResponse PMDPort::Init(const bess::pb::PMDPortArg &arg) {
     }
   }
 
-  // ----------- overlay rule -------------- //
-  if (arg.overlay_rules() || arg.command_queue()) {
-    // ret = overlay_rule_setup(ret_port_id);
-    // LOG(INFO) << "Setup command queue rule\n";
-    // if (ret != 0) {
-    //   return CommandFailure(-ret, "rule setup for overlay network failed.");
-    // }
-    // ---------- litter --------------- //
-    ret = litter_rule_setup(ret_port_id);
-    if (ret != 0) {
-      return CommandFailure(-ret, "rule setup for litter failed.");
-    }
-  }
-
   // ---------- data mapping ----------- //
   if (arg.data_mapping()) {
     ret = data_mapping_rule_setup(ret_port_id, num_rxq);
@@ -620,31 +383,6 @@ CommandResponse PMDPort::Init(const bess::pb::PMDPortArg &arg) {
       return CommandFailure(-ret, "priority mapping rule setup failed.");
     }
   }
-
-  // just for testing
-  // if (ptype_ == NIC) {
-  //   // for (int i = 0; i < 12; i++) {
-  //   //   struct rte_flow *flow;
-  //   //   struct rte_flow_error error;
-  //   //   flow = bkdrft::filter_by_udp_src_port(ret_port_id, 1001 + i, i, &error);
-  //   //   if (!flow) {
-  //   //     LOG(INFO) << "Data mapping error message: " << error.message << " \n";
-  //   //     return CommandFailure(-1, "failed to setup queue rules.");
-  //   //   }
-  //   // }
-  //   // struct rte_flow *flow;
-  //   // struct rte_flow_error error;
-  //   // flow = bkdrft::filter_by_udp_src_port(ret_port_id, 1001, 0, &error);
-  //   // if (!flow) {
-  //   //   LOG(INFO) << "Data mapping error message: " << error.message << " \n";
-  //   //   return CommandFailure(-1, "failed to setup queue rules.");
-  //   // }
-  //   // flow = bkdrft::filter_by_udp_src_port(ret_port_id, 1002, 2, &error);
-  //   // if (!flow) {
-  //   //   LOG(INFO) << "Data mapping error message: " << error.message << " \n";
-  //   //   return CommandFailure(-1, "failed to setup queue rules.");
-  //   // }
-  // }
 
   int offload_mask = 0;
   offload_mask |= arg.vlan_offload_rx_strip() ? ETH_VLAN_STRIP_OFFLOAD : 0;

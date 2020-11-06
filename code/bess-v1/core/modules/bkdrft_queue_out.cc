@@ -811,6 +811,7 @@ void BKDRFTQueueOut::ProcessBatch(Context *cntx, bess::PacketBatch *batch) {
   }
 
   // First check if any ctrl packet is in the queue
+  // TODO: here...
   if (cdq_)
     TryFailedCtrlPackets();
 
@@ -962,6 +963,7 @@ int BKDRFTQueueOut::SendPacket(Port *p, Flow *flow, queue_t qid,
                                bool *ctrl_pkt_sent) {
   uint32_t sent_pkts = 0;
   uint64_t sent_bytes = 0;
+  int ret;
 
   if (ctrl_pkt_sent != nullptr)
     *ctrl_pkt_sent = false;
@@ -979,7 +981,10 @@ int BKDRFTQueueOut::SendPacket(Port *p, Flow *flow, queue_t qid,
     // if (p->getConnectedPortType() == NIC) {
       for (uint32_t i = 0; i < cnt; i++) {
         // rte_prefetch0(pkts[i]->head_data()); // makes worse on the test
-        bess::bkdrft::mark_packet_with_queue_number(pkts[i], qid);
+        ret = bess::bkdrft::mark_packet_with_queue_number(pkts[i], qid);
+        if (unlikely(ret < 0)) {
+          LOG(ERROR) << "Failed to mark packet with queue number\n";
+        }
       }
     // }
   }
@@ -997,7 +1002,6 @@ int BKDRFTQueueOut::SendPacket(Port *p, Flow *flow, queue_t qid,
     if (ctrl_pkt_sent != nullptr)
       *ctrl_pkt_sent = res;
   }
-
   return sent_pkts;
 }
 

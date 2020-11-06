@@ -15,12 +15,13 @@
 
 using bess::utils::be16_t;
 using bess::utils::be32_t;
+using bess::utils::Ethernet;
+using bess::utils::Vlan;
+using bess::utils::Ipv4;
 using namespace bess::bkdrft;
 
 
 bool is_arp(bess::Packet *pkt) {
-  using bess::utils::Ethernet;
-  using bess::utils::Vlan;
   Ethernet *eth = reinterpret_cast<Ethernet *>(pkt->head_data());
   uint16_t ether_type = eth->ether_type.value();
   if (ether_type == Ethernet::Type::kArp)
@@ -342,7 +343,7 @@ check_queue_table:
      * read from the port.
      */
     uint32_t cnt = ReadBatch(qid, batch, max_burst); // burst
-    // if (port_->getConnectedPortType() == NIC) {
+    // if (port_->getConnectedPortType() == NIC && cnt > 0) {
     //   LOG(INFO) << "FOUND qid: " << (int)qid << " burst: " << burst << "\n";
     //   LOG(INFO) << "Read packets: " << cnt << "\n";
     // }
@@ -365,6 +366,24 @@ check_queue_table:
       // LOG(INFO) << "del q: " << (int)qid << " index " << index << " bit " <<
       // bit << " mask " << overview_mask_[index] << "\n";
     }
+
+    // Go through all packets for finding ARP?!
+    // We can group packets here, like having queues (buffers) here
+    // Now that we are doing this we can do some optimization
+    // We could even merge with queue out for ultimate performance (maybe?)
+    // int ret;
+    // for (uint32_t i = 0; i < cnt; i++) {
+    //   bess::Packet *pkt = batch->pkts()[0];
+    //   Ethernet *eth = pkt->head_data<Ethernet *>();
+    //   Ipv4 *ip_hdr = get_ip_header(eth);
+    //   if (ip_hdr != nullptr && ip_hdr->protocol == BKDRFT_ARP_IP_PROTO) {
+    //     eth->ether_type = be16_t(Ethernet::Type::kArp);
+    //     ret = remove_ip_header(pkt);
+    //     if (ret < 0) {
+    //       // TODO: what to do?
+    //     }
+    //   }
+    // }
 
     // TODO: this code snipt should be here?
     if (cnt && overlay_) {

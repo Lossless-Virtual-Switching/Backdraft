@@ -48,10 +48,7 @@ message PMDPortArg {
   bool vlan_offload_rx_filter = 6;
   bool vlan_offload_rx_qinq = 7;
   bool rate_limiting = 8;
-  bool dcb = 9; /// DCB configuration
   uint32 rate = 10;
-  bool overlay_rules = 11;
-  bool command_queue = 12; // place packets with pre-defined header (vlan) on the reserved command queue
   bool data_mapping = 13; // map data packets to a specific queue
 }
 

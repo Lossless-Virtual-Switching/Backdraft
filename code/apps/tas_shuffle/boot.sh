@@ -1,4 +1,6 @@
-#!/bin/sh
+#!/bin/bash
+
+# It is important that this is run with bash and not dash
 
 # Note: This script expects following environment variables to be defined
 # === TAS ===
@@ -8,17 +10,15 @@
 # count_queues: number of queues for port
 # prefix: dpdk file prefix
 # command_data_queue
-# === CLIENT  ===
+# ===============
 # type: 'client' or 'server', determine what program to execute
+# === CLIENT  ===
+# size
+# count_flow
 # dst_ip
-# duration
-# warmup_time
-# wait_before_measure
-# threads
-# connections
+# server_port
 # === SERVER ===
-# memory (in mb)
-# threads
+# port
 
 TAS_DIR=/root/post-loom/code/tas
 TAS_BENCH=/root/post-loom/code/tas-benchmark
@@ -52,25 +52,47 @@ echo TAS Server Is Up
 
 # client params
 cores=1
-mtcp_config=foo
-result_file=/tmp/log_drop_client.txt
-if [ -z "$message_size" ]; then
-  message_size=200
-fi
-max_pending_flow=64
-openall_delay=0
+# dst_ip_port_pair=$(echo "$dst_ip_port_pair" | tr -d '"')
+# echo $dst_ip_port_pair
 
-dst_ip_port_pair=$(echo "$dst_ip_port_pair" | tr -d '"')
-echo $dst_ip_port_pair
-
+instances=1
+echo  count instances $instances
+pids=()
+# declare -A pids
 if [ "$type" = "client" ]; then
-  LD_PRELOAD=$TAS_DIR/lib/libtas_interpose.so \
-     /root/mutilate/mutilate -s $dst_ip -t $duration -w $warmup_time \
-     -W $wait_before_measure -T $threads -c $connections
-  echo Done!
+  # one_gig=1073741824
+  # repeate=`echo $size / $one_gig  | bc`
+  # leftover=`echo $size % $one_gig | bc`
+  # while [ $repeate -gt 0 ]
+  # do
+  # done
+  for i in `seq $instances`
+  do
+    LD_PRELOAD=$TAS_DIR/lib/libtas_interpose.so \
+       /root/shuffle_client $size $count_flow $dst_ip $server_port &
+    echo child pid: $!
+    pids+=("$!")
+    echo client connecting to $dst_ip $server_port
+    server_port=$(($server_port + 1))
+  done
+  for pid in ${pids[@]}
+  do
+    wait $pid
+  done
 elif [ "$type" = "server" ]; then
-  LD_PRELOAD=$TAS_DIR/lib/libtas_interpose.so \
-    memcached -m $memory -u root -l $ip -t $threads
+  for i in `seq $instances`
+  do
+    LD_PRELOAD=$TAS_DIR/lib/libtas_interpose.so \
+      /root/shuffle_server $port &
+    echo child pid: $!
+    pids+=("$!")
+    echo server listenning on port $port
+    port=$(($port + 1))
+  done
+  for pid in ${pids[@]}
+  do
+    wait $pid
+  done
 else
   echo "type variable is not supported (type=$type)"
 fi
