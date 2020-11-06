@@ -60,6 +60,7 @@ class BKDRFTQueueInc final : public Module {
   // we should check BKDRFTSwDpCtrl
   queue_pause_status q_status_[MAX_QUEUES];
   Flow q_status_flows_[MAX_QUEUES];
+  std::queue<std::pair<uint16_t, uint32_t>> doorbell_service_queue_;
   int count_overview_seg_;
   uint64_t *overview_mask_;
   bool backpressure_;

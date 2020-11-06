@@ -66,7 +66,7 @@ int do_client(void *_cntx) {
 
   uint64_t start_time, end_time;
   uint64_t duration = cntx->duration * rte_get_timer_hz();
-  uint64_t ignore_result_duration = 0;
+  uint64_t ignore_result_duration = 5;
 
   struct rte_mbuf *bufs[BURST_SIZE];
   // struct rte_mbuf *ctrl_recv_bufs[BURST_SIZE];

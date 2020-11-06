@@ -130,7 +130,7 @@ def run_client(instance):
            [_server_ips[1]],
            [_server_ips[1]]][instance]
     mpps = 1000 * 1000
-    rate = [1000, 1000, 1000][instance]
+    rate = [1000, 20000, 20000][instance]
     _ips = ' '.join(ips)
     _cnt_flow = [1, count_flow, count_flow][instance]
     delay = [100, 100, 100]  # cycles per packet
@@ -250,10 +250,12 @@ def main():
     sleep(3)
 
     # Run client
+    global duration
     for i in range(count_client):
         client_p = run_client(i)
         clients.append(client_p)
         sleep(1)
+        duration -= 1  # next client has less time
 
     # Wait
     for proc in clients:

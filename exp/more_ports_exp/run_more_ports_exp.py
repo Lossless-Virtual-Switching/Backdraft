@@ -208,13 +208,13 @@ def main():
     #sleep(2)
 
     cnt_prt_q = [(2,2), (4,2), (8, 2), (2, 8), (4, 8), (8, 8), (16, 8)]
-    cnt_prt_q = [(2,4),]
+    cnt_prt_q = [(2,128),]
     # cnt_prt_q = [0]
     # Warning: SINGLE_PMD_MULTIPLE_Q is not supported any more.
     # (it needs EXCESS variable to be defined)
     exp_types = ['MULTIPLE_PMD_MULTIPLE_Q',] # 'SINGLE_PMD_MULTIPLE_Q']
     agents = ['BKDRFT', 'BESS']
-    agents = ['BESS',]
+    agents = ['BKDRFT',]
     for _type in exp_types:
         for agent in agents:
             results = []

@@ -316,7 +316,7 @@ void BKDRFTQueueOut::BufferBatch(__attribute__((unused)) Flow *flow,
   // add packets to queue
   count_enqueue = pktbuffer_enqueue(fstate->buffer, pkts, remaining_pkts);
   uint32_t failed_pkt = remaining_pkts - count_enqueue;
-  if (failed_pkt) {
+  if (failed_pkt > 0) {
     LOG(INFO) << "Failed to enqueue to buffer\n";
     // dropped packets failed to enqueue
     bess::Packet::Free(pkts + count_enqueue, failed_pkt);
@@ -541,11 +541,12 @@ uint16_t BKDRFTQueueOut::SendCtrlPkt(Port *p, queue_t qid,
   int dropped;
   bess::Packet *pkt;
   uint16_t sent_ctrl_pkts = 0;
+  int res;
   // int total_len = 0;
 
   pkt = current_worker.packet_pool()->Alloc();
   if (likely(pkt != nullptr)) {
-    int res = bess::bkdrft::prepare_ctrl_packet(pkt, qid, sent_pkts, sent_bytes,
+    res = bess::bkdrft::prepare_ctrl_packet(pkt, qid, sent_pkts, sent_bytes,
                                                 &sample_pkt_flow_);
     if (unlikely(res != 0)) {
       LOG(WARNING) << "SendCtrlPkt: failed to prepare pkt\n";
@@ -817,11 +818,22 @@ void BKDRFTQueueOut::ProcessBatch(Context *cntx, bess::PacketBatch *batch) {
     return;
   }
 
+  static uint64_t last_print = 0;
+  uint64_t before = rte_get_timer_cycles();
+  uint64_t after;
+
   if (buffering_) {
     ProcessBatchWithBuffer(cntx, batch);
   } else {
     ProcessBatchLossy(cntx, batch);
   }
+
+  after = rte_get_timer_cycles();
+  if (after - last_print > rte_get_timer_hz()) {
+    last_print = after;
+    LOG(INFO) << "process batch: " << after - before << "\n";
+  }
+
 }
 
 flow_state *BKDRFTQueueOut::GetFlowState(Context *cntx, Flow &flow) {
@@ -957,7 +969,7 @@ int BKDRFTQueueOut::SendPacket(Port *p, Flow *flow, queue_t qid,
   if (tx_bytes != nullptr)
     *tx_bytes = 0;
 
-  if (cdq_) {
+  if (cdq_ && p->getConnectedPortType() == NIC) {
     // ==== sample_pkt ==========
     // sample_pkt_flow_ = bess::bkdrft::PacketToFlow(*pkts[0]);
     // TODO: this is a copy
@@ -974,8 +986,8 @@ int BKDRFTQueueOut::SendPacket(Port *p, Flow *flow, queue_t qid,
 
   sent_pkts = p->SendPackets(qid, pkts, cnt);
 
-  if (sent_pkts && (cdq_ || tx_bytes != nullptr)) {
-    sent_bytes = total_len(pkts, sent_pkts);
+  if (sent_pkts > 0 && (cdq_ || tx_bytes != nullptr)) {
+    sent_bytes = 0; // total_len(pkts, sent_pkts);
     if (tx_bytes != nullptr)
       *tx_bytes = sent_bytes;
   }
@@ -985,6 +997,7 @@ int BKDRFTQueueOut::SendPacket(Port *p, Flow *flow, queue_t qid,
     if (ctrl_pkt_sent != nullptr)
       *ctrl_pkt_sent = res;
   }
+
   return sent_pkts;
 }
 
