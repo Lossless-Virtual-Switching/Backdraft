@@ -97,7 +97,7 @@ def bkdrft_pipeline():
 
     receive_side_x = Demultiplex(ranges=[
         {'start': 1000, 'end': 2000, 'gate': 1},
-        {'start': 5000, 'end': 6000, 'gate': 2},
+        {'start': 8000, 'end': 9000, 'gate': 2},
     ])
 
     queue_ids = [i for i in range(CNT_Q)]
