@@ -10,6 +10,7 @@ extern inline int vport_send_pkt(struct vport *port, uint16_t qid,
                             uint16_t doorbell,
                             struct rte_mempool *ctrl_pool)
 {
+  int res;
   register uint32_t nb_tx; // number of packets successfully transmitted
   uint32_t nb_ctrl_tx;
   uint32_t total_bytes = 0;
@@ -46,7 +47,11 @@ extern inline int vport_send_pkt(struct vport *port, uint16_t qid,
     // assert(sample_pkt);
 
     // prepare_packet(ctrl_pkt, payload, sample_pkt, packed_size);
-    prepare_packet(ctrl_pkt, NULL, sample_pkt, packed_size);
+    res = prepare_packet(ctrl_pkt, NULL, sample_pkt, packed_size);
+    if (unlikely(res != 0)) {
+      printf("failed to prepare ctrl packet\n");
+      return nb_tx; 
+    }
     // free(payload);
 
     nb_ctrl_tx = send_packets_vport(port, doorbell, (void **)&ctrl_pkt, 1);
@@ -153,11 +158,11 @@ poll_doorbell:
 
       // first byte defines the bkdrft message type
       msg_type = msg[0];
-      if (unlikely(msg_type == BKDRFT_OVERLAY_MSG_TYPE)) {
 #ifdef DEBUG
+      if (unlikely(msg_type == BKDRFT_OVERLAY_MSG_TYPE)) {
         printf("We found overlay message\n");
-#endif
       }
+#endif
       if (unlikely(msg_type != BKDRFT_CTRL_MSG_TYPE)) {
         // not a ctrl message
         // printf("poll_ctrl_queue...: not a bkdrft ctrl packet!\n");

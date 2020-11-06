@@ -347,7 +347,6 @@ check_queue_table:
     //   LOG(INFO) << "FOUND qid: " << (int)qid << " burst: " << burst << "\n";
     //   LOG(INFO) << "Read packets: " << cnt << "\n";
     // }
-    //
 
     /* important note:
      * ! if we do not read all the packets in the queue (I mean if we

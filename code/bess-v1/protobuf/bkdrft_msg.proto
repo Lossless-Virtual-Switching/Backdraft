@@ -2,7 +2,7 @@ syntax = "proto3";
 
 package bess.pb;
 
-message Ctrl { 
+message Ctrl {
   uint32 qid = 1;
   uint32 nb_pkts = 2;
   uint32 total_bytes = 3;

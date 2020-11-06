@@ -60,6 +60,9 @@ extern inline int send_pkt(int port, uint8_t qid, struct rte_mbuf **tx_pkts,
   struct rte_mbuf *sample_pkt;
   size_t packed_size;
   unsigned char *payload = NULL;
+  const size_t payload_offset = sizeof(struct rte_ether_hdr) + \
+                                sizeof(struct rte_ipv4_hdr) + \
+                                sizeof(struct rte_udp_hdr);
 
   // if (send_ctrl_pkt) {
   //   /* mark the packets to be placed on the mentioned queue by the recv nic */
@@ -80,25 +83,30 @@ extern inline int send_pkt(int port, uint8_t qid, struct rte_mbuf **tx_pkts,
   if (send_ctrl_pkt) {
     /* send control packet */
     ctrl_pkt = rte_pktmbuf_alloc(tx_mbuf_pool);
-    if (ctrl_pkt == NULL) {
-      printf("(bkdrft) send_pkt: Failed to allocate mbuf for ctrl pkt\n");
-    } else {
-      sample_pkt = tx_pkts[0];
-      assert(sample_pkt);
-
+    if (likely(ctrl_pkt != NULL)) {
+      payload = rte_pktmbuf_mtod_offset(ctrl_pkt, uint8_t *, payload_offset);
       packed_size = create_bkdraft_ctrl_msg(qid, bytes, nb_tx, &payload);
-      assert(payload);
-      prepare_packet(ctrl_pkt, payload, sample_pkt, packed_size);
-      free(payload);
-      ////
+
+      // assert(payload != NULL);
+      sample_pkt = tx_pkts[0];
+      // assert(sample_pkt);
+      prepare_packet(ctrl_pkt, NULL, sample_pkt, packed_size);
+      // free(payload);
+
       ctrl_nb_tx = rte_eth_tx_burst(port, BKDRFT_CTRL_QUEUE, &ctrl_pkt, 1);
-      // printf("sent ctrl pkt qid: %d\n", cpkt->q);
       if (ctrl_nb_tx != 1) {
         // sending ctrl pkt failed
         rte_pktmbuf_free(ctrl_pkt);
+#ifdef DEBUG
         printf("failed to send ctrl_pkt\n");
+#endif
       }
     }
+#ifdef DEBUG
+    else {
+      printf("(bkdrft) send_pkt: Failed to allocate mbuf for ctrl pkt\n");
+    }
+#endif
   }
 
   return nb_tx;
@@ -121,9 +129,10 @@ int poll_ctrl_queue_expose_qid(const int port, const int ctrl_qid,
   struct rte_mbuf *buf;
   uint8_t dqid;
   uint16_t dq_burst;
-  uint8_t msg[BKDRFT_MAX_MESSAGE_SIZE];
+  // uint8_t msg[BKDRFT_MAX_MESSAGE_SIZE];
+  uint8_t *msg;
   char msg_type;
-  void *data;
+  // void *data;
   size_t size;
   for (;;) {
     // read a ctrl packet
@@ -135,35 +144,40 @@ int poll_ctrl_queue_expose_qid(const int port, const int ctrl_qid,
         return 0;
       }
     }
+    // printf("bkdrft.c: received some ctrl packet (%d)\n", nb_ctrl_rx);
 
     buf = ctrl_rx_bufs[0];
-    size = get_payload(buf, &data);
-    if (data == NULL) {
+    size = get_payload(buf, (void **)(&msg));
+    if (unlikely(msg == NULL)) {
       printf("bkdrft.c: payload is null\n");
       // assume it was a corrupt packet
       rte_pktmbuf_free(buf); // free ctrl_pkt
       continue;
     }
 
-    memcpy(msg, data, size);
-    msg[size] = '\0';
-    rte_pktmbuf_free(buf); // free ctrl_pkt
+    // memcpy(msg, data, size);
+    // msg[size] = '\0';
 
     // first byte defines the bkdrft message type
     msg_type = msg[0];
-    if (msg_type == BKDRFT_OVERLAY_MSG_TYPE) {
+#ifdef DEBUG
+    if (unlikely(msg_type == BKDRFT_OVERLAY_MSG_TYPE)) {
       printf("We found overlay message\n");
     }
-    if (msg_type != BKDRFT_CTRL_MSG_TYPE) {
+#endif
+    if (unlikely(msg_type != BKDRFT_CTRL_MSG_TYPE)) {
       // not a ctrl message
-      // printf("poll_ctrl_queue...: not a bkdrft ctrl packet!\n");
+      // printf("poll_ctrl_queue...: not a bkdrft ctrl packet! (msg type: %d)\n",
+      //        msg_type);
+      rte_pktmbuf_free(buf); // free ctrl_pkt
       continue;
     }
     // unpacking protobuf
     DpdkNetPerf__Ctrl *ctrl_msg =
-        dpdk_net_perf__ctrl__unpack(NULL, size - 1, msg + 1);
-    if (ctrl_msg == NULL) {
+        dpdk_net_perf__ctrl__unpack(NULL, size - 2, msg + 1);
+    if (unlikely(ctrl_msg == NULL)) {
       // printf("Failed to parse ctrl message\n");
+      rte_pktmbuf_free(buf); // free ctrl_pkt
       // assume it was a corrupt packet
       // printf("poll_ctrl_queue...: corrupt ctrl message!\n");
       continue;
@@ -174,6 +188,7 @@ int poll_ctrl_queue_expose_qid(const int port, const int ctrl_qid,
     // printf("data qid: %d\n", (int)dqid);
     // fflush(stdout);
     dpdk_net_perf__ctrl__free_unpacked(ctrl_msg, NULL);
+    rte_pktmbuf_free(buf); // free ctrl_pkt
 
     // TODO: keep track of packets on each queue
     if (dq_burst > burst)

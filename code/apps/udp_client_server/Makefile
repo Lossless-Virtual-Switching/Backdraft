@@ -33,13 +33,15 @@ LDFLAGS = -L$(DPDK_LIB_DIR) -Wl,-rpath=$(DPDK_LIB_DIR) \
     -L$(CURRENT_DIR)/../../lib/bkdrft/build/ \
 
 #  -lgflags
+$(warning "Warning: mellanox is not active")
+MELLANOX = # -lmlx5 -lmlx4 -libverbs
 LIBS = -Wl,-non_shared \
        -Wl,--whole-archive -l$(DPDK_LIB) -Wl,--no-whole-archive \
        -Wl,-call_shared \
        -lbd_vport -lbkdrft -lprotobuf-c \
        -lpcap -lnuma \
        -lpthread -ldl \
-       -lmlx5 -lmlx4 -libverbs -lm
+       $(MELLANOX) -lm
 
 # binary name
 APP = udp_app

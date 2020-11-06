@@ -6,7 +6,7 @@
 #include <rte_mbuf.h>
 #include <rte_udp.h>
 
-void prepare_packet(struct rte_mbuf *buf, unsigned char *payload,
+int prepare_packet(struct rte_mbuf *buf, unsigned char *payload,
                     struct rte_mbuf *sample_pkt, size_t size);
 struct rte_ether_hdr *get_ethernet_header(struct rte_mbuf *pkt);
 struct rte_vlan_hdr *get_vlan_header(struct rte_ether_hdr *eth_hdr);

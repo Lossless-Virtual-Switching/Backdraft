@@ -70,14 +70,14 @@ static inline bess::utils::Ipv4 *get_ip_header(bess::utils::Ethernet *eth) {
       ip = reinterpret_cast<Ipv4 *>(vlan + 1);
     } else {
       // LOG(WARNING) << "get_ip_header: packet is not an Ip "
-      //                 "packet\n";
+      //                 "packet (type: " << ether_type << ")\n";
       return nullptr;  // failed
     }
   } else if (likely(ether_type == Ethernet::Type::kIpv4)) {
     ip = reinterpret_cast<Ipv4 *>(eth + 1);
   } else {
     // LOG(WARNING) << "get_ip_header: packet is not an Ip "
-    //                 "packet\n";
+    //                 "packet (type: " << ether_type << ")\n";
     return nullptr;  // failed
   }
   return ip;

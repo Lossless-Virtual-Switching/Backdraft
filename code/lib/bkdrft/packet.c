@@ -7,9 +7,9 @@
 /* This function is used for craeting Backdraft packets.
  * TODO: change this function to utilize the new create packet function.
  * */
-void prepare_packet(struct rte_mbuf *buf, unsigned char *payload,
+int prepare_packet(struct rte_mbuf *buf, unsigned char *payload,
                     struct rte_mbuf *sample_pkt, size_t size) {
-  // char *buf_ptr;
+  char *buf_ptr;
   struct rte_ether_hdr *eth_hdr;
   struct rte_ipv4_hdr *ipv4_hdr;
   struct rte_udp_hdr *udp_hdr;
@@ -18,7 +18,7 @@ void prepare_packet(struct rte_mbuf *buf, unsigned char *payload,
 #ifdef DEBUG
     printf("sample pkt is null\n");
 #endif
-    return;
+    return -1;
   }
 
   // struct rte_ether_hdr *s_eth_hdr = get_ethernet_header(sample_pkt);
@@ -28,7 +28,7 @@ void prepare_packet(struct rte_mbuf *buf, unsigned char *payload,
 #ifdef DEBUG
     printf("s_eth_hdr is null\n");
 #endif
-    return;
+    return -2;
   }
 
   struct rte_ipv4_hdr *s_ipv4_hdr = get_ipv4_header(s_eth_hdr);
@@ -47,9 +47,9 @@ void prepare_packet(struct rte_mbuf *buf, unsigned char *payload,
 
   // TODO: can use with out appending
   /* ethernet header */
-  // buf_ptr = rte_pktmbuf_append(buf, RTE_ETHER_HDR_LEN);
-  // eth_hdr = (struct rte_ether_hdr *)buf_ptr;
-  eth_hdr = rte_pktmbuf_mtod(buf, struct rte_ether_hdr *);
+  buf_ptr = rte_pktmbuf_append(buf, 256);
+  eth_hdr = (struct rte_ether_hdr *)buf_ptr;
+  // eth_hdr = rte_pktmbuf_mtod(buf, struct rte_ether_hdr *);
 
   rte_ether_addr_copy(&s_eth_hdr->s_addr, &eth_hdr->s_addr);
   rte_ether_addr_copy(&s_eth_hdr->d_addr, &eth_hdr->d_addr);
@@ -103,6 +103,7 @@ void prepare_packet(struct rte_mbuf *buf, unsigned char *payload,
   buf->l2_len = RTE_ETHER_HDR_LEN;
   buf->l3_len = sizeof(struct rte_ipv4_hdr);
   // buf->ol_flags = PKT_TX_IP_CKSUM | PKT_TX_IPV4;
+  return 0;
 }
 
 struct rte_ether_hdr *get_ethernet_header(struct rte_mbuf *pkt) {

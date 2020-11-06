@@ -3,14 +3,17 @@
 ##############################################################################
 # Compile, link, and install flags
 
-CPPFLAGS += -Iinclude/
+BKDRFT_INCLUDE =  -I../lib/bkdrft/include -I../lib/bkdrft/protobuf/_compile
+BKDRFT_LIB = -L../lib/bkdrft/build/ -lbkdrft -lprotobuf-c
+
+CPPFLAGS += -Iinclude/ $(BKDRFT_INCLUDE)
 CPPFLAGS += $(EXTRA_CPPFLAGS)
 CFLAGS += -std=gnu99 -O3 -g -Wall -Werror -march=native -fno-omit-frame-pointer
 CFLAGS += $(EXTRA_CFLAGS)
 CFLAGS_SHARED += $(CFLAGS) -fPIC
 LDFLAGS += -pthread -g
 LDFLAGS += $(EXTRA_LDFLAGS)
-LDLIBS += -lm -lpthread -lrt -ldl -lprotobuf-c
+LDLIBS += -lm -lpthread -lrt -ldl $(BKDRFT_LIB)
 LDLIBS += $(EXTRA_LDLIBS)
 
 PREFIX ?= /usr/local

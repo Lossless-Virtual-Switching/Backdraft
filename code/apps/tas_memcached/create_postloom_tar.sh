@@ -16,6 +16,9 @@ rm -r $here/post-loom/code/dpdk/x86_64-native-linuxapp-gcc
 rm -r $here/post-loom/code/dpdk/x86_64-*
 echo DPDK done
 
+cp -r $here/../../../code/lib $here/post-loom/code/
+echo LIB done
+
 cp -r $here/../../../code/tas $here/post-loom/code/
 echo TAS done
 

@@ -38,7 +38,7 @@ int prepare_packet(bess::Packet *pkt, void *payload, size_t size,
   // pkt->append(128)
   uint8_t *ptr = reinterpret_cast<uint8_t *>(pkt->head_data());
   // uint8_t *ptr = reinterpret_cast<uint8_t *>(pkt->append(256));
-  assert(ptr != nullptr);
+  // assert(ptr != nullptr);
   Ethernet *eth = reinterpret_cast<Ethernet *>(ptr);
   eth->dst_addr = flow->eth_dst_addr;  // s_eth->dst_addr;
   eth->src_addr = flow->eth_src_addr;  // s_eth->src_addr;
@@ -89,8 +89,9 @@ int prepare_ctrl_packet(bess::Packet *pkt, uint8_t qid, uint32_t nb_pkts,
                   + sizeof(Ethernet) + sizeof(Ipv4) + sizeof(Udp);
   payload[0] = BKDRFT_CTRL_MSG_TYPE;
   bool res = ctrl_msg.SerializeToArray(payload + 1, size - 2);
+  payload[size] = '\0';
   if (!res) {
-    LOG(WARNING) << "prepare_ctrl_packet: serializing protobuf failed\n";
+    // LOG(WARNING) << "prepare_ctrl_packet: serializing protobuf failed\n";
     return -1;  // failed
   }
   // payload.append(serialized_msg);
@@ -98,7 +99,7 @@ int prepare_ctrl_packet(bess::Packet *pkt, uint8_t qid, uint32_t nb_pkts,
   int pkt_size = prepare_packet(pkt, nullptr, size, flow);
   if (pkt_size < 0) {
     // prepare packet failed
-    LOG(WARNING) << "prepare_ctrl_packet: prepare packet failed!\n";
+    // LOG(WARNING) << "prepare_ctrl_packet: prepare packet failed!\n";
     return -2;
   }
 
@@ -118,6 +119,7 @@ int get_packet_payload(bess::Packet *pkt, void **payload,
   Ethernet *eth = reinterpret_cast<Ethernet *>(ptr);
   Ipv4 *ip = get_ip_header(eth);
   if (unlikely(ip == nullptr)) {
+    // LOG(INFO) << "No ip header\n";
     return -2;  // failed
   }
 
@@ -226,7 +228,7 @@ int parse_bkdrft_msg(bess::Packet *pkt, char *type, void **pb) {
     // bool parse_res = overlay_msg->ParseFromString(serialized_msg);
     bool parse_res = overlay_msg->ParseFromArray(msg + 1, size - 1);
     if (!parse_res) {
-      LOG(WARNING) << "parse_bkdrft_msg: Failed to parse ctrl message\n";
+      LOG(WARNING) << "parse_bkdrft_msg: Failed to parse overlay message\n";
       return -1;  // failed
     }
     *pb = overlay_msg;

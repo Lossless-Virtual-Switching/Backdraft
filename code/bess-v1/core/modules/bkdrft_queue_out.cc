@@ -555,8 +555,10 @@ uint16_t BKDRFTQueueOut::SendCtrlPkt(Port *p, queue_t qid,
       return 0;
     }
 
-    // mark the control packet to sit on the corresponding doorbel queue
-    bess::bkdrft::mark_packet_with_queue_number(pkt, doorbell_queue_number_);
+    if (p->getConnectedPortType() == NIC) {
+      // mark the control packet to sit on the corresponding doorbel queue
+      bess::bkdrft::mark_packet_with_queue_number(pkt, doorbell_queue_number_);
+    }
 
     sent_ctrl_pkts = p->SendPackets(doorbell_queue_number_, &pkt, 1);
     dropped = 1 - sent_ctrl_pkts;
