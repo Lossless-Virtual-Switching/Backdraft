@@ -124,8 +124,8 @@ poll_doorbell:
   //                             &dqid, &dq_burst);
   queue_found = 0;
 
-  if (queue_found)
-    goto fetch_packets;
+  // if (queue_found)
+  //   goto fetch_packets;
 
   for (;;) {
     // read a ctrl packet
@@ -199,7 +199,7 @@ poll_doorbell:
       break;
   }
 
-fetch_packets:
+// fetch_packets:
   if (dq_burst > burst)
     dq_burst = burst; // recv_bufs are limited
 

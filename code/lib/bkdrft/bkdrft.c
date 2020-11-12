@@ -9,6 +9,12 @@
 #include "packet.h" /* helper functions for creating packets */
 #include "bkdrft_msg.pb-c.h" /* bkdrft message protobuf */
 
+#define COUNT_PRIORITY 2
+struct queue_status {
+  int64_t nb_pkts;
+  int32_t prio;
+};
+
 extern inline int mark_data_queue(struct rte_mbuf *pkt, uint8_t qid) {
 	char *new_head;
 	__m128i ethh;
@@ -119,24 +125,69 @@ int poll_ctrl_queue(const int port, const int ctrl_qid, uint16_t burst,
                                     NULL);
 }
 
+static inline int _select_queue(const struct queue_status queue_status[],
+                                int count_queue, uint16_t *selected_q,
+                                uint32_t *cnt_pkt)
+{
+  // TODO: use a better data structure like heap for finding high priorities
+  int prio;
+  int i;
+  for (prio = 0; prio < COUNT_PRIORITY; prio++) {
+    for (i = 0; i < count_queue; i++) {
+      if (queue_status[i].prio == prio && queue_status[i].nb_pkts > 0) {
+        *selected_q = i;
+        *cnt_pkt = queue_status[i].nb_pkts;
+        return 1;
+      }
+    }
+  }
+
+  // static int i = 0;
+  // // register int i = 0;
+  // register int begin = i;
+  // do {
+  //   if (queue_status[i]. > 0) {
+  //     // there are some packets
+  //     *selected_q = i;
+  //     *cnt_pkt = queue_status[i];
+  //     return 1;
+  //   }
+  //   // next queue
+  //   i += 1;
+  //   i %= count_queue;
+  // } while(i != begin);
+  return 0;
+}
+
+
 int poll_ctrl_queue_expose_qid(const int port, const int ctrl_qid,
                                uint16_t burst, struct rte_mbuf **recv_bufs,
                                int blocking, uint16_t *data_qid)
 {
+  // Notice: only supporting 8 queues here
+  const int count_queue = 8;
+  static struct queue_status queue_status[8] = {};
+  uint32_t ctrl_burst = 512;
   uint16_t nb_ctrl_rx;
   uint16_t nb_data_rx;
-  struct rte_mbuf *ctrl_rx_bufs[1];
+  struct rte_mbuf *ctrl_rx_bufs[ctrl_burst];
   struct rte_mbuf *buf;
-  uint8_t dqid;
-  uint16_t dq_burst;
-  // uint8_t msg[BKDRFT_MAX_MESSAGE_SIZE];
+  uint16_t dqid;
+  uint32_t dq_burst;
   uint8_t *msg;
   char msg_type;
-  // void *data;
   size_t size;
+  int i;
+  int queue_found;
+
+poll_doorbell:
+  queue_found = 0;
+  // if (queue_found)
+  //   goto fetch_packets;
+
   for (;;) {
     // read a ctrl packet
-    nb_ctrl_rx = rte_eth_rx_burst(port, ctrl_qid, ctrl_rx_bufs, 1);
+    nb_ctrl_rx = rte_eth_rx_burst(port, ctrl_qid, ctrl_rx_bufs, ctrl_burst);
     if (nb_ctrl_rx == 0) {
       if (blocking) {
         continue;
@@ -146,65 +197,75 @@ int poll_ctrl_queue_expose_qid(const int port, const int ctrl_qid,
     }
     // printf("bkdrft.c: received some ctrl packet (%d)\n", nb_ctrl_rx);
 
-    buf = ctrl_rx_bufs[0];
-    size = get_payload(buf, (void **)(&msg));
-    if (unlikely(msg == NULL)) {
-      printf("bkdrft.c: payload is null\n");
-      // assume it was a corrupt packet
-      rte_pktmbuf_free(buf); // free ctrl_pkt
-      continue;
-    }
+    for (i = 0; i < nb_ctrl_rx; i++) {
+      buf = ctrl_rx_bufs[i];
+      size = get_payload(buf, (void **)(&msg));
+      if (unlikely(msg == NULL)) {
+        printf("bkdrft.c: payload is null\n");
+        // assume it was a corrupt packet
+        rte_pktmbuf_free(buf); // free ctrl_pkt
+        continue;
+      }
 
-    // memcpy(msg, data, size);
-    // msg[size] = '\0';
-
-    // first byte defines the bkdrft message type
-    msg_type = msg[0];
+      // first byte defines the bkdrft message type
+      msg_type = msg[0];
 #ifdef DEBUG
-    if (unlikely(msg_type == BKDRFT_OVERLAY_MSG_TYPE)) {
-      printf("We found overlay message\n");
-    }
+      if (unlikely(msg_type == BKDRFT_OVERLAY_MSG_TYPE)) {
+        printf("We found overlay message\n");
+      }
 #endif
-    if (unlikely(msg_type != BKDRFT_CTRL_MSG_TYPE)) {
-      // not a ctrl message
-      // printf("poll_ctrl_queue...: not a bkdrft ctrl packet! (msg type: %d)\n",
-      //        msg_type);
+      if (unlikely(msg_type != BKDRFT_CTRL_MSG_TYPE)) {
+        // not a ctrl message
+        // printf("poll_ctrl_queue...: not a bkdrft ctrl packet! (msg type: %d)\n",
+        //        msg_type);
+        rte_pktmbuf_free(buf); // free ctrl_pkt
+        continue;
+      }
+
+      // unpacking protobuf
+      DpdkNetPerf__Ctrl *ctrl_msg =
+          dpdk_net_perf__ctrl__unpack(NULL, size - 2, msg + 1);
+      if (unlikely(ctrl_msg == NULL)) {
+        // printf("Failed to parse ctrl message\n");
+        // assume it was a corrupt packet
+        // printf("poll_ctrl_queue...: corrupt ctrl message!\n");
+        rte_pktmbuf_free(buf); // free ctrl_pkt
+        continue;
+      }
+      dqid = (uint8_t)ctrl_msg->qid;
+      dq_burst = (uint16_t)ctrl_msg->nb_pkts;
+      // TODO: msg->total_bytes is not used yet!
+      // printf("data qid: %d\n", (int)dqid);
+      // fflush(stdout);
+      dpdk_net_perf__ctrl__free_unpacked(ctrl_msg, NULL);
       rte_pktmbuf_free(buf); // free ctrl_pkt
-      continue;
-    }
-    // unpacking protobuf
-    DpdkNetPerf__Ctrl *ctrl_msg =
-        dpdk_net_perf__ctrl__unpack(NULL, size - 2, msg + 1);
-    if (unlikely(ctrl_msg == NULL)) {
-      // printf("Failed to parse ctrl message\n");
-      rte_pktmbuf_free(buf); // free ctrl_pkt
-      // assume it was a corrupt packet
-      // printf("poll_ctrl_queue...: corrupt ctrl message!\n");
-      continue;
-    }
-    dqid = (uint8_t)ctrl_msg->qid;
-    dq_burst = (uint16_t)ctrl_msg->nb_pkts;
-    // TODO: msg->total_bytes is not used yet!
-    // printf("data qid: %d\n", (int)dqid);
-    // fflush(stdout);
-    dpdk_net_perf__ctrl__free_unpacked(ctrl_msg, NULL);
-    rte_pktmbuf_free(buf); // free ctrl_pkt
 
-    // TODO: keep track of packets on each queue
-    if (dq_burst > burst)
-      dq_burst = burst; // recv_bufs are limited
-
-    // read data queue
-    nb_data_rx = rte_eth_rx_burst(port, dqid, recv_bufs, burst);
-    if (nb_data_rx == 0) {
-      // printf("Read data queue %d but no data\n", 1);
-      continue;
+      // keep track of packets on each queue
+      queue_status[dqid].nb_pkts += dq_burst;
+      // printf("q %d cnt %ld\n", dqid, queue_status[dqid].nb_pkts);
     }
 
-    if (data_qid != NULL) {
-      *data_qid = dqid;
-    }
-
-    return nb_data_rx; // result is in recv_bufs
+    queue_found = _select_queue(queue_status, count_queue, &dqid, &dq_burst);
+    if (likely(queue_found))
+      break;
   }
+
+// fetch_packets:
+  if (dq_burst > burst)
+    dq_burst = burst; // recv_bufs are limited
+
+  // read data queue
+  nb_data_rx = rte_eth_rx_burst(port, dqid, recv_bufs, burst);
+  if (unlikely(nb_data_rx == 0)) {
+    // printf("Read data queue %d but no data\n", 1);
+    goto poll_doorbell;
+  }
+
+  queue_status[dqid].nb_pkts -= nb_data_rx;
+
+  if (data_qid != NULL) {
+    *data_qid = dqid;
+  }
+
+  return nb_data_rx; // result is in recv_bufs
 }

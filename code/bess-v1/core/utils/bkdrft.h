@@ -42,8 +42,9 @@ inline uint64_t total_len(bess::Packet **pkts, int count) {
 int prepare_packet(bess::Packet *pkt, void *payload, size_t size,
                    const Flow *flow);
 
-int prepare_ctrl_packet(bess::Packet * pkt, uint8_t qid, uint32_t nb_pkts,
-                        uint64_t sent_bytes, const Flow *flow);
+int prepare_ctrl_packet(bess::Packet * pkt, uint8_t qid, uint32_t prio,
+                        uint32_t nb_pkts, uint64_t sent_bytes,
+                        const Flow *flow);
 
 /*
   Finds the payload of the pkt by traversing the headers and updates the

@@ -194,47 +194,50 @@ inline bool BKDRFTQueueInc::CheckQueuedCtrlMessages(__attribute__((unused))
                                                     uint32_t *burst)
 {
 
-  if (doorbell_service_queue_.empty()) return false;
-  auto item = doorbell_service_queue_.front();
-  *qid = item.first;
-  *burst = item.second;
-  doorbell_service_queue_.pop();
-  // LOG(INFO) << "Selected queue: " << (int)*qid << " count: " << *burst << "\n";
-  return true;
-  // // static int j = 0;
-  // // static int selected_bit = -1;
-  // int j = 0;
-  // int selected_bit = -1;
-  // int selected_queue = 0;
-  // uint64_t temp_mask;
-  // int begin = j;
-  // do {
-  //   if (overview_mask_[j] > 0) {
-  //     temp_mask = overview_mask_[j];
-  //     // temp_mask &= UINT64_MAX << (selected_bit + 1);
-  //     while (true) {
-  //       selected_bit = __builtin_ffsl(temp_mask) - 1;
-  //       if (selected_bit < 0) break;
-  //       selected_queue = selected_bit + (j * 64);
-  //       if (unlikely(IsQueuePausedInCache(ctx, selected_queue))) {
-  //         temp_mask ^= 1L << selected_bit; // turn off selected_queue
-  //         continue;
-  //       }
-  //       *qid = selected_queue;
-  //       *burst = q_status_[selected_queue].remaining_dpkt;
-  //       // LOG(INFO) << "selected_queue: " << selected_queue
-  //       //           << " mask: " << overview_mask_[j] << "\n";
-  //       return true; // found a queue
-  //     }
-  //   }
-  //   // else {
-  //   //   selected_bit = -1;
-  //   // }
+  // First come First server
+  // if (doorbell_service_queue_.empty()) return false;
+  // auto item = doorbell_service_queue_.front();
+  // *qid = item.first;
+  // *burst = item.second;
+  // doorbell_service_queue_.pop();
+  // // LOG(INFO) << "Selected queue: " << (int)*qid << " count: " << *burst << "\n";
+  // return true;
 
-  //   j++;
-  //   j %= count_overview_seg_;
-  // } while (j != begin);
-  // return false;
+  // Lowest Queue-id First
+  // static int j = 0;
+  // static int selected_bit = -1;
+  int j = 0;
+  int selected_bit = -1;
+  int selected_queue = 0;
+  uint64_t temp_mask;
+  int begin = j;
+  do {
+    if (overview_mask_[j] > 0) {
+      temp_mask = overview_mask_[j];
+      // temp_mask &= UINT64_MAX << (selected_bit + 1);
+      while (true) {
+        selected_bit = __builtin_ffsl(temp_mask) - 1;
+        if (selected_bit < 0) break;
+        selected_queue = selected_bit + (j * 64);
+        if (unlikely(IsQueuePausedInCache(ctx, selected_queue))) {
+          temp_mask ^= 1L << selected_bit; // turn off selected_queue
+          continue;
+        }
+        *qid = selected_queue;
+        *burst = q_status_[selected_queue].remaining_dpkt;
+        // LOG(INFO) << "selected_queue: " << selected_queue
+        //           << " mask: " << overview_mask_[j] << "\n";
+        return true; // found a queue
+      }
+    }
+    // else {
+    //   selected_bit = -1;
+    // }
+
+    j++;
+    j %= count_overview_seg_;
+  } while (j != begin);
+  return false;
 }
 
 inline bool BKDRFTQueueInc::isManagedQueue(queue_t qid) {
@@ -299,7 +302,7 @@ uint32_t BKDRFTQueueInc::CDQ(Context *ctx,
           // TODO: not checking isManagedQueue for performance testing
           // if (isManagedQueue(dqid))
           q_status_[dqid].remaining_dpkt += nb_pkts;
-          doorbell_service_queue_.push(std::pair<uint16_t, uint32_t>(dqid, nb_pkts));
+          // doorbell_service_queue_.push(std::pair<uint16_t, uint32_t>(dqid, nb_pkts));
           if (likely(q_status_[dqid].remaining_dpkt > 0)) {
             int index = dqid / 64;
             int bit = dqid % 64;

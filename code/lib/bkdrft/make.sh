@@ -11,7 +11,7 @@ then
 fi
 cwd=`pwd`
 cd $curdir/protobuf/
-protoc-c --c_out=./_compile/ bkdrft_msg.proto 
+protoc-c --c_out=./_compile/ bkdrft_msg.proto
 cd $cwd
 
 rm -r $curdir/build/

@@ -70,10 +70,13 @@ int prepare_packet(bess::Packet *pkt, void *payload, size_t size,
   return 256;  // successfuly prepared the pkt.
 }
 
-int prepare_ctrl_packet(bess::Packet *pkt, uint8_t qid, uint32_t nb_pkts,
-                        uint64_t sent_bytes, const Flow *flow) {
+int prepare_ctrl_packet(bess::Packet *pkt, uint8_t qid, uint32_t prio,
+                        uint32_t nb_pkts, uint64_t sent_bytes,
+                        const Flow *flow)
+{
   bess::pb::Ctrl ctrl_msg;
   ctrl_msg.set_qid(qid);
+  ctrl_msg.set_prio(prio);
   ctrl_msg.set_nb_pkts(nb_pkts);
   ctrl_msg.set_total_bytes(sent_bytes);
   int size = ctrl_msg.ByteSizeLong();

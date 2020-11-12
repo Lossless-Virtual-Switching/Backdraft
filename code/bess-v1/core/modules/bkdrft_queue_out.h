@@ -30,6 +30,10 @@ const uint32_t max_availabe_flows = 256;
 const uint64_t flow_dealloc_limit = 100000000; // ns
 // const int bp_buffer_len_high_water = 2700;
 const uint64_t max_overlay_pause_duration = 5000000; // ns
+// TODO: may use HEAP, RB-Tree or ... for priority queue
+const int COUNT_PRIORITY = 2;
+const int PRIORITY_QUEUE_LEN = 64; // flow in prio
+const int ctrl_batch_size = 1024;
 
 using bess::bkdrft::Flow;
 struct queue_flow_info {
@@ -179,15 +183,19 @@ int pktbuffer_dequeue(pktbuffer_t *buf, bess::Packet **pkts, uint32_t count) {
     pull_to_peek = ring_pkts;
 
   if (pull_to_peek > 0) {
-    ret = rte_ring_dequeue_bulk(buf->ring_queue, (void **)(tmp_arr),
+    // ret = rte_ring_dequeue_bulk(buf->ring_queue, (void **)(tmp_arr),
+    //                             pull_to_peek, nullptr);
+    ret = rte_ring_dequeue_bulk(buf->ring_queue,
+                                (void **)(buf->peek + buf->tail),
                                 pull_to_peek, nullptr);
     if (unlikely(!ret)) {
       LOG(FATAL) << "pktbuffer_dequeue: failed to pull packets to peek\n";
     }
+    buf->tail += ret; // mail tail forward
 
     // copy packet pointeres to peek
-    for (int32_t i=0; i < ret; i++)
-      buf->peek[buf->tail++] = tmp_arr[i];
+    // for (int32_t i=0; i < ret; i++)
+    //   buf->peek[buf->tail++] = tmp_arr[i];
   }
 
   return from_peek + from_ring;
@@ -195,7 +203,9 @@ int pktbuffer_dequeue(pktbuffer_t *buf, bess::Packet **pkts, uint32_t count) {
 /* pktbuffer_t ====================== */
 
 struct flow_state {
+  uint32_t flow_id;
   queue_t qid; // the flow is mapped to this qid
+  uint32_t prio;
   OverlayState overlay_state; // overlay state (TRIGGERED, SAFE)
   uint64_t ts_last_overlay; // when was last overlay sent
   uint64_t no_overlay_duration; // for what duration no overlay should be sent
@@ -239,7 +249,7 @@ private:
   int SetupFlowControlBlockPool();
 
   // place not sent packets in the buffer for the given flow
-  void BufferBatch(Flow *flow, flow_state *fstate,
+  void BufferBatch(Flow *flow, struct flow_state *fstate,
                              bess::PacketBatch *batch, uint16_t sent_pkt);
 
   // try to send packets in the buffer
@@ -248,8 +258,10 @@ private:
   // try to send packets in the buffer
   void TrySendBufferPFQ(Context *cntx);
 
+  int TryFlushCtrlBatch();
+
   // send ctrl packet for the batch of packets sent on qid
-  uint16_t SendCtrlPkt(Port *p, queue_t qid, uint16_t sent_pkts,
+  uint16_t SendCtrlPkt(Port *p, queue_t qid, uint32_t prio, uint16_t sent_pkts,
                        uint32_t sent_bytes);
 
   void UpdatePortStats(queue_t qid, uint16_t sent_pkts, uint16_t droped,
@@ -269,7 +281,7 @@ private:
                        uint64_t buffer_size);
 
   // map a flow to a queue (or get the queue it was mapped before)
-  flow_state *GetFlowState(Context *cntx, Flow &flow);
+  struct flow_state *GetFlowState(Context *cntx, Flow &flow);
   void DeallocateFlowState(Context *cntx, Flow &flow);
 
   /*
@@ -277,8 +289,8 @@ private:
    * the total sent bytes and the status of ctrl packet can be checked from
    * exposed pointers. Pointers are ignored if they are null.
    */
-  int SendPacket(Port *p, Flow *flow, queue_t qid, bess::Packet **pkts, uint32_t cnt,
-                 uint64_t *tx_bytes, bool *ctrl_pkt_sent);
+  int SendPacket(Port *p, struct flow_state *fstate, bess::Packet **pkts,
+                 uint32_t cnt, uint64_t *tx_bytes, bool *ctrl_pkt_sent);
 
   // send an overlay message for the given flow
   // qid: the queue the flow is mapped to
@@ -287,12 +299,7 @@ private:
                   OverlayState state, uint64_t *duration=nullptr);
 
 private:
-  using bufferHashTable =
-      bess::utils::CuckooMap<Flow, std::vector<bess::Packet *> *, Flow::Hash,
-                             Flow::EqualTo>;
-
   Port *port_;
-  // queue_t qid_;
   uint32_t max_buffer_size_; // the size of output discriptors
 
   uint16_t count_queues_;
@@ -304,14 +311,8 @@ private:
   bool overlay_;
   uint32_t ecn_threshold_;
 
-  // This buffer is useful when per flow queueing is active
-  // we buffer each packet in its seperate queue
-  bufferHashTable buffers_;
-
   // The limmited_buffers_ are used for buffering packets when
   // per flow queueing is not active.
-  // std::vector<bess::Packet *> limited_buffers_[MAX_QUEUES];
-  // struct rte_ring *limited_buffers_[MAX_QUEUES];
   pktbuffer_t *limited_buffers_[MAX_QUEUES];
 
   uint64_t count_packets_in_buffer_;
@@ -335,7 +336,7 @@ private:
 
   uint64_t buffer_len_high_water = 6;
   uint64_t buffer_len_low_water = 16;
-  uint64_t bp_buffer_len_high_water = 6;
+  uint64_t bp_buffer_len_high_water = 512;
 
   // a  name given to this module. currently used for loggin pause per sec
   // statistics.
@@ -343,10 +344,6 @@ private:
   queue_flow_info q_info_[MAX_QUEUES];
   // used for determining the flow for which overlay should be generated
   Flow sample_pkt_flow_;
-  // used for estimating the drop rate of each flow.
-  // when in lossy mode, from this information we decide
-  // if pause or overlay should be emmited
-  bess::utils::CuckooMap<Flow, double, Flow::Hash, Flow::EqualTo> flow_drop_est;
 
   uint16_t doorbell_queue_number_;
   queue_t *data_queues_;
@@ -355,6 +352,17 @@ private:
   Flow *flow_state_flow_id_;
   uint32_t fsp_top_; // flow state pool top of the stack
   bool initialized_;
+
+  uint32_t num_filled_buffers_;
+  std::set<struct flow_state *> filled_buffers_;
+
+  uint32_t prio_queue_[COUNT_PRIORITY][PRIORITY_QUEUE_LEN];
+  int prio_queue_len_[COUNT_PRIORITY];
+
+  bess::Packet *ctrl_batch_[ctrl_batch_size];
+  int ctrl_batch_used_;
+  uint64_t first_ctrl_pkt_ts_;
+  uint64_t current_ns_;
 };
 
 #endif // BESS_MODULES_BKDRFTQUEUEOUT_H_
