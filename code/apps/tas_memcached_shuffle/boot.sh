@@ -1,4 +1,4 @@
-#!/bin/sh
+#!/bin/bash
 
 # Note: This script expects following environment variables to be defined
 # === TAS ===
@@ -16,6 +16,7 @@
 # wait_before_measure
 # threads
 # connections
+# shuffle_size
 # === SERVER ===
 # memory (in mb)
 # threads
@@ -30,6 +31,12 @@ flags=""
 if [ ${command_data_queue} -gt 0 ]
 then
   flags="--fp-command-data-queue"
+fi
+
+tmp_count_queue=1
+if [ ${command_data_queue} -gt 0 ]
+then
+  tmp_count_queue=2
 fi
 
 # start TAS engine
@@ -63,16 +70,57 @@ openall_delay=0
 dst_ip_port_pair=$(echo "$dst_ip_port_pair" | tr -d '"')
 echo $dst_ip_port_pair
 
+# TODO: take this as parameter
+shuffle_count_flow=1 # should not be changed (only 1 is supported)
+# shuffle_size=$((2 * 1024 * 1024 * 1024))
+shuffle_server_port=5678
+shuffle_instance=1
+shuffle_pids=()
+
+mem_value_size=200
+# mem_query_per_sec=1000
+# count_mutilate_worker=4
+
 if [ "$type" = "client" ]; then
+  # start shuffle client
+  for i in `seq $shuffle_instance`
+  do
+    LD_PRELOAD=$TAS_DIR/lib/libtas_interpose.so \
+      /root/shuffle_client $shuffle_size $shuffle_count_flow \
+                           $dst_ip $shuffle_server_port &
+    shuffle_pids+=("$!")
+  done
+  sleep 1
+
   LD_PRELOAD=$TAS_DIR/lib/libtas_interpose.so \
      /root/mutilate/mutilate -s $dst_ip -t $duration -w $warmup_time \
-     -W $wait_before_measure -T $threads -c $connections
-  sleep 10
+     -W $wait_before_measure -B -T $threads -c $connections -V $mem_value_size &
+  mutilate_pid=$!
+
+  # wait for mutilate to finish
+  wait $mutilate_pid
+
+  # wait for shuffle to finish
+  for shuffle_pid in $shuffle_pids
+  do
+    wait $shuffle_pid
+  done
+
   echo Done!
+  sleep 10 # wait some time before stopping client TAS engine
 elif [ "$type" = "server" ]; then
+  # start shuffle server
   LD_PRELOAD=$TAS_DIR/lib/libtas_interpose.so \
-    memcached -m $memory -u root -l $ip -t $threads
+    /root/shuffle_server $shuffle_server_port &
+  shuffle_pid=$!
+
+  # start memcached
+  LD_PRELOAD=$TAS_DIR/lib/libtas_interpose.so \
+    memcached -m $memory -u root -l $ip -t $threads &
+  wait $!
+
+  wait $shuffle_pid
 else
-  echo "type variable is not supported (type=$type)"
+  echo "type is not supported (type=$type)"
 fi
 
