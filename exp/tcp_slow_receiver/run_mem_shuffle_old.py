@@ -179,25 +179,26 @@ def get_containers_config():
 
     count_instance = 4
     cpus = [3, 3, 3, 4]  # request number of cpues for each instance
+    cpus_share = [0.95, 0.71, 1.0, 1.0]
     cores = get_cores(cpus)
 
     containers = [
-        {
-            # memcached
-            'name': 'tas_server_1',
-            'type': 'server',
-            'image': 'tas_memcached',
-            'cpu': cores[0],
-            'socket': socket_dir + '/tas_server_1.sock',
-            'ip': '10.10.0.1',
-            'prefix': 'tas_server_1',
-            'cpus': cpus[0],
-            'tas_cores': tas_cores,
-            'tas_queues': count_queue,
-            'cdq': int(cdq),
-            'memory': 1024,
-            'threads': 1,
-        },
+        # {
+        #     # memcached
+        #     'name': 'tas_server_1',
+        #     'type': 'server',
+        #     'image': 'tas_memcached',
+        #     'cpu': cores[0],
+        #     'socket': socket_dir + '/tas_server_1.sock',
+        #     'ip': '10.10.0.1',
+        #     'prefix': 'tas_server_1',
+        #     'cpus': cpus[0] * cpus_share[0],
+        #     'tas_cores': tas_cores,
+        #     'tas_queues': count_queue,
+        #     'cdq': int(cdq),
+        #     'memory': 1024,
+        #     'threads': 1,
+        # },
         {
             # shuffle
             'name': 'tas_server_2',
@@ -207,32 +208,32 @@ def get_containers_config():
             'socket': socket_dir + '/tas_server_2.sock',
             'ip': '10.10.0.2',
             'prefix': 'tas_server_2',
-            'cpus': cpus[1],
+            'cpus': cpus[1] * cpus_share[1],
             'tas_cores': tas_cores,
             'tas_queues': count_queue,
             'cdq': int(cdq),
             'port': 5678,
         },
-        {
-            # mutilate
-            'name': 'tas_client_1',
-            'type': 'client',
-            'image': 'tas_memcached',
-            'cpu': cores[2],
-            'socket': socket_dir + '/tas_client_1.sock',
-            'ip': '172.17.0.1',
-            'prefix': 'tas_client_1',
-            'cpus': cpus[2],
-            'tas_cores': tas_cores,
-            'tas_queues': count_queue,
-            'cdq': int(cdq),
-            'dst_ip': '10.10.0.1',
-            'duration': duration,
-            'warmup_time': warmup_time,
-            'wait_before_measure': 0,
-            'threads': 1,
-            'connections': mutilate_connections,
-        },
+        # {
+        #     # mutilate
+        #     'name': 'tas_client_1',
+        #     'type': 'client',
+        #     'image': 'tas_memcached',
+        #     'cpu': cores[2],
+        #     'socket': socket_dir + '/tas_client_1.sock',
+        #     'ip': '172.17.0.1',
+        #     'prefix': 'tas_client_1',
+        #     'cpus': cpus[2] * cpus_share[2],
+        #     'tas_cores': tas_cores,
+        #     'tas_queues': count_queue,
+        #     'cdq': int(cdq),
+        #     'dst_ip': '10.10.0.1',
+        #     'duration': duration,
+        #     'warmup_time': warmup_time,
+        #     'wait_before_measure': 0,
+        #     'threads': 1,
+        #     'connections': mutilate_connections,
+        # },
         {
             # shuffle
             'name': 'tas_client_2',
@@ -242,7 +243,25 @@ def get_containers_config():
             'socket': socket_dir + '/tas_client_2.sock',
             'ip': '172.17.0.2',
             'prefix': 'tas_client_2',
-            'cpus': cpus[3],
+            'cpus': cpus[3] * cpus_share[3],
+            'tas_cores': tas_cores,
+            'tas_queues': count_queue,
+            'cdq': int(cdq),
+            'dst_ip': '10.10.0.2',
+            'server_port': 5678,
+            'server_req_unit': shuffle_server_req_unit,
+            'count_flow': shuffle_count_flow,
+        },
+        {
+            # shuffle
+            'name': 'tas_client_1',
+            'type': 'client',
+            'image': 'tas_shuffle',
+            'cpu': cores[2],
+            'socket': socket_dir + '/tas_client_1.sock',
+            'ip': '172.17.0.1',
+            'prefix': 'tas_client_1',
+            'cpus': cpus[2] * cpus_share[2],
             'tas_cores': tas_cores,
             'tas_queues': count_queue,
             'cdq': int(cdq),
@@ -368,8 +387,8 @@ def main():
 
     try:
         # Wait for experiment duration to finish
-        print('wait {} seconds...'.format(duration))
-        sleep(duration)
+        print('wait {} seconds...'.format(duration + 10))
+        sleep(duration + 10)
     except KeyboardInterrupt:
         # catch Ctrl-C
         print('experiment termination process...')
@@ -518,9 +537,9 @@ if __name__ == '__main__':
     # tas should have only one core (not tested with more)
     tas_cores = 1  # how many cores are allocated to tas (fp-max-cores)
 
-    mutilate_connections = 8
+    mutilate_connections = 1
     shuffle_count_flow = 1  # shoudl be 1. shuffle app crashes otherwise
-    shuffle_server_req_unit = 100 * 1024 * 1024 # 4 * 1024 * 1024 * 1024
+    shuffle_server_req_unit = 500 *  1024 * 1024 # 10GB
 
 
     # do parameter checks

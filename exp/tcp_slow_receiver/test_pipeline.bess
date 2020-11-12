@@ -1,0 +1,33 @@
+import os
+import subprocess
+
+
+def del_socket(path):
+  if os.path.exists(path):
+     subprocess.call('sudo rm %s' % path, shell=True)
+
+del_socket('/tmp/test_dummy_1.sock')
+
+queues = 8
+Q_SIZE = 512
+TX_QUEUE_COUNT = queues
+RX_QUEUE_COUNT = queues
+
+dummy1 = PMDPort(
+  name='tas_dummy_1',
+  vdev='eth_vhost1,iface=/tmp/test_dummy_1.sock,queues={}'.format(queues),
+  num_inc_q=TX_QUEUE_COUNT,
+  num_out_q=RX_QUEUE_COUNT,
+  size_inc_q=Q_SIZE,
+  size_out_q=Q_SIZE
+  )
+
+for i in range(queues):
+  # q_out = BKDRFTQueueOut(port=dummy1, qid=queue_ids,
+  #   backpressure=bp, lossless=lossless, cdq=cdq, per_flow_buffering=pfq,
+  #   mname='dummy1', overlay=False)
+  q_out = QueueOut(port=dummy1, qid=i)
+  Source() -> q_out
+
+  QueueInc(port=dummy1, qid = i) -> Sink()
+
