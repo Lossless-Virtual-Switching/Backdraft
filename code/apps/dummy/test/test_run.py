@@ -1,14 +1,15 @@
+#!/usr/bin/python3
 import sys
 import subprocess
+from time import sleep
 
-sys.path.insert(0, '../')
+sys.path.insert(0, '../../../../exp/')
 from bkdrft_common import *
 from tas_containers import run_dummy_app
 
 
 # Kill anything running
-bessctl_do('daemon stop', stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE) # this may show an error it is nothing
+bessctl_do('daemon stop', stdout=subprocess.PIPE, stderr=subprocess.PIPE)
 
 subprocess.run('sudo pkill dummy_app', shell=True)
 
@@ -27,7 +28,7 @@ ret = bessctl_do('daemon start -- run file {}'.format(file_path))
 dummy_proc_cost = 0
 dummy_target_ip_list = []
 count_queue = 8
-cdq = 0
+cdq = 1
 d_cpu = [24]
 i = 0
 d_prefix = 'exp_dummy_{}'.format(i)
@@ -44,3 +45,12 @@ conf = {
         'ips': dummy_target_ip_list,
         }
 run_dummy_app(conf)
+
+while True:
+    try:
+        sleep(10)
+    except KeyboardInterrupt:
+        break
+
+subprocess.run('sudo pkill dummy_app')
+bessctl_do('daemon stop', stdout=subprocess.PIPE, stderr=subprocess.PIPE)

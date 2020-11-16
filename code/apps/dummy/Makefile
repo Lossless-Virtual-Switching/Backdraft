@@ -64,7 +64,8 @@ $(APP): $(OBJS)
 	$(CC) -o $(CURRENT_DIR)/build/$@ $^ $(LDFLAGS) $(LIBS)
 
 clean:
-	rm $(APP) *.o utils/*.o
+	rm *.o utils/*.o
+	rm -r $(CURRENT_DIR)/build/
 
 .PHONY: clean
 
