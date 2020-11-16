@@ -283,7 +283,7 @@ uint32_t BKDRFTQueueInc::CDQ(Context *ctx,
       // a pointer to parsed protobuf object
       // static void *pb = rte_malloc(nullptr, sizeof(bess::pb::Ctrl), 0);
       //  TODO: for Overlay messages we should do something else!
-      static void *pb = new bess::pb::Ctrl();
+      void *pb = &ctrl_pkt_pb_tmp_;
 
       bess::Packet *pkt;
       for (uint32_t i = 0; i < cnt; i++) {

@@ -70,6 +70,8 @@ class BKDRFTQueueInc final : public Module {
   uint16_t count_managed_queues;
   uint16_t doorbell_queue;
   queue_t *managed_queues;
+
+  bess::pb::Ctrl ctrl_pkt_pb_tmp_;
 };
 
 #endif  // BESS_MODULES_BKDRFQUEUEINC_H_
