@@ -19,6 +19,7 @@ SRCS-y := src/main.c
 SRCS-y += src/server.c
 SRCS-y += src/client.c
 SRCS-y += src/zipf.c
+SRCS-y += src/set.c
 SRCS-y += src/vport/vport.c
 
 CFLAGS += $(WERROR_FLAGS)

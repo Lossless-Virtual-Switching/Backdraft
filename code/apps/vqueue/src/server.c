@@ -24,12 +24,12 @@ static void worker(struct vport *port)
   uint64_t throughput = 0;
   struct rte_mbuf *rx_buf[burst];
 
-  uint32_t qid;
+  int16_t qid;
 
   uint64_t last_update_ts;
   uint64_t current_ts;
 
-  uint8_t doorbell_q = 0;
+  uint8_t doorbell_q = 1;
 
   if (doorbell_q)
     assert(count_queue > 2);
@@ -53,6 +53,7 @@ static void worker(struct vport *port)
         // read ctrl packet
         uint16_t *ptr = rte_pktmbuf_mtod(rx_buf[0], uint16_t *);
         qid = *ptr;
+        if (qid > count_queue) printf("wow: %d\n", qid);
         // printf("qid: %d\n", qid);
         rte_pktmbuf_free(rx_buf[0]);
       } else {
@@ -77,6 +78,12 @@ static void worker(struct vport *port)
         last_update_ts = current_ts;
       }
 
+      for (int j = 0; j < 10; j++) {
+        for (int k = 0; k < 100; k++) {
+           __asm__ volatile("" : "+g" (j) : :);
+        }
+      }
+
     }
   }
 
@@ -96,7 +103,7 @@ static void print_usage(void)
  * */
 int server_main(int argc, char* argv[])
 {
-  int count_queue = 8; // default: 8 queues
+  int count_queue = 10000; // default: 8 queues
   if (argc > 1) {
     count_queue = atoi(argv[1]);
     if (count_queue == 0) {

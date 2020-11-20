@@ -108,14 +108,14 @@ struct vport *new_vport(const char *name, uint16_t num_inc_q, uint16_t num_out_q
   }
 
   // create named pipe
-	for (i = 0; i < num_out_q; i++) {
-    snprintf(file_name, PORT_DIR_LEN, "%s/%s/%s.rx%d", TMP_DIR,
-             VPORT_DIR_PREFIX, name, i);
+	// for (i = 0; i < num_out_q; i++) {
+  //   snprintf(file_name, PORT_DIR_LEN, "%s/%s/%s.rx%d", TMP_DIR,
+  //            VPORT_DIR_PREFIX, name, i);
 
-    mkfifo(file_name, 0666);
+  //   mkfifo(file_name, 0666);
 
-    port->out_irq_fd[i] = open(file_name, O_RDWR);
-  }
+  //   port->out_irq_fd[i] = open(file_name, O_RDWR);
+  // }
 
   snprintf(file_name, PORT_DIR_LEN, "%s/%s/%s", TMP_DIR,
            VPORT_DIR_PREFIX, name);
@@ -132,15 +132,15 @@ int free_vport(struct vport *port)
     // TODO: keep track of number of connected vports
     // Make sure there is no other vport connected to this vport bar
     char file_name[PORT_DIR_LEN];
-    uint16_t num_out_q = port->bar->num_out_q;
+    // uint16_t num_out_q = port->bar->num_out_q;
     char *name = port->bar->name;
-    for (uint16_t i = 0; i < num_out_q; i++) {
-      snprintf(file_name, PORT_DIR_LEN, "%s/%s/%s.rx%d", TMP_DIR,
-               VPORT_DIR_PREFIX, name, i);
+    // for (uint16_t i = 0; i < num_out_q; i++) {
+    //   snprintf(file_name, PORT_DIR_LEN, "%s/%s/%s.rx%d", TMP_DIR,
+    //            VPORT_DIR_PREFIX, name, i);
 
-      unlink(file_name);
-      close(port->out_irq_fd[i]);
-    }
+    //   unlink(file_name);
+    //   close(port->out_irq_fd[i]);
+    // }
 
     snprintf(file_name, PORT_DIR_LEN, "%s/%s/%s", TMP_DIR, VPORT_DIR_PREFIX,
              name);
