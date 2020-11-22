@@ -46,6 +46,8 @@ struct vport {
 struct vport *from_vbar_addr(size_t bar_address);
 struct vport *new_vport(const char *name, uint16_t num_inc_q,
                         uint16_t num_out_q);
+struct vport *_new_vport(const char *name, uint16_t num_inc_q,
+                         uint16_t num_out_q, uint16_t queue_size);
 int free_vport(struct vport *port);
 int send_packets_vport(struct vport *port, uint16_t qid, void**pkts, int cnt);
 int recv_packets_vport(struct vport *port, uint16_t qid, void**pkts, int cnt);

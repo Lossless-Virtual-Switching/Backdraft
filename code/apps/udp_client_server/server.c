@@ -16,7 +16,7 @@
 #include <rte_ip.h>
 #include <rte_mbuf.h>
 
-#define BURST_SIZE (512)
+#define BURST_SIZE (1024)
 #define MAX_DURATION (60)             // (sec)
 #define MAX_EXPECTED_LATENCY (100000) // (us)
 
@@ -111,7 +111,7 @@ poll_doorbell:
       rte_pktmbuf_free(buf); // free ctrl_pkt
       continue;
     }
-    dqid = (uint8_t)ctrl_msg->qid;
+    dqid = (uint16_t)ctrl_msg->qid;
     dq_burst = (uint16_t)ctrl_msg->nb_pkts;
     // TODO: msg->total_bytes is not used yet!
     // printf("data qid: %d\n", (int)dqid);
@@ -204,7 +204,7 @@ int do_server(void *_cntx) {
   int system_mode = cntx->system_mode;
   struct rte_mempool *tx_mem_pool = cntx->tx_mem_pool; // just for sending arp
   struct rte_mempool *ctrl_mem_pool = cntx->ctrl_mem_pool;
-  uint8_t qid = cntx->default_qid;
+  uint16_t qid = cntx->default_qid;
   uint32_t count_queues = cntx->count_queues;
   struct rte_ether_addr my_eth = cntx->my_eth;
   uint32_t my_ip = cntx->src_ip;
@@ -224,7 +224,7 @@ int do_server(void *_cntx) {
   int first_pkt = 0; // flag indicating if has received the first packet
 
   // int throughput[MAX_DURATION];
-  const uint64_t hz = rte_get_tsc_hz();
+  const uint64_t hz = rte_get_timer_hz();
   uint64_t throughput = 0;
   uint64_t start_time;
   uint64_t exp_begin;
@@ -263,6 +263,9 @@ int do_server(void *_cntx) {
   // can not read queue until this time stamp
   uint64_t queue_status[count_queues];
 
+  int sum_nb_rx = 0;
+  int count_rx = 0;
+
   for (i = 0; i < count_queues; i++)
     queue_status[i] = 0;
 
@@ -292,7 +295,7 @@ int do_server(void *_cntx) {
 
   fprintf(fp, "Running server\n");
 
-  exp_begin = rte_get_tsc_cycles();
+  exp_begin = rte_get_timer_cycles();
   start_time = exp_begin;
   /* main worker loop */
   while (run && cntx->running) {
@@ -301,7 +304,7 @@ int do_server(void *_cntx) {
     q_index = (q_index + 1) % count_queues;
 
     /* get this iteration's timestamp */
-    current_time = rte_get_tsc_cycles();
+    current_time = rte_get_timer_cycles();
 
     /* if experiment time has passed kill the server
      * (not all experiments need this)
@@ -312,11 +315,17 @@ int do_server(void *_cntx) {
     }
 
     /* update throughput */
-    if (current_time - start_time > rte_get_tsc_hz()) {
+    if (current_time - start_time > rte_get_timer_hz()) {
       // print_stats(throughput, hist);
       // if (my_ip == 0xC0A80115)
-      //   printf("TP: %lu\n", throughput);
+      double avg_nb_rx = 0;
+      if (count_rx != 0)
+        avg_nb_rx = sum_nb_rx / (double)count_rx;
+      printf("TP: %lu\n", throughput);
+      printf("Average burst size: %.2f\n", avg_nb_rx);
       throughput = 0;
+      sum_nb_rx = 0;
+      count_rx = 0;
       start_time = current_time;
       // current_sec = 0;
       // printf("failed to push: %ld\n", failed_to_push);
@@ -369,6 +378,9 @@ int do_server(void *_cntx) {
       }
       continue;
     }
+
+    sum_nb_rx += nb_rx;
+    count_rx++;
 
     nb_pkts_process = 0;
     /* echo packets */
@@ -434,19 +446,6 @@ int do_server(void *_cntx) {
       throughput += 1;
       // throughput[current_sec] += 1;
 
-      // TODO: processing const should be applied after calculating latencies
-      /* apply processing cost */
-      // if (delay_cycles > 0) {
-      //   // rte_delay_us_block(delay_us);
-      //   uint64_t now = rte_get_tsc_cycles();
-      //   uint64_t end =
-      //       rte_get_tsc_cycles() + delay_cycles;
-      //   while (now < end) {
-      //     now = rte_get_tsc_cycles();
-      //   }
-      //   cycles_error =(now - end) * 0.5 + 0.5 * (cycles_error);
-      // }
-
       udp_hdr = (struct rte_udp_hdr *)(ipv4_hdr + 1);
 
       /* apply procesing cost for a specific flow (TODO: just for experiment) */
@@ -470,7 +469,7 @@ int do_server(void *_cntx) {
       ptr = ptr + ts_offset;
       timestamp = (*(uint64_t *)ptr);
       /* TODO: the following line only works on single node */
-      latency = (rte_get_timer_cycles() - timestamp) * 1000 * 1000 / hz; //(us)
+      latency = (rte_get_timer_cycles() - timestamp) * 1000 * 1000 / rte_get_timer_hz(); //(us)
       add_number_to_p_hist(hist, (float)latency);
 
       if (!bidi) {
@@ -522,7 +521,7 @@ int do_server(void *_cntx) {
     // }
 
     // this queue can not be serviced until the deadline is reached
-    queue_status[qid] = rte_get_tsc_cycles() + (nb_pkts_process * delay_cycles);
+    queue_status[qid] = rte_get_timer_cycles() + (nb_pkts_process * delay_cycles);
 
     while (k > 0) {
       if (port_type == dpdk) {
@@ -539,14 +538,14 @@ int do_server(void *_cntx) {
 
       /* move packets failed to send to the front of the queue */
       for (i = nb_tx; i < k; i++) {
-        // tx_buf[i - nb_tx] = tx_buf[i];
-        rte_pktmbuf_free(tx_buf[i]);
+        tx_buf[i - nb_tx] = tx_buf[i];
+        // rte_pktmbuf_free(tx_buf[i]);
       }
       // printf("server sent: %d\n", nb_tx);
-      failed_to_push += k - nb_tx;
-      k = 0;
-      // k -= nb_tx;
-      break;
+      // failed_to_push += k - nb_tx;
+      // k = 0;
+      k -= nb_tx;
+      // break;
     }
 
     // failed_to_push += k - nb_tx;

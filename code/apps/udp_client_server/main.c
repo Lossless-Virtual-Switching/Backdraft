@@ -13,11 +13,11 @@
 #define RX_RING_SIZE (512)
 #define TX_RING_SIZE (512)
 
-#define NUM_MBUFS (1024)
+#define NUM_MBUFS (16384)
 #define MBUF_CACHE_SIZE (512)
 #define PRIV_SIZE 256
 
-#define SHIFT_ARGS {argc--; argv++;};
+#define SHIFT_ARGS {argc--;if(argc>0)argv[1]=argv[0];argv++;};
 
 static unsigned int dpdk_port = 0;
 
@@ -26,6 +26,7 @@ static void print_usage(void)
 {
   printf("usage: ./udp_app [DPDK EAL arguments] -- [Client arguments]\n"
   "arguments:\n"
+  "    * (optional) bidi=<true/false>\n"
   "    * (optional) vport=<name of port>\n"
   "    * source_ip: ip of host on which app is running (useful for arp)\n"
   "    * number of queue\n"
@@ -226,7 +227,7 @@ int main(int argc, char *argv[]) {
 
   // how much is the size of udp payload
   // TODO: take message size from arguments
-  int payload_size = 1450; // 64; //
+  int payload_size = 64; // 1450; //
 
   // how many queues does the connected Nic/Vhost have
   uint16_t num_queues = 3;
@@ -273,6 +274,8 @@ int main(int argc, char *argv[]) {
   struct vport *virt_port = NULL;
   char port_name[PORT_NAME_LEN] = {}; // name of vport
 
+  int bidi = 1;
+
   // struct rte_ether_addr tmp_addr;
 
   // let dpdk parse its own arguments
@@ -287,6 +290,19 @@ int main(int argc, char *argv[]) {
     printf("argc < 5\n");
     print_usage();
     rte_exit(EXIT_FAILURE, "Wrong number of arguments");
+  }
+
+  if (strncmp(argv[1], "bidi=", 5) == 0) {
+    if (strncmp(argv[1] + 5, "false", 5) == 0) {
+      bidi = 0;
+    } else if (strncmp(argv[1] + 5, "true", 4) == 0) {
+      bidi = 1;
+    } else {
+      printf("bidi flag value is not recognized\n");
+      print_usage();
+      return 1;
+    }
+    SHIFT_ARGS;
   }
 
   if (strncmp(argv[1], "vport=", 6) == 0) {
@@ -497,7 +513,7 @@ int main(int argc, char *argv[]) {
     cntxs[i].running = 1;     // this job of this cntx has not finished yet
     cntxs[i].src_ip = source_ip + i;
     cntxs[i].use_vlan = 0;
-    cntxs[i].bidi = 1;
+    cntxs[i].bidi = bidi;
     cntxs[i].num_queues = num_queues; // how many queue port has
 
     /* how many queue the contex is responsible for */

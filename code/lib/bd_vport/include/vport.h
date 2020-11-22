@@ -4,7 +4,7 @@
 #include "llring.h"
 
 // #define MAX_QUEUES_PER_DIR 16384
-#define MAX_QUEUES_PER_DIR 128
+#define MAX_QUEUES_PER_DIR 10000
 
 #define SLOTS_PER_LLRING 1024
 #define SLOTS_WATERMARK ((SLOTS_PER_LLRING >> 3) * 7) /* 87.5% */
@@ -49,6 +49,8 @@ struct vport *from_vport_name(char *port_name);
 struct vport *from_vbar_addr(size_t bar_address);
 struct vport *new_vport(const char *name, uint16_t num_inc_q,
                         uint16_t num_out_q);
+struct vport *_new_vport(const char *name, uint16_t num_inc_q,
+                        uint16_t num_out_q, uint16_t q_size);
 int free_vport(struct vport *port);
 int send_packets_vport(struct vport *port, uint16_t qid, void**pkts, int cnt);
 int recv_packets_vport(struct vport *port, uint16_t qid, void**pkts, int cnt);

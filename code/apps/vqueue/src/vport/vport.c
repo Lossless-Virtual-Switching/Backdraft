@@ -25,10 +25,17 @@ struct vport *from_vbar_addr(size_t bar_address)
   return port;
 }
 
+struct vport *new_vport(const char *name, uint16_t num_inc_q,
+                        uint16_t num_out_q)
+{
+  return _new_vport(name, num_inc_q, num_out_q, SLOTS_PER_LLRING);
+}
+
 /* Allocate a new vport and vport_bar
  * Setup pipes
  * */
-struct vport *new_vport(const char *name, uint16_t num_inc_q, uint16_t num_out_q)
+struct vport *_new_vport(const char *name, uint16_t num_inc_q,
+                         uint16_t num_out_q, uint16_t queue_size)
 {
   uint32_t i;
 
@@ -53,7 +60,7 @@ struct vport *new_vport(const char *name, uint16_t num_inc_q, uint16_t num_out_q
   port->_main = 1; // this is the main vport (ownership of vbar)
 
   // calculate how much memory is needed for vport_bar
-  bytes_per_llring = llring_bytes_with_slots(SLOTS_PER_LLRING);
+  bytes_per_llring = llring_bytes_with_slots(queue_size);
   bytes_per_llring = ROUND_TO_64(bytes_per_llring);
   total_memory_needed = ROUND_TO_64(sizeof(struct vport_bar)) +
                 bytes_per_llring * (num_inc_q + num_out_q) +
@@ -81,7 +88,7 @@ struct vport *new_vport(const char *name, uint16_t num_inc_q, uint16_t num_out_q
     ptr += ROUND_TO_64(sizeof(struct vport_inc_regs));
 
     llr = (struct llring*)ptr;
-    llring_init(llr, SLOTS_PER_LLRING, SINGLE_PRODUCER, SINGLE_CONSUMER);
+    llring_init(llr, queue_size, SINGLE_PRODUCER, SINGLE_CONSUMER);
     llring_set_water_mark(llr, SLOTS_WATERMARK);
     bar->inc_qs[i] = llr;
     ptr += bytes_per_llring;
@@ -93,7 +100,7 @@ struct vport *new_vport(const char *name, uint16_t num_inc_q, uint16_t num_out_q
     ptr += ROUND_TO_64(sizeof(struct vport_out_regs));
 
     llr = (struct llring*)ptr;
-    llring_init(llr, SLOTS_PER_LLRING, SINGLE_PRODUCER, SINGLE_CONSUMER);
+    llring_init(llr, queue_size, SINGLE_PRODUCER, SINGLE_CONSUMER);
     llring_set_water_mark(llr, SLOTS_WATERMARK);
     bar->out_qs[i] = llr;
     ptr += bytes_per_llring;

@@ -1,11 +1,14 @@
 #include <stdio.h>
 #include <signal.h>
+#include <string.h>
 
 #include <rte_mbuf.h>
 #include <rte_cycles.h>
 
 #include "vport.h"
 #include "app.h"
+
+#define SHIFT_ARGS {argc--;if(argc > 0)argv[1]=argv[0]; argv++;}
 
 static volatile int run = 1;
 
@@ -104,6 +107,35 @@ static void print_usage(void)
 int server_main(int argc, char* argv[])
 {
   int count_queue = 10000; // default: 8 queues
+  struct vport *port = NULL;
+  int port_connected = 0;
+  char port_name[PORT_NAME_LEN];
+  char port_path[PORT_DIR_LEN];
+  size_t bar_address;
+  FILE *vport_fp;
+
+  if (argc > 1) {
+    // check if can connect to a port
+    if (strncmp(argv[1], "vport=", 6) == 0) {
+      strncpy(port_name, argv[1]+6, PORT_NAME_LEN);
+      snprintf(port_path, PORT_DIR_LEN, "%s/%s/%s",
+               TMP_DIR, VPORT_DIR_PREFIX, port_name);
+      printf("port file: %s\n", port_path);
+      vport_fp = fopen(port_path, "r");
+      if(!fread(&bar_address, 8, 1, vport_fp)) {
+        printf("file is empty (or another error)\n");
+        rte_exit(EXIT_FAILURE, "Error port file has an issue\n");
+      }
+      fclose(vport_fp);
+      port = from_vbar_addr(bar_address);
+      port_connected = 1;
+
+      printf("Server connected to vport with %d queues\n",
+             port->bar->num_out_q);
+      SHIFT_ARGS;
+    }
+  }
+
   if (argc > 1) {
     count_queue = atoi(argv[1]);
     if (count_queue == 0) {
@@ -112,10 +144,12 @@ int server_main(int argc, char* argv[])
     }
   }
 
-  printf("Createing a vport with %d queues\n", count_queue);
-
-  // create a vport
-  struct vport *port = new_vport("server_vport", count_queue, count_queue);
+  if (port_connected == 0) {
+    // create a vport
+    printf("Createing a vport with %d queues\n", count_queue);
+    port = new_vport("server_vport", count_queue, count_queue);
+    port_connected = 1;
+  }
 
   // add a listener for SIGINT intrupt
   signal(SIGINT, sig_int_handler);

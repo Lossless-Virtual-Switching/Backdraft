@@ -70,6 +70,12 @@ struct vport *from_vbar_addr(size_t bar_address)
 struct vport *new_vport(const char *name, uint16_t num_inc_q,
                         uint16_t num_out_q)
 {
+  return _new_vport(name, num_inc_q, num_out_q, SLOTS_PER_LLRING);
+}
+
+struct vport *_new_vport(const char *name, uint16_t num_inc_q,
+                        uint16_t num_out_q, uint16_t q_size)
+{
   uint32_t i;
 
   uint32_t bytes_per_llring;
@@ -86,6 +92,7 @@ struct vport *new_vport(const char *name, uint16_t num_inc_q,
   struct vport *port;
   struct vport_bar *bar;
   size_t bar_address;
+  uint16_t water_mark = (q_size >> 3) * 7;
 
   // allocate vport struct
   port = rte_zmalloc(NULL, sizeof(struct vport), 0);
@@ -93,7 +100,7 @@ struct vport *new_vport(const char *name, uint16_t num_inc_q,
   port->_main = 1; // this is the main vport (ownership of vbar)
 
   // calculate how much memory is needed for vport_bar
-  bytes_per_llring = llring_bytes_with_slots(SLOTS_PER_LLRING);
+  bytes_per_llring = llring_bytes_with_slots(q_size);
   bytes_per_llring = ROUND_TO_64(bytes_per_llring);
   total_memory_needed = ROUND_TO_64(sizeof(struct vport_bar)) +
                 bytes_per_llring * (num_inc_q + num_out_q) +
@@ -121,8 +128,8 @@ struct vport *new_vport(const char *name, uint16_t num_inc_q,
     ptr += ROUND_TO_64(sizeof(struct vport_inc_regs));
 
     llr = (struct llring*)ptr;
-    llring_init(llr, SLOTS_PER_LLRING, SINGLE_PRODUCER, SINGLE_CONSUMER);
-    llring_set_water_mark(llr, SLOTS_WATERMARK);
+    llring_init(llr, q_size, SINGLE_PRODUCER, SINGLE_CONSUMER);
+    llring_set_water_mark(llr, water_mark);
     bar->inc_qs[i] = llr;
     ptr += bytes_per_llring;
   }
@@ -133,8 +140,8 @@ struct vport *new_vport(const char *name, uint16_t num_inc_q,
     ptr += ROUND_TO_64(sizeof(struct vport_out_regs));
 
     llr = (struct llring*)ptr;
-    llring_init(llr, SLOTS_PER_LLRING, SINGLE_PRODUCER, SINGLE_CONSUMER);
-    llring_set_water_mark(llr, SLOTS_WATERMARK);
+    llring_init(llr, q_size, SINGLE_PRODUCER, SINGLE_CONSUMER);
+    llring_set_water_mark(llr, water_mark);
     bar->out_qs[i] = llr;
     ptr += bytes_per_llring;
   }
