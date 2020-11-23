@@ -34,8 +34,9 @@ int main(int argc, char *argv[])
 {
   int arg_dpdk;
   const int count_ports = 2;
-  int count_queues[count_ports];
-  int count_discriptors[count_ports];
+  uint16_t count_queues[count_ports];
+  uint16_t count_discriptors[count_ports];
+  uint32_t port_pool_size;
   struct vport *ports[count_ports];
   int i;
   char port_name[PORT_NAME_LEN];
@@ -75,9 +76,10 @@ int main(int argc, char *argv[])
 
   // create a vport
   for (i = 0; i < count_ports; i++) {
+    port_pool_size = (count_queues[i] + count_queues[i]) * 3 / 2;
     snprintf(port_name, PORT_NAME_LEN, "vport_%d", i);
     ports[i] = _new_vport(port_name, count_queues[i], count_queues[i],
-                         count_discriptors[i]);
+                          port_pool_size, count_discriptors[i]);
     printf("\nCreate new port: \n");
     printf("* port name: %s\n", port_name);
     printf("* count queue: %d\n", count_queues[i]);

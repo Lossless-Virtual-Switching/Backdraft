@@ -15,5 +15,11 @@ echo RTE_SDK: $RTE_SDK
 # 
 # cd $cur
 sudo pkill burst_composer
+
+echo make clean
 make clean
+echo
+echo ========== make clean done ==============
+echo
+echo make
 make

@@ -70,19 +70,24 @@ struct vport *from_vbar_addr(size_t bar_address)
 struct vport *new_vport(const char *name, uint16_t num_inc_q,
                         uint16_t num_out_q)
 {
-  return _new_vport(name, num_inc_q, num_out_q, SLOTS_PER_LLRING);
+  uint16_t pool_size = (num_inc_q + num_out_q) * 3 / 2;
+  if (pool_size < num_inc_q + num_out_q)
+    return NULL;
+  return _new_vport(name, num_inc_q, num_out_q, SLOTS_PER_LLRING, pool_size);
 }
 
 struct vport *_new_vport(const char *name, uint16_t num_inc_q,
-                        uint16_t num_out_q, uint16_t q_size)
+                         uint16_t num_out_q, uint16_t pool_size,
+                         uint16_t q_size)
 {
   uint32_t i;
 
-  uint32_t bytes_per_llring;
+  uint32_t inc_qs_ptr_size;
+  uint32_t out_qs_ptr_size;
   uint32_t total_memory_needed;
 
   uint8_t *ptr;
-  struct llring *llr;
+  struct llr_seg *seg;
   FILE *fp;
 
   struct stat sb;
@@ -92,7 +97,6 @@ struct vport *_new_vport(const char *name, uint16_t num_inc_q,
   struct vport *port;
   struct vport_bar *bar;
   size_t bar_address;
-  uint16_t water_mark = (q_size >> 3) * 7;
 
   // allocate vport struct
   port = rte_zmalloc(NULL, sizeof(struct vport), 0);
@@ -100,12 +104,10 @@ struct vport *_new_vport(const char *name, uint16_t num_inc_q,
   port->_main = 1; // this is the main vport (ownership of vbar)
 
   // calculate how much memory is needed for vport_bar
-  bytes_per_llring = llring_bytes_with_slots(q_size);
-  bytes_per_llring = ROUND_TO_64(bytes_per_llring);
+  inc_qs_ptr_size = ROUND_TO_64(sizeof(struct llr_seg *)) * num_inc_q;
+  out_qs_ptr_size = ROUND_TO_64(sizeof(struct llr_seg *)) * num_out_q;
   total_memory_needed = ROUND_TO_64(sizeof(struct vport_bar)) +
-                bytes_per_llring * (num_inc_q + num_out_q) +
-                ROUND_TO_64(sizeof(struct vport_inc_regs)) * num_inc_q +
-                ROUND_TO_64(sizeof(struct vport_out_regs)) * num_out_q;
+                        inc_qs_ptr_size + out_qs_ptr_size;
 
   bar = rte_zmalloc(NULL, total_memory_needed, 64);
   assert(bar);
@@ -117,35 +119,25 @@ struct vport *_new_vport(const char *name, uint16_t num_inc_q,
   strncpy(bar->name, name, PORT_NAME_LEN);
   bar->num_inc_q = num_inc_q;
   bar->num_out_q = num_out_q;
+  bar->pool = new_llr_pool(pool_size, q_size);
 
-  // move forward to reach llring section
   ptr = (uint8_t *)bar;
   ptr += ROUND_TO_64(sizeof(struct vport_bar));
+  bar->inc_qs = (struct llr_seg **)ptr;
+  bar->out_qs = (struct llr_seg **)(ptr + inc_qs_ptr_size);
 
-  // setup inc llring
+  // init each queue
   for (i = 0; i < num_inc_q; i++) {
-    bar->inc_regs[i] = (struct vport_inc_regs *)ptr;
-    ptr += ROUND_TO_64(sizeof(struct vport_inc_regs));
-
-    llr = (struct llring*)ptr;
-    llring_init(llr, q_size, SINGLE_PRODUCER, SINGLE_CONSUMER);
-    llring_set_water_mark(llr, water_mark);
-    bar->inc_qs[i] = llr;
-    ptr += bytes_per_llring;
+    seg = pull_llr(bar->pool);
+    bar->inc_qs[i] = seg;
   }
 
-  // setup out llring
-  for (i = 0; i < num_inc_q; i++) {
-    bar->out_regs[i] = (struct vport_out_regs *)ptr;
-    ptr += ROUND_TO_64(sizeof(struct vport_out_regs));
-
-    llr = (struct llring*)ptr;
-    llring_init(llr, q_size, SINGLE_PRODUCER, SINGLE_CONSUMER);
-    llring_set_water_mark(llr, water_mark);
-    bar->out_qs[i] = llr;
-    ptr += bytes_per_llring;
+  for (i = 0; i < num_out_q; i++) {
+    seg = pull_llr(bar->pool);
+    bar->out_qs[i] = seg;
   }
 
+  // Create temp directory
 	snprintf(port_dir, PORT_DIR_LEN, "%s/%s", TMP_DIR, VPORT_DIR_PREFIX);
   if (stat(port_dir, &sb) == 0) {
     assert((sb.st_mode & S_IFMT) == S_IFDIR);
@@ -154,21 +146,10 @@ struct vport *_new_vport(const char *name, uint16_t num_inc_q,
     mkdir(port_dir, S_IRWXU | S_IRWXG | S_IRWXO);
   }
 
-  // create named pipe
-	for (i = 0; i < num_out_q; i++) {
-    snprintf(file_name, PORT_DIR_LEN, "%s/%s/%s.rx%d", TMP_DIR,
-             VPORT_DIR_PREFIX, name, i);
-
-    mkfifo(file_name, 0666);
-
-    port->out_irq_fd[i] = open(file_name, O_RDWR);
-  }
-
-  // set port mac address
+  // Set port mac address
   _rand_set_port_mac_address(port);
 
-
-
+  // Create socket file (file with shared memory information)
   snprintf(file_name, PORT_DIR_LEN, "%s/%s/%s", TMP_DIR,
            VPORT_DIR_PREFIX, name);
   printf("Writing port information to %s\n", file_name);
@@ -184,20 +165,13 @@ int free_vport(struct vport *port)
     // TODO: keep track of number of connected vports
     // Make sure there is no other vport connected to this vport bar
     char file_name[PORT_DIR_LEN];
-    uint16_t num_out_q = port->bar->num_out_q;
     char *name = port->bar->name;
-    for (uint16_t i = 0; i < num_out_q; i++) {
-      snprintf(file_name, PORT_DIR_LEN, "%s/%s/%s.rx%d", TMP_DIR,
-               VPORT_DIR_PREFIX, name, i);
-
-      unlink(file_name);
-      close(port->out_irq_fd[i]);
-    }
 
     snprintf(file_name, PORT_DIR_LEN, "%s/%s/%s", TMP_DIR, VPORT_DIR_PREFIX,
              name);
     unlink(file_name);
 
+    free_llr_pool(port->bar->pool);
     rte_free(port->bar);
   }
 
@@ -211,9 +185,9 @@ int send_packets_vport(struct vport *port, uint16_t qid, void**pkts, int cnt)
   int ret;
 
   if (port->_main) {
-    q = port->bar->out_qs[qid];
+    q = &port->bar->out_qs[qid]->ring;
   } else {
-    q = port->bar->inc_qs[qid];
+    q = &port->bar->inc_qs[qid]->ring;
   }
 
   // ret = llring_enqueue_bulk(q, pkts, cnt);
@@ -237,9 +211,9 @@ int recv_packets_vport(struct vport *port, uint16_t qid, void**pkts, int cnt)
   int ret;
 
   if (port->_main) {
-    q = port->bar->inc_qs[qid];
+    q = &port->bar->inc_qs[qid]->ring;
   } else {
-    q = port->bar->out_qs[qid];
+    q = &port->bar->out_qs[qid]->ring;
   }
 
   // TODO: update code to work with bulk

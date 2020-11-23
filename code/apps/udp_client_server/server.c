@@ -243,7 +243,7 @@ int do_server(void *_cntx) {
   struct p_hist *hist;
   uint64_t ts_offset;
   uint64_t timestamp;
-  uint64_t latency;
+  __attribute__((unused)) uint64_t latency;
 
   uint64_t i;
   struct rte_mbuf *tx_buf[64];
@@ -470,7 +470,7 @@ int do_server(void *_cntx) {
       timestamp = (*(uint64_t *)ptr);
       /* TODO: the following line only works on single node */
       latency = (rte_get_timer_cycles() - timestamp) * 1000 * 1000 / rte_get_timer_hz(); //(us)
-      add_number_to_p_hist(hist, (float)latency);
+      // add_number_to_p_hist(hist, (float)latency);
 
       if (!bidi) {
         rte_pktmbuf_free(rx_bufs[i]);

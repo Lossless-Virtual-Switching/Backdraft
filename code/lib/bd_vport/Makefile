@@ -14,5 +14,6 @@ include $(RTE_SDK)/mk/rte.vars.mk
 EXTRA_CFLAGS = -march=native -Wall -Werror -I $(CURRENT_DIR)/include/ -O3
 LIB = libbd_vport.a
 SRCS-y := vport.c
+SRCS-y += llring_pool.c
 
 include $(RTE_SDK)/mk/rte.extlib.mk

@@ -17,7 +17,7 @@ burst_composer_delay=0  # us
 server_delay=0
 server_cores="6"
 client_cores="(10,12)"
-client_rate=1000000
+client_rate=-1000000
 
 burst="sudo ./build/burst_composer -l 2,4 --file-prefix=$prefix --proc-type=primary \
   --no-pci --socket-mem 15000,15000 -- $count_queues $burst_composer_delay"
