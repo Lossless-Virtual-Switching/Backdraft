@@ -70,8 +70,8 @@ int main(int argc, char *argv[])
   for (i = 0; i < count_ports; i++)
     count_queues[i] = count_queues_param;
 
-  count_discriptors[0] = 64;
-  count_discriptors[1] = 1024;
+  count_discriptors[0] = 1024; // transmit
+  count_discriptors[1] = 64;  // receive
 
   // create a vport
   for (i = 0; i < count_ports; i++) {
@@ -170,9 +170,8 @@ int tx_worker(void *args)
 
   printf("Tx | port name: %s\n", port->bar->name);
   while (run) {
-    // TODO: apply delay here
-    //
-    rte_delay_us_block(delay);
+    if (delay > 0)
+      rte_delay_us_block(delay);
 
     // deqeue some packets
     do {
@@ -181,10 +180,14 @@ int tx_worker(void *args)
 
     // transmit packets
     sent = 0;
+    // if (num_dequeue > 100)
+    //   printf("Should sent large burst %d\n", num_dequeue);
     do {
       num_tx = send_packets_vport(port, qid, (void **)(batch + sent),
                                   num_dequeue - sent);
       sent += num_tx;
+      // if (num_tx > 100)
+      //   printf("Send burst %d\n", num_tx);
     } while(sent < num_dequeue);
 
     qid++;

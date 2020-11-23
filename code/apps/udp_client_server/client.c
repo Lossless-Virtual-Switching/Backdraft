@@ -43,7 +43,7 @@ int do_client(void *_cntx) {
   port_type_t port_type = cntx->ptype;
   int dpdk_port = cntx->dpdk_port_id;
   struct vport *virt_port = cntx->virt_port;
-  uint8_t qid = cntx->default_qid;
+  uint16_t qid = cntx->default_qid;
   uint16_t count_queues = cntx->count_queues;
   struct rte_mempool *tx_mem_pool = cntx->tx_mem_pool;
   // struct rte_mempool *rx_mem_pool = cntx->rx_mem_pool;
@@ -326,6 +326,7 @@ int do_client(void *_cntx) {
         buf_ptr = rte_pktmbuf_append(buf, sizeof(struct rte_udp_hdr) +
                                               payload_length);
         udp_hdr = (struct rte_udp_hdr *)buf_ptr;
+        // udp_hdr = (struct rte_udp_hdr *)(ipv4_hdr + 1);
 
         /* Just for testing */
         /*
@@ -446,6 +447,7 @@ int do_client(void *_cntx) {
     fprintf(fp, "Tx: %ld\n", total_sent_pkts[k]);
     fprintf(fp, "Rx: %ld\n", total_received_pkts[k]);
     fprintf(fp, "failed to push: %ld\n", failed_to_push[k]);
+    fprintf(fp, "warmup time: %ld\n", ignore_result_duration);
   }
   fprintf(fp, "Client done\n");
   fflush(fp);
@@ -463,6 +465,7 @@ int do_client(void *_cntx) {
 
 void *_run_receiver_thread(void *_arg)
 {
+  printf("Receiver thread started\n");
   recv_thread_arg_t *arg = (recv_thread_arg_t *) _arg;
   struct context *cntx = arg->cntx;
   uint64_t start_time = arg->start_time;
@@ -514,9 +517,10 @@ void *_run_receiver_thread(void *_arg)
         nb_rx = vport_poll_ctrl_queue(virt_port, BKDRFT_CTRL_QUEUE,
                                       BURST_SIZE, recv_bufs, 0);
       }
-
       if (nb_rx == 0)
         continue;
+      printf("vport %d\n", nb_rx);
+
     } else {
       nb_rx = 0;
       for (rx_q = qid; rx_q < qid + count_queues; rx_q++) {
@@ -534,6 +538,9 @@ void *_run_receiver_thread(void *_arg)
 
     for (j = 0; j < nb_rx; j++) {
       buf = recv_bufs[j];
+      // rte_pktmbuf_free(buf); // free packet
+      // continue;
+
       if (port_type == dpdk) {
         valid_pkt = check_eth_hdr(src_ip, &my_eth, buf, tx_mem_pool, cdq,
                                   dpdk_port, qid);

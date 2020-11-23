@@ -39,7 +39,7 @@ static void print_usage(void)
   "    * experiment duration\n"
   "    * client port\n"
   "    * client delay cycles\n"
-  "    * rate=<value\n"
+  "    * rate value (pps)\n"
   "[server]\n"
   "    * server delay for each batch\n");
 }

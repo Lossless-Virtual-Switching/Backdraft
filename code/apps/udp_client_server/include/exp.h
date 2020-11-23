@@ -44,7 +44,7 @@ struct context {
   struct vport *virt_port;
 
   uint16_t num_queues;
-  uint8_t default_qid;
+  uint16_t default_qid;
 
   struct rte_ether_addr my_eth;
   uint32_t src_ip;
