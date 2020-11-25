@@ -11,7 +11,8 @@ CURRENT_DIR := $(dir $(MKFILE_PATH))
 
 include $(RTE_SDK)/mk/rte.vars.mk
 
-EXTRA_CFLAGS = -march=native -Wall -Werror -I $(CURRENT_DIR)/include/ -O3
+EXTRA_CFLAGS = -march=native -Wall -Werror -I $(CURRENT_DIR)/include/ -O3 \
+  -Wno-error=deprecated-declarations -Wno-deprecated-declarations
 LIB = libbd_vport.a
 SRCS-y := vport.c
 SRCS-y += llring_pool.c

@@ -121,7 +121,7 @@ struct vport *_new_vport(const char *name, uint16_t num_inc_q,
   strncpy(bar->name, name, PORT_NAME_LEN);
   bar->num_inc_q = num_inc_q;
   bar->num_out_q = num_out_q;
-  bar->pool = new_llr_pool(pool_size, q_size);
+  bar->pool = new_llr_pool(name, SOCKET_ID_ANY, pool_size, q_size);
 
   ptr = (uint8_t *)bar;
   ptr += ROUND_TO_64(sizeof(struct vport_bar));
@@ -189,7 +189,6 @@ int send_packets_vport(struct vport *port, uint16_t qid, void**pkts, int cnt)
 {
   struct llr_seg *q_list;
   int32_t ret;
-  // struct llr_seg *seg;
 
   if (port->_main) {
     q_list = port->bar->out_qs[qid];
@@ -197,17 +196,10 @@ int send_packets_vport(struct vport *port, uint16_t qid, void**pkts, int cnt)
     q_list = port->bar->inc_qs[qid];
   }
   // get the tail
-  // q_list = list_entry(q_list->list.prev, struct llr_seg, list);
+  q_list = list_entry(q_list->list.prev, struct llr_seg, list);
 
   // ret = llring_enqueue_bulk(q, pkts, cnt);
   ret = llring_enqueue_burst(&q_list->ring, pkts, cnt);
-  if (ret < 0) {
-    printf("\nWe have crossed the water mark\n");
-    // wtaer mark crossed
-    // seg = pull_llr(port->bar->pool);
-    // list_add_tail(&seg->list, &q_list->list);
-    printf("\nExtend queue %d\n", qid);
-  }
   ret &= 0x7fffffff;
   return ret;
   // if (ret == -LLRING_ERR_NOBUF)
@@ -223,7 +215,9 @@ int send_packets_vport(struct vport *port, uint16_t qid, void**pkts, int cnt)
 
 int recv_packets_vport(struct vport *port, uint16_t qid, void**pkts, int cnt)
 {
+  unsigned queue_size;
   struct llr_seg *q_list;
+  struct llr_seg *seg;
   int ret;
 
   if (port->_main) {
@@ -232,14 +226,25 @@ int recv_packets_vport(struct vport *port, uint16_t qid, void**pkts, int cnt)
     q_list = port->bar->out_qs[qid];
   }
 
+  queue_size = llring_count(&q_list->ring);
+  if (queue_size > q_list->ring.common.watermark) {
+    // printf("\nWe have crossed the water mark\n");
+    // water mark crossed
+    seg = pull_llr(port->bar->pool);
+    list_add_tail(&seg->list, &q_list->list);
+    // printf("Extend queue %d q: %p new list: %p next: %p\n\n",
+    //     qid, &q_list->list, &seg->list, q_list->list.next);
+    // fflush(stdout);
+  }
+
   // TODO: update code to work with bulk
   ret = llring_dequeue_burst(&q_list->ring, pkts, cnt);
-  if (llring_count(&q_list->ring) == 0) {
+  if (queue_size == 0) {
     // check if there is a tail
     if (q_list->list.next != &q_list->list) {
-      printf("me: %p, next: %p\n", &q_list->list, q_list->list.next);
+      // printf("qid: %d me: %p, next: %p\n", qid, &q_list->list, q_list->list.next);
+      // fflush(stdout);
       // there are some other queues
-      printf("push llring back\n");
       if (port->_main) {
         port->bar->inc_qs[qid] = list_entry(q_list->list.next, struct llr_seg, list);
       } else {
@@ -247,6 +252,7 @@ int recv_packets_vport(struct vport *port, uint16_t qid, void**pkts, int cnt)
       }
       list_del(&q_list->list);
       push_llr(port->bar->pool, q_list);
+      // printf("push llring back\n");
     }
   }
   return ret;
