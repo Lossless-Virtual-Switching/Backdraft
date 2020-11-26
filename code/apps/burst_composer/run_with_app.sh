@@ -12,12 +12,18 @@ port_name_2=vport_1
 count_queues=1
 cdq="bess"
 
-duration=10
+duration=30
 burst_composer_delay=0  # us
 server_delay=0
 server_cores="6"
 client_cores="(10,12)"
 client_rate=-1000000
+
+if [ $# -gt 0 ]
+then
+  burst_composer_delay=$1
+fi
+echo Burst Composer Delay $burst_composer_delay
 
 burst="sudo ./build/burst_composer -l 2,4 --file-prefix=$prefix --proc-type=primary \
   --no-pci --socket-mem 15000,15000 -- $count_queues $burst_composer_delay"
@@ -40,7 +46,7 @@ echo
 
 $burst&
 pid=$!
-sleep 10
+sleep 12
 echo
 echo
 
@@ -48,4 +54,5 @@ $server_cmd&
 sleep 2
 
 $client_cmd&
-wait $pid
+sleep 1
+sudo kill $pid

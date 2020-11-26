@@ -51,7 +51,7 @@ int main(int argc, char *argv[])
   int count_queues_param = -1;
   int delay = 0;
 
-  int shared_buffer_size = 8192;
+  int shared_buffer_size = 1024;
 
   arg_dpdk = dpdk_init(argc, argv);
   argc -= arg_dpdk;
@@ -153,6 +153,11 @@ int rx_worker(void *args)
   return 0;
 }
 
+static inline uint64_t ns_to_cycles(uint64_t ns)
+{
+  return (ns / 1000000000UL) * rte_get_timer_hz();
+}
+
 int tx_worker(void *args)
 {
   worker_arg_t *wargs = args;
@@ -169,6 +174,15 @@ int tx_worker(void *args)
   int num_dequeue;
   int qid = 0;
   int sent;
+  uint64_t now;
+  uint64_t last_log_ts = 0;
+
+  uint8_t is_paused = 0;
+  uint64_t pause_duration = 0;
+  uint64_t pause_start_ts = 0;
+  uint64_t pause_end_ts = 0;
+  uint64_t pause_per_sec = 0;
+  uint64_t pause_duration_out_of_sec = 0;
 
   printf("Tx | port name: %s\n", port->bar->name);
   while (run) {
@@ -182,14 +196,36 @@ int tx_worker(void *args)
 
     // transmit packets
     sent = 0;
-    // if (num_dequeue > 100)
-    //   printf("Should sent large burst %d\n", num_dequeue);
     do {
-      num_tx = send_packets_vport(port, qid, (void **)(batch + sent),
-                                  num_dequeue - sent);
+      now = rte_get_timer_cycles();
+      if (now - last_log_ts > rte_get_timer_hz()) {
+        printf("pause per sec: %ld  pause duration out of one sec: %ld\n",
+               pause_per_sec, pause_duration_out_of_sec);
+        pause_per_sec = 0;
+        pause_duration_out_of_sec = 0;
+        last_log_ts = now;
+      }
+
+      if (now >= pause_start_ts && now <= pause_end_ts) {
+        continue;
+      } else if (now > pause_end_ts) {
+        is_paused = 0;
+      }
+
+      num_tx = send_packets_vport_with_bp(port, qid, (void **)(batch + sent),
+                                          num_dequeue - sent, &pause_duration);
       sent += num_tx;
-      // if (num_tx > 100)
-      //   printf("Send burst %d\n", num_tx);
+
+      if (pause_duration > 0 && !is_paused) {
+        pause_per_sec += 1;
+        pause_duration_out_of_sec += pause_duration;
+        is_paused = 1;
+        pause_start_ts = rte_get_timer_cycles() + ns_to_cycles(delay * 500);
+        pause_end_ts = pause_start_ts + ns_to_cycles(pause_duration);
+        // pause_end_ts = pause_start_ts + ns_to_cycles(20000000000);
+        // pause_end_ts = pause_start_ts + 20 * rte_get_timer_hz();
+        // printf("pause duration %ld\n", pause_duration);
+      }
     } while(sent < num_dequeue);
 
     qid++;

@@ -14,7 +14,7 @@
 #include "llring_pool.h"
 #include "list.h"
 
-#define ROUND_TO_64(x) ((x + 32) & (~0x3f))
+#define ROUND_TO_64(x) ((x + 64) & (~0x3f))
 
 void _rand_set_port_mac_address(struct vport *port)
 {
@@ -57,10 +57,18 @@ struct vport *from_vport_name(char *port_name)
 struct vport *from_vbar_addr(size_t bar_address)
 {
   struct vport *port;
-  port = rte_zmalloc(NULL, sizeof(struct vport), 0);
+  size_t port_size;
+  struct vport_bar *bar;
+  uint8_t *ptr;
+
+  bar = (struct vport_bar *)bar_address;
+  port_size = sizeof(struct vport);
+  ptr = rte_zmalloc(NULL, port_size, 0);
+  port = (struct vport *)ptr;
   assert(port);
   port->_main = 0; // this is connected to someone elses vport_bar
-  port->bar = (struct vport_bar *)bar_address;
+  port->bar = bar;
+
   // set port mac address
   _rand_set_port_mac_address(port);
   return port;
@@ -82,11 +90,12 @@ struct vport *_new_vport(const char *name, uint16_t num_inc_q,
                          uint16_t num_out_q, uint16_t pool_size,
                          uint16_t q_size)
 {
-  uint32_t i;
+  uint32_t i, j;
 
   uint32_t inc_qs_ptr_size;
   uint32_t out_qs_ptr_size;
-  uint32_t total_memory_needed;
+  size_t total_memory_needed;
+  uint32_t port_size;
 
   uint8_t *ptr;
   struct llr_seg *seg;
@@ -100,16 +109,21 @@ struct vport *_new_vport(const char *name, uint16_t num_inc_q,
   struct vport_bar *bar;
   size_t bar_address;
 
+  struct rate *rate;
+
   // allocate vport struct
-  port = rte_zmalloc(NULL, sizeof(struct vport), 0);
+  port_size = sizeof(struct vport);
+  ptr = rte_zmalloc(NULL, port_size, 0);
+  port = (struct vport *)ptr;
   assert(port != NULL);
   port->_main = 1; // this is the main vport (ownership of vbar)
 
-  // calculate how much memory is needed for vport_bar
+  // Calculate how much memory is needed for vport_bar
   inc_qs_ptr_size = ROUND_TO_64(sizeof(struct llr_seg *)) * num_inc_q;
   out_qs_ptr_size = ROUND_TO_64(sizeof(struct llr_seg *)) * num_out_q;
   total_memory_needed = ROUND_TO_64(sizeof(struct vport_bar)) +
-                        inc_qs_ptr_size + out_qs_ptr_size;
+                        inc_qs_ptr_size + out_qs_ptr_size +
+                        ((num_inc_q + num_out_q) * ROUND_TO_64(sizeof(struct rate)));
 
   bar = rte_zmalloc(NULL, total_memory_needed, 64);
   assert(bar);
@@ -117,30 +131,57 @@ struct vport *_new_vport(const char *name, uint16_t num_inc_q,
   bar_address = (size_t)bar;
   port->bar = bar;
 
-  // initialize vport_bar structure
+  // Initialize vport_bar structure
   strncpy(bar->name, name, PORT_NAME_LEN);
   bar->num_inc_q = num_inc_q;
   bar->num_out_q = num_out_q;
+  bar->th_goal = q_size / 10;
+  bar->th_over = (q_size >> 3) * 7; // 87.5%
   bar->pool = new_llr_pool(name, SOCKET_ID_ANY, pool_size, q_size);
 
   ptr = (uint8_t *)bar;
   ptr += ROUND_TO_64(sizeof(struct vport_bar));
   bar->inc_qs = (struct llr_seg **)ptr;
-  bar->out_qs = (struct llr_seg **)(ptr + inc_qs_ptr_size);
+  ptr += inc_qs_ptr_size;
+  bar->out_qs = (struct llr_seg **)(ptr);
 
-  // init each queue
+  // Set memory for rate arrays
+  ptr += out_qs_ptr_size;
+  bar->inc_rate = (struct rate *)ptr;
+  ptr += (num_inc_q * ROUND_TO_64(sizeof(struct rate)));
+  bar->out_rate = (struct rate *)ptr;
+
+  // Init each queue
   for (i = 0; i < num_inc_q; i++) {
     seg = pull_llr(bar->pool);
+    assert(seg != NULL);
     INIT_LIST_HEAD(&seg->list);
-    printf("inc assigning qid: %d, ptr: %p next: %p\n", i, &seg->list, seg->list.next);
+    // printf("inc assigning qid: %d, ptr: %p next: %p\n",
+    //         i, &seg->list, seg->list.next);
     bar->inc_qs[i] = seg;
+
+    rate = &bar->inc_rate[i];
+    rate->tail = RATE_SEQUENCE_SIZE - 1;
+    rate->sum = RATE_INIT_VALUE * (RATE_SEQUENCE_SIZE - 1);
+    rate->pps = RATE_INIT_VALUE;
+    for (j = 0; j < RATE_SEQUENCE_SIZE - 1; j++)
+      rate->sequence[j] = RATE_INIT_VALUE;
   }
 
   for (i = 0; i < num_out_q; i++) {
     seg = pull_llr(bar->pool);
+    assert(seg != NULL);
     INIT_LIST_HEAD(&seg->list);
-    printf("out assigning qid: %d, ptr: %p next: %p\n", i, &seg->list, seg->list.next);
+    // printf("out assigning qid: %d, ptr: %p next: %p\n",
+    //        i, &seg->list, seg->list.next);
     bar->out_qs[i] = seg;
+
+    rate = &bar->out_rate[i];
+    rate->tail = RATE_SEQUENCE_SIZE - 1;
+    rate->sum = RATE_INIT_VALUE * (RATE_SEQUENCE_SIZE - 1);
+    rate->pps = RATE_INIT_VALUE;
+    for (j = 0; j < RATE_SEQUENCE_SIZE - 1; j++)
+      rate->sequence[j] = RATE_INIT_VALUE;
   }
 
   // Create temp directory
@@ -187,20 +228,50 @@ int free_vport(struct vport *port)
 
 int send_packets_vport(struct vport *port, uint16_t qid, void**pkts, int cnt)
 {
+  uint64_t pause_duration;
+  return send_packets_vport_with_bp(port, qid, pkts, cnt, &pause_duration);
+}
+
+/* Send packet to the queue.
+ * pause_duration is in nano-seconds (ns)
+ * */
+int send_packets_vport_with_bp(struct vport *port, uint16_t qid, void **pkts,
+                               int cnt, uint64_t *pause_duration)
+{
+  unsigned queue_size;
   struct llr_seg *q_list;
   int32_t ret;
+  uint64_t pps;
+
+  *pause_duration = 0;
 
   if (port->_main) {
     q_list = port->bar->out_qs[qid];
+    pps = port->bar->out_rate[qid].pps;
   } else {
     q_list = port->bar->inc_qs[qid];
+    pps = port->bar->inc_rate[qid].pps;
   }
+  // pps = 12000000;
+  // printf("qid: %d pps: %ld\n", qid, pps);
   // get the tail
   q_list = list_entry(q_list->list.prev, struct llr_seg, list);
 
   // ret = llring_enqueue_bulk(q, pkts, cnt);
   ret = llring_enqueue_burst(&q_list->ring, pkts, cnt);
   ret &= 0x7fffffff;
+
+  queue_size = llring_count(&q_list->ring);
+  if (queue_size > port->bar->th_over) {
+    if (pps > 0) {
+      *pause_duration = ((uint64_t)(queue_size - port->bar->th_goal)) * ((1000000000L) / pps);
+      // printf("delta packet: %d\n", queue_size - port->bar->th_goal);
+      // printf("pause: pps %ld, size: %d, duration: %ld\n", pps, queue_size, *pause_duration);
+    } else {
+      *pause_duration = 10000;
+    }
+  }
+
   return ret;
   // if (ret == -LLRING_ERR_NOBUF)
   //   return 0;
@@ -219,11 +290,14 @@ int recv_packets_vport(struct vport *port, uint16_t qid, void**pkts, int cnt)
   struct llr_seg *q_list;
   struct llr_seg *seg;
   int ret;
+  struct rate *rate;
 
   if (port->_main) {
     q_list = port->bar->inc_qs[qid];
+    rate = &port->bar->inc_rate[qid];
   } else {
     q_list = port->bar->out_qs[qid];
+    rate = &port->bar->out_rate[qid];
   }
 
   queue_size = llring_count(&q_list->ring);
@@ -255,5 +329,23 @@ int recv_packets_vport(struct vport *port, uint16_t qid, void**pkts, int cnt)
       // printf("push llring back\n");
     }
   }
+
+  rate->tp += ret;
+  uint64_t now = rte_get_timer_cycles();
+  if (now - rate->last_ts > rte_get_timer_hz()) {
+    rate->sum += rate->tp;
+    rate->sequence[rate->tail] = rate->tp;
+    rate->tail = (rate->tail + 1) % RATE_SEQUENCE_SIZE;
+    // if (rate->tail == rate->head) {
+      rate->sum -= rate->sequence[rate->head];
+      rate->head = (rate->head + 1) % RATE_SEQUENCE_SIZE;
+    // }
+    rate->tp = 0;
+    rate->last_ts = now;
+    rate->pps = rate->sum / (RATE_SEQUENCE_SIZE - 1);
+    // printf("main: %d qid: %d pps: %ld\n", port->_main, qid, rate->pps);
+  }
+  // if (rate->pps > 0)
+  //   printf("qid: %d pps: %ld\n", qid, rate->pps);
   return ret;
 }
