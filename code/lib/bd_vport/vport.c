@@ -245,17 +245,19 @@ int send_packets_vport_with_bp(struct vport *port, uint16_t qid, void **pkts,
 
   *pause_duration = 0;
 
-  if (port->_main) {
-    q_list = port->bar->out_qs[qid];
-    pps = port->bar->out_rate[qid].pps;
-  } else {
-    q_list = port->bar->inc_qs[qid];
-    pps = port->bar->inc_rate[qid].pps;
-  }
-  // pps = 12000000;
-  // printf("qid: %d pps: %ld\n", qid, pps);
-  // get the tail
-  q_list = list_entry(q_list->list.prev, struct llr_seg, list);
+  do {
+    if (port->_main) {
+      q_list = port->bar->out_qs[qid];
+      pps = port->bar->out_rate[qid].pps;
+    } else {
+      q_list = port->bar->inc_qs[qid];
+      pps = port->bar->inc_rate[qid].pps;
+    }
+    // pps = 12000000;
+    // printf("qid: %d pps: %ld\n", qid, pps);
+    // get the tail
+    q_list = list_entry(q_list->list.prev, struct llr_seg, list);
+  } while(q_list == LIST_POISON1 || q_list == LIST_POISON2);
 
   // ret = llring_enqueue_bulk(q, pkts, cnt);
   ret = llring_enqueue_burst(&q_list->ring, pkts, cnt);
