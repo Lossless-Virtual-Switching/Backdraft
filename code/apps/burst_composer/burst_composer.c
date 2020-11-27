@@ -9,7 +9,8 @@
 
 #include "vport.h"
 
-#define ROUND_TO_64(x) ((x + 32) & (~0x3f))
+#define ROUND_TO_64(x) ((x + 64) & (~0x3f))
+#define MAX_PAUSE_DURATION 500000000
 
 typedef struct {
   struct vport *port;
@@ -71,12 +72,13 @@ int main(int argc, char *argv[])
   for (i = 0; i < count_ports; i++)
     count_queues[i] = count_queues_param;
 
-  count_discriptors[0] = 1024; // transmit
+  // count_discriptors[0] = 1024;  // transmit
+  count_discriptors[0] = 64;  // transmit
   count_discriptors[1] = 64;  // receive
 
   // create a vport
   for (i = 0; i < count_ports; i++) {
-    port_pool_size = (count_queues[i] + count_queues[i]) * 3 / 2;
+    port_pool_size = (count_queues[i] + count_queues[i]) * 3 / 2 + 64;
     snprintf(port_name, PORT_NAME_LEN, "vport_%d", i);
     ports[i] = _new_vport(port_name, count_queues[i], count_queues[i],
                           port_pool_size, count_discriptors[i]);
@@ -155,7 +157,15 @@ int rx_worker(void *args)
 
 static inline uint64_t ns_to_cycles(uint64_t ns)
 {
-  return (ns / 1000000000UL) * rte_get_timer_hz();
+  return (ns * rte_get_timer_hz()) / 1000000000UL;
+}
+
+static inline uint64_t cycles_to_ns(uint64_t cycles)
+{
+  uint64_t ns;
+  ns = (cycles * 1000000000UL) / rte_get_timer_hz();
+  // printf("cycles: %ld, ns: %ld hz: %ld\n", cycles, ns, rte_get_timer_hz());
+  return ns;
 }
 
 int tx_worker(void *args)
@@ -165,6 +175,7 @@ int tx_worker(void *args)
   struct llring *shared_ring = wargs->shared_ring;
   // int cdq = wargs->cdq;
   int delay = wargs->delay;
+  int backpressure = 1;
 
   int run = 1;
   int count_queues = port->bar->num_inc_q;
@@ -183,6 +194,7 @@ int tx_worker(void *args)
   uint64_t pause_end_ts = 0;
   uint64_t pause_per_sec = 0;
   uint64_t pause_duration_out_of_sec = 0;
+  uint64_t cycles;
 
   printf("Tx | port name: %s\n", port->bar->name);
   while (run) {
@@ -206,6 +218,8 @@ int tx_worker(void *args)
         last_log_ts = now;
       }
 
+      assert( pause_end_ts >= pause_start_ts);
+
       if (now >= pause_start_ts && now <= pause_end_ts) {
         continue;
       } else if (now > pause_end_ts) {
@@ -216,12 +230,17 @@ int tx_worker(void *args)
                                           num_dequeue - sent, &pause_duration);
       sent += num_tx;
 
-      if (pause_duration > 0 && !is_paused) {
+      if (backpressure && pause_duration > 0 && !is_paused) {
+        if (pause_duration > MAX_PAUSE_DURATION) {
+          pause_duration = MAX_PAUSE_DURATION;
+        }
         pause_per_sec += 1;
-        pause_duration_out_of_sec += pause_duration;
+        cycles = ns_to_cycles(pause_duration); //lossy conversion
+        pause_duration_out_of_sec += cycles_to_ns(cycles); //lossless conversion
         is_paused = 1;
         pause_start_ts = rte_get_timer_cycles() + ns_to_cycles(delay * 500);
-        pause_end_ts = pause_start_ts + ns_to_cycles(pause_duration);
+        pause_end_ts = pause_start_ts + cycles;
+        assert(now < pause_start_ts);
         // pause_end_ts = pause_start_ts + ns_to_cycles(20000000000);
         // pause_end_ts = pause_start_ts + 20 * rte_get_timer_hz();
         // printf("pause duration %ld\n", pause_duration);

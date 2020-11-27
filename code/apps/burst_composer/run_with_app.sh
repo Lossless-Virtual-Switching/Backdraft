@@ -45,14 +45,19 @@ echo $client_cmd
 echo
 
 $burst&
-pid=$!
+burst_pid=$!
 sleep 12
 echo
 echo
 
 $server_cmd&
+server_pid=$!
 sleep 2
 
 $client_cmd&
-sleep 1
-sudo kill $pid
+client_pid=$!
+
+wait $client_pid
+wait $server_pid
+sleep 10
+sudo pkill burst_composer

@@ -30,20 +30,27 @@ struct rate {
   size_t head;
 }__attribute__((__aligned__(64)));
 
+struct queue_handler {
+  struct llr_seg *reader_head;
+  struct llr_seg *writer_head;
+  struct rate rate;
+  size_t total_size;
+  volatile uint32_t enqueue_pkts;
+  volatile uint32_t dequeue_pkts;
+  size_t th_over;
+  size_t th_goal;
+}__attribute__((__aligned__(64)));
+
+enum queue_direction {
+  INC=0,
+  OUT=1,
+};
+
 struct vport_bar {
   char name[PORT_NAME_LEN];
-
   int num_inc_q;
   int num_out_q;
-  int th_goal;
-  int th_over;
-
-  // These are an array of extendable llrings
-  // list of extendable-queues
-  struct llr_seg **inc_qs;
-  struct llr_seg **out_qs;
-  struct rate *inc_rate; // TODO: race ?!
-  struct rate *out_rate;
+  struct queue_handler *queues[2]; // INC and OUT
   struct llring_pool *pool;
 }__attribute__((__aligned__(64)));
 
