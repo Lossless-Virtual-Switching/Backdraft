@@ -14,7 +14,8 @@ include $(RTE_SDK)/mk/rte.vars.mk
 EXTRA_CFLAGS = -I $(CURRENT_DIR)/include/ \
 	-I $(CURRENT_DIR)/protobuf/_compile \
 	-I $(CURRENT_DIR)/../bd_vport/include \
-	-Wall -march=native -O3 # -DDEBUG
+	-Wno-error=deprecated-declarations -Wno-deprecated-declarations -g \
+	-Wall -march=native -O3 -DDEBUG
 
 LDLIBS = -L$(CURRENT_DIR)/../bd_vport/build/ -lbd_vport -lprotobuf-c
 

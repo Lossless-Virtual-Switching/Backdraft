@@ -449,7 +449,7 @@ int do_server(void *_cntx) {
       udp_hdr = (struct rte_udp_hdr *)(ipv4_hdr + 1);
 
       /* apply procesing cost for a specific flow (TODO: just for experiment) */
-      uint16_t src_port = rte_be_to_cpu_16(udp_hdr->src_port);
+      // uint16_t src_port = rte_be_to_cpu_16(udp_hdr->src_port);
       // uint16_t dst_port = rte_be_to_cpu_16(udp_hdr->dst_port);
       // if (rte_be_to_cpu_32(ipv4_hdr->dst_addr) == 0x0A0A0104) {
       //   uint64_t now = rte_get_tsc_cycles();
@@ -472,14 +472,14 @@ int do_server(void *_cntx) {
       latency = (rte_get_timer_cycles() - timestamp) * 1000 * 1000 / rte_get_timer_hz(); //(us)
       add_number_to_p_hist(hist, (float)latency);
 
+      // if (src_port >= 8000) {
+        // this packet needs heavy processing
+        nb_pkts_process++;
+      // }
+
       if (!bidi) {
         rte_pktmbuf_free(rx_bufs[i]);
         continue;
-      }
-
-      if (src_port >= 8000) {
-        // this packet needs heavy processing
-        nb_pkts_process++;
       }
 
       /*  swap mac address */
@@ -502,23 +502,22 @@ int do_server(void *_cntx) {
       k++;
     }
 
+    /* apply processing cost */
+    if (delay_cycles > 0) {
+      for (i = 0; i < nb_pkts_process; i++) {
+        // rte_delay_us_block(delay_us);
+        uint64_t now = rte_get_tsc_cycles();
+        uint64_t end =
+          rte_get_tsc_cycles() + delay_cycles;
+        while (now < end) {
+          now = rte_get_tsc_cycles();
+        }
+        cycles_error =(now - end) * 0.5 + 0.5 * (cycles_error);
+      }
+    }
+
     if (!bidi)
       continue;
-
-
-    /* apply processing cost */
-    // if (delay_cycles > 0) {
-    //   for (i = 0; i < nb_pkts_process; i++) {
-    //     // rte_delay_us_block(delay_us);
-    //     uint64_t now = rte_get_tsc_cycles();
-    //     uint64_t end =
-    //       rte_get_tsc_cycles() + delay_cycles;
-    //     while (now < end) {
-    //       now = rte_get_tsc_cycles();
-    //     }
-    //     cycles_error =(now - end) * 0.5 + 0.5 * (cycles_error);
-    //   }
-    // }
 
     // this queue can not be serviced until the deadline is reached
     queue_status[qid] = rte_get_timer_cycles() + (nb_pkts_process * delay_cycles);

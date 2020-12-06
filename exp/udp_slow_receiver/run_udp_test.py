@@ -24,7 +24,7 @@ if DIRECT_OUTPUT:
 # Select the port type
 PMD = 0
 VPORT = 1
-PORT_TYPE = VPORT
+PORT_TYPE = PMD
 
 cur_script_dir = os.path.dirname(os.path.abspath(__file__))
 # TODO: use json config file instead of genrating .bess pipeline files
@@ -85,6 +85,7 @@ def run_server(instance):
             'inst': instance,
             'delay': server_delay,
             'source_ip': _server_ips[instance],
+            'bidi': 'false'
             }
     if PORT_TYPE == PMD:
         vdev = ['virtio_user0,path=/tmp/ex_vhost0.sock,queues='+str(count_queue),
@@ -94,7 +95,7 @@ def run_server(instance):
         args['file-prefix'] = prefix
         cmd = ('sudo {bin} --no-pci --lcores="{cpu}" --file-prefix={file-prefix} '
                 '--vdev="{vdev}" --socket-mem=128 -- '
-                '{source_ip} {count_queue} {sysmod} {mode} {delay}').format(**args)
+                'bidi={bidi} {source_ip} {count_queue} {sysmod} {mode} {delay}').format(**args)
     else:
         vdev = ['ex_vhost0','ex_vhost2'][instance]
         prefix = 'bessd-dpdk-prefix'
@@ -102,7 +103,7 @@ def run_server(instance):
         args['file-prefix'] = prefix
         cmd = ('sudo {bin} --no-pci --lcores="{cpu}" --file-prefix={file-prefix} '
                 '--proc-type=secondary --socket-mem=128 -- '
-                'vport={vdev} {source_ip} {count_queue} '
+                'bidi={bidi} vport={vdev} {source_ip} {count_queue} '
                 '{sysmod} {mode} {delay}').format(**args)
 
     print("=" * 32)
@@ -130,7 +131,7 @@ def run_client(instance):
            [_server_ips[1]],
            [_server_ips[1]]][instance]
     mpps = 1000 * 1000
-    rate = [1000, 20000, 20000][instance]
+    rate = [-1000, 20000, 20000][instance]
     _ips = ' '.join(ips)
     _cnt_flow = [1, count_flow, count_flow][instance]
     delay = [100, 100, 100]  # cycles per packet
@@ -147,6 +148,7 @@ def run_client(instance):
             'source_ip': _client_ip,
             'port': port,
             'delay': delay[instance],
+            'bidi': 'false',
             }
     if PORT_TYPE == PMD:
         vdev = ['virtio_user1,path=/tmp/ex_vhost1.sock,queues='+str(count_queue),
@@ -156,7 +158,7 @@ def run_client(instance):
         args['file-prefix'] = prefix
         cmd = ('sudo {bin} --no-pci --lcores="{cpu}" --file-prefix={file-prefix} '
                 '--vdev="{vdev}" --socket-mem=128 -- '
-                '{source_ip} {count_queue} {sysmod} {mode} {cnt_ips} {ips} '
+                'bidi={bidi} {source_ip} {count_queue} {sysmod} {mode} {cnt_ips} {ips} '
                 '{count_flow} {duration} {port} {delay}').format(**args)
     else:
         vdev = ['ex_vhost1', 'ex_vhost3', 'ex_vhost4'][instance]
@@ -165,7 +167,7 @@ def run_client(instance):
         args['file-prefix'] = prefix
         cmd = ('sudo {bin} --no-pci --lcores="{cpu}" --file-prefix={file-prefix} '
                 '--proc-type=secondary --socket-mem=128 -- '
-                'vport={vdev} {source_ip} {count_queue} '
+                'bidi={bidi} vport={vdev} {source_ip} {count_queue} '
                 '{sysmod} {mode} {cnt_ips} {ips} '
                 '{count_flow} {duration} {port} {delay}').format(**args)
     if rate >= 0:

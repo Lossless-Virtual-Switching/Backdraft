@@ -33,7 +33,7 @@ if PORT_TYPE == VPORT:
 else:
     pipeline_config_temp = os.path.join(cur_script_dir,
                                         'pmd_port_pipeline.txt')
-pipeline_config_file = os.path.join(cur_script_dir, 'slow_receiver.bess')
+pipeline_config_file = os.path.join(cur_script_dir, 'exp_config.bess')
 slow_receiver_exp = os.path.abspath(os.path.join(cur_script_dir,
         '../../code/apps/udp_client_server/build/udp_app'))
 
@@ -54,7 +54,7 @@ def update_config():
     content.insert(index, 'COMMAND_Q = {}\n'.format(str(cdq)))
     content.insert(index, 'CNT_Q = {}\n'.format(str(count_queue)))
     content.insert(index, 'PFQ = {}\n'.format(str(pfq)))
-    content.insert(index, 'LOSSLESS = {}\n'.format(str(lossless)))
+    content.insert(index, 'LOSSLESS = {}\n'.format(str(buffering)))
     with open(pipeline_config_file, 'w') as f:
         f.writelines(content)
 
@@ -73,7 +73,7 @@ def run_server(instance):
     """
         Start a server process
     """
-    cpu = ['9', '3'][instance]  # on which cpu
+    cpu = ['9', '22'][instance]  # on which cpu
     server_delay = [0, slow][instance]
     args = {
             'bin': slow_receiver_exp,
@@ -88,7 +88,7 @@ def run_server(instance):
             }
     if PORT_TYPE == PMD:
         vdev = ['virtio_user0,path=/tmp/ex_vhost0.sock,queues='+str(count_queue),
-                'virtio_user2,path=/tmp/ex_vhost2.sock,queues='+str(count_queue)][instance]
+                'virtio_user5,path=/tmp/bg_server_1.sock,queues='+str(count_queue)][instance]
         prefix = 'slow_receiver_server_{}'.format(instance)
         args['vdev'] = vdev
         args['file-prefix'] = prefix
@@ -123,17 +123,17 @@ def run_client(instance):
         Start a client process
     """
     port = [1008, 8989, 9002][instance]
-    cpu = ['(10-11)', '(6-7)', '(4-5)'][instance]
+    cpu = ['(10-11)', '(30-31)', '(4-5)'][instance]
     # TODO: the following line is an example of code that is not suitable!
     # should switch to run_udp_app instead of this function
     ips = [[_server_ips[0], ],  # latency server ip
            [_server_ips[1]],
            [_server_ips[1]]][instance]
     mpps = 1000 * 1000
-    rate = [1000, 20000, 20000][instance]
+    rate = [1000, -1, -1][instance]
     _ips = ' '.join(ips)
     _cnt_flow = [1, count_flow, count_flow][instance]
-    delay = [100, 100, 100]  # cycles per packet
+    delay = [0, 0, 0]  # cycles per packet
     args = {
             'bin': slow_receiver_exp,
             'cpu': cpu,
@@ -144,14 +144,14 @@ def run_client(instance):
             'ips':  _ips,
             'count_flow': _cnt_flow,
             'duration': duration,
-            'source_ip': _client_ip,
+            'source_ip': _client_ip[instance],
             'port': port,
             'delay': delay[instance],
             'bidi': 'false',
             }
     if PORT_TYPE == PMD:
         vdev = ['virtio_user1,path=/tmp/ex_vhost1.sock,queues='+str(count_queue),
-               'virtio_user3,path=/tmp/ex_vhost3.sock,queues='+str(count_queue),][instance]
+               'virtio_user4,path=/tmp/bg_client_1.sock,queues='+str(count_queue),][instance]
         prefix = 'slow_receiver_exp_client_{}'.format(instance)
         args['vdev'] = vdev
         args['file-prefix'] = prefix
@@ -231,7 +231,7 @@ def main():
             'warmup_time': 0,
             'wait_before_measure': 0,
             'threads': 1,
-            'connections': 1,
+            'connections': 8,
             'name': 'tas_mem_client_1',
             'type': 'client',
             'image': 'tas_memcached',
@@ -292,16 +292,20 @@ def main():
     # Run server
     server_p1 = run_server(0)
     mem_server = spin_up_memcached(memcached_config[0])
+    bg_server = run_server(1)
     sleep(3)
     # Run client
     client_p = run_client(0)
     mem_client = spin_up_memcached(memcached_config[1])
+    bg_client = run_client(1)
 
     # Wait
     client_p.wait()
+    bg_client.wait()
     while docker_container_is_running(memcached_config[1]['name']):
         sleep(3)
     server_p1.wait()
+    bg_server.wait()
 
     # Get output of processes
     if not DIRECT_OUTPUT:
@@ -311,38 +315,52 @@ def main():
         print('++++++ Incast Client ++++')
         txt = get_docker_container_logs(memcached_config[1]['name'])
         print(txt)
+        print('++++++ Background Client ++++')
+        txt = str(bg_client.stdout.read().decode())
+        print(txt)
         print('++++++ Latency Server ++++')
         txt = str(server_p1.stdout.read().decode())
         print(txt)
         txt = str(server_p1.stderr.read().decode())
         print(txt)
         print('++++++ Incast Server ++++')
-        get_docker_container_logs(memcached_config[0]['name'])
+        txt = get_docker_container_logs(memcached_config[0]['name'])
+        print(txt)
+        print('++++++ Background Server ++++')
+        txt = str(bg_server.stdout.read().decode())
+        print(txt)
+        txt = str(bg_server.stderr.read().decode())
+        print(txt)
         print('+++++++++++++++++++')
 
     print('----- switch stats -----')
-    print('server1\n')
+    print('Latency Server\n')
     p = bessctl_do('show port ex_vhost0', stdout=subprocess.PIPE)
     txt = p.stdout.decode()
     print(txt)
 
-    print('server2\n')
+    print('Incast Server\n')
     p = bessctl_do('show port ex_vhost2', stdout=subprocess.PIPE)
     txt = p.stdout.decode()
     print(txt)
 
-    print('client\n')
+    print('Background Server\n')
+    p = bessctl_do('show port bg_server', stdout=subprocess.PIPE)
+    txt = p.stdout.decode()
+    print(txt)
+
+    print('Latency Client\n')
     p = bessctl_do('show port ex_vhost1', stdout=subprocess.PIPE)
     txt = p.stdout.decode()
     print(txt)
 
-    print('client2\n')
+    print('Incast Client\n')
     p = bessctl_do('show port ex_vhost3', stdout=subprocess.PIPE)
     txt = p.stdout.decode()
     print(txt)
 
-    print('client3\n')
-    p = bessctl_do('show port ex_vhost4', stdout=subprocess.PIPE)
+    print('Background Client\n')
+    p = bessctl_do('show port bg_client', stdout=subprocess.PIPE)
     txt = p.stdout.decode()
     print(txt)
 
@@ -351,6 +369,8 @@ def main():
     bessctl_do('command module server1_qout get_pause_calls EmptyArg {}',
             stdout=FNULL)
     bessctl_do('command module server2_qout get_pause_calls EmptyArg {}',
+            stdout=FNULL)
+    bessctl_do('command module server3_qout get_pause_calls EmptyArg {}',
             stdout=FNULL)
     bessctl_do('daemon stop', stdout=FNULL)
 
@@ -396,12 +416,12 @@ if __name__ == '__main__':
     bp = args.bp
     cdq = args.cdq
     pfq = args.pfq
-    lossless = args.buffering
+    buffering = args.buffering
     duration = args.duration
 
     # TODO: having const ips does not scale
     _server_ips = ['10.10.1.3', '10.10.1.5']
-    _client_ip = '172.10.1.2'
+    _client_ip = ['172.10.1.2', '172.30.1.2']
 
     if cdq and sysmod != 'bkdrft':
         print('comand data queueing is only available on bkdrft mode',
@@ -416,6 +436,9 @@ if __name__ == '__main__':
        print('bkdrft needs command data queueing', file=sys.stderr)
        sys.exit(1)
 
+    if bp and not buffering:
+        print("Backpressure needs buffering to be enabled", file=sys.stderr)
+        sys.exit(1)
 
     main()
 
