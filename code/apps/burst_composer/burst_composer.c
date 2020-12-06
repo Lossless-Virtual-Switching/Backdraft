@@ -11,6 +11,7 @@
 
 #define ROUND_TO_64(x) ((x + 64) & (~0x3f))
 #define MAX_PAUSE_DURATION 500000000
+#define SECOND_NS 1000000000UL
 
 typedef struct {
   struct vport *port;
@@ -24,13 +25,13 @@ int tx_worker(void *);
 
 static inline uint64_t ns_to_cycles(uint64_t ns)
 {
-  return (ns * rte_get_timer_hz()) / 1000000000UL;
+  return (ns * rte_get_timer_hz()) / SECOND_NS;
 }
 
 static inline uint64_t cycles_to_ns(uint64_t cycles)
 {
   uint64_t ns;
-  ns = (cycles * 1000000000UL) / rte_get_timer_hz();
+  ns = (cycles * SECOND_NS) / rte_get_timer_hz();
   // printf("cycles: %ld, ns: %ld hz: %ld\n", cycles, ns, rte_get_timer_hz());
   return ns;
 }
