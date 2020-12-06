@@ -43,6 +43,7 @@ print('number of queues: ', Q)
 
 # Add worker to bess
 bess.add_worker(0, 0)
+bess.add_worker(1, 2)
 
 
 del_socket('tmp_vhost/tas_server_1.sock')
@@ -143,7 +144,9 @@ client_1_out = BKDRFTQueueOut(port=client1, qid=queue_ids,
     backpressure=bp, lossless=lossless, cdq=cdq, per_flow_buffering=pfq,
     mname='client1', overlay=False)
 
-client_2_out = BKDRFTQueueOut(port=client2, qid=queue_ids,
+r_queue_ids = [queue_ids[0], ]
+r_queue_ids.extend(reversed(queue_ids[1:]))
+client_2_out = BKDRFTQueueOut(port=client2, qid=r_queue_ids,
     backpressure=bp, lossless=lossless, cdq=cdq, per_flow_buffering=pfq,
     mname='client2', overlay=False)
 
@@ -155,27 +158,54 @@ dummy_1_out = BKDRFTQueueOut(port=dummy1, qid=queue_ids,
 #     backpressure=bp, lossless=lossless, cdq=cdq, per_flow_buffering=pfq,
 #     mname='dummy2', overlay=False)
 
+# if bp:
+#     client_1_out.attach_task(wid=0)
+#     client_2_out.attach_task(wid=0)
+#     server_1_out.attach_task(wid=1)
+#     server_2_out.attach_task(wid=1)
+#     dummy_1_out.attach_task(wid=1)
+
 if not cdq:
     # poll other queues
     for i in range(0, Q):
         # client
-        BKDRFTQueueInc(port=client1, qid=[i], backpressure=bp, cdq=cdq) -> aggregate_client
-        BKDRFTQueueInc(port=client2, qid=[i], backpressure=bp, cdq=cdq) -> aggregate_client
+        cq1 = BKDRFTQueueInc(port=client1, qid=[i], backpressure=bp, cdq=cdq)
+        cq2 = BKDRFTQueueInc(port=client2, qid=[i], backpressure=bp, cdq=cdq)
+        cq1.attach_task(wid=0)
+        cq2.attach_task(wid=0)
+        cq1 -> aggregate_client
+        cq2 -> aggregate_client
         # server
-        BKDRFTQueueInc(port=server1, qid=[i], backpressure=bp, cdq=cdq) -> aggregate_server
-        BKDRFTQueueInc(port=server2, qid=[i], backpressure=bp, cdq=cdq) -> aggregate_server
+        sq1 = BKDRFTQueueInc(port=server1, qid=[i], backpressure=bp, cdq=cdq)
+        sq2 = BKDRFTQueueInc(port=server2, qid=[i], backpressure=bp, cdq=cdq)
+        sq1.attach_task(wid=0)
+        sq2.attach_task(wid=0)
+        sq1 -> aggregate_server
+        sq2 -> aggregate_server
         # dummy
-        BKDRFTQueueInc(port=dummy1, qid=[i], backpressure=bp, cdq=cdq) -> client_side_iplookup
+        dq1 = BKDRFTQueueInc(port=dummy1, qid=[i], backpressure=bp, cdq=cdq)
+        dq1.attach_task(wid=0)
+        dq1 -> client_side_iplookup
         # BKDRFTQueueInc(port=dummy2, qid=[i], backpressure=bp, cdq=cdq) -> server_side_iplookup
 else:
     # client
-    BKDRFTQueueInc(port=client1, qid=queue_ids, backpressure=bp, cdq=cdq) -> aggregate_client
-    BKDRFTQueueInc(port=client2, qid=queue_ids, backpressure=bp, cdq=cdq) -> aggregate_client
+    cq1 =  BKDRFTQueueInc(port=client1, qid=queue_ids, backpressure=bp, cdq=cdq)
+    cq2 =  BKDRFTQueueInc(port=client2, qid=queue_ids, backpressure=bp, cdq=cdq)
+    cq1.attach_task(wid=0)
+    cq2.attach_task(wid=0)
+    cq1 -> aggregate_client
+    cq2 -> aggregate_client
     # server
-    BKDRFTQueueInc(port=server1, qid=queue_ids, backpressure=bp, cdq=cdq) -> aggregate_server
-    BKDRFTQueueInc(port=server2, qid=queue_ids, backpressure=bp, cdq=cdq) -> aggregate_server
+    sq1 =  BKDRFTQueueInc(port=server1, qid=queue_ids, backpressure=bp, cdq=cdq)
+    sq2 =  BKDRFTQueueInc(port=server2, qid=queue_ids, backpressure=bp, cdq=cdq)
+    sq1.attach_task(wid=1)
+    sq2.attach_task(wid=1)
+    sq1 -> aggregate_server
+    sq2 -> aggregate_server
     # dummy
-    BKDRFTQueueInc(port=dummy1, qid=queue_ids, backpressure=bp, cdq=cdq) -> client_side_iplookup
+    dq1 = BKDRFTQueueInc(port=dummy1, qid=queue_ids, backpressure=bp, cdq=cdq)
+    dq1.attach_task(wid=1)
+    dq1 -> client_side_iplookup
     # BKDRFTQueueInc(port=dummy2, qid=queue_ids, backpressure=bp, cdq=cdq) -> server_side_iplookup
 
 

@@ -31,12 +31,22 @@
 #ifndef BESS_DRIVERS_BDVPORT_H_
 #define BESS_DRIVERS_BDVPORT_H_
 
+
+#include <string>
+
+#include <rte_config.h>
+#include <rte_errno.h>
+#include <rte_ethdev.h>
+
+#include "../module.h"
+#include "../port.h"
+
 // VPORT =================================
 #include <stdint.h>
 #include "../kmod/llring.h"
 
 // #define MAX_QUEUES_PER_DIR 16384
-#define MAX_QUEUES_PER_DIR 128
+// #define MAX_QUEUES_PER_DIR 10000 // defined at /core/port.h
 
 #define SLOTS_PER_LLRING 1024
 #define SLOTS_WATERMARK ((SLOTS_PER_LLRING >> 3) * 7) /* 87.5% */
@@ -85,15 +95,6 @@ int free_vport(struct vport *port);
 int send_packets_vport(struct vport *port, uint16_t qid, void**pkts, int cnt);
 int recv_packets_vport(struct vport *port, uint16_t qid, void**pkts, int cnt);
 // VPORT =================================
-
-#include <string>
-
-#include <rte_config.h>
-#include <rte_errno.h>
-#include <rte_ethdev.h>
-
-#include "../module.h"
-#include "../port.h"
 
 typedef uint16_t dpdk_port_t;
 

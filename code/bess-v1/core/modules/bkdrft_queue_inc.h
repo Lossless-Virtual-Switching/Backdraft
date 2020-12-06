@@ -11,7 +11,7 @@
 #include "../utils/flow.h"
 using Flow = bess::bkdrft::Flow;
 
-#define MAX_QUEUES 128
+// #define MAX_QUEUES 128 // used MAX_QUEUES_PER_DIR from /core/port.h
 
 struct queue_pause_status {
 	uint64_t until;
@@ -58,8 +58,8 @@ class BKDRFTQueueInc final : public Module {
   // it is a cache for what BKDRFTSwDpCtrl knows
   // if this array says it should not wait then
   // we should check BKDRFTSwDpCtrl
-  queue_pause_status q_status_[MAX_QUEUES];
-  Flow q_status_flows_[MAX_QUEUES];
+  queue_pause_status q_status_[MAX_QUEUES_PER_DIR];
+  Flow q_status_flows_[MAX_QUEUES_PER_DIR];
   std::queue<std::pair<uint16_t, uint32_t>> doorbell_service_queue_;
   int count_overview_seg_;
   uint64_t *overview_mask_;

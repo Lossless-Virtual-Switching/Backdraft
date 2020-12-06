@@ -187,7 +187,7 @@ size_t get_payload(struct rte_mbuf *pkt, void **payload) {
 }
 
 
-extern inline size_t create_bkdraft_ctrl_msg(uint8_t qid, uint32_t nb_bytes,
+extern inline size_t create_bkdraft_ctrl_msg(uint16_t qid, uint32_t nb_bytes,
                                              uint32_t nb_pkts,
                                              unsigned char **buf)
 {

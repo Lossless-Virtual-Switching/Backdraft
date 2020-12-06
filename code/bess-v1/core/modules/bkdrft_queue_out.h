@@ -19,7 +19,7 @@
 #include "../utils/cuckoo_map.h"
 
 
-const queue_t MAX_QUEUES = 128;
+// const queue_t MAX_QUEUES = 10000; // used MAX_QUEUES_PER_DIR from /core/port.h
 // const int buffer_len_high_water = 256;
 // const uint64_t buffer_len_high_water = 15000; // bytes
 // const int buffer_len_low_water = 64;
@@ -118,6 +118,7 @@ int pktbuffer_enqueue(pktbuffer_t *buf, bess::Packet **pkts, uint32_t count)
   // move packets to ring
   ret = rte_ring_enqueue_bulk(buf->ring_queue, (void **)(pkts + cur_index),
                               to_the_ring, NULL);
+  ret = ret & 0x7fffffff;
   // if ret == 0 then failed to enqueue
   buf->pkts += ret;
   return ret + to_the_peek;
@@ -313,7 +314,7 @@ private:
 
   // The limmited_buffers_ are used for buffering packets when
   // per flow queueing is not active.
-  pktbuffer_t *limited_buffers_[MAX_QUEUES];
+  pktbuffer_t *limited_buffers_[MAX_QUEUES_PER_DIR];
 
   uint64_t count_packets_in_buffer_;
   uint64_t bytes_in_buffer_;
@@ -322,7 +323,7 @@ private:
   bess::utils::CuckooMap<Flow, struct flow_state *, Flow::Hash, Flow::EqualTo>
       flow_buffer_mapping_;
 
-  uint64_t failed_ctrl_packets[MAX_QUEUES];
+  uint64_t failed_ctrl_packets[MAX_QUEUES_PER_DIR];
   uint64_t pause_call_total;
   // data structure for holding pause call per sec values
   std::vector<int> pcps;
@@ -336,12 +337,12 @@ private:
 
   uint64_t buffer_len_high_water = 6;
   uint64_t buffer_len_low_water = 16;
-  uint64_t bp_buffer_len_high_water = 512;
+  uint64_t bp_buffer_len_high_water = 6;
 
   // a  name given to this module. currently used for loggin pause per sec
   // statistics.
   std::string name_;
-  queue_flow_info q_info_[MAX_QUEUES];
+  queue_flow_info q_info_[MAX_QUEUES_PER_DIR];
   // used for determining the flow for which overlay should be generated
   Flow sample_pkt_flow_;
 

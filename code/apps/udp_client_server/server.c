@@ -226,12 +226,13 @@ int do_server(void *_cntx) {
   // int throughput[MAX_DURATION];
   const uint64_t hz = rte_get_timer_hz();
   uint64_t throughput = 0;
+  uint64_t empty_burst = 0;
   uint64_t start_time;
   uint64_t exp_begin;
   uint64_t current_time;
   // uint64_t current_sec;
   uint64_t last_pkt_time = 0;
-  const uint64_t wait_until_exp_begins = 20 * hz; /* cycles */
+  const uint64_t wait_until_exp_begins = 60 * hz; /* cycles */
   const uint64_t termination_threshold = 10 * hz;
   int run = 1;
 
@@ -253,8 +254,11 @@ int do_server(void *_cntx) {
   uint64_t k;
 
   // TODO: take these parameters from command line
-  uint64_t token_limit = 200000;
-  uint8_t rate_limit = 0;
+  uint64_t token_limit = 3000000;
+  uint8_t rate_limit = 1;
+  uint64_t delta_time;
+  uint64_t limit_window;
+  uint8_t rate_limit_change_flag = 0;
 
   uint8_t cdq = system_mode == system_bkdrft;
   int valid_pkt;
@@ -315,7 +319,8 @@ int do_server(void *_cntx) {
     }
 
     /* update throughput */
-    if (current_time - start_time > rte_get_timer_hz()) {
+    delta_time = current_time - start_time;
+    if (delta_time > rte_get_timer_hz()) {
       // print_stats(throughput, hist);
       // if (my_ip == 0xC0A80115)
       double avg_nb_rx = 0;
@@ -323,20 +328,25 @@ int do_server(void *_cntx) {
         avg_nb_rx = sum_nb_rx / (double)count_rx;
       printf("TP: %lu\n", throughput);
       printf("Average burst size: %.2f\n", avg_nb_rx);
+      // printf("No empty burst: %ld\n", empty_burst);
       throughput = 0;
       sum_nb_rx = 0;
       count_rx = 0;
       start_time = current_time;
+      empty_burst = 0;
       // current_sec = 0;
       // printf("failed to push: %ld\n", failed_to_push);
     }
 
     /* Increase rate limit (TODO: just for a specific experiment) */
-    // if (current_time - exp_begin > 20 * rte_get_tsc_hz()) {
-    //   token_limit = 400000;
-    // }
+    if (rate_limit_change_flag == 0 && current_time - exp_begin > 32 * rte_get_tsc_hz()) {
+      printf("=============== Changing Throughput Rate ==================\n");
+      rate_limit_change_flag = 1;
+      token_limit = 6000000;
+    }
 
-    if (rate_limit && throughput >= token_limit) {
+    limit_window = token_limit * (delta_time / (double)(rte_get_timer_hz()));
+    if (rate_limit && throughput >= limit_window) {
       continue;
     }
 
@@ -365,6 +375,7 @@ int do_server(void *_cntx) {
     }
 
     if (nb_rx == 0) {
+      empty_burst++;
       if (first_pkt) {
         /* if client has started sending data
          * and some amount of time has passed since

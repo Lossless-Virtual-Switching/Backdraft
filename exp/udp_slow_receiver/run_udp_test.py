@@ -14,7 +14,7 @@ from bkdrft_common import *
 
 # For debuging
 # print applications output directly into the stdout
-DIRECT_OUTPUT = False
+DIRECT_OUTPUT = True
 
 if DIRECT_OUTPUT:
     print('=' * 32)
@@ -74,7 +74,7 @@ def run_server(instance):
     """
         Start a server process
     """
-    cpu = ['2', '3'][instance]  # on which cpu
+    cpu = ['18', '4'][instance]  # on which cpu
     server_delay = [0, slow][instance]
     args = {
             'bin': slow_receiver_exp,
@@ -123,14 +123,14 @@ def run_client(instance):
         Start a client process
     """
     port = [1008, 8989, 9002][instance]
-    cpu = ['(8-9)', '(6-7)', '(4-5)'][instance]
+    cpu = ['(12,14)', '(10,12)', '(6,8)'][instance]
     # TODO: the following line is an example of code that is not suitable!
     # should switch to run_udp_app instead of this function
     ips = [[_server_ips[1], _server_ips[0]],
            [_server_ips[1]],
            [_server_ips[1]]][instance]
     mpps = 1000 * 1000
-    rate = [1000, 20000, 20000][instance]
+    rate = [-1000, -20000, -20000][instance]
     _ips = ' '.join(ips)
     _cnt_flow = [1, count_flow, count_flow][instance]
     delay = [100, 100, 100]  # cycles per packet
@@ -235,13 +235,14 @@ def main():
     # Run a configuration (pipeline)
     remove_socks()
     file_path = pipeline_config_file
-    ret = bessctl_do('daemon start -- run file {}'.format(file_path))
+    ret = bessctl_do('daemon start -- run file {}'.format(file_path),
+            cpu_list='0,2')
 
     if bess_only:
         # Only run bess config
         return 0
 
-    count_client = 3
+    count_client = 1
     clients = []
 
     # Run server
@@ -258,13 +259,17 @@ def main():
         duration -= 1  # next client has less time
 
     # Wait
-    for proc in clients:
-        proc.wait()
-    # subprocess.run('sudo pkill udp_app', shell=True)  # Stop server
-    # server_p1.kill()
-    server_p1.wait()
-    server_p2.wait()
-
+    try:
+        for proc in clients:
+            proc.wait()
+        server_p1.wait()
+        server_p2.wait()
+    except KeyboardInterrupt:
+        # subprocess.run('sudo pkill udp_app', shell=True)  # Stop server
+        for p in clients:
+            p.kill()
+        server_p1.kill()
+        server_p2.kill()
 
     # Get output of processes
     if not DIRECT_OUTPUT:

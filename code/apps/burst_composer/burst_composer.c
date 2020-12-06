@@ -22,6 +22,19 @@ typedef struct {
 int rx_worker(void *);
 int tx_worker(void *);
 
+static inline uint64_t ns_to_cycles(uint64_t ns)
+{
+  return (ns * rte_get_timer_hz()) / 1000000000UL;
+}
+
+static inline uint64_t cycles_to_ns(uint64_t cycles)
+{
+  uint64_t ns;
+  ns = (cycles * 1000000000UL) / rte_get_timer_hz();
+  // printf("cycles: %ld, ns: %ld hz: %ld\n", cycles, ns, rte_get_timer_hz());
+  return ns;
+}
+
 static int dpdk_init(int argc, char *argv[])
 {
   int arg_parsed;
@@ -72,8 +85,8 @@ int main(int argc, char *argv[])
   for (i = 0; i < count_ports; i++)
     count_queues[i] = count_queues_param;
 
-  // count_discriptors[0] = 1024;  // transmit
-  count_discriptors[0] = 64;  // transmit
+  count_discriptors[0] = 1024;  // transmit
+  // count_discriptors[0] = 256;  // transmit
   count_discriptors[1] = 64;  // receive
 
   // create a vport
@@ -118,6 +131,10 @@ int main(int argc, char *argv[])
   }
 }
 
+// Pause global variable
+uint64_t pause_start_ts = 0;
+uint64_t pause_end_ts = 0;
+
 int rx_worker(void *args)
 {
   worker_arg_t *wargs = args;
@@ -132,9 +149,16 @@ int rx_worker(void *args)
   int num_enqueue;
   int qid = 0;
   struct rte_mbuf *batch[burst];
+  uint64_t now;
 
   printf("Rx | port name: %s\n", port->bar->name);
   while (run) {
+
+    now = rte_get_timer_cycles();
+    // check if we should wait
+    if (now >= pause_start_ts && now <= pause_end_ts) {
+      continue;
+    }
     // recv a batch
     if (cdq) {
 
@@ -153,19 +177,6 @@ int rx_worker(void *args)
     // printf("read and enqueue packest\n");
   }
   return 0;
-}
-
-static inline uint64_t ns_to_cycles(uint64_t ns)
-{
-  return (ns * rte_get_timer_hz()) / 1000000000UL;
-}
-
-static inline uint64_t cycles_to_ns(uint64_t cycles)
-{
-  uint64_t ns;
-  ns = (cycles * 1000000000UL) / rte_get_timer_hz();
-  // printf("cycles: %ld, ns: %ld hz: %ld\n", cycles, ns, rte_get_timer_hz());
-  return ns;
 }
 
 int tx_worker(void *args)
@@ -190,11 +201,11 @@ int tx_worker(void *args)
 
   uint8_t is_paused = 0;
   uint64_t pause_duration = 0;
-  uint64_t pause_start_ts = 0;
-  uint64_t pause_end_ts = 0;
   uint64_t pause_per_sec = 0;
   uint64_t pause_duration_out_of_sec = 0;
   uint64_t cycles;
+
+  uint8_t has_update_pause = 0;
 
   printf("Tx | port name: %s\n", port->bar->name);
   while (run) {
@@ -221,9 +232,17 @@ int tx_worker(void *args)
       assert( pause_end_ts >= pause_start_ts);
 
       if (now >= pause_start_ts && now <= pause_end_ts) {
+        if (has_update_pause == 0) {
+          set_queue_pause_state(port, 1, qid, 1);
+          has_update_pause = 1;
+        }
         continue;
       } else if (now > pause_end_ts) {
         is_paused = 0;
+        if (has_update_pause == 1) {
+          has_update_pause = 0;
+          set_queue_pause_state(port, 1, qid, 0);
+        }
       }
 
       num_tx = send_packets_vport_with_bp(port, qid, (void **)(batch + sent),
@@ -231,9 +250,9 @@ int tx_worker(void *args)
       sent += num_tx;
 
       if (backpressure && pause_duration > 0 && !is_paused) {
-        if (pause_duration > MAX_PAUSE_DURATION) {
-          pause_duration = MAX_PAUSE_DURATION;
-        }
+        // if (pause_duration > MAX_PAUSE_DURATION) {
+        //   pause_duration = MAX_PAUSE_DURATION;
+        // }
         pause_per_sec += 1;
         cycles = ns_to_cycles(pause_duration); //lossy conversion
         pause_duration_out_of_sec += cycles_to_ns(cycles); //lossless conversion

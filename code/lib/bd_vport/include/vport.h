@@ -39,6 +39,8 @@ struct queue_handler {
   volatile uint32_t dequeue_pkts;
   size_t th_over;
   size_t th_goal;
+  uint64_t count_empty;
+  uint8_t is_paused;
 }__attribute__((__aligned__(64)));
 
 enum queue_direction {
@@ -72,5 +74,7 @@ int send_packets_vport(struct vport *port, uint16_t qid, void**pkts, int cnt);
 int send_packets_vport_with_bp(struct vport *port, uint16_t qid, void **pkts,
                                int cnt, uint64_t *pause_duration);
 int recv_packets_vport(struct vport *port, uint16_t qid, void**pkts, int cnt);
+void set_queue_pause_state(struct vport *port, int dir, uint16_t qid,
+    uint8_t state);
 
 #endif

@@ -113,7 +113,7 @@ def bkdrft_pipeline():
           LOSSLESS, 'bp:', BP)
     router = IPLookup()
     router.add(prefix='10.10.1.3', prefix_len=32, gate=1)
-    router.add(prefix='10.0.0.0', prefix_len=8, gate=2)
+    router.add(prefix='10.10.1.4', prefix_len=32, gate=2)
 
     receive_side_x = Demultiplex(ranges=[
         {'start': 1000, 'end': 2000, 'gate': 1},

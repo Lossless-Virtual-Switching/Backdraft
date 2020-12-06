@@ -94,9 +94,9 @@ CommandResponse BKDRFTQueueInc::Init(const bess::pb::BKDRFTQueueIncArg &arg) {
         "in order to manage multiple queues");
   }
 
-  if (count_managed_queues > MAX_QUEUES) {
+  if (count_managed_queues > MAX_QUEUES_PER_DIR) {
     return CommandFailure(EINVAL, "Maximum supported number of queues are %d. "
-        "%d queues have been requested", MAX_QUEUES, count_managed_queues);
+        "%d queues have been requested", MAX_QUEUES_PER_DIR, count_managed_queues);
   }
 
   // acquire queue
@@ -120,7 +120,7 @@ CommandResponse BKDRFTQueueInc::Init(const bess::pb::BKDRFTQueueIncArg &arg) {
     return CommandFailure(ENOMEM, "Context creation failed");
 
   // initialize q_status
-  for (int i = 0; i < MAX_QUEUES; i++) {
+  for (int i = 0; i < MAX_QUEUES_PER_DIR; i++) {
     q_status_[i] = (queue_pause_status){
       until : 0,
       failed_ctrl : 0,
@@ -128,9 +128,9 @@ CommandResponse BKDRFTQueueInc::Init(const bess::pb::BKDRFTQueueIncArg &arg) {
     };
   }
 
-  int number_of_8bytes = MAX_QUEUES / 64;
+  int number_of_8bytes = MAX_QUEUES_PER_DIR / 64;
   if (count_managed_queues  % 64 != 0) number_of_8bytes++;
-  overview_mask_ = reinterpret_cast<uint64_t *>(rte_zmalloc(nullptr, number_of_8bytes, 0));
+  overview_mask_ = reinterpret_cast<uint64_t *>(rte_zmalloc(nullptr, number_of_8bytes * 8, 0));
   count_overview_seg_ = number_of_8bytes;
 
   return CommandSuccess();

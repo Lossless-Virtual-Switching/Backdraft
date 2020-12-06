@@ -15,7 +15,7 @@ struct rte_udp_hdr *get_udp_header(struct rte_ipv4_hdr *ipv4_hdr);
 struct rte_tcp_hdr *get_tcp_header(struct rte_ipv4_hdr *ipv4_hdr);
 size_t get_payload(struct rte_mbuf *pkt, void **payload);
 
-size_t create_bkdraft_ctrl_msg(uint8_t qid, uint32_t nb_bytes,
+size_t create_bkdraft_ctrl_msg(uint16_t qid, uint32_t nb_bytes,
                                uint32_t nb_pkts, unsigned char **buf);
 
 // end packet.h

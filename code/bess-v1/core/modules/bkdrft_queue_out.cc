@@ -59,7 +59,7 @@ CommandResponse BKDRFTQueueOut::Init(const bess::pb::BKDRFTQueueOutArg &arg) {
   const char *port_name;
   int ret;
   bool ret2;
-  uint32_t i;
+  int i;
 
   initialized_ = false;
 
@@ -81,15 +81,15 @@ CommandResponse BKDRFTQueueOut::Init(const bess::pb::BKDRFTQueueOutArg &arg) {
   // Get liset of requested queues
   count_queues_ = arg.qid_size();
   data_queues_ = new queue_t[count_queues_];
-  for (int i = 0; i < count_queues_; i++)
+  for (i = 0; i < count_queues_; i++)
     data_queues_[i] = arg.qid(i);
 
   // Validate the number of requested queues
   if (count_queues_ < 1 || (count_queues_ < 2 && cdq_)) {
     return CommandFailure(EINVAL, "Count queues should be more than 2");
-  } else if (count_queues_ > MAX_QUEUES) {
+  } else if (count_queues_ > MAX_QUEUES_PER_DIR) {
     return CommandFailure(EINVAL, "Count queues should not be more than %d, "
-        "it is currently: %d\n", MAX_QUEUES, count_queues_);
+        "it is currently: %d\n", MAX_QUEUES_PER_DIR, count_queues_);
   }
 
   // Acquire queues
@@ -142,14 +142,14 @@ CommandResponse BKDRFTQueueOut::Init(const bess::pb::BKDRFTQueueOutArg &arg) {
   }
   LOG(INFO) << "name: " << name_ << "\n";
 
-  for (i = 0; i < MAX_QUEUES; i++) {
+  for (i = 0; i < MAX_QUEUES_PER_DIR; i++) {
     q_info_[i] = {
         .flow = bess::bkdrft::empty_flow,
         .last_visit = 0,
     };
   }
 
-  for (i = 0; i < MAX_QUEUES; i++)
+  for (i = 0; i < MAX_QUEUES_PER_DIR; i++)
     failed_ctrl_packets[i] = 0;
 
   LOG(INFO) << "BKDRFTQueueOut: name: " << name_
@@ -182,23 +182,26 @@ int BKDRFTQueueOut::SetupFlowControlBlockPool() {
 
   // allocate memory for pool of flow control blocks
   flow_state_pool_ = reinterpret_cast<struct flow_state *>(
-                        rte_malloc("flow_state_pool",
+                        rte_zmalloc("flow_state_pool",
                           sizeof(struct flow_state) * max_availabe_flows,
                           64));
-  assert(flow_state_pool_ != nullptr);
+  if (flow_state_pool_ == nullptr) LOG(FATAL) << "Flow state pool failed\n";
 
   // allocate memory for an array showing flow of each Flow Control Block
   flow_state_flow_id_ = reinterpret_cast<bess::bkdrft::Flow *> (
                         rte_malloc("flow_id_array",
                           sizeof(bess::bkdrft::Flow) * max_availabe_flows,
                           0));
-  assert(flow_staet_flow_id_ != nullptr);
+  if (flow_state_pool_ == nullptr) LOG(FATAL) << "Flow state flow id pool failed\n";
 
   // initializing flow control block pool elements
   for (uint32_t i = 0; i < max_availabe_flows; i++) {
     flow_state_pool_[i].flow_id = i;
-    flow_state_pool_[i].in_use = 0;
     flow_state_pool_[i].qid = 0;
+    flow_state_pool_[i].prio = 0;
+    flow_state_pool_[i].packet_in_buffer = 0;
+    flow_state_pool_[i].byte_in_buffer = 0;
+    flow_state_pool_[i].in_use = 0;
     if (buffering_) {
       if (per_flow_buffering_) {
         char name[20];
@@ -220,7 +223,7 @@ int BKDRFTQueueOut::SetupFlowControlBlockPool() {
   if (buffering_ && !per_flow_buffering_) {
     // initialize limited buffers
     char name[20];
-    for (uint32_t i = 0; i < MAX_QUEUES; i++) {
+    for (uint32_t i = 0; i < MAX_QUEUES_PER_DIR; i++) {
       snprintf(name, 20, "buf_%s_%d", name_.c_str(), i);
       // LOG(INFO) << "buffer name: " <<  name << "\n";
 
@@ -266,7 +269,7 @@ void BKDRFTQueueOut::DeInit() {
         free_pktbuffer(flow_state_pool_[i].buffer);
       }
     } else if (limited_buffers_ != nullptr) {
-      for (uint32_t i = 0; i < MAX_QUEUES ; i++) {
+      for (uint32_t i = 0; i < MAX_QUEUES_PER_DIR ; i++) {
         free_pktbuffer(limited_buffers_[i]);
       }
     }
@@ -302,7 +305,7 @@ void BKDRFTQueueOut::BufferBatch(__attribute__((unused)) Flow *flow,
   // do not buffer more than a certain threshold
   // LOG(INFO) << "bytes in buffre " << bytes_in_buffer_ << "\n";
   // TODO: maybe the rte_ring full function should be used
-  if (unlikely(fstate->packet_in_buffer >= max_buffer_size_ - 1)) {
+  if (unlikely(fstate->buffer->pkts + remaining_pkts >= max_buffer_size_ - 1)) {
     if (log_)
       LOG(INFO) << "Maximum buffer size reached!\n";
 
@@ -326,6 +329,7 @@ void BKDRFTQueueOut::BufferBatch(__attribute__((unused)) Flow *flow,
 
   // add packets to queue
   count_enqueue = pktbuffer_enqueue(fstate->buffer, pkts, remaining_pkts);
+  // LOG(INFO) << "before: " << fstate->packet_in_buffer << " enq: " << count_enqueue << "\n";
   uint32_t failed_pkt = remaining_pkts - count_enqueue;
   if (unlikely(failed_pkt > 0)) {
     // LOG(INFO) << "Failed to enqueue to buffer\n";
@@ -344,7 +348,13 @@ void BKDRFTQueueOut::BufferBatch(__attribute__((unused)) Flow *flow,
       p->queue_stats[dir][0].diff_hist[failed_pkt]++;
     }
   }
-  fstate->packet_in_buffer += count_enqueue;
+  // fstate->packet_in_buffer += count_enqueue;
+  // if (fstate->packet_in_buffer > 1000) LOG(FATAL) << "overflow\n";
+  // if (fstate->packet_in_buffer != fstate->buffer->pkts) {
+  //   LOG(FATAL) << "inconsistancy: " << fstate->packet_in_buffer << 
+  //     " , " << fstate->buffer->pkts << " count enqueue: " << 
+  //     count_enqueue << " remaining pkts: " << remaining_pkts << "\n";
+  // }
 
   uint64_t pkt_len;
   // for (int i = sent_pkts; i < cnt; i++) {
@@ -404,7 +414,8 @@ void BKDRFTQueueOut::TrySendBufferPFQ(Context *cntx) {
       // flow = &flow_state_flow_id_[flow_id];
 
       while (true) {
-        k = fstate->packet_in_buffer;
+        // LOG(INFO) << "qid: " << (int)fstate->qid << "\n";
+        k = fstate->buffer->pkts;
         //LOG(INFO) << "Flow buffer size: " << k << "\n";
         if (unlikely(k <= 0)) {
           // filled_buffers_.erase(iter); // bufer has been emptied
@@ -448,8 +459,8 @@ void BKDRFTQueueOut::TrySendBufferPFQ(Context *cntx) {
 
         count_packets_in_buffer_ -= sent_pkts;
         bytes_in_buffer_ -= sent_bytes;
-        fstate->packet_in_buffer -= sent_pkts;
-        fstate->byte_in_buffer -= sent_bytes;
+        // fstate->packet_in_buffer -= sent_pkts;
+        // fstate->byte_in_buffer -= sent_bytes;
 
         if (sent_pkts < k || (cdq_ && !sent_ctrl_pkt)) {
           // some of the packets failed or
@@ -602,8 +613,8 @@ void BKDRFTQueueOut::TrySendBuffer(Context *cntx) {
 
       count_packets_in_buffer_ -= sent_pkts;
       bytes_in_buffer_ -= sent_bytes;
-      fstate->packet_in_buffer -= sent_pkts;
-      fstate->byte_in_buffer -= sent_bytes;
+      // fstate->packet_in_buffer -= sent_pkts;
+      // fstate->byte_in_buffer -= sent_bytes;
 
       if (sent_pkts < burst || (cdq_ && !sent_ctrl_pkt)) {
         // failed to send all the burst or
@@ -624,9 +635,12 @@ void BKDRFTQueueOut::TrySendBuffer(Context *cntx) {
 
 int BKDRFTQueueOut::TryFlushCtrlBatch()
 {
-  bool can_flush = (ctrl_batch_used_ > 7) ||
+  bool can_flush = (ctrl_batch_used_ > 31) ||
     (current_ns_ - first_ctrl_pkt_ts_) > 1000;
-  if (!can_flush) return 0;
+  if (!can_flush) {
+    LOG(INFO) << "Can not flush delta: "<<current_ns_ - first_ctrl_pkt_ts_ <<"\n";
+    return 0;
+  }
 
   bool ret;
   uint32_t i;
@@ -656,6 +670,7 @@ int BKDRFTQueueOut::TryFlushCtrlBatch()
     for (i = 0; i < failed + healthy_pkts; i++) {
       ctrl_batch_[i] = ctrl_batch_[i + sent_ctrl_pkts];
     }
+    LOG(INFO) << "Failed to send ctrl batch\n";
   }
 
   // Allocate new healthy packets
@@ -663,6 +678,9 @@ int BKDRFTQueueOut::TryFlushCtrlBatch()
                     ctrl_batch_ + failed + healthy_pkts, sent_ctrl_pkts, 256);
   if (unlikely(!ret))
     LOG(FATAL) << "Falied to refill the ctrl_batch_\n";
+  // else
+  //   LOG(INFO) << "update ctrl batch, new: " << sent_ctrl_pkts
+  //     << " kept: " << failed + healthy_pkts << "\n";
 
   ctrl_batch_used_ = failed;
 
@@ -686,6 +704,10 @@ uint16_t BKDRFTQueueOut::SendCtrlPkt(Port *p, queue_t qid, uint32_t prio,
     LOG(FATAL) << "ctrl_batch_limit reached\n";
 
   // pkt = current_worker.packet_pool()->Alloc();
+  // if (ctrl_batch_used_ >= ctrl_batch_size)
+  //   LOG(FATAL) << "ctrl_batch_used_: " << ctrl_batch_used_ << " size: " << ctrl_batch_size << "\n";
+  if (ctrl_batch_used_ == 0)
+    first_ctrl_pkt_ts_ = current_ns_;
   pkt = ctrl_batch_[ctrl_batch_used_++];
   if (likely(pkt != nullptr)) {
     res = bess::bkdrft::prepare_ctrl_packet(pkt, qid, prio, sent_pkts,
@@ -704,6 +726,10 @@ uint16_t BKDRFTQueueOut::SendCtrlPkt(Port *p, queue_t qid, uint32_t prio,
     }
 
     TryFlushCtrlBatch();
+    // sent_ctrl_pkts = port_->SendPackets(doorbell_queue_number_, ctrl_batch_,
+    //                                     ctrl_batch_used_);
+    // if (sent_ctrl_pkts == 0) bess::Packet::Free(pkt);
+    // ctrl_msg_tp_ += sent_ctrl_pkts;
 
     return 1;
   } else {
@@ -742,7 +768,7 @@ bool BKDRFTQueueOut::TryFailedCtrlPackets() {
   bess::Packet *pkts[32];
   Port *p = port_;
 
-  for (int i = 0; i < MAX_QUEUES; i++) {
+  for (int i = 0; i < MAX_QUEUES_PER_DIR; i++) {
     cnt = failed_ctrl_packets[i];
     if (cnt == 0) {
       continue;
@@ -820,14 +846,15 @@ inline void BKDRFTQueueOut::Pause(Context *cntx, const Flow &flow,
 
   ts = cntx->current_ns + duration + jitter;
 
-  LOG(INFO) << "before pauseing flow\n";
+  // LOG(INFO) << "before pauseing flow\n";
 
   bess::bkdrft::BKDRFTSwDpCtrl &dropMan =
       bess::bkdrft::BKDRFTSwDpCtrl::GetInstance();
-  dropMan.PauseFlow(ts, pps, flow);
+  // dropMan.PauseFlow(ts, pps + 32, flow);
+  dropMan.PauseFlow(ts, 100000000, flow);
   pause_call_total += 1;
 
-  // if (log_)
+  if (log_)
     LOG(INFO) << "pause qid: " << (int)qid << " pause duration: "
               << duration << " until: " << ts
               << " pps: " << pps << "\n  flow: " << FlowToString(flow) << "\n";
@@ -847,7 +874,7 @@ void BKDRFTQueueOut::ProcessBatchWithBuffer(Context *cntx,
 
   // Before we give away this batch let's check on our buffer.
   // if (BKDRFTQueueOut::count_packets_in_buffer_ > 0) {
-  if (fstate->packet_in_buffer > 0) {
+  if (fstate->buffer->pkts > 0) {
     // We have some packet in the buffer, to avoid packet
     // reordering I should send the remining packets in
     // buffer first.
@@ -878,7 +905,7 @@ void BKDRFTQueueOut::ProcessBatchWithBuffer(Context *cntx,
   // if we are buffering then we can decide based on the buffer size
   // for each flow
 
-  if (overlay_ && fstate->packet_in_buffer > buffer_len_high_water
+  if (overlay_ && fstate->buffer->pkts > buffer_len_high_water
       && cntx->current_ns - fstate->ts_last_overlay > fstate->no_overlay_duration) {
     fstate->ts_last_overlay = cntx->current_ns;
     fstate->overlay_state = OverlayState::TRIGGERED;
@@ -887,7 +914,8 @@ void BKDRFTQueueOut::ProcessBatchWithBuffer(Context *cntx,
     fstate->no_overlay_duration = duration;
   }
 
-  if (backpressure_ && fstate->packet_in_buffer > bp_buffer_len_high_water) {
+  if (backpressure_ && fstate->buffer->pkts > bp_buffer_len_high_water) {
+    // LOG(INFO) << "pause pkts in buf: " << fstate->buffer->pkts << "\n";
     if (!per_flow_buffering_) {
       // TODO: this code may be better to be placed in some other place
       // TODO: it might be good to have a data structure for keeping track of
@@ -896,13 +924,13 @@ void BKDRFTQueueOut::ProcessBatchWithBuffer(Context *cntx,
       auto iter = flow_buffer_mapping_.begin();
       for (; iter != flow_buffer_mapping_.end(); iter++) {
         if (iter->second->qid == qid) {
-          Pause(cntx, iter->first, qid, iter->second->packet_in_buffer);
+          Pause(cntx, iter->first, qid, iter->second->buffer->pkts);
           // LOG(INFO) << "pause: " << FlowToString(iter->first) << "\n";
         }
       }
     } else {
       // each flow has its own queue
-      Pause(cntx, flow, qid, fstate->packet_in_buffer);
+      Pause(cntx, flow, qid, fstate->buffer->pkts);
     }
   }
 }
@@ -947,6 +975,7 @@ void BKDRFTQueueOut::ProcessBatch(Context *cntx, bess::PacketBatch *batch) {
   if (cdq_) {
     Port *p  = port_;
     if (ctrl_batch_used_ >= ctrl_batch_size - 1) {
+      LOG(INFO) << "ctrl batch is full dropping\n";
       bess::Packet::Free(batch->pkts(), batch->cnt());
       if (!(p->GetFlags() & DRIVER_FLAG_SELF_OUT_STATS)) {
         const packet_dir_t dir = PACKET_DIR_OUT;
@@ -980,7 +1009,6 @@ void BKDRFTQueueOut::ProcessBatch(Context *cntx, bess::PacketBatch *batch) {
   //   last_print = after;
   //   LOG(INFO) << "process batch: " << after - before << "\n";
   // }
-
 }
 
 flow_state *BKDRFTQueueOut::GetFlowState(Context *cntx, Flow &flow) {
@@ -1036,7 +1064,8 @@ flow_state *BKDRFTQueueOut::GetFlowState(Context *cntx, Flow &flow) {
       break;
     } else {
       // check if the flow should be deallocated
-      if (flow_state_pool_[index].packet_in_buffer == 0 &&
+      // LOG(INFO) << "Here: " << index << "\n";
+      if (flow_state_pool_[index].buffer->pkts == 0 &&
           cntx->current_ns - flow_state_pool_[index].last_used > flow_dealloc_limit) {
         DeallocateFlowState(cntx, flow_state_flow_id_[index]);
         state = &flow_state_pool_[index];
@@ -1051,7 +1080,6 @@ flow_state *BKDRFTQueueOut::GetFlowState(Context *cntx, Flow &flow) {
 
   if (state == nullptr) {
     LOG(FATAL) << "flow state pool overflow\n";
-    throw std::runtime_error("flow state pool overflow\n");
   }
 
   state->qid = qid;
@@ -1188,7 +1216,7 @@ int BKDRFTQueueOut::SendOverlay(const Flow &flow, const flow_state *fstate,
   uint64_t bdp = 0; // bandwidth delay product
   uint64_t dt_lw = 0;
   if (state == OverlayState::TRIGGERED) {
-    buffer_size = fstate->packet_in_buffer;
+    buffer_size = fstate->buffer->pkts;
     if (buffer_size < buffer_len_low_water) {
       dt_lw = 1000;
     } else if  (rate == 0) {

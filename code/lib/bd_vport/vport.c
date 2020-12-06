@@ -161,8 +161,8 @@ struct vport *_new_vport(const char *name, uint16_t num_inc_q,
       rate->tail = RATE_SEQUENCE_SIZE - 1;
 
       q_handler->total_size = q_size;
-      q_handler->th_over = q_size * 7 / 8;
-      q_handler->th_goal = q_size / 10;
+      q_handler->th_over = 128; // q_size * 7 / 8;
+      q_handler->th_goal = 64; // q_size / 10; // 32;
     }
   }
 
@@ -298,7 +298,7 @@ int recv_packets_vport(struct vport *port, uint16_t qid, void**pkts, int cnt)
 
   // Check if queue needs to be extended
   // TODO: upper limit is just for testing
-  int extend = 1;
+  int extend = 0;
   if (extend && _count_pkts_in_q(q) > q->th_over && q->total_size < 2048) {
     // printf("\nWe have crossed the water mark\n");
     // water mark crossed
@@ -327,6 +327,10 @@ read_pkts:
       pkts += ret;
       goto read_pkts;
     }
+  }
+
+  if (dequeued == 0 && q->is_paused) {
+    q->count_empty++;
   }
 
   // // Queue Deallocation
@@ -362,6 +366,22 @@ read_pkts:
     rate->last_ts = now;
     rate->pps = rate->sum / (RATE_SEQUENCE_SIZE - 1);
     // printf("main: %d qid: %d pps: %ld\n", port->_main, qid, rate->pps);
+    // printf("main: %d qid: %d size: %d\n",
+    //     port->_main, qid, llring_count(&read_seg->ring));
+    printf("main: %d qid: %d empty: %ld\n",
+        port->_main, qid, q->count_empty);
+    q->count_empty = 0;
   }
   return dequeued;
+}
+
+// dir: 0 INC, 1 OUT
+void set_queue_pause_state(struct vport *port, int dir, uint16_t qid,
+    uint8_t state)
+{
+  if (port->_main) {
+    port->bar->queues[dir][qid].is_paused = state;
+  } else {
+    port->bar->queues[1 - dir][qid].is_paused = state;
+  }
 }

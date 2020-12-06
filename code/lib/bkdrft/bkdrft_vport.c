@@ -50,17 +50,19 @@ extern inline int vport_send_pkt(struct vport *port, uint16_t qid,
     res = prepare_packet(ctrl_pkt, NULL, sample_pkt, packed_size);
     if (unlikely(res != 0)) {
       printf("failed to prepare ctrl packet\n");
-      return nb_tx; 
+      return nb_tx;
     }
     // free(payload);
 
+retry_ctrl_pkt:
     nb_ctrl_tx = send_packets_vport(port, doorbell, (void **)&ctrl_pkt, 1);
     if (unlikely(nb_ctrl_tx != 1)) {
       // sending ctrl pkt failed
-      rte_pktmbuf_free(ctrl_pkt);
+      // rte_pktmbuf_free(ctrl_pkt);
 #ifdef DEBUG
       printf("failed to send ctrl_pkt\n");
 #endif
+      goto retry_ctrl_pkt;
     }
   }
 
@@ -77,30 +79,56 @@ extern inline int vport_poll_ctrl_queue(struct vport *port,
                                           blocking, NULL);
 }
 
-static inline int _select_queue(const int32_t queue_status[], int count_queue,
+static inline int _select_queue(const uint64_t overview_segment[],
+                                int count_overview_seg,
+                                const int32_t queue_status[], int count_queue,
                                 uint16_t *selected_q, uint32_t *cnt_pkt)
 {
-  static int i = 0;
-  // register int i = 0;
-  register int begin = i;
+  int j = 0;
+  int selected_bit = -1;
+  int selected_queue = 0;
+  uint64_t temp_mask;
+  int begin = j;
   do {
-    if (queue_status[i] > 0) {
-      // there are some packets
-      *selected_q = i;
-      *cnt_pkt = queue_status[i];
-      return 1;
+    if (overview_segment[j] > 0) {
+      temp_mask = overview_segment[j];
+      while (1) {
+        selected_bit = __builtin_ffsl(temp_mask) - 1;
+        if (selected_bit < 0) break;
+        selected_queue = selected_bit + (j * 64);
+        *selected_q = selected_queue;
+        *cnt_pkt = queue_status[selected_queue];
+        // printf("selected q: %d, mask: %ld\n", selected_queue, temp_mask);
+        return 1;
+      }
     }
-    // next queue
-    i += 1;
-    i %= count_queue;
-  } while(i != begin);
+    j++;
+    j %= count_overview_seg;
+  } while(j != begin);
   return 0;
+  // static int i = 0;
+  // // register int i = 0;
+  // register int begin = i;
+  // do {
+  //   if (queue_status[i] > 0) {
+  //     // there are some packets
+  //     *selected_q = i;
+  //     *cnt_pkt = queue_status[i];
+  //     return 1;
+  //   }
+  //   // next queue
+  //   i += 1;
+  //   i %= count_queue;
+  // } while(i != begin);
+  // return 0;
 }
 
 int vport_poll_ctrl_queue_expose_qid(struct vport *port, uint16_t ctrl_qid,
                                uint16_t burst, struct rte_mbuf **recv_bufs,
                                int blocking, uint16_t *data_qid)
 {
+  static const int count_overview_seg = MAX_QUEUES_PER_DIR / 64;
+  static uint64_t overview_segment[MAX_QUEUES_PER_DIR / 64] = {};
   // TODO: implement ffs priority queue
   // TODO: move queue_status to the vport struct (maybe)
   static int32_t queue_status[MAX_QUEUES_PER_DIR] = {}; // from vport.h
@@ -131,13 +159,6 @@ poll_doorbell:
     // read a ctrl packet
     nb_ctrl_rx = recv_packets_vport(port, ctrl_qid,
                                     (void **)ctrl_rx_bufs, ctrl_burst);
-    if (nb_ctrl_rx == 0) {
-      if (blocking) {
-        continue;
-      } else {
-        return 0;
-      }
-    }
 
     for (i = 0; i < nb_ctrl_rx; i++) {
       buf = ctrl_rx_bufs[i];
@@ -181,7 +202,7 @@ poll_doorbell:
         rte_pktmbuf_free(buf); // free ctrl_pkt
         continue;
       }
-      dqid = (uint8_t)ctrl_msg->qid;
+      dqid = (uint16_t)ctrl_msg->qid;
       dq_burst = (uint16_t)ctrl_msg->nb_pkts;
       // TODO: msg->total_bytes is not used yet!
       // printf("data qid: %d\n", (int)dqid);
@@ -191,12 +212,24 @@ poll_doorbell:
 
       // keep track of packets on each queue
       queue_status[dqid] += dq_burst;
+      if (queue_status[dqid] > 0) {
+        int index = dqid / 64;
+        int bit = dqid % 64;
+        overview_segment[index] |= 1L << bit;
+      }
     }
 
-    queue_found = _select_queue(queue_status, MAX_QUEUES_PER_DIR,
+    queue_found = _select_queue(overview_segment, count_overview_seg,
+                                queue_status, MAX_QUEUES_PER_DIR,
                                 &dqid, &dq_burst);
     if (likely(queue_found))
       break;
+
+    if (blocking) {
+      continue;
+    } else {
+      return 0;
+    }
   }
 
 // fetch_packets:
@@ -215,6 +248,13 @@ poll_doorbell:
   }
 
   queue_status[dqid] -= nb_data_rx;
+  // printf("qid: %d size: %d\n", dqid, queue_status[dqid]);
+  if (queue_status[dqid] <= 0) {
+    int index = dqid / 64;
+    int bit = dqid % 64;
+    // printf("turn off bit: %d %d\n", index, bit);
+    overview_segment[index] &= ~(1L << bit);
+  }
 
   if (data_qid != NULL) {
     *data_qid = dqid;

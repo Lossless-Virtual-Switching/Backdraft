@@ -12,12 +12,12 @@ port_name_2=vport_1
 count_queues=1
 cdq="bess"
 
-duration=30
+duration=60
 burst_composer_delay=0  # us
 server_delay=0
 server_cores="6"
 client_cores="(10,12)"
-client_rate=-1000000
+client_rate=10000000
 
 if [ $# -gt 0 ]
 then
@@ -59,5 +59,5 @@ client_pid=$!
 
 wait $client_pid
 wait $server_pid
-sleep 10
+sleep 2
 sudo pkill burst_composer

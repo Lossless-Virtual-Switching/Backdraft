@@ -195,11 +195,6 @@ def run_udp_app(config):
     }
     conf.update(config)
 
-    ips = conf['ips']
-    count_ips = len(ips)
-    conf['cnt_ips'] = count_ips
-    conf['ips'] = ' '.join(ips)
-
     mode = conf['type']
     # argv = ['sudo', udp_app, '--no-pci', '-l', conf['cpu'],
     #         '--file-prefix={}'.format(conf['prefix']),
@@ -213,11 +208,17 @@ def run_udp_app(config):
         #         conf['delay']]
         # argv += params
     elif mode == 'client':
-        cmd = ('sudo {bin} --no-pci -l{cpu} --file-prefix={prefix} '
+        ips = conf['ips']
+        count_ips = len(ips)
+        conf['cnt_ips'] = count_ips
+        conf['ips'] = ' '.join(ips)
+        cmd = ('sudo {bin} --no-pci --lcores="{cpu}" --file-prefix={prefix} '
                 '--vdev="{vdev}" --socket-mem=128 -- '
                 '{ip} {count_queue} {sysmod} {mode} {cnt_ips} {ips} '
                 '{count_flow} {duration} {port} {delay}'
               ).format(bin=udp_app, mode=mode, **conf)
+        if 'rate' in conf:
+            cmd += ' {}'.format(conf['rate'])
         # params = [conf['ip'], conf['count_queue'], conf['sysmod'], mode,
         #           count_ips, conf['ips'], conf['count_flow'], conf['duration'],
         #           conf['port']]
@@ -231,6 +232,7 @@ def run_udp_app(config):
     # print(cmd)
     FNULL = open(os.devnull, 'w') # pipe output to null
     FNULL = None
+    FNULL = subprocess.PIPE
     print(cmd)
     proc = subprocess.Popen(cmd, shell=True, close_fds=True,
                             stdout=FNULL, stderr=subprocess.STDOUT)

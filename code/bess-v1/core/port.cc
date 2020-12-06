@@ -283,37 +283,69 @@ void Port::ReleaseQueues(const struct module *m, packet_dir_t dir,
 void Port::RecordRate(packet_dir_t dir, queue_t qid, bess::Packet **pkts,
                       int packets) {
   uint64_t now = tsc_to_ns(rdtsc());
-  uint64_t diff;
-  uint64_t total_bytes;
+  uint64_t diff = 0;
+  uint64_t total_bytes = 0;
+  double tp = 0;
+  double q_size = 0.0f;
 
-  total_bytes = 0;
   for (int pkt = 0; pkt < packets; pkt++) {
     total_bytes += pkts[pkt]->total_len();
   }
 
   // TODO: maybe use a moving average
-  static const double g = 0.80;
+  // static const double g = 0.80;
   diff = now - rate_.timestamp[dir][qid];
+  rate_.timestamp[dir][qid] = now;
   if (diff < 1000000000UL) {
-    rate_.tp[dir][qid] += packets;
-  } else {
-    // update rate every one second using EWMA
-    rate_.tp[dir][qid] += packets;
+    tp = packets * 1000000000.0f / (double)diff;
+    tp_queue_[tp_q_head_] = tp;
+    tp_q_head_ += 1;
+    tp_q_head_ %= TP_Q_SIZE;
 
-    uint64_t current_rate = g * rate_.tp[dir][qid] * 1.0e9 / (double)diff;
-    rate_.pps[dir][qid] =  current_rate + (1 - g) * rate_.pps[dir][qid];
-    // rate_.pps[dir][qid] = g * (packets * 1e9 / (double)diff)
-    //                         + ( 1 - g) * rate_.pps[dir][qid];
+    if (tp_q_tail_ - tp_q_head_ < 1) {
+      tp_q_tail_ += 1;
+      tp_q_tail_ %= TP_Q_SIZE;
+      pkt_sum_ -= tp_queue_[tp_q_tail_];
+    }
 
-    rate_.bps[dir][qid] = (total_bytes + 24 * packets) * 8 * 1e9 / diff;
-    // I don't understand the packets headers yet, however, I created an issue in
-    // BESS repo
+    pkt_sum_ += tp;
+    q_size = static_cast<double>(tp_q_head_ - tp_q_tail_);
+    if (q_size < 0) q_size += TP_Q_SIZE;
 
-    rate_.tp[dir][qid] = 0;
-    rate_.timestamp[dir][qid] = now;
-    // LOG(INFO) << "name: " << name_ <<
-    //           "qid: " << qid << " estimated rate: "  << rate_.pps[dir][qid];
+    rate_.pps[dir][qid] = pkt_sum_ / q_size;
+
+    // static uint64_t log_ts = 0;
+    // if (now - log_ts > 1000000000UL) {
+    //   LOG(INFO) << "test: " << tp_q_head_ - tp_q_tail_ << "\n";
+    //   LOG(INFO) << "tp head: " << tp_q_head_ << " tp tail: " << tp_q_tail_ << "\n";
+    //   LOG(INFO) << "diff: " << diff << " packets: " << packets << "\n";
+    //   LOG(INFO) << "TP: " << tp << " pkt_sum " << pkt_sum_ << " qsize " << q_size << "\n";
+    //   LOG(INFO) << "name " << name() << " dir " << dir <<
+    //     " rate: " << rate_.pps[dir][qid] << "\n";
+    //   log_ts = now;
+    // }
   }
+
+  // if (diff < 1000000000UL) {
+  //   rate_.tp[dir][qid] += packets;
+  // } else {
+  //   // update rate every one second using EWMA
+  //   rate_.tp[dir][qid] += packets;
+
+  //   uint64_t current_rate = g * rate_.tp[dir][qid] * 1.0e9 / (double)diff;
+  //   rate_.pps[dir][qid] =  current_rate + (1 - g) * rate_.pps[dir][qid];
+  //   // rate_.pps[dir][qid] = g * (packets * 1e9 / (double)diff)
+  //   //                         + ( 1 - g) * rate_.pps[dir][qid];
+
+  //   rate_.bps[dir][qid] = (total_bytes + 24 * packets) * 8 * 1e9 / diff;
+  //   // I don't understand the packets headers yet, however, I created an issue in
+  //   // BESS repo
+
+  //   rate_.tp[dir][qid] = 0;
+  //   rate_.timestamp[dir][qid] = now;
+  //   // LOG(INFO) << "name: " << name_ <<
+  //   //           "qid: " << qid << " estimated rate: "  << rate_.pps[dir][qid];
+  // }
 
   rate_.packets[dir][qid] += packets;
   rate_.bytes[dir][qid] += total_bytes;
@@ -362,12 +394,12 @@ uint32_t Port::RateLimit(packet_dir_t dir, queue_t qid) {
   }
 
   // TODO: estimate RTT and set may_increase with RTT intervals
-  if (now - may_increase_ts > 500e3) {
-    may_increase = true;
-    may_increase_ts = now;
-  }
+  // if (now - may_increase_ts > 500e3) {
+  //   may_increase = true;
+  //   may_increase_ts = now;
+  // }
 
-  if (allowed_to_send > 31 && allowed_to_send < 65 && may_increase) {
+  if (allowed_to_send > 31 && allowed_to_send < 129) { // 
     // If client can send and the limit is about to reach, increase the rate
     // if client can send and if packets are not
     // dropped then we can assume an ack packet happening.
