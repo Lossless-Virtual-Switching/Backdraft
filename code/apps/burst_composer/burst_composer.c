@@ -86,8 +86,8 @@ int main(int argc, char *argv[])
   for (i = 0; i < count_ports; i++)
     count_queues[i] = count_queues_param;
 
-  count_discriptors[0] = 1024;  // transmit
-  // count_discriptors[0] = 256;  // transmit
+  // count_discriptors[0] = 1024;  // transmit
+  count_discriptors[0] = 256;  // transmit
   count_discriptors[1] = 64;  // receive
 
   // create a vport
@@ -261,8 +261,6 @@ int tx_worker(void *args)
         pause_start_ts = rte_get_timer_cycles() + ns_to_cycles(delay * 500);
         pause_end_ts = pause_start_ts + cycles;
         assert(now < pause_start_ts);
-        // pause_end_ts = pause_start_ts + ns_to_cycles(20000000000);
-        // pause_end_ts = pause_start_ts + 20 * rte_get_timer_hz();
         // printf("pause duration %ld\n", pause_duration);
       }
     } while(sent < num_dequeue);

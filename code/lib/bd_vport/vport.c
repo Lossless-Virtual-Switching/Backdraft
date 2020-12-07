@@ -161,13 +161,13 @@ struct vport *_new_vport(const char *name, uint16_t num_inc_q,
       rate->tail = RATE_SEQUENCE_SIZE - 1;
 
       q_handler->total_size = q_size;
-      q_handler->th_over = 128; // q_size * 7 / 8;
-      q_handler->th_goal = 64; // q_size / 10; // 32;
+      q_handler->th_over = q_size * 7 / 8;
+      q_handler->th_goal = q_size / 10;
     }
   }
 
   // Create temp directory
-	snprintf(port_dir, PORT_DIR_LEN, "%s/%s", TMP_DIR, VPORT_DIR_PREFIX);
+  snprintf(port_dir, PORT_DIR_LEN, "%s/%s", TMP_DIR, VPORT_DIR_PREFIX);
   if (stat(port_dir, &sb) == 0) {
     assert((sb.st_mode & S_IFMT) == S_IFDIR);
   } else {
@@ -239,6 +239,7 @@ int send_packets_vport_with_bp(struct vport *port, uint16_t qid, void **pkts,
   int32_t ret;
   int enqueued = 0;
   uint64_t pps;
+  uint32_t count_pkts;
 
   *pause_duration = 0;
 
@@ -267,10 +268,16 @@ send_pkts:
   }
 
   // Check if pause request should be signaled
-  if (_count_pkts_in_q(q) > q->th_over) {
+  count_pkts = _count_pkts_in_q(q);
+  if (count_pkts > q->th_over) {
     if (pps > 0) {
-      *pause_duration = ((uint64_t)(_count_pkts_in_q(q) - q->th_goal)) *
+      *pause_duration = ((uint64_t)(count_pkts - q->th_goal)) *
                             ((1000000000L) / pps);
+      // Just for debuging
+      // if (*pause_duration > 1000000000L) {
+      //   printf("large pause: duration: %lu q: %d pps: %ld\n",
+      //       *pause_duration, _count_pkts_in_q(q), pps);
+      // }
     } else {
       *pause_duration = 10000;
     }
@@ -331,6 +338,12 @@ read_pkts:
 
   if (dequeued == 0 && q->is_paused) {
     q->count_empty++;
+    if (q->empty_start_ts == 0) {
+      q->empty_start_ts = rte_get_timer_cycles();
+    }
+  } else if(q->empty_start_ts != 0) {
+    q->empty_cycles += rte_get_timer_cycles() - q->empty_start_ts;
+    q->empty_start_ts = 0;
   }
 
   // // Queue Deallocation
@@ -368,9 +381,10 @@ read_pkts:
     // printf("main: %d qid: %d pps: %ld\n", port->_main, qid, rate->pps);
     // printf("main: %d qid: %d size: %d\n",
     //     port->_main, qid, llring_count(&read_seg->ring));
-    printf("main: %d qid: %d empty: %ld\n",
-        port->_main, qid, q->count_empty);
+    printf("main: %d qid: %d empty: %ld cycles: %ld\n",
+        port->_main, qid, q->count_empty, q->empty_cycles);
     q->count_empty = 0;
+    q->empty_cycles = 0;
   }
   return dequeued;
 }

@@ -40,6 +40,8 @@ struct queue_handler {
   size_t th_over;
   size_t th_goal;
   uint64_t count_empty;
+  uint64_t empty_cycles;
+  uint64_t empty_start_ts;
   uint8_t is_paused;
 }__attribute__((__aligned__(64)));
 
