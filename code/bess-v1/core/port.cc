@@ -43,7 +43,7 @@
 
 #include "message.h"
 
-#define second_ns 1e9
+#define second_ns 1000000000UL
 
 std::map<std::string, Port *> PortBuilder::all_ports_;
 
@@ -280,38 +280,34 @@ void Port::ReleaseQueues(const struct module *m, packet_dir_t dir,
   }
 }
 
-void Port::RecordRate(packet_dir_t dir, queue_t qid, bess::Packet **pkts,
+void Port::RecordRate(packet_dir_t dir, queue_t qid,
+    __attribute__((unused)) bess::Packet **pkts,
                       int packets) {
   uint64_t now = tsc_to_ns(rdtsc());
   uint64_t diff = 0;
   uint64_t total_bytes = 0;
-  double tp = 0;
-  double q_size = 0.0f;
+  // double tp = 0;
 
-  for (int pkt = 0; pkt < packets; pkt++) {
-    total_bytes += pkts[pkt]->total_len();
-  }
+  // TODO: we do not need total bytes
+  // for (int pkt = 0; pkt < packets; pkt++) {
+  //   total_bytes += pkts[pkt]->total_len();
+  // }
 
-  // TODO: maybe use a moving average
-  // static const double g = 0.80;
   diff = now - rate_.timestamp[dir][qid];
-  rate_.timestamp[dir][qid] = now;
-  if (diff < 1000000000UL) {
-    tp = packets * 1000000000.0f / (double)diff;
-    tp_queue_[tp_q_head_] = tp;
-    tp_q_head_ += 1;
-    tp_q_head_ %= TP_Q_SIZE;
 
-    if (tp_q_tail_ - tp_q_head_ < 1) {
-      tp_q_tail_ += 1;
-      tp_q_tail_ %= TP_Q_SIZE;
-      pkt_sum_ -= tp_queue_[tp_q_tail_];
-    }
+  cur_tp_ += packets;
+  if (unlikely(diff >= second_ns)) {
+    // tp = packets * 1000000000.0f / (double)diff;
+    pkt_sum_ += cur_tp_;
+    tp_queue_[tp_q_tail_] = cur_tp_;
+    tp_q_tail_ = (tp_q_tail_ + 1) % TP_Q_SIZE;
 
-    pkt_sum_ += tp;
-    q_size = static_cast<double>(tp_q_head_ - tp_q_tail_);
-    if (q_size < 0) q_size += TP_Q_SIZE;
+    pkt_sum_ -= tp_queue_[tp_q_head_];
+    tp_q_head_ = (tp_q_head_ + 1) % TP_Q_SIZE;
 
+    cur_tp_ = 0;
+    rate_.timestamp[dir][qid] = now;
+    double q_size = TP_Q_SIZE - 1;
     rate_.pps[dir][qid] = pkt_sum_ / q_size;
 
     // static uint64_t log_ts = 0;
@@ -326,26 +322,6 @@ void Port::RecordRate(packet_dir_t dir, queue_t qid, bess::Packet **pkts,
     // }
   }
 
-  // if (diff < 1000000000UL) {
-  //   rate_.tp[dir][qid] += packets;
-  // } else {
-  //   // update rate every one second using EWMA
-  //   rate_.tp[dir][qid] += packets;
-
-  //   uint64_t current_rate = g * rate_.tp[dir][qid] * 1.0e9 / (double)diff;
-  //   rate_.pps[dir][qid] =  current_rate + (1 - g) * rate_.pps[dir][qid];
-  //   // rate_.pps[dir][qid] = g * (packets * 1e9 / (double)diff)
-  //   //                         + ( 1 - g) * rate_.pps[dir][qid];
-
-  //   rate_.bps[dir][qid] = (total_bytes + 24 * packets) * 8 * 1e9 / diff;
-  //   // I don't understand the packets headers yet, however, I created an issue in
-  //   // BESS repo
-
-  //   rate_.tp[dir][qid] = 0;
-  //   rate_.timestamp[dir][qid] = now;
-  //   // LOG(INFO) << "name: " << name_ <<
-  //   //           "qid: " << qid << " estimated rate: "  << rate_.pps[dir][qid];
-  // }
 
   rate_.packets[dir][qid] += packets;
   rate_.bytes[dir][qid] += total_bytes;
@@ -399,7 +375,7 @@ uint32_t Port::RateLimit(packet_dir_t dir, queue_t qid) {
   //   may_increase_ts = now;
   // }
 
-  if (allowed_to_send > 31 && allowed_to_send < 129) { // 
+  if (allowed_to_send > 31) { //  && allowed_to_send < 129
     // If client can send and the limit is about to reach, increase the rate
     // if client can send and if packets are not
     // dropped then we can assume an ack packet happening.
@@ -414,14 +390,19 @@ uint32_t Port::RateLimit(packet_dir_t dir, queue_t qid) {
 
 void Port::IncreaseRate(packet_dir_t dir, queue_t qid) {
   // increase the rate
+  // LOG(INFO) << "INcrease rate: " << limiter_.limit[dir][qid] << " dir: " << dir << " q: " << qid << "\n";
   if (limiter_.limit[dir][qid] < 350e3) {
     limiter_.limit[dir][qid] = limiter_.limit[dir][qid] * 10;
     if (limiter_.limit[dir][qid] > 350e3)
       limiter_.limit[dir][qid] = 350e3;
+    // if (limiter_.limit[dir][qid] < 10000) {
+    //  LOG(INFO) << "(2) INcrease rate: " << limiter_.limit[dir][qid] << " dir: " << dir << " q: " << qid << "\n";
+    // }
   } else {
     if (limiter_.limit[dir][qid] < 100e6) // 100 Mpps is the limit
       limiter_.limit[dir][qid] += 1024;
   }
+  // LOG(INFO) << "(2) INcrease rate: " << limiter_.limit[dir][qid] << " dir: " << dir << " q: " << qid << "\n";
 }
 
 void Port::UpdateTokens(packet_dir_t dir, queue_t qid, int recv) {

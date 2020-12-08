@@ -447,10 +447,10 @@ BKDRFTQueueInc::RunTask(Context *ctx, bess::PacketBatch *batch, void *) {
       // TODO: check BESS shared object class!
       BKDRFTSwDpCtrl &dropMan = bess::bkdrft::BKDRFTSwDpCtrl::GetInstance();
       DpTblEntry entry = dropMan.GetFlowStatus(q_status_flows_[qid]);
-      q_status_[qid].until = entry.until;
-      if (entry.until != 0)  {
-        // if (wait_until > 0)
-        // 	LOG(INFO) << "a flow is paused:" << (int)dqid << "\n";
+      if (entry.until != 0 && entry.until != q_status_[qid].until) {
+        // LOG(INFO) << "Pause: " << FlowToString(q_status_flows_[qid]) << "\n";
+        q_status_[qid].until = entry.until;
+
         uint32_t rate = entry.rate;
         if (rate < 32)
           rate = 32;

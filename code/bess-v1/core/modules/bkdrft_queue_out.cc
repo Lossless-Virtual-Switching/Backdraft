@@ -117,7 +117,7 @@ CommandResponse BKDRFTQueueOut::Init(const bess::pb::BKDRFTQueueOutArg &arg) {
   log_ = arg.log();
 
   // TODO: this modules is not thread safe yet
-  if (buffering_ || backpressure_) {
+  if (buffering_ || backpressure_ || cdq_) {
     task_id_t tid = RegisterTask(nullptr);
     if (tid == INVALID_TASK_ID)
       return CommandFailure(ENOMEM, "Context creation failed");
@@ -199,8 +199,6 @@ int BKDRFTQueueOut::SetupFlowControlBlockPool() {
     flow_state_pool_[i].flow_id = i;
     flow_state_pool_[i].qid = 0;
     flow_state_pool_[i].prio = 0;
-    flow_state_pool_[i].packet_in_buffer = 0;
-    flow_state_pool_[i].byte_in_buffer = 0;
     flow_state_pool_[i].in_use = 0;
     if (buffering_) {
       if (per_flow_buffering_) {
@@ -329,7 +327,6 @@ void BKDRFTQueueOut::BufferBatch(__attribute__((unused)) Flow *flow,
 
   // add packets to queue
   count_enqueue = pktbuffer_enqueue(fstate->buffer, pkts, remaining_pkts);
-  // LOG(INFO) << "before: " << fstate->packet_in_buffer << " enq: " << count_enqueue << "\n";
   uint32_t failed_pkt = remaining_pkts - count_enqueue;
   if (unlikely(failed_pkt > 0)) {
     // LOG(INFO) << "Failed to enqueue to buffer\n";
@@ -348,35 +345,29 @@ void BKDRFTQueueOut::BufferBatch(__attribute__((unused)) Flow *flow,
       p->queue_stats[dir][0].diff_hist[failed_pkt]++;
     }
   }
-  // fstate->packet_in_buffer += count_enqueue;
-  // if (fstate->packet_in_buffer > 1000) LOG(FATAL) << "overflow\n";
-  // if (fstate->packet_in_buffer != fstate->buffer->pkts) {
-  //   LOG(FATAL) << "inconsistancy: " << fstate->packet_in_buffer << 
-  //     " , " << fstate->buffer->pkts << " count enqueue: " << 
-  //     count_enqueue << " remaining pkts: " << remaining_pkts << "\n";
+
+  // uint64_t pkt_len;
+  // // for (int i = sent_pkts; i < cnt; i++) {
+  // for (uint32_t i = 0; i < count_enqueue; i++) {
+  //   // pkt_len = pkts[i]->total_len();
+  //   // remaining_bytes += pkt_len;
+  //   // fstate->byte_in_buffer += pkt_len;
+  //   // TODO: maybe it is better to use rte_ring_enqueue_bulk (and remove the for loop)
+  //   // rte_ring_enqueue(fstate->buffer, (void *)pkts[i]);
+
+  //   // buf->push_back(pkts[i]);
+  //   // buf_size++;
+  //   // if (buf_size > ecn_threshold_)
+  //   // if (fstate->packet_in_buffer > ecn_threshold_)
+  //   //   ecnMark(pkts[i]);
   // }
-
-  uint64_t pkt_len;
-  // for (int i = sent_pkts; i < cnt; i++) {
-  for (uint32_t i = 0; i < count_enqueue; i++) {
-    pkt_len = pkts[i]->total_len();
-    remaining_bytes += pkt_len;
-    fstate->byte_in_buffer += pkt_len;
-    // TODO: maybe it is better to use rte_ring_enqueue_bulk (and remove the for loop)
-    // rte_ring_enqueue(fstate->buffer, (void *)pkts[i]);
-    // buf[fstate->packet_in_buffer++] = pkts[i];
-    // fstate->packet_in_buffer += 1;
-
-    // buf->push_back(pkts[i]);
-    // buf_size++;
-    // if (buf_size > ecn_threshold_)
-    // if (fstate->packet_in_buffer > ecn_threshold_)
-    //   ecnMark(pkts[i]);
-  }
 
   count_packets_in_buffer_ += remaining_pkts;
   bytes_in_buffer_ += remaining_bytes;
   filled_buffers_.insert(fstate); // this buffer has some packets
+
+  // LOG(INFO) << "BufferBatch total: " << count_packets_in_buffer_
+  //  << " F: " << fstate->buffer->pkts << "\n";
 }
 
 /*
@@ -459,8 +450,6 @@ void BKDRFTQueueOut::TrySendBufferPFQ(Context *cntx) {
 
         count_packets_in_buffer_ -= sent_pkts;
         bytes_in_buffer_ -= sent_bytes;
-        // fstate->packet_in_buffer -= sent_pkts;
-        // fstate->byte_in_buffer -= sent_bytes;
 
         if (sent_pkts < k || (cdq_ && !sent_ctrl_pkt)) {
           // some of the packets failed or
@@ -477,80 +466,6 @@ void BKDRFTQueueOut::TrySendBufferPFQ(Context *cntx) {
       // }
     }
   }
-
-  // // TODO: The order of flows trying to send is important, but it is not
-  // // taken to the account here.
-  // for (; iter != flow_buffer_mapping_.end(); iter++) {
-  // // for (; iter != filled_buffers_.end(); iter++) {
-  //   fstate = iter->second;
-  //   // fstate = *iter;
-  //   qid = fstate->qid;
-  //   fstate_index = fstate - flow_state_pool_;
-  //   flow = &flow_state_flow_id_[fstate_index];
-
-  //   while (true) {
-  //     // k = fstate->buffer->size();
-  //     k = fstate->packet_in_buffer;
-  //     //LOG(INFO) << "Flow buffer size: " << k << "\n";
-  //     if (unlikely(k <= 0)) {
-  //       // filled_buffers_.erase(iter); // bufer has been emptied
-  //       if (cntx->current_ns - fstate->last_used > flow_dealloc_limit) {
-  //         // the flow control block has not received packet for a while
-  //         // put it back in the pool.
-
-  //         // LOG(INFO) << "TrySendBufferPfq: deallocate\n";
-  //         DeallocateFlowState(cntx, flow_state_flow_id_[fstate->flow_id]);
-  //       }
-  //       break;
-  //     }
-
-  //     if (k > max_batch_size)
-  //       k = max_batch_size;
-
-  //     sent_pkts = SendPacket(p, flow, qid, fstate->buffer->peek, k, &sent_bytes,
-  //                            &sent_ctrl_pkt);
-
-  //     // total_bytes = total_len(pkts, k);
-  //     dropped = 0; // no packet is dropped
-
-  //     // Remove sent packets from buffer
-  //     dequeue_size = pktbuffer_dequeue(fstate->buffer, nullptr, sent_pkts);
-  //     if (unlikely(dequeue_size != sent_pkts)) {
-  //       LOG(FATAL) << "expected dequeue " << sent_pkts << " actual "
-  //                  << dequeue_size << " queue size "
-  //                  << fstate->buffer->pkts << "\n";
-  //     }
-
-  //     if (!(p->GetFlags() & DRIVER_FLAG_SELF_OUT_STATS)) {
-  //       const packet_dir_t dir = PACKET_DIR_OUT;
-
-  //       p->queue_stats[dir][qid].packets += sent_pkts;
-  //       p->queue_stats[dir][qid].dropped += dropped;
-  //       p->queue_stats[dir][qid].bytes += sent_bytes;
-  //       p->queue_stats[dir][qid].requested_hist[k]++;  // sent_pkts
-  //       p->queue_stats[dir][qid].actual_hist[sent_pkts]++;
-  //       p->queue_stats[dir][qid].diff_hist[dropped]++;
-  //     }
-
-  //     count_packets_in_buffer_ -= sent_pkts;
-  //     bytes_in_buffer_ -= sent_bytes;
-  //     fstate->packet_in_buffer -= sent_pkts;
-  //     fstate->byte_in_buffer -= sent_bytes;
-
-  //     if (sent_pkts < k || (cdq_ && !sent_ctrl_pkt)) {
-  //       // some of the packets failed or
-  //       // control packet failed
-  //       break;
-  //     }
-  //   }
-
-  //   // if (overlay_ && fstate != nullptr
-  //   //     && fstate->byte_in_buffer < buffer_len_low_water
-  //   //     && fstate->overlay_state == OverlayState::TRIGGERED) {
-  //   //   fstate->overlay_state = OverlayState::SAFE;
-  //   //   SendOverlay(iter->first, qid, OverlayState::SAFE);
-  //   // }
-  // }
 }
 
 void BKDRFTQueueOut::TrySendBuffer(Context *cntx) {
@@ -638,7 +553,7 @@ int BKDRFTQueueOut::TryFlushCtrlBatch()
   bool can_flush = (ctrl_batch_used_ > 31) ||
     (current_ns_ - first_ctrl_pkt_ts_) > 1000;
   if (!can_flush) {
-    LOG(INFO) << "Can not flush delta: "<<current_ns_ - first_ctrl_pkt_ts_ <<"\n";
+    // LOG(INFO) << "Can not flush delta: "<<current_ns_ - first_ctrl_pkt_ts_ <<"\n";
     return 0;
   }
 
@@ -827,6 +742,7 @@ inline void BKDRFTQueueOut::Pause(Context *cntx, const Flow &flow,
   uint64_t jitter = rng.GetRange(MIN_PAUSE_DURATION);
   uint64_t effect_time = 0; // 200000; // TODO: find this variable, rtt + ...
   uint64_t estimated_buffer_len;
+  // pps = 450000;
   Port *p = port_;
   pps = p->rate_.pps[PACKET_DIR_OUT][qid];
   if (pps == 0) {
@@ -850,8 +766,8 @@ inline void BKDRFTQueueOut::Pause(Context *cntx, const Flow &flow,
 
   bess::bkdrft::BKDRFTSwDpCtrl &dropMan =
       bess::bkdrft::BKDRFTSwDpCtrl::GetInstance();
-  // dropMan.PauseFlow(ts, pps + 32, flow);
-  dropMan.PauseFlow(ts, 100000000, flow);
+  dropMan.PauseFlow(ts, pps + 32, flow);
+  // dropMan.PauseFlow(ts, 100000000, flow);
   pause_call_total += 1;
 
   if (log_)
@@ -1085,8 +1001,6 @@ flow_state *BKDRFTQueueOut::GetFlowState(Context *cntx, Flow &flow) {
   state->qid = qid;
   state->overlay_state = OverlayState::SAFE;
   state->ts_last_overlay = 0;
-  state->packet_in_buffer = 0;
-  state->byte_in_buffer = 0;
   state->in_use = 1;
   state->last_used = cntx->current_ns;
   if (!per_flow_buffering_) {

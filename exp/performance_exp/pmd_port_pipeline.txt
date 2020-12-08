@@ -17,8 +17,8 @@ LOSSLESS = 0
 CNT_Q = 8
 
 rate = 100000
-Q_SIZE = 512
-bp_threshold = 64
+Q_SIZE = 512  # TODO: This is hard coded
+bp_threshold = 64  # TODO: This is hard coded
 
 # == Insert here ==
 # ==     End     ==
@@ -26,8 +26,8 @@ bp_threshold = 64
 TX_QUEUE_COUNT = CNT_Q
 RX_QUEUE_COUNT = CNT_Q
 Q = max(TX_QUEUE_COUNT, RX_QUEUE_COUNT)
-rate_limiting = False
-# rate_limiting = BP
+# rate_limiting = False
+rate_limiting = BP
 # ======================================
 
 if Q_SIZE < bp_threshold:
@@ -124,7 +124,7 @@ if COMMAND_Q:
 elif PFQ:
     count_internal_q = 0
 else:
-    count_internal_q = 0
+    count_internal_q = 1
 
 # if count_internal_q > 0:
 #     bess.add_worker(1, 2)

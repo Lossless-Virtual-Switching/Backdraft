@@ -210,8 +210,6 @@ struct flow_state {
   OverlayState overlay_state; // overlay state (TRIGGERED, SAFE)
   uint64_t ts_last_overlay; // when was last overlay sent
   uint64_t no_overlay_duration; // for what duration no overlay should be sent
-  uint64_t packet_in_buffer; // how many packets in the buffer
-  uint64_t byte_in_buffer; // how many bytes in the buffer
   pktbuffer_t *buffer; // pointer to queue buffer
   bool in_use; // indicating if the object is being used by a flow
   uint64_t last_used; // keeps track of the usage
