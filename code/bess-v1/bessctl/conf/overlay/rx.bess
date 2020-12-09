@@ -2,6 +2,8 @@ import os
 import subprocess
 
 count_queue = 8
+rate = 300000
+rate_limit = 1
 pci = os.environ.get('PCI', '7:00.1')
 
 socket="/tmp/tmp_vhost.sock"
@@ -13,22 +15,21 @@ if os.path.exists(socket):
 server = PMDPort(name="tmp_vhost",
   vdev=vdev,
   num_inc_q = count_queue,
-  num_out_q=count_queue, rate_limiting=1, rate=300)
+  num_out_q=count_queue, rate_limiting=rate_limit, rate=rate)
 
 nic = PMDPort(pci=pci,
   num_inc_q=count_queue,
   num_out_q=count_queue,
-  command_queue=True,
-  data_mapping=True, rate_limiting=1, rate=300)
+  data_mapping=False, rate_limiting=rate_limit, rate=rate)
 
+queue_ids = list(range(count_queue))
 BKDRFTQueueInc(port=nic,
-  qid=0,
+  qid=queue_ids,
   cdq=1,
   backpressure=0,
   overlay=1)  -> \
 BKDRFTQueueOut(port=server,
-  count_queues=count_queue,
-  qid=0,
+  qid=queue_ids,
   lossless=1,
   backpressure=0,
   log=0,
@@ -36,6 +37,5 @@ BKDRFTQueueOut(port=server,
   per_flow_buffering=0,
   ecn_threshold=100000,
   overlay=1,
-  multiqueue=1,
   mname="test")
 
