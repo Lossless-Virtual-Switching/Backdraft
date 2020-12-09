@@ -2,9 +2,9 @@
   "default_client": {
     "message_per_sec": -1,
     "flow_duration": 0,
-    "message_size": 14000,
+    "message_size": 1450,
     "flow_num_msg": 0,
-    "flow_per_destination": 8,
+    "flow_per_destination": 4,
     "count_thread": 1,
     "delay_cycles": 0
   },

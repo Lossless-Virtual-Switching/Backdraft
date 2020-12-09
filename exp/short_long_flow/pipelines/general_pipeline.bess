@@ -49,14 +49,6 @@ def get_mac_address():
   return add
 
 
-def get_pci_address(iface):
-  """
-  Get PCI address for the given interface name
-  """
-  # ethtool -i iface # this should give enough information
-  raise Exception('Not implemented yet')
-
-
 def get_current_node_info(file_path):
   mac = get_mac_address()
   found = False
@@ -102,6 +94,7 @@ pfq = config['pfq']
 overlay = config['overlay']
 
 cpu_queues = size_q
+rate = 40000
 
 
 # ===========================================#
@@ -116,7 +109,7 @@ cpu_queues = size_q
 
 # PCI of port connected to switch
 sw_port = PMDPort(pci=out_pci, num_inc_q=count_queue, num_out_q=count_queue,
-           rate_limiting=overlay, rate=40, command_queue=cdq, data_mapping=cdq)
+           rate_limiting=overlay, rate=rate, data_mapping=cdq)
 
 
 # TAS vhost ports
@@ -129,7 +122,10 @@ for i, instance in enumerate(instances):
   # make sure previous socket file is removed
   if os.path.exists(tas_socket):
     # os.remove(tas_socket)
-    subprocess.call('sudo rm {}'.format(tas_socket), shell=True)
+    rc = subprocess.call('sudo rm {}'.format(tas_socket), shell=True)
+    if rc != 0:
+      print('failed to remove socket {}'.format(tas_socket), file=sys.stderr)
+      sys.exit(1)
     print('previous socket file removed')
 
   vdev = 'eth_vhost{},iface={},queues={}'.format(i, tas_socket, count_tas_queues)
@@ -140,7 +136,7 @@ for i, instance in enumerate(instances):
     size_inc_q=size_q,
     size_out_q=size_q * 4,
     rate_limiting=overlay,
-    rate=40)
+    rate=rate)
 
   # print(type(str(tas_port.mac_addr)), str(tas_port.mac_addr))
   l2fwd_entries.append({'addr': str(tas_port.mac_addr), 'gate': i + 1})
@@ -160,6 +156,7 @@ for i, instance in enumerate(instances):
 # l2fwd:0 -> rep
 
 
+queue_ids = list(range(count_queue))
 sw_merge = Merge()
 if not cdq:
   # each queue should be polled
@@ -170,14 +167,14 @@ if not cdq:
     sw_q_inc.attach_task(wid=next_wid())
 else:
   # only doorbell queue should be polled
-  sw_q_inc = BKDRFTQueueInc(port=sw_port, qid=[i for i in range(count_queue)],
+  sw_q_inc = BKDRFTQueueInc(port=sw_port, qid=queue_ids,
                             cdq=cdq, backpressure=bp, overlay=overlay)
   sw_q_inc -> sw_merge:0
   sw_q_inc.attach_task(wid=next_wid())
 
 # Backdraft queue out can manage multiple queue
-sw_q_out = BKDRFTQueueOut(port=sw_port, qid=[i for i in range(count_queue)],
-              count_queues=count_queue, backpressure=bp, lossless=buffering,
+sw_q_out = BKDRFTQueueOut(port=sw_port, qid=queue_ids,
+              backpressure=bp, lossless=buffering,
               cdq=cdq, per_flow_buffering=pfq, mname='sw', overlay = overlay)
 # if buffering:
 #   sw_q_out.attach_task(wid=next_wid())
@@ -212,7 +209,7 @@ for i, (vhost, ip) in enumerate(vhosts):
       qinc.attach_task(wid=next_wid())
   else:
     # only dorbell queue should be polled
-    qinc = BKDRFTQueueInc(port=vhost, qid=[j for j in range(count_queue)],
+    qinc = BKDRFTQueueInc(port=vhost, qid=queue_ids,
                           cdq=cdq, backpressure=bp, overlay=overlay)
     qinc -> merge:gate
     gate += 1
@@ -251,8 +248,8 @@ tmp_queue.attach_task(wid=next_wid())
 
 lookup_gate = 1
 for i, (vhost, ip) in enumerate(vhosts):
-  qout = BKDRFTQueueOut(port=vhost, qid=[j for j in range(count_queue)],
-               count_queues=count_queue, backpressure=bp, lossless=buffering,
+  qout = BKDRFTQueueOut(port=vhost, qid=queue_ids,
+               backpressure=bp, lossless=buffering,
                cdq=cdq, per_flow_buffering=pfq, mname=vhost.name + '_' + str(i),
                overlay=overlay)
   # if buffering:
