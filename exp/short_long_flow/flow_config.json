@@ -4,7 +4,7 @@
     "flow_duration": 0,
     "message_size": 1450,
     "flow_num_msg": 0,
-    "flow_per_destination": 4,
+    "flow_per_destination": 2,
     "count_thread": 1,
     "delay_cycles": 0
   },
@@ -18,9 +18,9 @@
   "other_client": {
     "message_per_sec": -1,
     "flow_duration": 0,
-    "message_size": 100,
+    "message_size": 1450,
     "flow_num_msg": 0,
-    "flow_per_destination": 2,
+    "flow_per_destination": 1,
     "count_thread": 1
   },
   "slow_server": {

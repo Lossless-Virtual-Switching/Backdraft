@@ -204,17 +204,17 @@ inline bool BKDRFTQueueInc::CheckQueuedCtrlMessages(__attribute__((unused))
   // return true;
 
   // Lowest Queue-id First
-  // static int j = 0;
-  // static int selected_bit = -1;
-  int j = 0;
-  int selected_bit = -1;
+  static int j = 0;
+  static int selected_bit = -1;
+  // int j = 0;
+  // int selected_bit = -1;
   int selected_queue = 0;
   uint64_t temp_mask;
   int begin = j;
   do {
     if (overview_mask_[j] > 0) {
       temp_mask = overview_mask_[j];
-      // temp_mask &= UINT64_MAX << (selected_bit + 1);
+      temp_mask &= UINT64_MAX << (selected_bit + 1);
       while (true) {
         selected_bit = __builtin_ffsl(temp_mask) - 1;
         if (selected_bit < 0) break;
@@ -283,39 +283,50 @@ uint32_t BKDRFTQueueInc::CDQ(Context *ctx,
       // a pointer to parsed protobuf object
       // static void *pb = rte_malloc(nullptr, sizeof(bess::pb::Ctrl), 0);
       //  TODO: for Overlay messages we should do something else!
-      void *pb = &ctrl_pkt_pb_tmp_;
+      // void *pb = &ctrl_pkt_pb_tmp_;
+      void *pb = nullptr;
 
       bess::Packet *pkt;
       for (uint32_t i = 0; i < cnt; i++) {
         pkt = ctrl_batch.pkts()[i];
         res = parse_bkdrft_msg(pkt, &message_type, &pb);
         if (unlikely(res != 0)) {
-          // LOG(WARNING) << "Failed to parse bkdrft msg\n";
+          LOG(WARNING) << "Failed to parse bkdrft msg\n";
           bess::Packet::Free(pkt); // free unknown packet
           continue;
         }
 
         if (message_type == BKDRFT_CTRL_MSG_TYPE) {
-          bess::pb::Ctrl *ctrl_msg = reinterpret_cast<bess::pb::Ctrl *>(pb);
-          dqid = static_cast<queue_t>(ctrl_msg->qid());
-          nb_pkts = ctrl_msg->nb_pkts();
+          struct cdq_payload *ctrl_msg =
+            reinterpret_cast<struct cdq_payload *>(pb);
+          dqid = ctrl_msg->qid;
+          nb_pkts = ctrl_msg->nb_pkts;
+          // bess::pb::Ctrl *ctrl_msg = reinterpret_cast<bess::pb::Ctrl *>(pb);
+          // dqid = static_cast<queue_t>(ctrl_msg->qid());
+          // nb_pkts = ctrl_msg->nb_pkts();
+
           // TODO: not checking isManagedQueue for performance testing
           // if (isManagedQueue(dqid))
-          q_status_[dqid].remaining_dpkt += nb_pkts;
-          // doorbell_service_queue_.push(std::pair<uint16_t, uint32_t>(dqid, nb_pkts));
-          if (likely(q_status_[dqid].remaining_dpkt > 0)) {
-            int index = dqid / 64;
-            int bit = dqid % 64;
-            overview_mask_[index] |= 1L << bit;
-            // LOG(INFO) << "add q: " << (int)dqid << " index " << index << " bit "
-            //           << bit << " mask " << overview_mask_[index] << "\n";
-          }
-          //
-          // LOG(INFO) << "Received ctrl message: qid: " << (int)dqid
-          //   << " count: " << nb_pkts << "\n";
+          if (unlikely(dqid > MAX_QUEUES_PER_DIR)) {
+            LOG(INFO) << "Received ctrl message: qid: " << (int)dqid
+              << " count: " << nb_pkts << "\n";
+          } else {
+            q_status_[dqid].remaining_dpkt += nb_pkts;
+            // doorbell_service_queue_.push(std::pair<uint16_t, uint32_t>(dqid, nb_pkts));
+            if (likely(q_status_[dqid].remaining_dpkt > 0)) {
+              int index = dqid / 64;
+              int bit = dqid % 64;
+              overview_mask_[index] |= 1L << bit;
+              // LOG(INFO) << "add q: " << (int)dqid << " index " << index << " bit "
+              //           << bit << " mask " << overview_mask_[index] << "\n";
+            }
+            //
+            // LOG(INFO) << "Received ctrl message: qid: " << (int)dqid
+            //    << " count: " << nb_pkts << "\n";
 
-          // not freeing ctrl_msg because we want it to be reused
-          // delete ctrl_msg;
+            // not freeing ctrl_msg because we want it to be reused
+            // delete ctrl_msg;
+          }
         } else if (message_type == BKDRFT_OVERLAY_MSG_TYPE) {
           bess::pb::Overlay *overlay_msg =
             reinterpret_cast<bess::pb::Overlay *>(pb);

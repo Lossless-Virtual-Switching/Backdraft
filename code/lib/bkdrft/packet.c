@@ -4,6 +4,8 @@
 #include <rte_byteorder.h>
 #include <rte_ethdev.h>
 
+#define BD_PKT_SIZE 128
+
 /* This function is used for craeting Backdraft packets.
  * TODO: change this function to utilize the new create packet function.
  * */
@@ -47,9 +49,9 @@ int prepare_packet(struct rte_mbuf *buf, unsigned char *payload,
 
   // TODO: can use with out appending
   /* ethernet header */
-  buf_ptr = rte_pktmbuf_append(buf, 256);
-  eth_hdr = (struct rte_ether_hdr *)buf_ptr;
-  // eth_hdr = rte_pktmbuf_mtod(buf, struct rte_ether_hdr *);
+  // buf_ptr = rte_pktmbuf_append(buf, BD_PKT_SIZE);
+  // eth_hdr = (struct rte_ether_hdr *)buf_ptr;
+  eth_hdr = rte_pktmbuf_mtod(buf, struct rte_ether_hdr *);
 
   rte_ether_addr_copy(&s_eth_hdr->s_addr, &eth_hdr->s_addr);
   rte_ether_addr_copy(&s_eth_hdr->d_addr, &eth_hdr->d_addr);
@@ -79,8 +81,6 @@ int prepare_packet(struct rte_mbuf *buf, unsigned char *payload,
   }
 
   /* UDP header + data */
-  // buf_ptr = rte_pktmbuf_append(buf, sizeof(struct rte_udp_hdr) + size);
-  // udp_hdr = (struct rte_udp_hdr *)buf_ptr;
   udp_hdr = (struct rte_udp_hdr *)(ipv4_hdr + 1);
   if (likely(s_udp_hdr != NULL)) {
     udp_hdr->src_port = s_udp_hdr->src_port;
@@ -100,6 +100,8 @@ int prepare_packet(struct rte_mbuf *buf, unsigned char *payload,
     memcpy((udp_hdr + 1), payload, size);
   }
 
+  buf->pkt_len = BD_PKT_SIZE;
+  buf->data_len = BD_PKT_SIZE;
   buf->l2_len = RTE_ETHER_HDR_LEN;
   buf->l3_len = sizeof(struct rte_ipv4_hdr);
   // buf->ol_flags = PKT_TX_IP_CKSUM | PKT_TX_IPV4;
@@ -187,24 +189,26 @@ size_t get_payload(struct rte_mbuf *pkt, void **payload) {
 }
 
 
-extern inline size_t create_bkdraft_ctrl_msg(uint16_t qid, uint32_t nb_bytes,
+extern inline size_t create_bkdraft_ctrl_msg(uint16_t qid,
+                                             __attribute__((unused))uint32_t nb_bytes,
                                              uint32_t nb_pkts,
                                              unsigned char **buf)
 {
   size_t size = 0;
   // size_t packed_size = 0;
-  unsigned char *payload = *buf;
+  // unsigned char *payload = *buf;
+  struct cdq_payload *payload = (struct cdq_payload *)(*buf);
 
   // memset(ctrl_msg, 0, sizeof(DpdkNetPerf__Ctrl));
 
-  DpdkNetPerf__Ctrl ctrl_msg = DPDK_NET_PERF__CTRL__INIT;
-  // dpdk_net_perf__ctrl__init(&ctrl_msg);
-  ctrl_msg.qid = qid;
-  ctrl_msg.total_bytes = nb_bytes;
-  ctrl_msg.nb_pkts = nb_pkts;
+  // DpdkNetPerf__Ctrl ctrl_msg = DPDK_NET_PERF__CTRL__INIT;
+  // // dpdk_net_perf__ctrl__init(&ctrl_msg);
+  // ctrl_msg.qid = qid;
+  // ctrl_msg.total_bytes = nb_bytes;
+  // ctrl_msg.nb_pkts = nb_pkts;
 
-  size = dpdk_net_perf__ctrl__get_packed_size(&ctrl_msg);
-  size = size + 1; // one byte for adding message type tag
+  // size = dpdk_net_perf__ctrl__get_packed_size(&ctrl_msg);
+  // size = size + 1; // one byte for adding message type tag
 
   if (unlikely(payload == NULL)) {
     // TODO: check if malloc has performance hit.
@@ -213,12 +217,18 @@ extern inline size_t create_bkdraft_ctrl_msg(uint16_t qid, uint32_t nb_bytes,
 #endif
     payload = malloc(size);
     assert(payload);
-    *buf = payload;
+    *buf = (unsigned char *)payload;
   }
 
   // first byte defines the bkdrft message type
-  payload[0] = BKDRFT_CTRL_MSG_TYPE;
-  dpdk_net_perf__ctrl__pack(&ctrl_msg, payload + 1);
+  // payload[0] = BKDRFT_CTRL_MSG_TYPE;
+  // dpdk_net_perf__ctrl__pack(&ctrl_msg, payload + 1);
+
+  payload->type = BKDRFT_CTRL_MSG_TYPE;
+  payload->qid = qid;
+  payload->prio = 0; // TODO: implement prio
+  payload->nb_pkts = nb_pkts;
+  size = sizeof(struct cdq_payload);
 
   return size;
 }

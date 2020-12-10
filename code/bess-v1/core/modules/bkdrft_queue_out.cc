@@ -615,12 +615,10 @@ uint16_t BKDRFTQueueOut::SendCtrlPkt(Port *p, queue_t qid, uint32_t prio,
   int res;
   // int total_len = 0;
 
-  if (unlikely(ctrl_batch_used_ == ctrl_batch_size))
+  if (unlikely(ctrl_batch_used_ >= ctrl_batch_size))
     LOG(FATAL) << "ctrl_batch_limit reached\n";
 
   // pkt = current_worker.packet_pool()->Alloc();
-  // if (ctrl_batch_used_ >= ctrl_batch_size)
-  //   LOG(FATAL) << "ctrl_batch_used_: " << ctrl_batch_used_ << " size: " << ctrl_batch_size << "\n";
   if (ctrl_batch_used_ == 0)
     first_ctrl_pkt_ts_ = current_ns_;
   pkt = ctrl_batch_[ctrl_batch_used_++];
@@ -640,6 +638,7 @@ uint16_t BKDRFTQueueOut::SendCtrlPkt(Port *p, queue_t qid, uint32_t prio,
       bess::bkdrft::mark_packet_with_queue_number(pkt, doorbell_queue_number_);
     }
 
+    // int sent_ctrl_pkts = port_->SendPackets(doorbell_queue_number_, &pkt, 1);
     TryFlushCtrlBatch();
     // sent_ctrl_pkts = port_->SendPackets(doorbell_queue_number_, ctrl_batch_,
     //                                     ctrl_batch_used_);
@@ -671,58 +670,6 @@ inline void BKDRFTQueueOut::UpdatePortStats(queue_t qid, uint16_t sent_pkts,
     p->queue_stats[dir][qid].actual_hist[sent_pkts]++;
     p->queue_stats[dir][qid].diff_hist[dropped]++;
   }
-}
-
-/* Try to send ctrl packets for data packets already sent */
-bool BKDRFTQueueOut::TryFailedCtrlPackets() {
-  int cnt = 0;
-  int k = 0;
-  int batch_size = 32;
-  int sent = 0;
-  bool alloc_res = false;
-  bess::Packet *pkts[32];
-  Port *p = port_;
-
-  for (int i = 0; i < MAX_QUEUES_PER_DIR; i++) {
-    cnt = failed_ctrl_packets[i];
-    if (cnt == 0) {
-      continue;
-    }
-
-    // k = min(cnt, batch_size)
-    k = cnt;
-    if (k > batch_size) {
-      k = batch_size;
-    }
-
-    alloc_res = current_worker.packet_pool()->AllocBulk(pkts, k);
-    if (likely(alloc_res)) {
-      for (int j = 0; j < k; j++) {
-        bess::Packet *pkt = pkts[j];
-        // TODO: sotre how many ctrl pkt for each flow was failed
-        // we do not have enough information specially sample_pkt_ is not
-        // correct Maybe have a similar system as buffering the dropped packets
-        // TODO: prio of control packet is lost
-        int res =
-            bess::bkdrft::prepare_ctrl_packet(pkt, i, 0, 0, 0, &sample_pkt_flow_);
-        if (res != 0) {
-          LOG(WARNING) << "TryFailedCtrlPackets: failed to prepare pkt\n";
-          bess::Packet::Free(pkts + j, k - j);
-          k = j;
-          break;
-        }
-      }
-
-      sent = p->SendPackets(BKDRFT_CTRL_QUEUE, pkts, k);
-      ctrl_msg_tp_ += sent;
-      failed_ctrl_packets[i] -= sent;
-      if (sent < k) {
-        bess::Packet::Free(pkts + sent, k - sent);
-        return false;
-      }
-    }
-  }
-  return true;
 }
 
 /*
@@ -1079,7 +1026,7 @@ int BKDRFTQueueOut::SendPacket(Port *p, struct flow_state *fstate,
   if (cdq_) {
     // ==== sample_pkt ==========
     // TODO: this is a copy
-    sample_pkt_flow_ = flow_state_flow_id_[fstate->flow_id];;
+    sample_pkt_flow_ = flow_state_flow_id_[fstate->flow_id];
 
     // mark destination queue
     if (p->getConnectedPortType() == NIC) {

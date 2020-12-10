@@ -1,17 +1,12 @@
 cnt_queues = 8
-command_queue = True
 dcb = False
 data_mapping = True
-
 mellanox_PCI = '07:00.1'
-
 # intel_PCI = '81:00.1'
 
 my_vhost0 = PMDPort(pci=mellanox_PCI,
   num_inc_q=cnt_queues,
   num_out_q=cnt_queues,
-  dcb=dcb,
-  command_queue=command_queue,
   data_mapping=data_mapping)
 # my_vhost0 = PMDPort(name='test_interface', vdev='eth_vhost0,iface=/tmp/test.sock,queues='+str(cnt_queues))
 

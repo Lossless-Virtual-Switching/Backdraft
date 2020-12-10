@@ -192,6 +192,7 @@ def run_udp_app(config):
       'count_flow': 1,
       'duration': 40,
       'port': 5000,
+      'bidi': 'false',
     }
     conf.update(config)
 
@@ -200,8 +201,8 @@ def run_udp_app(config):
     #         '--file-prefix={}'.format(conf['prefix']),
     #         '--vdev={}'.format(conf['vdev']), '--socket-mem=128', '--']
     if mode  == 'server':
-        cmd = ('sudo {bin} --no-pci -l{cpu} --file-prefix={prefix} '
-                '--vdev="{vdev}" --socket-mem=128 -- '
+        cmd = ('sudo {bin} --no-pci --lcores="{cpu}" --file-prefix={prefix} '
+                'bidi={bidi} --vdev="{vdev}" --socket-mem=128 -- '
                 '{ip} {count_queue} {sysmod} {mode} {delay}'
               ).format(bin=udp_app, mode=mode, **conf)
         # params = [conf['ip'], conf['count_queue'], conf['sysmod'], conf['mode'],
@@ -214,7 +215,7 @@ def run_udp_app(config):
         conf['ips'] = ' '.join(ips)
         cmd = ('sudo {bin} --no-pci --lcores="{cpu}" --file-prefix={prefix} '
                 '--vdev="{vdev}" --socket-mem=128 -- '
-                '{ip} {count_queue} {sysmod} {mode} {cnt_ips} {ips} '
+                'bidi={bidi} {ip} {count_queue} {sysmod} {mode} {cnt_ips} {ips} '
                 '{count_flow} {duration} {port} {delay}'
               ).format(bin=udp_app, mode=mode, **conf)
         if 'rate' in conf:

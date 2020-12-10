@@ -272,9 +272,6 @@ private:
   // routine for the mode with out buffering
   void ProcessBatchLossy(Context *ctx, bess::PacketBatch *batch);
 
-  // try to send ctrl packets which were not sent
-  bool TryFailedCtrlPackets();
-
   // performe a pause cal for the given flow
   void Pause(Context *cntx, const Flow &flow, const queue_t qid,
                        uint64_t buffer_size);

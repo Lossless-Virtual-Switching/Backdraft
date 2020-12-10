@@ -65,7 +65,7 @@ int do_client(void *_cntx) {
   assert(count_dst_ip >= 1);
 
   uint64_t start_time, end_time;
-  uint64_t duration = cntx->duration * rte_get_timer_hz();
+  uint64_t duration = (cntx->duration < 0) ? 0 : ((unsigned int)cntx->duration) * rte_get_timer_hz();
   uint64_t ignore_result_duration = 5;
 
   struct rte_mbuf *bufs[BURST_SIZE];

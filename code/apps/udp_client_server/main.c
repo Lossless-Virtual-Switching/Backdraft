@@ -36,7 +36,7 @@ static void print_usage(void)
   "    * count destination ips\n"
   "    * valid ip values (as many as defined in prev. param)\n"
   "    * count flow\n"
-  "    * experiment duration\n"
+  "    * experiment duration (zero means run with out a limit)\n"
   "    * client port\n"
   "    * client delay cycles\n"
   "    * rate value (pps)\n"
@@ -244,7 +244,7 @@ int main(int argc, char *argv[]) {
   // how many flows should client generate
   // TODO: can limit the number of flows a server accepts
   int count_flow = 0;
-  uint32_t duration = 40;
+  int32_t duration = 40;
 
   // only used in server
   // delay for each burst in server (us)

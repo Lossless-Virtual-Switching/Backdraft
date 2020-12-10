@@ -20,7 +20,7 @@ server = PMDPort(name="tmp_vhost",
 nic = PMDPort(pci=pci,
   num_inc_q=count_queue,
   num_out_q=count_queue,
-  data_mapping=False, rate_limiting=rate_limit, rate=rate)
+  data_mapping=True, rate_limiting=rate_limit, rate=rate)
 
 queue_ids = list(range(count_queue))
 BKDRFTQueueInc(port=nic,

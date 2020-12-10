@@ -63,7 +63,7 @@ struct context {
   uint64_t **tmp_array;
 
   // client
-  uint32_t duration;
+  int32_t duration;
   uint32_t *dst_ips;
   int count_dst_ip;
   uint16_t dst_port;

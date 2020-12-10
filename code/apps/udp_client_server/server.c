@@ -255,7 +255,7 @@ int do_server(void *_cntx) {
 
   // TODO: take these parameters from command line
   uint64_t token_limit = 3000000;
-  uint8_t rate_limit = 1;
+  uint8_t rate_limit = 0;
   uint64_t delta_time;
   uint64_t limit_window;
   uint8_t rate_limit_change_flag = 0;
@@ -481,7 +481,7 @@ int do_server(void *_cntx) {
       timestamp = (*(uint64_t *)ptr);
       /* TODO: the following line only works on single node */
       latency = (rte_get_timer_cycles() - timestamp) * 1000 * 1000 / rte_get_timer_hz(); //(us)
-      add_number_to_p_hist(hist, (float)latency);
+      // add_number_to_p_hist(hist, (float)latency);
 
       // if (src_port >= 8000) {
         // this packet needs heavy processing

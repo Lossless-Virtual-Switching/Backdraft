@@ -25,6 +25,17 @@ namespace bkdrft {
 
 using bess::bkdrft::Flow;
 
+
+struct[[gnu::packed]] cdq_payload {
+  char type;
+  uint16_t qid;
+  uint16_t prio;
+  uint32_t nb_pkts;
+};
+struct bd_message {
+  char type;
+};
+
 inline uint64_t total_len(bess::Packet **pkts, int count) {
   int i;
   uint64_t bytes = 0;
@@ -85,29 +96,43 @@ static inline bess::utils::Ipv4 *get_ip_header(bess::utils::Ethernet *eth) {
 }
 
 static inline int mark_packet_with_queue_number(bess::Packet *pkt, uint8_t q) {
+  // TODO: assuming it is an ip packet
   using bess::utils::Ethernet;
-  char *new_head;
-  be32_t tag;
-  uint16_t tci = q << 3 | 0 << 12 | q; // vlan (prio=3, vlan-id=q)
-
-  new_head = static_cast<char *>(pkt->prepend(4));
-  if (unlikely(new_head == nullptr)) {
-    return -1;
-  }
-
-  __m128i ethh;
-  ethh = _mm_loadu_si128(reinterpret_cast<__m128i *>(new_head + 4));
-  be16_t tpid(be16_t::swap(_mm_extract_epi16(ethh, 6)));
-
-  if (tpid.value() == Ethernet::Type::kVlan) {
-    tag = be32_t((Ethernet::Type::kQinQ << 16) | tci);
-  } else {
-    tag = be32_t((Ethernet::Type::kVlan << 16) | tci);
-  }
-  ethh = _mm_insert_epi32(ethh, tag.raw_value(), 3);
-  _mm_storeu_si128(reinterpret_cast<__m128i *>(new_head), ethh);
+  using bess::utils::Ipv4;
+  uint8_t tos;
+  Ethernet *eth_hdr = pkt->head_data<Ethernet *>();
+  Ipv4 *ip_hdr = reinterpret_cast<Ipv4 *>(eth_hdr + 1);
+  tos = ip_hdr->type_of_service;
+  tos &= 0x03;  // preserving the ecn bits and reseting others
+  tos |= q << 2;
+  ip_hdr->type_of_service = tos;
   return 0;  // success
 }
+
+// static inline int mark_packet_with_queue_number(bess::Packet *pkt, uint8_t q) {
+//   using bess::utils::Ethernet;
+//   char *new_head;
+//   be32_t tag;
+//   uint16_t tci = q << 3 | 0 << 12 | q; // vlan (prio=3, vlan-id=q)
+// 
+//   new_head = static_cast<char *>(pkt->prepend(4));
+//   if (unlikely(new_head == nullptr)) {
+//     return -1;
+//   }
+// 
+//   __m128i ethh;
+//   ethh = _mm_loadu_si128(reinterpret_cast<__m128i *>(new_head + 4));
+//   be16_t tpid(be16_t::swap(_mm_extract_epi16(ethh, 6)));
+// 
+//   if (tpid.value() == Ethernet::Type::kVlan) {
+//     tag = be32_t((Ethernet::Type::kQinQ << 16) | tci);
+//   } else {
+//     tag = be32_t((Ethernet::Type::kVlan << 16) | tci);
+//   }
+//   ethh = _mm_insert_epi32(ethh, tag.raw_value(), 3);
+//   _mm_storeu_si128(reinterpret_cast<__m128i *>(new_head), ethh);
+//   return 0;  // success
+// }
 
 }  // namespace bkdrft
 }  // namespace bess

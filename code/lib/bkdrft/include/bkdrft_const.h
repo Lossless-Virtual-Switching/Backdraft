@@ -1,6 +1,17 @@
 #ifndef _BKDRFT_CONST_H
 #define _BKDRFT_CONST_H
 
+struct cdq_payload {
+  char type;
+  uint16_t qid;
+  uint16_t prio;
+  uint32_t nb_pkts;
+}__attribute__((__packed__));
+
+struct bd_message {
+  char type;
+};
+
 // TODO: ctrl queue is not constant due to static partitioning
 #define BKDRFT_CTRL_QUEUE (0)
 #define BKDRFT_MAX_MESSAGE_SIZE (128)
