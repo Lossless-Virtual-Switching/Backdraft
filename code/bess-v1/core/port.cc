@@ -315,7 +315,7 @@ void Port::RecordRate(packet_dir_t dir, queue_t qid,
     //   LOG(INFO) << "test: " << tp_q_head_ - tp_q_tail_ << "\n";
     //   LOG(INFO) << "tp head: " << tp_q_head_ << " tp tail: " << tp_q_tail_ << "\n";
     //   LOG(INFO) << "diff: " << diff << " packets: " << packets << "\n";
-    //   LOG(INFO) << "TP: " << tp << " pkt_sum " << pkt_sum_ << " qsize " << q_size << "\n";
+       LOG(INFO) << "TP: " << cur_tp_ << " pkt_sum " << pkt_sum_ << " qsize " << q_size << "\n";
     //   LOG(INFO) << "name " << name() << " dir " << dir <<
     //     " rate: " << rate_.pps[dir][qid] << "\n";
     //   log_ts = now;

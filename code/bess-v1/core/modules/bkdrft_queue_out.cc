@@ -33,7 +33,7 @@ static inline void ecnMark(bess::Packet *pkt) {
   Ipv4 *ip = reinterpret_cast<Ipv4 *>(eth + 1);
 
   if (ip->protocol == Ipv4::Proto::kTcp)
-    ip->type_of_service = 0x03;
+    ip->type_of_service |= 0x03;
 }
 
 /*
@@ -128,6 +128,8 @@ CommandResponse BKDRFTQueueOut::Init(const bess::pb::BKDRFTQueueOutArg &arg) {
   ecn_threshold_ = 20 * 32;
   if (arg.ecn_threshold())
     ecn_threshold_ = arg.ecn_threshold();
+	LOG(INFO) << "name: " << name_
+		<<  "ECN Threshold: " << ecn_threshold_ << "\n";
 
   count_packets_in_buffer_ = 0;
   bytes_in_buffer_ = 0;
@@ -299,46 +301,20 @@ void BKDRFTQueueOut::BufferBatch(__attribute__((unused)) Flow *flow,
   int cnt = batch->cnt();
   uint16_t remaining_pkts = cnt - sent_pkts;
   uint32_t count_enqueue;
-
-  // do not buffer more than a certain threshold
-  // LOG(INFO) << "bytes in buffre " << bytes_in_buffer_ << "\n";
-  // TODO: maybe the rte_ring full function should be used
-  if (unlikely(fstate->buffer->pkts + remaining_pkts >= max_buffer_size_ - 1)) {
-    if (log_)
-      LOG(INFO) << "Maximum buffer size reached!\n";
-
-    Port *p = port_;
-
-    // TODO: qid in the following stats is not correct
-    if (!(p->GetFlags() & DRIVER_FLAG_SELF_OUT_STATS)) {
-      const packet_dir_t dir = PACKET_DIR_OUT;
-
-      p->queue_stats[dir][0].packets += 0;
-      p->queue_stats[dir][0].dropped += remaining_pkts;
-      p->queue_stats[dir][0].requested_hist[cnt]++;
-      p->queue_stats[dir][0].diff_hist[remaining_pkts]++;
-    }
-
-    bess::Packet::Free(pkts, remaining_pkts);
-    return;
-  }
-
   uint64_t remaining_bytes = 0;
 
-  // add packets to queue
   count_enqueue = pktbuffer_enqueue(fstate->buffer, pkts, remaining_pkts);
   uint32_t failed_pkt = remaining_pkts - count_enqueue;
   if (unlikely(failed_pkt > 0)) {
-    // LOG(INFO) << "Failed to enqueue to buffer\n";
-    // dropped packets failed to enqueue
+    // Dropped packets failed to enqueue
     bess::Packet::Free(pkts + count_enqueue, failed_pkt);
     // Count the dropped packets
     Port *p = port_;
 
     // TODO: qid in the following stats is not correct
+		// (we are not using per queue stats)
     if (!(p->GetFlags() & DRIVER_FLAG_SELF_OUT_STATS)) {
       const packet_dir_t dir = PACKET_DIR_OUT;
-
       p->queue_stats[dir][0].packets += 0;
       p->queue_stats[dir][0].dropped += failed_pkt;
       p->queue_stats[dir][0].requested_hist[cnt]++;
@@ -346,21 +322,12 @@ void BKDRFTQueueOut::BufferBatch(__attribute__((unused)) Flow *flow,
     }
   }
 
-  // uint64_t pkt_len;
-  // // for (int i = sent_pkts; i < cnt; i++) {
-  // for (uint32_t i = 0; i < count_enqueue; i++) {
-  //   // pkt_len = pkts[i]->total_len();
-  //   // remaining_bytes += pkt_len;
-  //   // fstate->byte_in_buffer += pkt_len;
-  //   // TODO: maybe it is better to use rte_ring_enqueue_bulk (and remove the for loop)
-  //   // rte_ring_enqueue(fstate->buffer, (void *)pkts[i]);
-
-  //   // buf->push_back(pkts[i]);
-  //   // buf_size++;
-  //   // if (buf_size > ecn_threshold_)
-  //   // if (fstate->packet_in_buffer > ecn_threshold_)
-  //   //   ecnMark(pkts[i]);
-  // }
+	// ECN Mark packets
+	if (fstate->buffer->pkts >= ecn_threshold_) {
+		for (uint32_t i = 0; i < count_enqueue; i++) {
+			ecnMark(pkts[i]);
+		}
+	}
 
   count_packets_in_buffer_ += remaining_pkts;
   bytes_in_buffer_ += remaining_bytes;
@@ -376,7 +343,7 @@ void BKDRFTQueueOut::BufferBatch(__attribute__((unused)) Flow *flow,
  * rest of packets in that buffer will not be tried. (Other
  * flows will be tried.)
  * */
-void BKDRFTQueueOut::TrySendBufferPFQ(Context *cntx) {
+void BKDRFTQueueOut::TrySendBufferPFQ(__attribute__((unused))Context *cntx) {
   Port *p = port_;
   queue_t qid;
   uint16_t max_batch_size = peek_size; // TODO:BQL can be used here
@@ -410,13 +377,13 @@ void BKDRFTQueueOut::TrySendBufferPFQ(Context *cntx) {
         //LOG(INFO) << "Flow buffer size: " << k << "\n";
         if (unlikely(k <= 0)) {
           // filled_buffers_.erase(iter); // bufer has been emptied
-          if (cntx->current_ns - fstate->last_used > flow_dealloc_limit) {
-            // the flow control block has not received packet for a while
-            // put it back in the pool.
+          // if (cntx->current_ns - fstate->last_used > flow_dealloc_limit) {
+          //   // the flow control block has not received packet for a while
+          //   // put it back in the pool.
 
-            // LOG(INFO) << "TrySendBufferPfq: deallocate\n";
-            DeallocateFlowState(cntx, flow_state_flow_id_[fstate->flow_id]);
-          }
+          //   // LOG(INFO) << "TrySendBufferPfq: deallocate\n";
+          //   DeallocateFlowState(cntx, flow_state_flow_id_[fstate->flow_id]);
+          // }
           break;
         }
 
@@ -585,7 +552,7 @@ int BKDRFTQueueOut::TryFlushCtrlBatch()
     for (i = 0; i < failed + healthy_pkts; i++) {
       ctrl_batch_[i] = ctrl_batch_[i + sent_ctrl_pkts];
     }
-    LOG(INFO) << "Failed to send ctrl batch\n";
+    // LOG(INFO) << "Failed to send ctrl batch\n";
   }
 
   // Allocate new healthy packets
@@ -689,7 +656,7 @@ inline void BKDRFTQueueOut::Pause(Context *cntx, const Flow &flow,
   uint64_t jitter = rng.GetRange(MIN_PAUSE_DURATION);
   uint64_t effect_time = 0; // 200000; // TODO: find this variable, rtt + ...
   uint64_t estimated_buffer_len;
-  // pps = 450000;
+  // pps = 3000000;
   Port *p = port_;
   pps = p->rate_.pps[PACKET_DIR_OUT][qid];
   if (pps == 0) {
@@ -717,10 +684,10 @@ inline void BKDRFTQueueOut::Pause(Context *cntx, const Flow &flow,
   // dropMan.PauseFlow(ts, 100000000, flow);
   pause_call_total += 1;
 
-  if (log_)
-    LOG(INFO) << "pause qid: " << (int)qid << " pause duration: "
-              << duration << " until: " << ts
-              << " pps: " << pps << "\n  flow: " << FlowToString(flow) << "\n";
+  // if (log_)
+	LOG(INFO) << "name: " << name_ << " pause qid: " << (int)qid << " pause duration: "
+		<< duration << " until: " << ts
+		<< " pps: " << pps << "\n  flow: " << FlowToString(flow) << "\n";
 }
 
 void BKDRFTQueueOut::ProcessBatchWithBuffer(Context *cntx,
@@ -981,9 +948,21 @@ void BKDRFTQueueOut::DeallocateFlowState(__attribute__((unused)) Context *cntx,
   if (unlikely(entry == nullptr))
     return;
 
-  // LOG(INFO) << "Deallocate Fow State\n";
+  LOG(INFO) << "Deallocate Fow State\n";
 
   struct flow_state *fstate = entry->second;
+	uint32_t prio = fstate->prio;
+
+	bool prio_found = false;
+	for (int i = 0; i < prio_queue_len_[prio]; i++) {
+		if (prio_found) {
+			prio_queue_[prio][i - 1] = prio_queue_[prio][i];
+		} else if (prio_queue_[prio][i] == prio) {
+			prio_found = true;
+		}
+	}
+	if (prio_found)
+		prio_queue_len_[prio]--;
 
   if (per_flow_buffering_) {
     // fstate->buffer->clear();
@@ -1003,8 +982,6 @@ void BKDRFTQueueOut::DeallocateFlowState(__attribute__((unused)) Context *cntx,
  * Send packets on the given port and queue.
  * Assume packets go through a buffer
  * (not really buffering, just faking).
- * If the size of buffer is greater than ecn_threshold_ then mark the
- * packets.
  * The buffer will be in an empty state when this function returns.
  * (Because we will not keep anything for retransmition or ...)
  * */

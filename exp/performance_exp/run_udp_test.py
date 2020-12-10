@@ -9,7 +9,7 @@ import argparse
 sys.path.insert(0, "../")
 from bkdrft_common import *
 # TODO: use run_udp_app instead of run_server and run_client
-from tas_containers import spin_up_memcached
+from tas_containers import spin_up_memcached, spin_up_tas
 
 # For debuging
 # print applications output directly into the stdout
@@ -130,7 +130,7 @@ def run_client(instance):
            [_server_ips[1]],
            [_server_ips[1]]][instance]
     mpps = 1000 * 1000
-    rate = [1000, -1, -1][instance]
+    rate = [1000, 1500000, -1][instance]
     _ips = ' '.join(ips)
     _cnt_flow = [1, count_flow, count_flow][instance]
     delay = [0, 0, 0]  # cycles per packet
@@ -246,12 +246,56 @@ def main():
             }
         ]
 
+    rpc_config = [
+            {   # server 1
+                'port': 1234,
+                'count_flow': 100,
+                'ips': [('10.0.0.2', 1234),],  # not used for server
+                'flow_duration': 0,  # ms # not used for server
+                'message_per_sec': -1,  # not used for server
+                'message_size': 200,
+                'flow_num_msg': 0,   # not used for server
+                'count_threads': 1,
+                'name': 'rpc_server_1',
+                'type': 'server',
+                'image': 'tas_container',
+                'cpu': '6,7,8',
+                'socket': '/tmp/rpc_server_1.sock',
+                'ip': '10.10.1.6',
+                'prefix': 'rpc_server_1',
+                'cpus': 3,
+                'tas_cores': 1,
+                'tas_queues': count_queue,
+                'cdq': int(cdq),
+                }, {   # client 1
+                    'name': 'rpc_client_1',
+                    'type': 'client',
+                    'image': 'tas_container',
+                    'cpu': '23,24,25',
+                    'socket': '/tmp/rpc_client_1.sock',
+                    'ip': '172.40.1.2',
+                    'prefix': 'rpc_client_1',
+                    'cpus': 3,
+                    'tas_cores': 1,
+                    'tas_queues': count_queue,
+                    'cdq': int(cdq),
+                    'port': 7788,  # not used for client
+                    'count_flow': 4,
+                    'ips': [('10.10.1.6', 1234)],
+                    'flow_duration': 0,
+                    'message_per_sec': -1,
+                    'message_size': 300,
+                    'flow_num_msg': 0,
+                    'count_threads': 1,
+                    },
+                ]
+
 
     # Kill anything running
     print('stop any thing running from previous tries')
     subprocess.run('sudo pkill udp_app', shell=True)  # Stop server
 
-    for c in reversed(memcached_config):
+    for c in (memcached_config + rpc_config):
         name = c.get('name')
         subprocess.run('sudo docker stop -t 0 {}'.format(name),
                 shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
@@ -292,11 +336,13 @@ def main():
     # Run server
     server_p1 = run_server(0)
     mem_server = spin_up_memcached(memcached_config[0])
+    rpc_server = spin_up_tas(rpc_config[0])
     bg_server = run_server(1)
     sleep(3)
     # Run client
     client_p = run_client(0)
     mem_client = spin_up_memcached(memcached_config[1])
+    rpc_client = spin_up_tas(rpc_config[1])
     bg_client = run_client(1)
 
     # Wait
@@ -318,6 +364,9 @@ def main():
         print('++++++ Background Client ++++')
         txt = str(bg_client.stdout.read().decode())
         print(txt)
+        print('++++++ RPC Client ++++')
+        txt = get_docker_container_logs(rpc_config[1]['name'])
+        print(txt)
         print('++++++ Latency Server ++++')
         txt = str(server_p1.stdout.read().decode())
         print(txt)
@@ -330,6 +379,9 @@ def main():
         txt = str(bg_server.stdout.read().decode())
         print(txt)
         txt = str(bg_server.stderr.read().decode())
+        print(txt)
+        print('++++++ RPC Server ++++')
+        txt = get_docker_container_logs(rpc_config[0]['name'])
         print(txt)
         print('+++++++++++++++++++')
 
@@ -349,6 +401,11 @@ def main():
     txt = p.stdout.decode()
     print(txt)
 
+    print('RPC Server\n')
+    p = bessctl_do('show port rpc_server', stdout=subprocess.PIPE)
+    txt = p.stdout.decode()
+    print(txt)
+
     print('Latency Client\n')
     p = bessctl_do('show port ex_vhost1', stdout=subprocess.PIPE)
     txt = p.stdout.decode()
@@ -364,6 +421,11 @@ def main():
     txt = p.stdout.decode()
     print(txt)
 
+    print('RPC Client\n')
+    p = bessctl_do('show port rpc_client', stdout=subprocess.PIPE)
+    txt = p.stdout.decode()
+    print(txt)
+
     # bessctl_do('command module client_qout0 get_pause_calls EmptyArg {}')
     FNULL = open(os.devnull, 'w') # pipe output to null
     bessctl_do('command module server1_qout get_pause_calls EmptyArg {}',
@@ -372,10 +434,12 @@ def main():
             stdout=FNULL)
     bessctl_do('command module server3_qout get_pause_calls EmptyArg {}',
             stdout=FNULL)
+    bessctl_do('command module server4_qout get_pause_calls EmptyArg {}',
+            stdout=FNULL)
     bessctl_do('daemon stop', stdout=FNULL)
 
-    # Kill memcached server and client
-    for c in reversed(memcached_config):
+    # Kill docker containers
+    for c in (memcached_config + rpc_config):
         name = c.get('name')
         subprocess.run('sudo docker stop -t 0 {}'.format(name),
                 shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)

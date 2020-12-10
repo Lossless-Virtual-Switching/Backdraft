@@ -481,7 +481,7 @@ int do_server(void *_cntx) {
       timestamp = (*(uint64_t *)ptr);
       /* TODO: the following line only works on single node */
       latency = (rte_get_timer_cycles() - timestamp) * 1000 * 1000 / rte_get_timer_hz(); //(us)
-      // add_number_to_p_hist(hist, (float)latency);
+      add_number_to_p_hist(hist, (float)latency);
 
       // if (src_port >= 8000) {
         // this packet needs heavy processing

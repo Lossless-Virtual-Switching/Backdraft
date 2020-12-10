@@ -11,7 +11,6 @@ AGENT = BESS
 BP = 0
 PFQ = 0
 COMMAND_Q = 0
-ECNT=32000
 LOSSLESS = 0
 
 CNT_Q = 8
@@ -28,11 +27,18 @@ RX_QUEUE_COUNT = CNT_Q
 Q = max(TX_QUEUE_COUNT, RX_QUEUE_COUNT)
 # rate_limiting = False
 rate_limiting = BP
+
+ECNT = 48
+BD = BP and PFQ and COMMAND_Q and LOSSLESS
+if BD:
+  ECNT = 100000000
+
 # ======================================
 
 if Q_SIZE < bp_threshold:
     print("Backpressure threshold is grater than queue size",
             file=sys.stderr)
+
 
 count_vsw_cores = 1
 for i in range(count_vsw_cores):
@@ -107,10 +113,32 @@ client3 = PMDPort(
         size_inc_q=Q_SIZE,
         size_out_q=Q_SIZE)
 
-# Server 2 (Incast Server)
+# Server 3 (Background Server)
 server3 = PMDPort(
         name='bg_server',
         vdev='eth_vhost5,iface=/tmp/bg_server_1.sock,queues={}'.format(Q),
+        rate_limiting=rate_limiting,
+        rate=rate,
+        num_inc_q=TX_QUEUE_COUNT,
+        num_out_q=RX_QUEUE_COUNT,
+        size_inc_q=Q_SIZE,
+        size_out_q=Q_SIZE)
+
+# Client 4 (RPC Client)
+client4 = PMDPort(
+        name='rpc_client',
+        vdev='eth_vhost6,iface=/tmp/rpc_client_1.sock,queues={}'.format(Q),
+        rate_limiting=rate_limiting,
+        rate=rate,
+        num_inc_q=TX_QUEUE_COUNT,
+        num_out_q=RX_QUEUE_COUNT,
+        size_inc_q=Q_SIZE,
+        size_out_q=Q_SIZE)
+
+# Server 4 (RPC Server)
+server4 = PMDPort(
+        name='rpc_server',
+        vdev='eth_vhost7,iface=/tmp/rpc_server_1.sock,queues={}'.format(Q),
         rate_limiting=rate_limiting,
         rate=rate,
         num_inc_q=TX_QUEUE_COUNT,
@@ -143,15 +171,17 @@ router = IPLookup()
 router.add(prefix='10.10.1.3', prefix_len=32, gate=1)  # Latency
 router.add(prefix='10.10.1.4', prefix_len=32, gate=2)  # Incast
 router.add(prefix='10.10.1.5', prefix_len=32, gate=3)  # Background
+router.add(prefix='10.10.1.6', prefix_len=32, gate=4)  # RPC
 router.add(prefix='0.0.0.0', prefix_len=0, gate=default_port)
-server_side_repeater = Replicate(gates=[0,1,2])
+server_side_repeater = Replicate(gates=[0,1,2,3])
 
 receive_side_x = IPLookup()
 receive_side_x.add(prefix='172.10.1.2', prefix_len=32, gate=1)  # Latency
 receive_side_x.add(prefix='172.20.1.2', prefix_len=32, gate=2)  # Incast
 receive_side_x.add(prefix='172.30.1.2', prefix_len=32, gate=3)  # Background
+receive_side_x.add(prefix='172.40.1.2', prefix_len=32, gate=4)  # RPC
 receive_side_x.add(prefix='0.0.0.0', prefix_len=0, gate=default_port)
-client_side_repeater = Replicate(gates=[0,1,2])
+client_side_repeater = Replicate(gates=[0,1,2,3])
 
 queue_ids = list(range(CNT_Q))
 client_qout0 = BKDRFTQueueOut(port=host1, qid=queue_ids,
@@ -172,6 +202,12 @@ client_qout3 = BKDRFTQueueOut(port=client3, qid=queue_ids,
         mname='client3')
 client_qout3.set_backpressure_threshold(threshold=bp_threshold)
 
+client_qout4 = BKDRFTQueueOut(port=client4, qid=queue_ids,
+        backpressure=BP, lossless=LOSSLESS, cdq=COMMAND_Q,
+        per_flow_buffering=PFQ, ecn_threshold=ECNT, overlay=False,
+        mname='client4')
+client_qout4.set_backpressure_threshold(threshold=bp_threshold)
+
 server1_qout::BKDRFTQueueOut(port=host0.name, qid=queue_ids,
         backpressure=BP, lossless=LOSSLESS, cdq=COMMAND_Q,
         per_flow_buffering=PFQ, ecn_threshold=ECNT, overlay=False,
@@ -184,11 +220,17 @@ server2_qout::BKDRFTQueueOut(port=host2.name, qid=queue_ids,
         mname='server2')
 server2_qout.set_backpressure_threshold(threshold=bp_threshold)
 
-server3_qout::BKDRFTQueueOut(port=server3.name, qid=queue_ids,
+server3_qout::BKDRFTQueueOut(port=server3, qid=queue_ids,
         backpressure=BP, lossless=LOSSLESS, cdq=COMMAND_Q,
         per_flow_buffering=PFQ, ecn_threshold=ECNT, overlay=False,
         mname='server3')
 server3_qout.set_backpressure_threshold(threshold=bp_threshold)
+
+server4_qout::BKDRFTQueueOut(port=server4, qid=queue_ids,
+        backpressure=BP, lossless=LOSSLESS, cdq=COMMAND_Q,
+        per_flow_buffering=PFQ, ecn_threshold=ECNT, overlay=False,
+        mname='server4')
+server4_qout.set_backpressure_threshold(threshold=bp_threshold)
 
 
 loop = CNT_Q
@@ -207,6 +249,9 @@ for i in range(loop):
     client3_qin = BKDRFTQueueInc(port=client3,
             qid=queue_ids, backpressure=BP, cdq=COMMAND_Q, overlay=False)
 
+    client4_qin = BKDRFTQueueInc(port=client4,
+            qid=queue_ids, backpressure=BP, cdq=COMMAND_Q, overlay=False)
+
     server1_qin = BKDRFTQueueInc(port=host0,
             qid=queue_ids, backpressure=BP, cdq=COMMAND_Q, overlay=False)
 
@@ -216,26 +261,34 @@ for i in range(loop):
     server3_qin = BKDRFTQueueInc(port=server3,
             qid=queue_ids, backpressure=BP, cdq=COMMAND_Q, overlay=False)
 
+    server4_qin = BKDRFTQueueInc(port=server4,
+            qid=queue_ids, backpressure=BP, cdq=COMMAND_Q, overlay=False)
+
 
     if count_internal_q == 0:
         client_qin  -> router
         client2_qin -> router
         client3_qin -> router
+        client4_qin -> router
     else:
         client_qin  -> rx_queues[0]
         client2_qin -> rx_queues[1 % count_internal_q]
         client3_qin -> rx_queues[2 % count_internal_q]
+        client4_qin -> rx_queues[3 % count_internal_q]
 
     server1_qin -> receive_side_x
     server2_qin -> receive_side_x
     server3_qin -> receive_side_x
+    server4_qin -> receive_side_x
 
     client_qin.attach_task(wid=next_wid())
     client2_qin.attach_task(wid=next_wid())
     client3_qin.attach_task(wid=next_wid())
+    client4_qin.attach_task(wid=next_wid())
     server1_qin.attach_task(wid=next_wid())
     server2_qin.attach_task(wid=next_wid())
     server3_qin.attach_task(wid=next_wid())
+    server4_qin.attach_task(wid=next_wid())
 
 for i in range(count_internal_q):
     rx_queues[i] -> router
@@ -243,16 +296,20 @@ for i in range(count_internal_q):
 router:1 -> server1_qout
 router:2 -> server2_qout
 router:3 -> server3_qout
+router:4 -> server4_qout
 router:default_port -> server_side_repeater
 
 receive_side_x:1 -> client_qout0
 receive_side_x:2 -> client_qout2
 receive_side_x:3 -> client_qout3
+receive_side_x:4 -> client_qout4
 receive_side_x:default_port -> client_side_repeater
 
 server_side_repeater:0 -> server1_qout
 server_side_repeater:1 -> server2_qout
 server_side_repeater:2 -> server3_qout
+server_side_repeater:3 -> server4_qout
 client_side_repeater:0 -> client_qout0
 client_side_repeater:1 -> client_qout2
 client_side_repeater:2 -> client_qout3
+client_side_repeater:3 -> client_qout4
