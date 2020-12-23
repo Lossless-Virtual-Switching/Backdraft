@@ -14,7 +14,7 @@ from bkdrft_common import *
 
 # For debuging
 # print applications output directly into the stdout
-DIRECT_OUTPUT = True
+DIRECT_OUTPUT = False
 
 if DIRECT_OUTPUT:
     print('=' * 32)
@@ -30,13 +30,13 @@ cur_script_dir = os.path.dirname(os.path.abspath(__file__))
 # TODO: use json config file instead of genrating .bess pipeline files
 if PORT_TYPE == VPORT:
     pipeline_config_temp = os.path.join(cur_script_dir,
-                                        'vport_pipeline.txt')
+            'vport_pipeline.txt')
 else:
     pipeline_config_temp = os.path.join(cur_script_dir,
-                                        'pmd_port_pipeline.txt')
-pipeline_config_file = os.path.join(cur_script_dir, 'slow_receiver.bess')
+            'pmd_port_pipeline.txt')
+    pipeline_config_file = os.path.join(cur_script_dir, 'slow_receiver.bess')
 slow_receiver_exp = os.path.abspath(os.path.join(cur_script_dir,
-        '../../code/apps/udp_client_server/build/udp_app'))
+    '../../code/apps/udp_client_server/build/udp_app'))
 
 
 def update_config():
@@ -106,14 +106,14 @@ def run_server(instance):
                 'bidi={bidi} vport={vdev} {source_ip} {count_queue} '
                 '{sysmod} {mode} {delay}').format(**args)
 
-    print("=" * 32)
+        print("=" * 32)
     print(" " * 13 + "server")
     print(cmd)
     print("=" * 32, end='\n\n')
     # Run in background
     if not DIRECT_OUTPUT:
         p = subprocess.Popen(cmd, shell=True, stdout=subprocess.PIPE,
-                             stderr=subprocess.PIPE)
+                stderr=subprocess.PIPE)
     else:
         p = subprocess.Popen(cmd, shell=True)
     return p
@@ -128,8 +128,8 @@ def run_client(instance):
     # TODO: the following line is an example of code that is not suitable!
     # should switch to run_udp_app instead of this function
     ips = [[_server_ips[1], _server_ips[0]],
-           [_server_ips[1]],
-           [_server_ips[1]]][instance]
+            [_server_ips[1]],
+            [_server_ips[1]]][instance]
     mpps = 1000 * 1000
     rate = [-1000, -20000, -20000][instance]
     _ips = ' '.join(ips)
@@ -152,7 +152,7 @@ def run_client(instance):
             }
     if PORT_TYPE == PMD:
         vdev = ['virtio_user1,path=/tmp/ex_vhost1.sock,queues='+str(count_queue),
-               'virtio_user3,path=/tmp/ex_vhost3.sock,queues='+str(count_queue),][instance]
+                'virtio_user3,path=/tmp/ex_vhost3.sock,queues='+str(count_queue),][instance]
         prefix = 'slow_receiver_exp_client_{}'.format(instance)
         args['vdev'] = vdev
         args['file-prefix'] = prefix
@@ -170,9 +170,9 @@ def run_client(instance):
                 'bidi={bidi} vport={vdev} {source_ip} {count_queue} '
                 '{sysmod} {mode} {cnt_ips} {ips} '
                 '{count_flow} {duration} {port} {delay}').format(**args)
-    if rate >= 0:
-        # add rate limit argument
-        cmd += ' {}'.format(rate)
+        if rate >= 0:
+            # add rate limit argument
+            cmd += ' {}'.format(rate)
 
     print("=" * 32)
     print(" " * 13 + "client")
@@ -206,32 +206,28 @@ def print_pps_from_info_log():
     print("=== pause call per sec ===")
 
 
-def main():
-    """
-    About experiment:
-        BKDRFT UDP Testbed
-    """
-
+def kill():
     # Kill anything running
     print('stop any thing running from previous tries')
     subprocess.run('sudo pkill udp_app', shell=True)  # Stop server
     bessctl_do('daemon stop', stderr=subprocess.PIPE)
     sleep(1)
 
+def main():
+    """
+    About experiment:
+        BKDRFT UDP Testbed Single Node
+    """
+    kill()
+
     # Run bess daemon
     print('start bess daemon')
     ret = bessctl_do('daemon start')
-    if ret.returncode != 0:
-        # TODO: this way of checking for failed pipeline does not work
-        # look for the bug or find a better way.
-        print('failed to start bess daemon')
-        return 1
 
     print('==============================')
     print('         UDP Testbed')
     print('==============================')
 
-    # Update configuration
     update_config()
 
     # Run a configuration (pipeline)
@@ -330,22 +326,22 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('count_queue', type=int)
     parser.add_argument('mode',
-      help='define whether bess or bkdrft system should be used')
+            help='define whether bess or bkdrft system should be used')
     parser.add_argument('delay', type=int,
-      help='processing cost for each packet in cpu cycles '
-           '(for both client and server)')
+            help='processing cost for each packet in cpu cycles '
+            '(for both client and server)')
     parser.add_argument('--count_flow', type=int, default=1,
-      help='number of flows, per each core. used for client app')
+            help='number of flows, per each core. used for client app')
     parser.add_argument('--cdq', action='store_true', default=False,
-      help='enable command data queueing')
+            help='enable command data queueing')
     parser.add_argument('--bp', action='store_true', default=False,
-      help='have pause call (backpresure) enabled')
+            help='have pause call (backpresure) enabled')
     parser.add_argument('--pfq', action='store_true', default=False,
-      help='enable per flow queueing')
+            help='enable per flow queueing')
     parser.add_argument('--buffering', action='store_true', default=False,
-      help='buffer packets (no drop)')
+            help='buffer packets (no drop)')
     parser.add_argument('--duration', type=int, default=10,
-      help='experiment duration')
+            help='experiment duration')
     parser.add_argument('--bessonly', action='store_true', default=False)
 
     args = parser.parse_args()
@@ -366,7 +362,7 @@ if __name__ == '__main__':
 
     if cdq and sysmod != 'bkdrft':
         print('comand data queueing is only available on bkdrft mode',
-              file=sys.stderr)
+                file=sys.stderr)
         sys.exit(1)
 
     if cdq and count_queue < 2:
@@ -374,9 +370,8 @@ if __name__ == '__main__':
         sys.exit(1)
 
     if sysmod == 'bkdrft' and not cdq:
-       print('bkdrft needs command data queueing', file=sys.stderr)
-       sys.exit(1)
+        print('bkdrft needs command data queueing', file=sys.stderr)
+        sys.exit(1)
 
 
     main()
-
