@@ -1,0 +1,24 @@
+node1:
+  ip: "192.168.1.1"
+  mac: "98:f2:b3:cc:12:91"
+  instances:
+    - port: 1001
+      ip: "192.168.1.11"
+      app: "rpc"
+      type: "client"
+      cpus: "7,8,9"
+      flow_config_name: "default_client"
+      tas_cores: 1
+      destinations:
+        - node2_0
+node2:
+  ip: "192.168.1.2"
+  mac: "98:f2:b3:cb:54:f1" 
+  instances:
+    - port: 2001
+      ip: "192.168.1.21"
+      type: "server"
+      app: "rpc"
+      cpus: "7,8,9"
+      flow_config_name: "default_server"
+      tas_cores: 1

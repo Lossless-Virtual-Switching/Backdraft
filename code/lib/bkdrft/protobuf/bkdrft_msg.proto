@@ -1,0 +1,18 @@
+syntax = "proto3";
+
+package dpdk_net_perf;
+
+message Overlay {
+  uint32 src_port = 1;
+  uint32 dst_port = 2;
+  uint32 src_ip = 3;
+  uint32 dst_ip = 4;
+  uint32 wnd_size = 5;
+}
+
+message Ctrl {
+  uint32 qid = 1;
+  uint32 prio = 2;
+  uint32 nb_pkts = 3;
+  uint32 total_bytes = 4;
+}

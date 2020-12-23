@@ -1,6 +1,6 @@
 #include <stdlib.h>
 #include <math.h>
-#include "../include/zipf.h"
+#include "zipf.h"
 
 struct zipfgen *new_zipfgen(int n, double s)
 {

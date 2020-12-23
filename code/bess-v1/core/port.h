@@ -49,9 +49,10 @@
 #include "utils/common.h"
 #include "utils/ether.h"
 
-typedef uint8_t queue_t;
+typedef uint16_t queue_t;
 
-#define MAX_QUEUES_PER_DIR 128 /* [0, 31] (for each RX/TX) */
+// #define MAX_QUEUES_PER_DIR 10000 /* [0, 31] (for each RX/TX) */
+#define MAX_QUEUES_PER_DIR 32 // 16384 /* [0, 31] (for each RX/TX) */
 
 #define DRIVER_FLAG_SELF_INC_STATS 0x0001
 #define DRIVER_FLAG_SELF_OUT_STATS 0x0002
@@ -73,7 +74,10 @@ typedef enum {
 typedef enum {
   NIC = 0,
   VHOST = 1,
+  VPORT = 2,
 } port_type_t;
+
+const int TP_Q_SIZE = 4;
 
 class Port;
 class PortTest;
@@ -248,7 +252,12 @@ class Port {
 
   // overide this section to create a new driver -----------------------------
   Port()
-      : port_stats_(),
+      : tp_queue_(),
+        tp_q_head_(0),
+        tp_q_tail_(TP_Q_SIZE - 1),
+        pkt_sum_(),
+        cur_tp_(),
+        port_stats_(),
         conf_(),
         ptype_(),
         name_(),
@@ -368,6 +377,12 @@ class Port {
 
  private:
   inline void IncreaseRate(packet_dir_t dir, queue_t qid);
+
+  uint64_t tp_queue_[TP_Q_SIZE];
+  int64_t tp_q_head_;
+  int64_t tp_q_tail_;
+  uint64_t pkt_sum_;
+  uint64_t cur_tp_;
 
  protected:
   friend class PortBuilder;

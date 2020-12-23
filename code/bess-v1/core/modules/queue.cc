@@ -33,6 +33,8 @@
 #include <cstdlib>
 
 #include "../utils/format.h"
+#include "../utils/ip.h"
+#include "../utils/ether.h"
 
 #define DEFAULT_QUEUE_SIZE 1024
 
@@ -169,6 +171,20 @@ std::string Queue::GetDesc() const {
   return bess::utils::Format("%u/%u", llring_count(ring), ring->common.slots);
 }
 
+
+static inline void ecnMark(bess::Packet *pkt) {
+  using bess::utils::Ethernet;
+  using bess::utils::Ipv4;
+
+  Ethernet *eth = pkt->head_data<Ethernet *>();
+	if (eth->ether_type.value() != Ethernet::kIpv4)
+		return;
+  Ipv4 *ip = reinterpret_cast<Ipv4 *>(eth + 1);
+
+  if (ip->protocol == Ipv4::Proto::kTcp)
+    ip->type_of_service |= 0x03;
+}
+
 /* from upstream */
 void Queue::ProcessBatch(Context *, bess::PacketBatch *batch) {
   int queued =
@@ -184,6 +200,15 @@ void Queue::ProcessBatch(Context *, bess::PacketBatch *batch) {
     stats_.dropped += to_drop;
     bess::Packet::Free(batch->pkts() + queued, to_drop);
   }
+
+	// ecn mark
+	// threshold = 8
+	if (llring_count(queue_) > 8) {
+		for (int i = 0; i < queued; i++) {
+			ecnMark(batch->pkts()[i]);
+		}
+	}
+
 }
 
 /* to downstream */

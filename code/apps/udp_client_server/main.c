@@ -4,24 +4,50 @@
 #include <rte_mbuf.h>
 #include <stdint.h>
 #include <string.h>
+#include <assert.h>
 
-#include "include/exp.h"
-#include "include/flow_rules.h"
+#include "exp.h"
+#include "flow_rules.h"
+#include "vport.h"
 
-#define RX_RING_SIZE (64)
-#define TX_RING_SIZE (64)
+#define RX_RING_SIZE (512)
+#define TX_RING_SIZE (512)
 
-#define NUM_MBUFS (8191)
-#define MBUF_CACHE_SIZE (250)
+#define NUM_MBUFS (16384)
+#define MBUF_CACHE_SIZE (512)
+#define PRIV_SIZE 256
+
+#define SHIFT_ARGS {argc--;if(argc>0)argv[1]=argv[0];argv++;};
 
 static unsigned int dpdk_port = 0;
-// TODO: find out if connected to nic or not
-// static int connected_to_nic = 0;
+
+
+static void print_usage(void)
+{
+  printf("usage: ./udp_app [DPDK EAL arguments] -- [Client arguments]\n"
+  "arguments:\n"
+  "    * (optional) bidi=<true/false>\n"
+  "    * (optional) vport=<name of port>\n"
+  "    * source_ip: ip of host on which app is running (useful for arp)\n"
+  "    * number of queue\n"
+  "    * system mode: bess or bkdrft\n"
+  "    * mode: client or server\n"
+  "[client]\n"
+  "    * count destination ips\n"
+  "    * valid ip values (as many as defined in prev. param)\n"
+  "    * count flow\n"
+  "    * experiment duration (zero means run with out a limit)\n"
+  "    * client port\n"
+  "    * client delay cycles\n"
+  "    * rate value (pps)\n"
+  "[server]\n"
+  "    * server delay for each batch\n");
+}
 
 /*
  * Initialize an ethernet port
  */
-static inline int port_init(uint8_t port, struct rte_mempool *mbuf_pool,
+static inline int dpdk_port_init(uint8_t port, struct rte_mempool *mbuf_pool,
                             uint16_t queues, struct rte_ether_addr *my_eth) {
 
   struct rte_eth_conf port_conf = {
@@ -100,41 +126,58 @@ static inline int port_init(uint8_t port, struct rte_mempool *mbuf_pool,
   return 0;
 }
 
-static int dpdk_init(int argc, char *argv[], struct rte_mempool **rx_mbuf_pool,
-                     struct rte_mempool **tx_mbuf_pool,
-                     struct rte_mempool **ctrl_mbuf_pool) {
+static int vport_init(char *port_name, struct vport **virt_port)
+{
+  *virt_port = from_vport_name(port_name);
+  return *virt_port == NULL;
+}
+
+static int dpdk_init(int argc, char *argv[]) {
   int args_parsed;
 
   args_parsed = rte_eal_init(argc, argv);
-  if (args_parsed < 0)
+  if (args_parsed < 0) {
+    print_usage();
     rte_exit(EXIT_FAILURE, "Error with EAL initialization\n");
+  }
 
-  if (!rte_eth_dev_is_valid_port(0))
-    rte_exit(EXIT_FAILURE, "Error no available port\n");
+  return args_parsed;
+}
 
-  // create mempools
-  *rx_mbuf_pool =
-      rte_pktmbuf_pool_create("MBUF_RX_POOL", NUM_MBUFS, MBUF_CACHE_SIZE, 0,
-                              RTE_MBUF_DEFAULT_BUF_SIZE, rte_socket_id());
+static int create_pools(port_type_t port_type,
+                        struct rte_mempool **rx_mbuf_pool,
+                        struct rte_mempool **tx_mbuf_pool,
+                        struct rte_mempool **ctrl_mbuf_pool)
+{
+  const int name_size = 64;
+  long long pid = getpid();
+  char pool_name[name_size];
 
-  if (*rx_mbuf_pool == NULL)
-    rte_exit(EXIT_FAILURE, "Error can not create rx mbuf pool\n");
+  if (port_type == dpdk) {
+    // create mempools
+    snprintf(pool_name, name_size, "MUBF_RX_POOL_%lld", pid);
+    *rx_mbuf_pool =
+      rte_pktmbuf_pool_create(pool_name, NUM_MBUFS, MBUF_CACHE_SIZE, PRIV_SIZE,
+                                RTE_MBUF_DEFAULT_BUF_SIZE, rte_socket_id());
+    if (*rx_mbuf_pool == NULL)
+      rte_exit(EXIT_FAILURE, "Error can not create rx mbuf pool\n");
+  }
 
+  snprintf(pool_name, name_size, "MBUF_TX_POOL_%lld", pid);
   *tx_mbuf_pool =
-      rte_pktmbuf_pool_create("MBUF_TX_POOL", NUM_MBUFS, MBUF_CACHE_SIZE, 0,
+      rte_pktmbuf_pool_create(pool_name, NUM_MBUFS, MBUF_CACHE_SIZE, PRIV_SIZE,
                               RTE_MBUF_DEFAULT_BUF_SIZE, rte_socket_id());
 
   if (*tx_mbuf_pool == NULL)
     rte_exit(EXIT_FAILURE, "Error can not create tx mbuf pool\n");
 
+  snprintf(pool_name, name_size, "MBUF_CTRL_POOL_%lld", pid);
   *ctrl_mbuf_pool =
-      rte_pktmbuf_pool_create("MBUF_CTRL_POOL", NUM_MBUFS, MBUF_CACHE_SIZE, 0,
+      rte_pktmbuf_pool_create(pool_name, NUM_MBUFS, MBUF_CACHE_SIZE, PRIV_SIZE,
                               RTE_MBUF_DEFAULT_BUF_SIZE, rte_socket_id());
 
   if (*ctrl_mbuf_pool == NULL)
     rte_exit(EXIT_FAILURE, "Error can not create tx mbuf pool\n");
-
-  return args_parsed;
 }
 
 // static int setup_pfc(uint16_t port_id)
@@ -145,18 +188,19 @@ static int dpdk_init(int argc, char *argv[], struct rte_mempool **rx_mbuf_pool,
 //   status = rte_eth_dev_flow_ctrl_get(port_id, &fc_conf);
 //   if (status)
 //     return status;
-// 
+//
 //   fc_conf.autoneg = 1;
 //   fc_conf.mode = RTE_FC_FULL;
-// 
+//
 //   // pfc_conf.fc = fc_conf;
 //   // pfc_conf.priority = 4;
-// 
+//
 //   // status = rte_eth_dev_priority_flow_ctrl_set(port_id, &pfc_conf);
 //   status = rte_eth_dev_flow_ctrl_set(port_id, &fc_conf);
 //   if (status)
 //     return status;
 // }
+//
 
 /*
  * Main function for running a server or client applications
@@ -168,16 +212,14 @@ int main(int argc, char *argv[]) {
   // number of arguments used by dpdk arg parse
   int args_parsed;
 
-  struct rte_mempool *rx_mbuf_pool;
-  struct rte_mempool *tx_mbuf_pool;
-  struct rte_mempool *ctrl_mbuf_pool;
+  struct rte_mempool *rx_mbuf_pool = NULL;
+  struct rte_mempool *tx_mbuf_pool = NULL;
+  struct rte_mempool *ctrl_mbuf_pool = NULL;
 
   // mac address of connected port
   struct rte_ether_addr my_eth;
 
   // these ip and port values are fake
-  // uint32_t client_ip;
-  // uint32_t server_ip;
   uint32_t source_ip;
   int client_port = 5058;
   // TODO: this does not generalize to the count cpu
@@ -185,7 +227,7 @@ int main(int argc, char *argv[]) {
 
   // how much is the size of udp payload
   // TODO: take message size from arguments
-  int payload_size = 1450; // 64; //
+  int payload_size = 64; // 1450; //
 
   // how many queues does the connected Nic/Vhost have
   uint16_t num_queues = 3;
@@ -202,12 +244,16 @@ int main(int argc, char *argv[]) {
   // how many flows should client generate
   // TODO: can limit the number of flows a server accepts
   int count_flow = 0;
-  uint32_t duration = 40;
+  int32_t duration = 40;
 
   // only used in server
   // delay for each burst in server (us)
   unsigned int server_delay = 0;
   uint64_t delay_cycles = 0;
+
+  // rate limit args
+  uint8_t rate_limit = 0; // default off
+  uint64_t rate = UINT64_MAX; // default no limit
 
   // contex pointers pass to functions
   struct context cntxs[20];
@@ -224,51 +270,57 @@ int main(int argc, char *argv[]) {
   int lcore_id;
   int cntxIndex;
 
+  port_type_t port_type = dpdk;
+  struct vport *virt_port = NULL;
+  char port_name[PORT_NAME_LEN] = {}; // name of vport
+
+  int bidi = 1;
+
   // struct rte_ether_addr tmp_addr;
 
   // let dpdk parse its own arguments
   args_parsed =
-      dpdk_init(argc, argv, &rx_mbuf_pool, &tx_mbuf_pool, &ctrl_mbuf_pool);
-
-  // this is filling fake ip variables
-  // str_to_ip("192.168.2.55", &client_ip);
-  // str_to_ip("192.168.2.10", &server_ip);
+      dpdk_init(argc, argv);
 
   // parse program args
   argc -= args_parsed;
   argv += args_parsed;
 
-  // arguments:
-  // * source_ip: ip of host on which app is running (useful for arp)
-  // * number of queue
-  // * system mode: bess or bkdrft
-  // * mode: client or server
-  // [client]
-  // * count destination ips
-  // * valid ip values (as many as defined in prev. param)
-  // * count flow
-  // * experiment duration
-  // * client port
-  // * client delay cycles
-  // [server]
-  // * server delay for each batch
+  if (argc < 5) {
+    printf("argc < 5\n");
+    print_usage();
+    rte_exit(EXIT_FAILURE, "Wrong number of arguments");
+  }
+
+  if (strncmp(argv[1], "bidi=", 5) == 0) {
+    if (strncmp(argv[1] + 5, "false", 5) == 0) {
+      bidi = 0;
+    } else if (strncmp(argv[1] + 5, "true", 4) == 0) {
+      bidi = 1;
+    } else {
+      printf("bidi flag value is not recognized\n");
+      print_usage();
+      return 1;
+    }
+    SHIFT_ARGS;
+  }
+
+  if (strncmp(argv[1], "vport=", 6) == 0) {
+    // if starts with `vport=`
+    strncpy(port_name, argv[1] + 6, PORT_NAME_LEN);
+    port_type = vport;
+    SHIFT_ARGS;
+  }
 
   // source_ip
   str_to_ip(argv[1], &source_ip);
-  argv++;
-  argc--;
+  SHIFT_ARGS;
 
   // read number of queues
   num_queues = atoi(argv[1]);
   if (num_queues < 1)
     rte_exit(EXIT_FAILURE, "At least one queue is needed");
-  argv++;
-  argc--;
-
-  // check number of remaining args
-  if (argc < 3) {
-    rte_exit(EXIT_FAILURE, "Wrong number of arguments");
-  }
+  SHIFT_ARGS;
 
   // system mode
   if (!strcmp(argv[1], "bess")) {
@@ -288,6 +340,7 @@ int main(int argc, char *argv[]) {
 
     // parse client arguments
     if (argc < 5) {
+      print_usage();
       rte_exit(EXIT_FAILURE, "Wrong number of arguments");
     }
 
@@ -319,6 +372,15 @@ int main(int argc, char *argv[]) {
       delay_cycles = atol(argv[7 + count_server_ips]);
     printf("Client processing between each packet %ld cycles\n", delay_cycles);
 
+    if (argc > 8 + count_server_ips) {
+      rate_limit = 1;
+      rate = atol(argv[8 + count_server_ips]);
+    }
+    if (rate_limit)
+      printf("Client rate limit is on rate: %ld\n", rate);
+    else
+      printf("Client rate limit is off\n");
+
   } else if (!strcmp(argv[2], "server")) {
     // server
     mode = mode_server;
@@ -326,6 +388,7 @@ int main(int argc, char *argv[]) {
     // parse server arguments
     if (argc < 2) {
       rte_exit(EXIT_FAILURE, "wrong number of arguments");
+      print_usage();
     }
     server_delay = atoi(argv[3]);
   } else {
@@ -333,7 +396,14 @@ int main(int argc, char *argv[]) {
     return -1;
   }
 
-  count_core = rte_lcore_count();
+  if (mode == mode_client) {
+    // client does not support multi-processing (need to be investigated and
+    // tested again) there are so many changes since the multiprocess feature
+    // was added.
+    count_core = 1;
+  } else {
+    count_core = rte_lcore_count();
+  }
   printf("Count core: %d\n", count_core);
 
   if (count_core > num_queues) {
@@ -352,8 +422,27 @@ int main(int argc, char *argv[]) {
   }
 
   printf("Number of queues: %d\n", num_queues);
-  if (port_init(dpdk_port, rx_mbuf_pool, num_queues, &my_eth) != 0)
-    rte_exit(EXIT_FAILURE, "Cannot init port %hhu\n", dpdk_port);
+
+  // check if dpdk port exists
+  if (port_type == dpdk && !rte_eth_dev_is_valid_port(0))
+    rte_exit(EXIT_FAILURE, "Error no available port\n");
+
+  create_pools(port_type, &rx_mbuf_pool, &tx_mbuf_pool, &ctrl_mbuf_pool);
+
+  if (port_type == dpdk) {
+    if (dpdk_port_init(dpdk_port, rx_mbuf_pool, num_queues, &my_eth) != 0)
+      rte_exit(EXIT_FAILURE, "Cannot init port %hhu\n", dpdk_port);
+  } else {
+    if (vport_init(port_name, &virt_port)) {
+      rte_exit(EXIT_FAILURE, "Failed to init vport\n");
+    }
+    // read port mac address
+    for (int i = 0; i < 6; i++){
+      // printf("%.2x:", virt_port->mac_addr[i]);
+      my_eth.addr_bytes[i] = virt_port->mac_addr[i];
+    }
+    // printf("\n");
+  }
 
 //   int res;
 //   printf("einval: %d, eio: %d, enotsup: %d, enodev: %d\n", EINVAL, EIO, ENOTSUP, ENODEV);
@@ -408,19 +497,23 @@ int main(int argc, char *argv[]) {
   for (int i = 0; i < count_core; i++) {
     cntxs[i].mode = mode;
     cntxs[i].system_mode = system_mode;
+    cntxs[i].ptype = port_type;
     cntxs[i].rx_mem_pool = rx_mbuf_pool;
     cntxs[i].tx_mem_pool = tx_mbuf_pool;
     cntxs[i].ctrl_mem_pool = ctrl_mbuf_pool;
     cntxs[i].worker_id = i;
-    cntxs[i].port = dpdk_port;
+    cntxs[i].dpdk_port_id = dpdk_port;
+    cntxs[i].virt_port = virt_port;
     cntxs[i].my_eth = my_eth;
+
     cntxs[i].default_qid = next_qid; // poll this queue
     next_qid += queue_per_core;
     assert(next_qid - 1 < num_queues);
+
     cntxs[i].running = 1;     // this job of this cntx has not finished yet
     cntxs[i].src_ip = source_ip + i;
     cntxs[i].use_vlan = 0;
-    cntxs[i].bidi = 0;
+    cntxs[i].bidi = bidi;
     cntxs[i].num_queues = num_queues; // how many queue port has
 
     /* how many queue the contex is responsible for */
@@ -431,6 +524,9 @@ int main(int argc, char *argv[]) {
     FILE *fp = fmemopen(output_buffers[i], 2048, "w+");
     assert(fp != NULL);
     cntxs[i].fp = fp;
+
+    cntxs[i].rate_limit = rate_limit;
+    cntxs[i].rate = rate;
 
     if (mode == mode_server) {
       cntxs[i].src_port = server_port[0];
@@ -485,16 +581,11 @@ int main(int argc, char *argv[]) {
       cntxs[i].delay_cycles = delay_cycles;
 
       /* use zipf for selecting dst ip */
-      cntxs[i].destination_distribution = DIST_ZIPF;
+      cntxs[i].destination_distribution = DIST_ZIPF; // DIST_UNIFORM;
       cntxs[i].queue_selection_distribution = DIST_UNIFORM;
 
       cntxs[i].managed_queues = NULL;
     }
-  }
-
-  // free
-  for (int q = 0; q < num_queues; q++) {
-    rte_eth_tx_done_cleanup(dpdk_port, q, 0);
   }
 
   cntxIndex = 1;
@@ -504,22 +595,24 @@ int main(int argc, char *argv[]) {
     }
     do_server(&cntxs[0]);
 
+    // ask other workers to stop
     for (int i = 0; i < count_core; i++) {
       cntxs[i].running = 0;
     }
-    sleep(3);
 
-    uint64_t tmp_array[2][32] ={};
-    for (int i = 0; i < count_core; i++) {
-      /* stop other wokers from running */
-      cntxs[i].running = 0;
-      for (int z=0;z<32;z++) {
-        tmp_array[0][z] += cntxs[i].tmp_array[0][z];
-        tmp_array[1][z] += cntxs[i].tmp_array[1][z];
-      }
-    }
+    rte_eal_mp_wait_lcore(); // wait until all workers are stopped
 
-    sleep(4);
+    // uint64_t tmp_array[2][32] ={};
+    // for (int i = 0; i < count_core; i++) {
+    //   /* stop other wokers from running */
+    //   cntxs[i].running = 0;
+    //   for (int z = 0; z < 32; z++) {
+    //     tmp_array[0][z] += cntxs[i].tmp_array[0][z];
+    //     tmp_array[1][z] += cntxs[i].tmp_array[1][z];
+    //   }
+    // }
+
+    // sleep(4);
 
     for (int i = 0; i < count_core; i++) {
       printf("------ worker %d ------\n", i);
@@ -537,17 +630,12 @@ int main(int argc, char *argv[]) {
     // }
 
   } else {
-    RTE_LCORE_FOREACH_SLAVE(lcore_id) {
-      rte_eal_remote_launch(do_client, (void *)&cntxs[cntxIndex++], lcore_id);
-    }
+    // RTE_LCORE_FOREACH_SLAVE(lcore_id) {
+    //   rte_eal_remote_launch(do_client, (void *)&cntxs[cntxIndex++], lcore_id);
+    // }
     do_client(&cntxs[0]);
 
-    // TODO: change this with a barrier
-    for (int i = 0; i < count_core; i++) {
-      while (cntxs[i].running) {
-        rte_delay_us_block(1000); // 1 msec
-      }
-    }
+    // rte_eal_mp_wait_lcore();
 
     // print client results to stdout
     for (int i = 0; i < count_core; i++) {
@@ -568,8 +656,10 @@ int main(int argc, char *argv[]) {
     fclose(cntxs[i].fp);
     free(output_buffers[i]);
   }
-  for (int q = 0; q < num_queues; q++) {
-    rte_eth_tx_done_cleanup(dpdk_port, q, 0);
+  if (port_type == dpdk) {
+    for (int q = 0; q < num_queues; q++) {
+      rte_eth_tx_done_cleanup(dpdk_port, q, 0);
+    }
   }
   return 0;
 }

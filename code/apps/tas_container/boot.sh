@@ -3,7 +3,7 @@
 # Note: This script expects following environment variables to be defined
 # === TAS ===
 # socket_file: path to the shared *.sock
-# ip: tas ip 
+# ip: tas ip
 # cores: number of tas cores
 # count_queues: number of queues for port
 # prefix: dpdk file prefix
@@ -64,7 +64,7 @@ exec $TAS_DIR/tas/tas --dpdk-extra=--vdev \
   --cc=dctcp-win \
   --fp-cores-max=$CORES \
   --count-queue=$QUEUES \
-  ${flags} 2>&1 &  # 1> /dev/null 2>&1 
+  ${flags} 2>&1 &  # 1> /dev/null 2>&1
 
 # dctcp-win
 # const-rate
@@ -103,7 +103,7 @@ if [ "$type" = "client" ]; then
     $flow_num_msg
 elif [ "$type" = "server" ]; then
   LD_PRELOAD=$TAS_DIR/lib/libtas_interpose.so \
-    $TAS_BENCH/micro_rpc_modified/echoserver_linux $port $cores $mtcp_config $count_flow $message_size 
+    $TAS_BENCH/micro_rpc_modified/echoserver_linux $port $cores $mtcp_config $count_flow $message_size
 else
   echo "type variable is not supported (type=$type)"
 fi

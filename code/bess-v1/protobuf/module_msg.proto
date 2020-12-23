@@ -861,12 +861,10 @@ message BKDRFTQueueOutArg {
   bool lossless = 4; // Do not drop packets, buffer them.
   bool backpressure = 5; // enable pause call mechanisem
   bool per_flow_buffering = 6; // buffer (and send) each flow on a seperate queue (as far as possible)
-  bool multiqueue = 7; // consider having multiple queues (count_queues are the number of available queues) (pfq oerrides this)
-  uint64 count_queues = 8; // number of available queues for buffering (if no pfq) and for sending packets.
-  uint64 ecn_threshold = 9; // ECN marking
-  bool overlay = 10; // enable sending overlay messages
-  string mname = 11; // name of this queue out (used for reporting pause call per second)
-  bool log = 12; // enable some logging (only for debug)
+  uint64 ecn_threshold = 7; // ECN marking
+  bool overlay = 8; // enable sending overlay messages
+  string mname = 9; // name of this queue out (used for reporting pause call per second)
+  bool log = 10; // enable some logging (only for debug)
 }
 
 /**

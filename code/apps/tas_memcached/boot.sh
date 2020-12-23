@@ -67,6 +67,7 @@ if [ "$type" = "client" ]; then
   LD_PRELOAD=$TAS_DIR/lib/libtas_interpose.so \
      /root/mutilate/mutilate -s $dst_ip -t $duration -w $warmup_time \
      -W $wait_before_measure -T $threads -c $connections
+  sleep 10
   echo Done!
 elif [ "$type" = "server" ]; then
   LD_PRELOAD=$TAS_DIR/lib/libtas_interpose.so \

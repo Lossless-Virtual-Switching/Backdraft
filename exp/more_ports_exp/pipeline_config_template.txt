@@ -1,5 +1,5 @@
 """
-BKDRFT PFQ Experiment 
+BKDRFT PFQ Experiment
 This experiment shows that BKDRFT scales with the
 increase in the number of queues.
 """
@@ -12,56 +12,75 @@ SINGLE_PMD_MULTIPLE_Q = 2
 BESS = 0
 BKDRFT = 1
 
+buffering = True
+pfq = True
+cdq = True
+bp = True
+overlay = False
+
 # == Insert here ==
 # ==     End     ==
 assert (CNT_P % 2 == 0 and CNT_P > 0)
-assert (CNT_Q <= 8 and CNT_Q > 0)
+# assert (CNT_Q <= 8 and CNT_Q > 0)
 
 TX_QUEUE_COUNT = CNT_Q
-RX_QUEUE_COUNT = CNT_Q 
-Q_SIZE = 64
+RX_QUEUE_COUNT = CNT_Q
+Q_SIZE = 1024
 Q = max(TX_QUEUE_COUNT, RX_QUEUE_COUNT)
 # ======================================
 
 
+# worker cpu
+bess.add_worker(0, 0)
+
+
 if TYPE == SINGLE_PMD_MULTIPLE_Q:
-    my_vhost1 = PMDPort(name='ex_vhost0', vdev='eth_vhost0,iface=/tmp/ex_vhost0.sock,queues={}'.format(Q), 
+    my_vhost1 = BDVPort(name='ex_vhost0', port_name='ex_vhost0',
         num_inc_q=TX_QUEUE_COUNT,
         num_out_q=RX_QUEUE_COUNT,
         size_inc_q=Q_SIZE,
         size_out_q=Q_SIZE)
 
-    my_vhost2 = PMDPort(name='ex_vhost1', vdev='eth_vhost1,iface=/tmp/ex_vhost1.sock,queues={}'.format(Q), 
+    my_vhost2 = BDVPort(name='ex_vhost1', port_name='ex_vhost1',
         num_inc_q=TX_QUEUE_COUNT,
         num_out_q=RX_QUEUE_COUNT,
         size_inc_q=Q_SIZE,
         size_out_q=Q_SIZE)
 
     if AGENT == BESS:
-        QueueInc(port=my_vhost1.name, qid=0) -> QueueOut(port=my_vhost2.name, qid=0)
-        QueueInc(port=my_vhost2.name, qid=0) -> QueueOut(port=my_vhost1.name, qid=0)
+        for i in range(i, Q):
+            QueueInc(port=my_vhost1.name, qid=i) -> \
+                QueueOut(port=my_vhost2.name, qid=i)
+            QueueInc(port=my_vhost2.name, qid=i) -> \
+                 QueueOut(port=my_vhost1.name, qid=i)
     elif AGENT == BKDRFT:
-        BKDRFTQueueInc(port=my_vhost1.name, qid=0) -> BKDRFTQueueOut(port=my_vhost2.name, qid=0)
-        BKDRFTQueueInc(port=my_vhost2.name, qid=0) -> BKDRFTQueueOut(port=my_vhost1.name, qid=0)
+        queue_ids = [i for i in range(Q)]
+        BKDRFTQueueInc(port=my_vhost1.name, qid=queue_ids,
+                       cdq=cdq, overlay=overlay, backpressure=bp) -> \
+            BKDRFTQueueOut(port=my_vhost2.name, qid=queue_ids,
+                           lossless=buffering, backpressure=bp, cdq=cdq,
+                           per_flow_buffering=pfq, overlay=overlay,
+                           mname='my_vhost2')
+        BKDRFTQueueInc(port=my_vhost2.name, qid=queue_ids,
+                       cdq=cdq, overlay=overlay, backpressure=bp) -> \
+            BKDRFTQueueOut(port=my_vhost1.name, qid=queue_ids,
+                           lossless=buffering, backpressure=bp, cdq=cdq,
+                           per_flow_buffering=pfq, overlay=overlay,
+                           mname='my_vhost1')
 
-    for i in range(2, min(EXCESS + 2, 8)):
-        if AGENT == BESS:
-            QueueInc(port=my_vhost1.name, qid=i) -> QueueOut(port=my_vhost2.name, qid=i)
-        elif AGENT == BKDRFT:
-            BKDRFTQueueInc(port=my_vhost1.name, qid=i) -> BKDRFTQueueOut(port=my_vhost2.name, qid=i)
 elif TYPE == MULTIPLE_PMD_MULTIPLE_Q:
     for i in range(0, CNT_P, 2):
         j = i + 1
 
-        host0 = PMDPort(name='ex_vhost{0}'.format(i),
-        vdev='eth_vhost{0},iface=/tmp/ex_vhost{0}.sock,queues={1}'.format(i, Q), 
+        name = 'ex_vhost{0}'.format(i)
+        host0 = BDVPort(name=name, port_name=name,
         num_inc_q=TX_QUEUE_COUNT,
         num_out_q=RX_QUEUE_COUNT,
         size_inc_q=Q_SIZE,
         size_out_q=Q_SIZE)
 
-        host1 = PMDPort(name='ex_vhost{0}'.format(j),
-        vdev='eth_vhost{0},iface=/tmp/ex_vhost{0}.sock,queues={1}'.format(j, Q), 
+        name = 'ex_vhost{0}'.format(j)
+        host1 = BDVPort(name=name, port_name=name,
         num_inc_q=TX_QUEUE_COUNT,
         num_out_q=RX_QUEUE_COUNT,
         size_inc_q=Q_SIZE,
@@ -69,10 +88,27 @@ elif TYPE == MULTIPLE_PMD_MULTIPLE_Q:
 
         if AGENT == BESS:
             for k in range(Q):
-                QueueInc(port=host0.name, qid=k) -> QueueOut(port=host1.name, qid=k)
-                QueueInc(port=host1.name, qid=k) -> QueueOut(port=host0.name, qid=k)
+                # QueueInc(port=host0.name, qid=k) -> \
+                #     QueueOut(port=host1.name, qid=k)
+                # QueueInc(port=host1.name, qid=k) -> \
+                #     QueueOut(port=host0.name, qid=k)
+                BKDRFTQueueInc(port=host0.name, qid=[k]) -> \
+                    BKDRFTQueueOut(port=host1.name, qid=[k], mname=host1.name)
+                BKDRFTQueueInc(port=host1.name, qid=[k]) -> \
+                    BKDRFTQueueOut(port=host0.name, qid=[k], mname=host1.name)
         elif AGENT == BKDRFT:
             # BKDRFT only needs one module per control queue
-            BKDRFTQueueInc(port=host0.name, qid=0) -> BKDRFTQueueOut(port=host1.name, qid=0)
-            BKDRFTQueueInc(port=host1.name, qid=0) -> BKDRFTQueueOut(port=host0.name, qid=0)
+            queue_ids = [i for i in range(Q)]
+            BKDRFTQueueInc(port=host0.name, qid=queue_ids,
+                           cdq=cdq, overlay=overlay, backpressure=bp) -> \
+                BKDRFTQueueOut(port=host1.name, qid=queue_ids,
+                           lossless=buffering, backpressure=bp, cdq=cdq,
+                           per_flow_buffering=pfq, overlay=overlay,
+                           mname=host1.name)
+            BKDRFTQueueInc(port=host1.name, qid=queue_ids,
+                           cdq=cdq, overlay=overlay, backpressure=bp) -> \
+                BKDRFTQueueOut(port=host0.name, qid=queue_ids,
+                           lossless=buffering, backpressure=bp, cdq=cdq,
+                           per_flow_buffering=pfq, overlay=overlay,
+                           mname=host0.name)
 

@@ -79,6 +79,7 @@ if [ "$type" = "client" ]; then
   do
     wait $pid
   done
+  sleep 10  # wait some time before stopping client TAS engine
 elif [ "$type" = "server" ]; then
   for i in `seq $instances`
   do

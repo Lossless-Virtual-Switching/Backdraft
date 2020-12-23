@@ -6,16 +6,18 @@
     "ip": "10.1.1.1",
     "mac": "98:f2:b3:c1:e1:91",
     "cpuset": "3",
-    "cpu_share": 1
+    "cpu_share": 1,
+    "type": "server"
   },
   {
     "name": "iperf3_client",
     "image": "legacy_exp_iperf3",
-    "args": "client 10.1.1.1 10.2.2.1",
+    "args": "client 10.1.1.1",
     "ip": "10.1.1.2",
     "mac": "98:f2:b3:c2:e2:92",
     "cpuset": "5",
-    "cpu_share": 1
+    "cpu_share": 1,
+    "type": "client"
   },
   {
     "name": "iperf3_server_2",
@@ -24,6 +26,7 @@
     "ip": "10.2.2.1",
     "mac": "98:f2:b3:c3:e3:93",
     "cpuset": "4",
-    "cpu_share": 1
+    "cpu_share": 1,
+    "type": "server"
   }
 ]

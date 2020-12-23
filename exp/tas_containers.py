@@ -96,6 +96,27 @@ def spin_up_memcached(conf):
     return subprocess.run(cmd, shell=True, stdout=subprocess.PIPE)
 
 
+def spin_up_memcached_shuffle(conf):
+    here = os.path.dirname(__file__)
+    tas_spinup_script = os.path.abspath(os.path.join(here,
+        '../code/apps/tas_memcached_shuffle/spin_up_tas_container.sh'))
+    # image_name = 'tas_memcached_shuffle'
+
+    cmd = ('{tas_script} {name} {image} {cpu} {cpus:.2f} '
+            '{socket} {ip} {tas_cores} {tas_queues} {prefix} {cdq} '
+            '{type} ').format(tas_script=tas_spinup_script, **conf)
+    if conf['type'] == 'client':
+        cmd = ('{cmd} {dst_ip} {duration} {warmup_time} {wait_before_measure} '
+               '{threads} {connections} {shuffle_size}').format(cmd=cmd, **conf)
+    elif conf['type'] == 'server':
+        cmd = '{cmd} {memory} {threads}'.format(cmd=cmd, **conf)
+    else:
+        raise Exception('Container miss configuration: '
+                        'expecting type to be client or server')
+    # print(cmd)
+    return subprocess.run(cmd, shell=True, stdout=subprocess.PIPE)
+
+
 def spin_up_shuffle(conf):
     """
     general:
@@ -171,32 +192,34 @@ def run_udp_app(config):
       'count_flow': 1,
       'duration': 40,
       'port': 5000,
+      'bidi': 'false',
     }
     conf.update(config)
-
-    ips = conf['ips']
-    count_ips = len(ips)
-    conf['cnt_ips'] = count_ips
-    conf['ips'] = ' '.join(ips)
 
     mode = conf['type']
     # argv = ['sudo', udp_app, '--no-pci', '-l', conf['cpu'],
     #         '--file-prefix={}'.format(conf['prefix']),
     #         '--vdev={}'.format(conf['vdev']), '--socket-mem=128', '--']
     if mode  == 'server':
-        cmd = ('sudo {bin} --no-pci -l{cpu} --file-prefix={prefix} '
-                '--vdev="{vdev}" --socket-mem=128 -- '
+        cmd = ('sudo {bin} --no-pci --lcores="{cpu}" --file-prefix={prefix} '
+                'bidi={bidi} --vdev="{vdev}" --socket-mem=128 -- '
                 '{ip} {count_queue} {sysmod} {mode} {delay}'
               ).format(bin=udp_app, mode=mode, **conf)
         # params = [conf['ip'], conf['count_queue'], conf['sysmod'], conf['mode'],
         #         conf['delay']]
         # argv += params
     elif mode == 'client':
-        cmd = ('sudo {bin} --no-pci -l{cpu} --file-prefix={prefix} '
+        ips = conf['ips']
+        count_ips = len(ips)
+        conf['cnt_ips'] = count_ips
+        conf['ips'] = ' '.join(ips)
+        cmd = ('sudo {bin} --no-pci --lcores="{cpu}" --file-prefix={prefix} '
                 '--vdev="{vdev}" --socket-mem=128 -- '
-                '{ip} {count_queue} {sysmod} {mode} {cnt_ips} {ips} '
+                'bidi={bidi} {ip} {count_queue} {sysmod} {mode} {cnt_ips} {ips} '
                 '{count_flow} {duration} {port} {delay}'
               ).format(bin=udp_app, mode=mode, **conf)
+        if 'rate' in conf:
+            cmd += ' {}'.format(conf['rate'])
         # params = [conf['ip'], conf['count_queue'], conf['sysmod'], mode,
         #           count_ips, conf['ips'], conf['count_flow'], conf['duration'],
         #           conf['port']]
@@ -209,6 +232,50 @@ def run_udp_app(config):
     #     os.execvp('sudo', argv)
     # print(cmd)
     FNULL = open(os.devnull, 'w') # pipe output to null
+    FNULL = None
+    FNULL = subprocess.PIPE
+    print(cmd)
+    proc = subprocess.Popen(cmd, shell=True, close_fds=True,
+                            stdout=FNULL, stderr=subprocess.STDOUT)
+    return proc
+
+
+def run_dummy_app(config):
+    """
+    Run dummy application
+    it does not use container for running
+    config fields:
+    * -- general --
+    * cpu: on which core
+    * prefix: dpdk file perfix
+    * vdev: which port to connect
+    * ---- app ----
+    * count_queue
+    * cdq: should use doorbell queue
+    * process_cost: cycles per packet (target pkt)
+    * ips: list of ips e.g. ['10.10.0.1',...] (target ips)
+    """
+    here = os.path.dirname(__file__)
+    app = os.path.abspath(os.path.join(here,
+            '../code/apps/dummy/build/dummy_app'))
+
+    # default values
+    conf = {
+      'process_cost': 0,
+    }
+    conf.update(config)
+
+    ips = conf['ips']
+    count_ips = len(ips)
+    conf['cnt_ips'] = count_ips
+    conf['ips'] = ' '.join(ips)
+
+    cmd = ('sudo {bin} --no-pci -l{cpu} --file-prefix={prefix} '
+            '--vdev="{vdev}" --socket-mem=128 -- '
+            '{count_queue} {cdq} {process_cost} {cnt_ips} {ips}'
+          ).format(bin=app, **conf)
+
+    FNULL = open(os.devnull, 'w')  # pipe output to null
     FNULL = None
     print(cmd)
     proc = subprocess.Popen(cmd, shell=True, close_fds=True,

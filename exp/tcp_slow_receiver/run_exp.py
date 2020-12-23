@@ -13,14 +13,25 @@ from tas_containers import *
 
 
 cur_script_dir = os.path.dirname(os.path.abspath(__file__))
-bessctl_dir = os.path.abspath(os.path.join(cur_script_dir,
-    '../../code/bess-v1/bessctl'))
-bessctl_bin = os.path.join(bessctl_dir, 'bessctl')
 
-pipeline_config_temp = os.path.join(cur_script_dir,
-    'pipeline_config_template.txt')
+# pipeline_config_temp = os.path.join(cur_script_dir,
+#     'new_pipeline.txt')
 pipeline_config_file = os.path.join(cur_script_dir,
     'pipeline.bess')
+
+# connect dummy app
+CONNECT_DUMMY = False
+# SIMPLE
+SIMPLE_PIPELINE = True
+if SIMPLE_PIPELINE:
+    pipeline_config_temp = os.path.join(cur_script_dir,
+        'simple_pipeline.txt')
+elif CONNECT_DUMMY:
+    pipeline_config_temp = os.path.join(cur_script_dir,
+        'new_pipeline.txt')
+else:
+    pipeline_config_temp = os.path.join(cur_script_dir,
+        'pipeline_config_template.txt')
 
 
 def update_config():
@@ -131,8 +142,8 @@ def mean(iterable):
 
 def get_cores(count_instance):
     # number of available cores
-    total_cores = 14  # TODO: this is hardcoded
-    reserved_cores = 1  # possibly for BESS
+    total_cores = 16  # TODO: this is hardcoded
+    reserved_cores = 3  # possibly for BESS
     available_cores = total_cores - reserved_cores
     only_even = True  # for numa machinces (to place on one node)
     print('should place cores on even ids: ', only_even)
@@ -190,17 +201,17 @@ def _get_rpc_containers(containers):
         {   # client 1
             'port': 7788,  # not used for client
             'count_flow': count_flow,
-            'ips': [('10.10.0.2', 5678)],
+            'ips': [('10.10.0.1', 1234)],
             'flow_duration': 0,
             'message_per_sec': -1,
-            'message_size': 500,
+            'message_size': 64,
             'flow_num_msg': 0,
             'count_threads': 1,
         },
         {   # client 2
             'port': 7788,  # not used for client
             'count_flow': count_flow,
-            'ips': [('10.10.0.1', 1234)],  # ('10.10.0.1', 1234),
+            'ips': [('10.10.0.2', 5678)],  # ('10.10.0.1', 1234),
             'flow_duration': 0,
             'message_per_sec': -1,
             'message_size': 500,
@@ -231,12 +242,14 @@ def _get_unidir_containers(containers):
             'threads': 1,
             'connections': count_flow,
             'message_size': 500,
+            'server_delay_cycles': 0,
         },
         {  # client 2
             'server_ip': containers[1]['ip'],
             'threads': 1,
             'connections': count_flow,
             'message_size': 500,
+            'server_delay_cycles': 0,
         }
     ]
     for container, params in zip(containers, app_params):
@@ -374,7 +387,10 @@ def get_containers_config():
 
 
 def get_tas_results(containers, client_1_tas_logs):
-    client_1_dst_count = len(containers[2]['ips'])
+    if SIMPLE_PIPELINE:
+        client_1_dst_count = len(containers[1]['ips'])
+    else:
+        client_1_dst_count = len(containers[2]['ips'])
     lines = client_1_tas_logs.split('\n')
     count_line = len(lines)
 
@@ -448,6 +464,7 @@ def main():
                 shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
         subprocess.run('sudo docker rm {}'.format(name),
                 shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    subprocess.run('sudo pkill dummy_app', shell=True)
 
     # Run BESS daemon
     print('start BESS daemon')
@@ -467,19 +484,41 @@ def main():
         print('BESS pipeline ready.')
         return
 
-    print('==========================================')
+    print('==============================================')
     print('     TCP/Linux Socket App Performance Test')
-    print('==========================================')
+    print('==============================================')
+
+    if CONNECT_DUMMY:
+        d_cpu = [4]
+        for i in range(1):
+            d_prefix = 'exp_dummy_{}'.format(i)
+            vdev = 'virtio_user{},path=tmp_vhost/tas_dummy_{}.sock,queues={}'
+            vdev = vdev.format(i, i+1, count_queue)
+            d_cdq = 'cdq' if cdq else '-'
+            conf = {
+                    'cpu': d_cpu[i],
+                    'prefix': d_prefix,
+                    'vdev': vdev,
+                    'count_queue': count_queue,
+                    'cdq': d_cdq,
+                    'process_cost': dummy_proc_cost,
+                    'ips': dummy_target_ip_list,
+                    }
+            run_dummy_app(conf)
 
     # Spin up TAS
     print('running containers...')
     for c in containers:
         pprint(c)
         run_container(c)
-        sleep(5)
+        # sleep(5)
 
-    print('{} sec warm up...'.format(warmup_time))
-    sleep(warmup_time)
+    try:
+        print('{} sec warm up...'.format(warmup_time))
+        sleep(warmup_time)
+    except KeyboardInterrupt:
+        # catch Ctrl-C
+        print('skipping warm up')
 
     # Get result before
     before_res = get_port_packets('tas_server_1')
@@ -495,7 +534,10 @@ def main():
     after_res = get_port_packets('tas_server_1')
 
     # client 1 tas logs
-    client_1_container_name = containers[2]['name']
+    if SIMPLE_PIPELINE:
+        client_1_container_name = containers[1]['name']
+    else:
+        client_1_container_name = containers[2]['name']
     p = subprocess.run('sudo docker logs {}'.format(client_1_container_name),
             shell=True, stdout=subprocess.PIPE)
     client_1_tas_logs = p.stdout.decode().strip()
@@ -509,7 +551,7 @@ def main():
         subprocess.run('sudo chown $USER {}'.format(output_log_file),
                        shell=True, stdout=subprocess.PIPE)
     else:
-        # craete log file
+        # create log file
         output = open(output_log_file, 'w')
         output.close()
 
@@ -532,27 +574,31 @@ def main():
     logs.append(txt)
     # print('server1\n', txt)
 
-    p = bessctl_do('show port tas_server_2', subprocess.PIPE)
-    txt = p.stdout.decode()
-    logs.append(txt)
-    # print('server2\n', txt)
+    if not SIMPLE_PIPELINE:
+        p = bessctl_do('show port tas_server_2', subprocess.PIPE)
+        txt = p.stdout.decode()
+        logs.append(txt)
+        # print('server2\n', txt)
 
     p = bessctl_do('show port tas_client_1', subprocess.PIPE)
     txt = p.stdout.decode()
     logs.append(txt)
     # print('client1\n', txt)
 
-    p = bessctl_do('show port tas_client_2', subprocess.PIPE)
-    txt = p.stdout.decode()
-    logs.append(txt)
-    # print('client2\n', txt)
+    if not SIMPLE_PIPELINE:
+        p = bessctl_do('show port tas_client_2', subprocess.PIPE)
+        txt = p.stdout.decode()
+        logs.append(txt)
+        # print('client2\n', txt)
 
     # pause call per sec
     bessctl_do('command module bkdrft_queue_out0 get_pause_calls EmptyArg {}')
     bessctl_do('command module bkdrft_queue_out1 get_pause_calls EmptyArg {}')
-    # if cdq:
-    bessctl_do('command module bkdrft_queue_out2 get_pause_calls EmptyArg {}')
-    bessctl_do('command module bkdrft_queue_out3 get_pause_calls EmptyArg {}')
+    if not SIMPLE_PIPELINE:
+        bessctl_do('command module bkdrft_queue_out2 get_pause_calls EmptyArg {}')
+        bessctl_do('command module bkdrft_queue_out3 get_pause_calls EmptyArg {}')
+    if CONNECT_DUMMY:
+        bessctl_do('command module bkdrft_queue_out4 get_pause_calls EmptyArg {}')
     pps_val = get_pps_from_info_log()
     pps_log = str_format_pps(pps_val)
     # print(pps_log)
@@ -607,6 +653,7 @@ def main():
             stdout=subprocess.PIPE, stderr=subprocess.PIPE)
         subprocess.run('sudo docker rm {}'.format(name), shell=True,
             stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    subprocess.run('sudo pkill dummy_app', shell=True)
 
     # Stop BESS daemon
     bessctl_do('daemon stop')
@@ -652,6 +699,8 @@ if __name__ == '__main__':
     warmup_time = args.warmup_time
     # tas should have only one core (not tested with more)
     tas_cores = 1  # how many cores are allocated to tas (fp-max-cores)
+    dummy_proc_cost = 500  # cycles per pkt
+    dummy_target_ip_list = []
 
     # select the app
     if app == 'rpc':

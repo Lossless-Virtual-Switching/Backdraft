@@ -1,0 +1,206 @@
+"""
+BKDRFT Slow Receiver Experiment
+The pipline used to configure bess will be generate from this file.
+Some variable will be add to the generated file in the specified section.
+"""
+
+# == parameters:
+BESS = 0
+BKDRFT = 1
+BESS_BP = 2
+BESS_PFQ = 3
+
+# These variables may be overrided
+AGENT = BESS
+BP = 0
+PFQ = 0
+COMMAND_Q = 0
+ECNT=32000
+LOSSLESS = 0
+
+CNT_Q = 8
+
+# == Insert here ==
+# ==     End     ==
+
+TX_QUEUE_COUNT = CNT_Q
+RX_QUEUE_COUNT = CNT_Q
+Q_SIZE = 512
+Q = max(TX_QUEUE_COUNT, RX_QUEUE_COUNT)
+# ======================================
+
+count_vsw_cores = 1
+for i in range(count_vsw_cores):
+    bess.add_worker(i, i)
+
+_next_wid = -1
+def next_wid():
+    global _next_wid
+    _next_wid += 1
+    _next_wid = _next_wid % count_vsw_cores
+    return _next_wid
+
+
+# Server 1
+#eth_vhost0
+print('eth_vhost0,iface=/tmp/ex_vhost0.sock,queues={}'.format(Q))
+host0 = PMDPort(
+  name='ex_vhost0',
+  vdev='eth_vhost0,iface=/tmp/ex_vhost0.sock,queues={}'.format(Q),
+  num_inc_q=TX_QUEUE_COUNT,
+  num_out_q=RX_QUEUE_COUNT,
+  size_inc_q=Q_SIZE,
+  size_out_q=Q_SIZE)
+
+# Client
+host1 = PMDPort(
+  name='ex_vhost1',
+  vdev='eth_vhost1,iface=/tmp/ex_vhost1.sock,queues={}'.format(Q),
+  num_inc_q=TX_QUEUE_COUNT,
+  num_out_q=RX_QUEUE_COUNT,
+  size_inc_q=Q_SIZE,
+  size_out_q=Q_SIZE)
+
+client2 = PMDPort(
+  name='ex_vhost3',
+  vdev='eth_vhost3,iface=/tmp/ex_vhost3.sock,queues={}'.format(Q),
+  num_inc_q=TX_QUEUE_COUNT,
+  num_out_q=RX_QUEUE_COUNT,
+  size_inc_q=Q_SIZE,
+  size_out_q=Q_SIZE)
+
+# Server 2
+host2 = PMDPort(
+    name='ex_vhost2',
+    vdev='eth_vhost2,iface=/tmp/ex_vhost2.sock,queues={}'.format(Q),
+  num_inc_q=TX_QUEUE_COUNT,
+  num_out_q=RX_QUEUE_COUNT,
+  size_inc_q=Q_SIZE,
+  size_out_q=Q_SIZE)
+
+
+def bkdrft_pipeline():
+    """
+    Setup pipeline with bkdrft modules and configure
+    modules as wanted.
+
+    Configuration Schema:
+
+    [client] --> [ip lookup] ____|- (10.*.*.*) -> [server_1]
+                                 |- (192.*.*.*)-> [server_2]
+    """
+    print('cnt q:', CNT_Q, 'pfq:', PFQ, 'cdq:', COMMAND_Q, 'lossless:',
+          LOSSLESS, 'bp:', BP)
+    router = IPLookup()
+    router.add(prefix='10.10.1.3', prefix_len=32, gate=1)
+    router.add(prefix='10.0.0.0', prefix_len=8, gate=2)
+
+    receive_side_x = Demultiplex(ranges=[
+        {'start': 1000, 'end': 2000, 'gate': 1},
+        {'start': 8000, 'end': 9000, 'gate': 2},
+    ])
+
+    queue_ids = [i for i in range(CNT_Q)]
+    client_qout0 = BKDRFTQueueOut(port=host1, qid=queue_ids,
+        backpressure=BP, lossless=LOSSLESS, cdq=COMMAND_Q, per_flow_buffering=PFQ,
+        ecn_threshold=ECNT, overlay=False, mname='client1')
+
+    client_qout2 = BKDRFTQueueOut(port=client2, qid=queue_ids,
+        backpressure=BP, lossless=LOSSLESS, cdq=COMMAND_Q, per_flow_buffering=PFQ,
+        ecn_threshold=ECNT, overlay=False, mname='client2')
+
+    # client_qout0 = QueueOut(port=host1.name, qid=0)
+    # client_qout1 = QueueOut(port=host1.name, qid=1)
+
+    server1_qout::BKDRFTQueueOut(port=host0.name, qid=queue_ids,
+        backpressure=BP, lossless=LOSSLESS, cdq=COMMAND_Q, per_flow_buffering=PFQ,
+        ecn_threshold=ECNT, overlay=False, mname='server1')
+
+    server2_qout::BKDRFTQueueOut(port=host2.name, qid=queue_ids,
+        backpressure=BP, lossless=LOSSLESS, cdq=COMMAND_Q,
+        per_flow_buffering=PFQ, ecn_threshold=ECNT, overlay=False,
+        mname='server2')
+
+
+    loop = CNT_Q
+    if COMMAND_Q:
+        loop = 1
+
+
+    # q1 = Queue()
+    # q1.attach_task(wid=next_wid())
+    # q2 = Queue()
+    # q2.attach_task(wid=next_wid())
+
+    for i in range(loop):
+        if not COMMAND_Q:
+          queue_ids = [i]
+        client_qin = BKDRFTQueueInc(port=host1,
+            qid=queue_ids, backpressure=BP, cdq=COMMAND_Q, overlay=False)
+
+        client2_qin = BKDRFTQueueInc(port=client2,
+            qid=queue_ids, backpressure=BP, cdq=COMMAND_Q, overlay=False)
+
+        server1_qin = BKDRFTQueueInc(port=host0,
+            qid=queue_ids, backpressure=BP, cdq=COMMAND_Q, overlay=False)
+
+        server2_qin = BKDRFTQueueInc(port=host2,
+            qid=queue_ids, backpressure=BP, cdq=COMMAND_Q, overlay=False)
+
+        client_qin  -> router         # q1
+        client2_qin -> router         # q1
+        server1_qin -> receive_side_x # q2
+        server2_qin -> receive_side_x # q2
+
+        client_qin.attach_task(wid=next_wid())
+        client2_qin.attach_task(wid=next_wid())
+        server1_qin.attach_task(wid=next_wid())
+        server2_qin.attach_task(wid=next_wid())
+
+    # q1 -> router
+    # q2 -> receive_side_x
+    router:1 -> server1_qout
+    router:2 -> server2_qout
+    receive_side_x:1 -> client_qout0
+    receive_side_x:2 -> client_qout2
+
+
+# router = IPLookup()
+# router.add(prefix='192.0.0.0', prefix_len=8, gate=1)
+# router.add(prefix='10.0.0.0', prefix_len=8, gate=2)
+# for i in range(CNT_Q):
+#   client_qin = QueueInc(port=host1, qid=i)
+#   client_qin -> router
+#
+# server1_qout = QueueOut(port=host0, qid=0)
+# server2_qout = QueueOut(port=host2, qid=0)
+# router:1 -> server1_qout
+# router:2 -> server2_qout
+
+
+if AGENT == BESS:
+    bkdrft_pipeline()
+
+elif AGENT == BKDRFT:
+    bkdrft_pipeline()
+
+elif AGENT == BESS_BP:
+    # client_qin -> iplookup -> server1_qout(/2)
+    BP = 1  # Backpressure is on
+    COMMAND_Q = 0 # No command queueing
+    PFQ = 0
+    bkdrft_pipeline()
+
+elif AGENT == BESS_PFQ:
+    COMMAND_Q = 0
+    PFQ = 1
+    bkdrft_pipeline()
+else:
+    print("AGENT misconfigured")
+    raise Exception()
+
+# Attach to worker
+# client_qin.attach_task(wid=0)
+# client2_qin.attach_task(wid=0)
+# server1_qin.attach_task(wid=0)
+# server2_qin.attach_task(wid=0)

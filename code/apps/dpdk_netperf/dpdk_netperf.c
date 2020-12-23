@@ -11,21 +11,35 @@
 #include <stdbool.h>
 #include <stdint.h>
 #include <unistd.h>
-
+#include <assert.h>
 #include <time.h>
-#include "data_structure/f_linklist.h"
-#include "utils/include/bkdrft.h"
-#include "utils/include/percentile.h"
-#include "utils/include/zipf.h"
+#include <rte_mempool.h>
+
+// #include "data_structure/f_linklist.h"
+#include "bkdrft.h"
+#include "bkdrft_const.h"
+#include "bkdrft_vport.h"
+#include "percentile.h"
+#include "zipf.h"
+#include "vport.h"
 
 #define RX_RING_SIZE 128
 #define TX_RING_SIZE 128
 
 #define NUM_MBUFS 8191
-#define MBUF_CACHE_SIZE 250
+#define MBUF_CACHE_SIZE 512 // 250 ...
+#define PRIV_SIZE 256
 #define BURST_SIZE 32
 #define MAX_CORES 64
 #define UDP_MAX_PAYLOAD 1472
+
+#define SHIFT_ARG {argc--; argv++;}
+
+enum port_type_t {
+  dpdk,
+  vport
+};
+typedef enum port_type_t port_type_t;
 
 // #define nnper
 
@@ -55,17 +69,6 @@ static const struct rte_eth_conf port_conf_default = {
         },
 };
 
-struct nbench_req {
-  uint32_t magic;
-  int nports;
-};
-
-struct nbench_resp {
-  uint32_t magic;
-  int nports;
-  uint16_t ports[];
-};
-
 enum {
   MODE_UDP_CLIENT = 0,
   MODE_UDP_SERVER,
@@ -75,6 +78,10 @@ enum {
   (((uint32_t)a << 24) | ((uint32_t)b << 16) | ((uint32_t)c << 8) | (uint32_t)d)
 
 static unsigned int dpdk_port = 0;
+static struct vport *virt_port;
+static char port_name[PORT_NAME_LEN];
+static port_type_t port_type;
+
 static uint8_t mode;
 struct rte_mempool *rx_mbuf_pool;
 struct rte_mempool *tx_mbuf_pool;
@@ -93,8 +100,6 @@ struct rte_ether_addr broadcast_mac = {
 uint16_t next_port = 50000;
 bool bkdrft;
 static uint64_t server_delay = 0;
-
-/* dpdk_netperf.c: simple implementation of netperf on DPDK */
 
 static int str_to_ip(const char *str, uint32_t *addr) {
   uint8_t a, b, c, d;
@@ -120,8 +125,11 @@ static int str_to_long(const char *str, long *val) {
  * Initializes a given port using global settings and with the RX buffers
  * coming from the mbuf_pool passed as a parameter.
  */
-static inline int port_init(uint8_t port, struct rte_mempool *mbuf_pool,
-                            unsigned int n_queues) {
+static int port_init_dpdk(void) {
+  uint8_t port = dpdk_port;
+  struct rte_mempool *mbuf_pool = rx_mbuf_pool;
+  unsigned int n_queues = num_queues;
+
   struct rte_eth_conf port_conf = port_conf_default;
   const uint16_t rx_rings = n_queues, tx_rings = n_queues;
   uint16_t nb_rxd = RX_RING_SIZE;
@@ -142,9 +150,7 @@ static inline int port_init(uint8_t port, struct rte_mempool *mbuf_pool,
   retval = rte_eth_dev_adjust_nb_rx_tx_desc(port, &nb_rxd, &nb_txd);
   if (retval != 0) return retval;
 
-  /* Allocate and set up 1 RX queue per Ethernet port. Alireza: Not true
-   * anymore
-   * */
+  /* Allocate and set up RX queues */
   for (q = 0; q < rx_rings; q++) {
     retval = rte_eth_rx_queue_setup(
         port, q, nb_rxd, rte_eth_dev_socket_id(port), NULL, mbuf_pool);
@@ -155,9 +161,7 @@ static inline int port_init(uint8_t port, struct rte_mempool *mbuf_pool,
   rte_eth_dev_info_get(0, &dev_info);
   txconf = &dev_info.default_txconf;
 
-  /* Allocate and set up 1 TX queue per Ethernet port. Alireza: Not true
-   * anymore
-   * */
+  /* Allocate and set up TX queues */
   for (q = 0; q < tx_rings; q++) {
     retval = rte_eth_tx_queue_setup(port, q, nb_txd,
                                     rte_eth_dev_socket_id(port), txconf);
@@ -182,25 +186,50 @@ static inline int port_init(uint8_t port, struct rte_mempool *mbuf_pool,
   return 0;
 }
 
+static int port_init_vport(void)
+{
+  size_t bar_address;
+  FILE *fp;
+  char port_path[PORT_DIR_LEN];
+  snprintf(port_path, PORT_DIR_LEN, "%s/%s/%s", TMP_DIR,
+           VPORT_DIR_PREFIX, port_name);
+  fp = fopen(port_path, "r");
+  if(fread(&bar_address, 8, 1, fp) == 0) {
+    // failed to read vbar address
+    return -1;
+  }
+  fclose(fp);
+  virt_port = from_vbar_addr(bar_address);
+  return 0;
+}
+
+static int port_init(void)
+{
+  if (port_type == dpdk) {
+    return port_init_dpdk();
+  } else if (port_type == vport) {
+    return port_init_vport();
+  }
+  return -1;
+}
+
 /*
  * Run a client
  */
 static void do_client(uint8_t port) {
   uint64_t start_time, end_time;
   uint64_t send_failure = 0;
-  uint8_t burst = 32;  // BURST_SIZE;
+  const uint8_t burst = BURST_SIZE;
   struct rte_mbuf *buf;
   struct rte_mbuf *batch[burst];
-  char *buf_ptr;
   struct rte_ether_hdr *eth_hdr;
   struct rte_ipv4_hdr *ipv4_hdr;
-  // struct bkdrft_ipv4_opt *opt;
   struct rte_udp_hdr *udp_hdr;
   uint16_t nb_tx, i;
   uint64_t reqs = 0;
   struct rte_ether_addr server_eth = {{0x52, 0x54, 0x00, 0x12, 0x00, 0x00}};
   bool setup_port = false;
-  /* changing ports */
+  /* changing queue */
   int current_queue = 2;
   struct zipfgen *zipf;
   /* 99.9 latency calculation variables */
@@ -211,13 +240,20 @@ static void do_client(uint8_t port) {
   float pkt_clatency = 0;
   hist = new_p_hist(60);
 #endif
-  zipf = new_zipfgen(num_queues - 1, 1);
+  int flow_id = 0;
+  int count_flow = num_queues; // TODO: count flow could be different
+
+  if (bkdrft) {
+    zipf = new_zipfgen(num_queues - 1, 1);
+  } else {
+    zipf = new_zipfgen(num_queues, 1);
+  }
 
   /*
    * Check that the port is on the same NUMA node as the polling thread
    * for best performance.
    */
-  if (rte_eth_dev_socket_id(port) > 0 &&
+  if (port_type == dpdk && rte_eth_dev_socket_id(port) > 0 &&
       rte_eth_dev_socket_id(port) != (int)rte_socket_id())
     printf(
         "WARNING, port %u is on remote NUMA node to polling thread.\n\t"
@@ -236,15 +272,15 @@ static void do_client(uint8_t port) {
 #endif
 
     if (rte_pktmbuf_alloc_bulk(tx_mbuf_pool, batch, burst)) {
+      // failed to allocate packet
+      // printf("failed to allocate\n");
       continue;
     }
 
     for (i = 0; i < burst; i++) {
       buf = batch[i];
       /* ethernet header */
-      buf_ptr = rte_pktmbuf_append(buf, RTE_ETHER_HDR_LEN);
-      assert(buf_ptr);
-      eth_hdr = (struct rte_ether_hdr *)buf_ptr;
+      eth_hdr = rte_pktmbuf_mtod(buf, struct rte_ether_hdr *);
 
       rte_ether_addr_copy(&my_eth, &eth_hdr->s_addr);
       rte_ether_addr_copy(&server_eth, &eth_hdr->d_addr);
@@ -263,12 +299,9 @@ static void do_client(uint8_t port) {
       // vlan_hdr->eth_proto = vlan_ether_proto_type;
 
       /* IPv4 header */
-      buf_ptr = rte_pktmbuf_append(buf, sizeof(struct rte_ipv4_hdr));
-      assert(buf_ptr);
-      ipv4_hdr = (struct rte_ipv4_hdr *)buf_ptr;
+      ipv4_hdr = (struct rte_ipv4_hdr *)(eth_hdr + 1);
       ipv4_hdr->version_ihl = 0x45;
-      // ipv4_hdr->version_ihl = 0x46;
-      ipv4_hdr->type_of_service = 3 << 2; // place on queue 3
+      ipv4_hdr->type_of_service = 0;
       ipv4_hdr->total_length =
           rte_cpu_to_be_16(sizeof(struct rte_ipv4_hdr) +
                            sizeof(struct rte_udp_hdr) + payload_len);
@@ -279,24 +312,15 @@ static void do_client(uint8_t port) {
       ipv4_hdr->hdr_checksum = 1000 + 3;
       ipv4_hdr->src_addr = rte_cpu_to_be_32(my_ip);
       ipv4_hdr->dst_addr = rte_cpu_to_be_32(server_ip);
-      // add bkdrft queue option
-      // buf_ptr = rte_pktmbuf_append(buf, sizeof(struct bkdrft_ipv4_opt));
-      // assert(buf_ptr);
-      // opt = (struct bkdrft_ipv4_opt *)buf_ptr;
-      // *opt = init_bkdrft_ipv4_opt; // set some default values
-      // opt->queue_number = 3;
 
       /* UDP header + data */
-      buf_ptr =
-          rte_pktmbuf_append(buf, sizeof(struct rte_udp_hdr) + payload_len);
-      assert(buf_ptr);
-      udp_hdr = (struct rte_udp_hdr *)buf_ptr;
+      udp_hdr = (struct rte_udp_hdr *)(ipv4_hdr + 1);
       udp_hdr->src_port = rte_cpu_to_be_16(client_port);
-      udp_hdr->dst_port = rte_cpu_to_be_16(server_port);
+      udp_hdr->dst_port = rte_cpu_to_be_16(server_port + flow_id);
       udp_hdr->dgram_len =
           rte_cpu_to_be_16(sizeof(struct rte_udp_hdr) + payload_len);
       udp_hdr->dgram_cksum = 0;
-      memset(buf_ptr + sizeof(struct rte_udp_hdr), 0xAB, payload_len);
+      memset((void *)(udp_hdr + 1), 0xAB, payload_len);
 
       buf->l2_len = RTE_ETHER_HDR_LEN;
       buf->l3_len = sizeof(struct rte_ipv4_hdr);
@@ -304,18 +328,33 @@ static void do_client(uint8_t port) {
     }
 
     /* send packet */
-    if (bkdrft) {
-      // current_queue = zipf->gen(zipf);
-      current_queue = 1;
-      // printf("q: %d\n", current_queue);
-      // fflush(stdout);
-      // opt->queue_number = current_queue;
-      ipv4_hdr->type_of_service = current_queue << 2;
-      nb_tx = send_pkt(port, current_queue, batch, burst, true, ctrl_mbuf_pool);
-      // printf("nb_tx: %d\n", nb_tx); 
+    if (port_type == dpdk) {
+      if (bkdrft) {
+        // current_queue = zipf->gen(zipf);
+        current_queue = 1;
+        // printf("q: %d\n", current_queue);
+        // fflush(stdout);
+        ipv4_hdr->type_of_service = current_queue << 2;
+        nb_tx = send_pkt(port, current_queue, batch, burst,
+                         true, ctrl_mbuf_pool);
+      } else {
+        // BESS
+        nb_tx = send_pkt(port, 0, batch, burst, false, ctrl_mbuf_pool);
+      }
     } else {
-      nb_tx = send_pkt(port, 0, batch, burst, false, ctrl_mbuf_pool);
+      // VPort
+      if (bkdrft)
+        current_queue = zipf->gen(zipf);
+      else
+        current_queue = zipf->gen(zipf) - 1;
+
+      // current_queue = 1;
+      // nb_tx = send_packets_vport(virt_port, current_queue,
+      //                            (void **)batch, burst);
+      nb_tx = vport_send_pkt(virt_port, current_queue, batch, burst,
+                             bkdrft, 0, tx_mbuf_pool);
     }
+
     reqs += nb_tx;
     send_failure += burst - nb_tx;
     for (i = nb_tx; i < burst; i++) {
@@ -331,6 +370,10 @@ static void do_client(uint8_t port) {
     pkt_clatency += pkt_latency;
     add_number_to_p_hist(hist, pkt_latency * 1000);
 #endif
+
+    // set next flow id
+    flow_id += 1;
+    flow_id %= count_flow;
   }
   end_time = rte_get_timer_cycles();
   if (setup_port) reqs--;
@@ -344,8 +387,9 @@ static void do_client(uint8_t port) {
 #ifdef nnper
   printf("mean latency (us): %f\n", pkt_clatency / reqs);
 #else
-  printf("mean latency (us): %f\n", (float)(end_time - start_time) * 1000 *
-                                        1000 / (reqs * rte_get_timer_hz()));
+  printf("mean latency (us): %d\n", -1);
+  // printf("mean latency (us): %f\n", (float)(end_time - start_time) * 1000 *
+  //                                       1000 / (reqs * rte_get_timer_hz()));
 #endif
   printf("send failures: %" PRIu64 " packets\n", send_failure);
 
@@ -358,7 +402,7 @@ static void do_client(uint8_t port) {
 }
 
 /*
- * Run a netperf server
+ * Run a server
  */
 static int do_server(void *arg) {
   uint8_t port = dpdk_port;
@@ -376,7 +420,7 @@ static int do_server(void *arg) {
    * Check that the port is on the same NUMA node as the polling thread
    * for best performance.
    */
-  if (rte_eth_dev_socket_id(port) > 0 &&
+  if (port_type == dpdk && rte_eth_dev_socket_id(port) > 0 &&
       rte_eth_dev_socket_id(port) != (int)rte_socket_id())
     printf(
         "WARNING, port %u is on remote NUMA node to polling thread.\n\t"
@@ -394,7 +438,7 @@ static int do_server(void *arg) {
     curts = rte_get_timer_cycles();
     if (curts - timestamp > hz) {
       for (i = 0; i < num_queues; i++) {
-        // printf("Queue: %d, Throughput: %lu\n", i, tput[i]);
+        printf("Queue: %d, Throughput: %lu\n", i, tput[i]);
         tput[i] = 0;
       }
       // printf("=============\n");
@@ -402,11 +446,23 @@ static int do_server(void *arg) {
     }
 
     /* receive packets */
-    if (bkdrft) {
-      nb_rx = poll_ctrl_queue_expose_qid(port, BKDRFT_CTRL_QUEUE, 32, rx_bufs, true, &q);
+    if (port_type == dpdk) {
+      if (bkdrft) {
+        nb_rx = poll_ctrl_queue_expose_qid(port, BKDRFT_CTRL_QUEUE, 32,
+                                           rx_bufs, true, &q);
+      } else {
+        nb_rx = rte_eth_rx_burst(port, q, rx_bufs, BURST_SIZE);
+        q = (q + 1) % num_queues;
+      }
     } else {
-      nb_rx = rte_eth_rx_burst(port, q, rx_bufs, BURST_SIZE);
-      q = (q + 1) % num_queues;
+      // vport
+      if (bkdrft) {
+        nb_rx =vport_poll_ctrl_queue_expose_qid (virt_port, BKDRFT_CTRL_QUEUE,
+                                                 BURST_SIZE, rx_bufs, true, &q);
+      } else {
+        nb_rx = recv_packets_vport(virt_port, q, (void**)rx_bufs, BURST_SIZE);
+        q = (q + 1) % num_queues;
+      }
     }
 
     if (timestamp == 0) {
@@ -424,7 +480,7 @@ static int do_server(void *arg) {
       uint64_t now = start;
       while (now < end) {
         now = rte_get_tsc_cycles();
-      } 
+      }
     }
   }
   return 0;
@@ -441,53 +497,74 @@ static int dpdk_init(int argc, char *argv[]) {
   if (args_parsed < 0)
     rte_exit(EXIT_FAILURE, "Error with EAL initialization\n");
 
-  /* Check that there is a port to send/receive on. */
-  if (!rte_eth_dev_is_valid_port(0))
-    rte_exit(EXIT_FAILURE, "Error: no available ports\n");
+  return args_parsed;
+}
+
+static void create_pools(void) {
+  const int namelen = 64;
+  char pool_name[namelen];
+  long int pid = getpid();
+
+  if (port_type == dpdk) {
+    snprintf(pool_name, namelen, "MBUF_RX_POOL_%ld", pid);
+    /* Creates a new mempool in memory to hold the mbufs. */
+    rx_mbuf_pool =
+        rte_pktmbuf_pool_create(pool_name, NUM_MBUFS, MBUF_CACHE_SIZE, 0,
+                                RTE_MBUF_DEFAULT_BUF_SIZE, rte_socket_id());
+
+    if (rx_mbuf_pool == NULL)
+      rte_exit(EXIT_FAILURE, "Cannot create rx mbuf pool\n");
+  }
 
   /* Creates a new mempool in memory to hold the mbufs. */
-  rx_mbuf_pool =
-      rte_pktmbuf_pool_create("MBUF_RX_POOL", NUM_MBUFS, MBUF_CACHE_SIZE, 0,
-                              RTE_MBUF_DEFAULT_BUF_SIZE, rte_socket_id());
-
-  if (rx_mbuf_pool == NULL)
-    rte_exit(EXIT_FAILURE, "Cannot create rx mbuf pool\n");
-
-  /* Creates a new mempool in memory to hold the mbufs. */
+  snprintf(pool_name, namelen, "MBUF_TX_POOL_%ld", pid);
   tx_mbuf_pool =
-      rte_pktmbuf_pool_create("MBUF_TX_POOL", NUM_MBUFS, MBUF_CACHE_SIZE, 0,
-                              RTE_MBUF_DEFAULT_BUF_SIZE, rte_socket_id());
-
+      rte_pktmbuf_pool_create(pool_name, NUM_MBUFS, MBUF_CACHE_SIZE, PRIV_SIZE,
+                             RTE_MBUF_DEFAULT_BUF_SIZE, rte_socket_id());
   if (tx_mbuf_pool == NULL)
     rte_exit(EXIT_FAILURE, "Cannot create tx mbuf pool\n");
 
   /* Create a new mempool in memory to hold the mbufs. */
+  snprintf(pool_name, namelen, "MBUF_CTRL_POOL_%ld", pid);
   ctrl_mbuf_pool =
-      rte_pktmbuf_pool_create("MBUF_CTRL_POOL", NUM_MBUFS, MBUF_CACHE_SIZE, 0,
+      rte_pktmbuf_pool_create(pool_name, NUM_MBUFS, MBUF_CACHE_SIZE, PRIV_SIZE,
                               RTE_MBUF_DEFAULT_BUF_SIZE, rte_socket_id());
-
   if (ctrl_mbuf_pool == NULL)
     rte_exit(EXIT_FAILURE, "Cannot crate ctrl mbuf pool\n");
-
-  return args_parsed;
 }
 
-static int parse_netperf_args(int argc, char *argv[]) {
+static int parse_args(int argc, char *argv[]) {
   long tmp;
 
   /* argv[0] is still the program name */
+  if (strncmp(argv[1], "vport=", 6) == 0) {
+    // if starts with vport= then we should use vport
+    strncpy(port_name, argv[1] + 6, PORT_NAME_LEN);
+    port_type = vport;
+    SHIFT_ARG;
+  }
+
   if (argc < 3) {
     printf("not enough arguments left: %d\n", argc);
     return -EINVAL;
   }
 
+  if (strcmp(argv[1], "bkdrft") == 0) {
+    bkdrft = true;
+    SHIFT_ARG;
+  } else if(strcmp(argv[1], "bess") == 0) {
+    bkdrft = false;
+    SHIFT_ARG;
+  } else {
+    bkdrft = false;
+  }
+
   str_to_ip(argv[2], &my_ip);
-  printf("===\n");
 
   if (!strcmp(argv[1], "UDP_CLIENT")) {
     mode = MODE_UDP_CLIENT;
     argc -= 3;
-    if (argc < 7) {
+    if (argc < 6) {
       printf("not enough arguments left: %d\n", argc);
       return -EINVAL;
     }
@@ -498,13 +575,7 @@ static int parse_netperf_args(int argc, char *argv[]) {
     seconds = tmp;
     str_to_long(argv[7], &tmp);
     payload_len = tmp;
-    if (argc > 5 && !strcmp(argv[8], "bkdrft")) {
-      bkdrft = true;
-    } else {
-      bkdrft = false;
-    }
-    if (sscanf(argv[9], "%u", &num_queues) != 1) return -EINVAL;
-    printf("Client BKDRFT mode: %d\n", bkdrft);
+    if (sscanf(argv[8], "%u", &num_queues) != 1) return -EINVAL;
   } else if (!strcmp(argv[1], "UDP_SERVER")) {
     mode = MODE_UDP_SERVER;
     argc -= 3;
@@ -512,10 +583,7 @@ static int parse_netperf_args(int argc, char *argv[]) {
       if (sscanf(argv[3], "%u", &num_queues) != 1) return -EINVAL;
     }
     if (argc >= 2) {
-      bkdrft = !strcmp(argv[4], "bkdrft");
-    }
-    if (argc >= 3) {
-      server_delay = atoi(argv[5]); 
+      server_delay = atoi(argv[4]);
     }
   } else {
     printf("invalid mode '%s'\n", argv[1]);
@@ -539,16 +607,29 @@ int main(int argc, char *argv[]) {
   /* initialize our arguments */
   argc -= args_parsed;
   argv += args_parsed;
-  res = parse_netperf_args(argc, argv);
-  if (res < 0) return 0;
+  res = parse_args(argc, argv);
+  if (res < 0) return res;
+
   printf("=======================\n");
   printf("is bkdrft: %d\n", bkdrft);
+  if (port_type == vport)
+    printf("using vport: %s\n", port_name);
   printf("=======================\n");
+
+  if (port_type == dpdk) {
+    /* Check that there is a port to send/receive on. */
+    if (!rte_eth_dev_is_valid_port(0))
+      rte_exit(EXIT_FAILURE, "Error: no available ports\n");
+    create_pools();
+  } else if (port_type == vport && mode == MODE_UDP_CLIENT) {
+    create_pools();
+  }
 
   /* initialize port */
   if (mode == MODE_UDP_CLIENT && rte_lcore_count() > 1)
     printf("\nWARNING: Too many lcores enabled. Only 1 used.\n");
-  if (port_init(dpdk_port, rx_mbuf_pool, num_queues) != 0)
+
+  if (port_init() != 0)
     rte_exit(EXIT_FAILURE, "Cannot init port %" PRIu8 "\n", dpdk_port);
 
   if (mode == MODE_UDP_CLIENT)
@@ -558,6 +639,10 @@ int main(int argc, char *argv[]) {
     RTE_LCORE_FOREACH_SLAVE(lcore_id)
     rte_eal_remote_launch(do_server, (void *)i++, lcore_id);
     do_server((void *)i);
+  }
+
+  if (port_type == vport) {
+    free_vport(virt_port);
   }
 
   return 0;

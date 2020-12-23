@@ -44,17 +44,6 @@
 #define SN_HW_RXCSUM 0
 #define SN_HW_TXCSUM 0
 
-#define MAX_PATTERN_IN_FLOW 3
-#define MAX_ACTIONS_IN_FLOW 2
-#define MAX_PATTERN_NUM (MAX_PATTERN_IN_FLOW)
-#define MAX_ACTION_NUM (MAX_ACTIONS_IN_FLOW)
-
-#define SRC_IP ((0 << 24) + (0 << 16) + (0 << 8) + 0) /* src ip = 0.0.0.0 */
-#define DEST_IP \
-  ((192 << 24) + (168 << 16) + (1 << 8) + 1) /* dest ip = 192.168.1.1 */
-#define FULL_MASK 0xffffffff                 /* full mask */
-#define EMPTY_MASK 0x0                       /* empty mask */
-
 static const struct rte_eth_conf default_eth_conf(
     struct rte_eth_dev_info dev_info, int num_rxq) {
   struct rte_eth_conf ret = rte_eth_conf();
@@ -87,15 +76,27 @@ static const struct rte_eth_conf default_eth_conf(
 int data_mapping_rule_setup(dpdk_port_t port_id, uint16_t count_queue) {
   struct rte_flow *flow;
   struct rte_flow_error error;
-  uint16_t vlan_id;
-  uint16_t prio = 3; // Notice: Only mapping vlan packets with prio=3
-  uint16_t vlan_mask = 0x0fff;
+  const uint8_t tos_mask = 0xfc;
+  // uint16_t vlan_id;
+  // uint16_t prio = 3; // Notice: Only mapping vlan packets with prio=3
+  // uint16_t vlan_mask = 0x0fff;
 
   // mapping vlan_id (i) -> queue (i - 1) for i in [1, count_queue]
   for (int i = 0; i < count_queue; i++) {
-    vlan_id = i + 1;
-    flow = bkdrft::filter_by_vlan_id(port_id, prio, vlan_id, vlan_mask,
-                                     i, &error);
+    uint8_t tos = i << 2;
+    flow = bkdrft::filter_by_ip_tos(port_id, tos, tos_mask, i, &error);
+    // vlan_id = i + 1;
+    // flow = bkdrft::filter_by_vlan_id(port_id, prio, vlan_id, vlan_mask,
+    //                                 i, &error);
+    if (!flow) {
+      LOG(INFO) << "Data mapping error message: " << error.message << " \n";
+      return -1;  // failed
+    }
+    // also consider ingress packets having vlan
+    // prio: 3, vlan_id: 100
+    flow = bkdrft::filter_by_ip_tos_with_vlan(port_id, tos,
+          tos_mask, 3, 100, 0xefff, i, &error);
+
     if (!flow) {
       LOG(INFO) << "Data mapping error message: " << error.message << " \n";
       return -1;  // failed

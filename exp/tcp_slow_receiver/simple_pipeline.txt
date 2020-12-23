@@ -1,0 +1,156 @@
+"""
+"""
+import os
+import subprocess
+
+def del_socket(path):
+  if os.path.exists(path):
+     subprocess.call('sudo rm %s' % path, shell=True)
+
+Q = 8
+bp = 0
+cdq = 0
+pfq = 0
+lossless = 0
+delay_per_packet = 0
+
+# == Insert here ==
+# =================
+
+RX_QUEUE_COUNT = Q
+TX_QUEUE_COUNT = Q
+Q_SIZE = 64
+
+rate_limit = bp
+rate = 100000  # kilo pkt / sec
+print('number of queues: ', Q)
+print('bp: ', bp)
+
+# Add worker to bess
+bess.add_worker(0, 0)
+# bess.add_worker(1, 2)
+
+del_socket('tmp_vhost/tas_server_1.sock')
+del_socket('tmp_vhost/tas_client_1.sock')
+del_socket('tmp_vhost/tas_server_2.sock')
+del_socket('tmp_vhost/tas_client_2.sock')
+
+
+# Define PMDPorts
+server1 = PMDPort(
+  name='tas_server_1',
+  vdev='eth_vhost0,iface=tmp_vhost/tas_server_1.sock,queues={}'.format(Q),
+  num_inc_q=TX_QUEUE_COUNT,
+  num_out_q=RX_QUEUE_COUNT,
+  size_inc_q=Q_SIZE,
+  size_out_q=Q_SIZE,
+  rate_limiting=rate_limit,
+  rate=rate)
+
+client1 = PMDPort(
+  name='tas_client_1',
+  vdev='eth_vhost1,iface=tmp_vhost/tas_client_1.sock,queues={}'.format(Q),
+  num_inc_q=TX_QUEUE_COUNT,
+  num_out_q=RX_QUEUE_COUNT,
+  size_inc_q=Q_SIZE,
+  size_out_q=Q_SIZE,
+  rate_limiting=rate_limit,
+  rate=rate)
+
+extra = 0
+c = []
+s = []
+for i in range(0, 2 * extra, 2):
+  del_socket('tmp_vhost/tas_server_{}.sock'.format(i+2))
+  del_socket('tmp_vhost/tas_client_{}.sock'.format(i+2))
+  client2 = PMDPort(
+    name='tas_client_2_{}'.format(i),
+    vdev='eth_vhost{0},iface=tmp_vhost/tas_client_{0}.sock,queues={1}'.format(i+2, Q),
+    num_inc_q=TX_QUEUE_COUNT,
+    num_out_q=RX_QUEUE_COUNT,
+    size_inc_q=Q_SIZE,
+    size_out_q=Q_SIZE,
+    rate_limiting=rate_limit,
+    rate=rate)
+
+  server2 = PMDPort(
+    name='tas_server_2_{}'.format(i),
+    vdev='eth_vhost{},iface=tmp_vhost/tas_server_{}.sock,queues={}'.format(i+3, i+2, Q),
+    num_inc_q=TX_QUEUE_COUNT,
+    num_out_q=RX_QUEUE_COUNT,
+    size_inc_q=Q_SIZE,
+    size_out_q=Q_SIZE,
+    rate_limiting=rate_limit,
+    rate=rate)
+  c.append(client2)
+  s.append(server2)
+
+queue_ids = list(range(Q))
+server_1_out = BKDRFTQueueOut(port=server1, qid=queue_ids,
+  backpressure=bp, lossless=lossless, cdq=cdq, per_flow_buffering=pfq,
+  mname='server1', overlay=False)
+
+client_1_out = BKDRFTQueueOut(port=client1, qid=queue_ids,
+    backpressure=bp, lossless=lossless, cdq=cdq, per_flow_buffering=pfq,
+    mname='client1', overlay=False)
+
+cout = []
+sout = []
+for i in range(extra):
+  client_2_out = BKDRFTQueueOut(port=c[i], qid=queue_ids,
+      backpressure=bp, lossless=lossless, cdq=cdq, per_flow_buffering=pfq,
+      mname='client2_{}'.format(i), overlay=False)
+
+  server_2_out = BKDRFTQueueOut(port=s[i], qid=queue_ids,
+    backpressure=bp, lossless=lossless, cdq=cdq, per_flow_buffering=pfq,
+    mname='server2_{}'.format(i), overlay=False)
+  cout.append(client_2_out)
+  sout.append(server_2_out)
+
+if not cdq:
+    # poll other queues
+    for i in range(0, Q):
+        # client
+        cq1 = BKDRFTQueueInc(port=client1, qid=[i], backpressure=bp, cdq=cdq)
+        cq1.attach_task(wid=0)
+        cq1 -> server_1_out
+        # server
+        sq1 = BKDRFTQueueInc(port=server1, qid=[i], backpressure=bp, cdq=cdq)
+        sq1.attach_task(wid=0)
+        sq1 ->client_1_out
+        # test
+        for j in range(extra):
+                cport = c[j]
+                print(j, c[j].name)
+                sport = s[j]
+                server_2_out = sout[j]
+                client_2_out = cout[j]
+                cq2 = BKDRFTQueueInc(port=cport, qid=[i], backpressure=bp, cdq=cdq)
+                cq2.attach_task(wid=0)
+                cq2 -> server_2_out
+                sq2 = BKDRFTQueueInc(port=sport, qid=[i], backpressure=bp, cdq=cdq)
+                sq2.attach_task(wid=0)
+                sq2 ->client_2_out
+
+else:
+    # client
+    cq1 =  BKDRFTQueueInc(port=client1, qid=queue_ids, backpressure=bp, cdq=cdq)
+    cq1.attach_task(wid=0)
+    cq1 -> server_1_out
+    # server
+    sq1 =  BKDRFTQueueInc(port=server1, qid=queue_ids, backpressure=bp, cdq=cdq)
+    sq1.attach_task(wid=0)
+    sq1 -> client_1_out
+    # test
+    for i in range(extra):
+        cport = c[i]
+        sport = s[i]
+        server_2_out = sout[i]
+        client_2_out = cout[i]
+        cq2 = BKDRFTQueueInc(port=cport, qid=queue_ids, backpressure=bp, cdq=cdq)
+        cq2.attach_task(wid=0)
+        cq2 -> server_2_out
+        sq2 = BKDRFTQueueInc(port=sport, qid=queue_ids, backpressure=bp, cdq=cdq)
+        sq2.attach_task(wid=0)
+        sq2 ->client_2_out
+

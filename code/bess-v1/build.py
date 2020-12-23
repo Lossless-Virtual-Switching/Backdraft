@@ -95,8 +95,8 @@ DPDK_TARGET = 'x86_64-native-linuxapp-gcc'
 kernel_release = cmd('uname -r', quiet=True).strip()
 
 DPDK_DIR = '%s/%s' % (DEPS_DIR, DPDK_VER)
-DPDK_CFLAGS = '"-g -w -fPIC"'
-DPDK_ORIG_CONFIG = '%s/config/common_linux' % DPDK_DIR
+DPDK_CFLAGS = '"-g -w"'
+DPDK_CONFIG = '%s/build/.config' % DPDK_DIR
 
 extra_libs = set()
 cxx_flags = []
@@ -197,11 +197,16 @@ def set_config(filename, config, new_value):
     with open(filename) as fp:
         lines = fp.readlines()
 
+    found = False
     with open(filename, 'w') as fp:
         for line in lines:
             if line.startswith(config + '='):
+                found = True
                 line = '%s=%s\n' % (config, new_value)
             fp.write(line)
+
+    assert found, '"%s" is not found in %s' % (config, filename)
+    print('  %s: %s=%s' % (filename, config, new_value))
 
 
 def is_kernel_header_installed():
@@ -212,10 +217,10 @@ def check_kernel_headers():
     # If kernel header is not available, do not attempt to build
     # any components that require kernel.
     if not is_kernel_header_installed():
-        set_config(DPDK_ORIG_CONFIG, 'CONFIG_RTE_EAL_IGB_UIO', 'n')
-        set_config(DPDK_ORIG_CONFIG, 'CONFIG_RTE_KNI_KMOD', 'n')
-        set_config(DPDK_ORIG_CONFIG, 'CONFIG_RTE_LIBRTE_KNI', 'n')
-        set_config(DPDK_ORIG_CONFIG, 'CONFIG_RTE_LIBRTE_PMD_KNI', 'n')
+        set_config(DPDK_CONFIG, 'CONFIG_RTE_EAL_IGB_UIO', 'n')
+        set_config(DPDK_CONFIG, 'CONFIG_RTE_KNI_KMOD', 'n')
+        set_config(DPDK_CONFIG, 'CONFIG_RTE_LIBRTE_KNI', 'n')
+        set_config(DPDK_CONFIG, 'CONFIG_RTE_LIBRTE_PMD_KNI', 'n')
 
 
 def check_bnx():
@@ -223,30 +228,40 @@ def check_bnx():
         extra_libs.add('z')
     else:
         print(' - "zlib1g-dev" is not available. Disabling BNX2X PMD...')
-        set_config(DPDK_ORIG_CONFIG, 'CONFIG_RTE_LIBRTE_BNX2X_PMD', 'n')
+        set_config(DPDK_CONFIG, 'CONFIG_RTE_LIBRTE_BNX2X_PMD', 'n')
 
 
 def check_mlx():
-    if check_header('infiniband/ib.h', 'gcc') and check_c_lib('mlx4') and \
-            check_c_lib('mlx5'):
-        extra_libs.add('ibverbs')
-        extra_libs.add('mlx4')
-        extra_libs.add('mlx5')
-    else:
-        print(' - "Mellanox OFED" is not available. '
-              'Disabling MLX4 and MLX5 PMDs...')
-        if check_header('infiniband/verbs.h', 'gcc'):
+    ibverbs_avail = check_header('infiniband/ib.h', 'gcc')
+    mlx4_avail = check_c_lib('mlx4')
+    mlx5_avail = check_c_lib('mlx5')
+
+    if ibverbs_avail:
+        if mlx4_avail:
+            extra_libs.add('mlx4')
+            set_config(DPDK_CONFIG, 'CONFIG_RTE_LIBRTE_MLX4_PMD', 'y')
+        else:
+            print(" - Mellanox OFED: MLX4 PMD not available, disabling...")
+            set_config(DPDK_CONFIG, 'CONFIG_RTE_LIBRTE_MLX4_PMD', 'n')
+
+        if mlx5_avail:
+            extra_libs.add('mlx5')
+            set_config(DPDK_CONFIG, 'CONFIG_RTE_LIBRTE_MLX5_PMD', 'y')
+        else:
+            print(" - Mellanox OFED: MLX5 PMD not available, disabling...")
+            set_config(DPDK_CONFIG, 'CONFIG_RTE_LIBRTE_MLX5_PMD', 'n')
+
+        if mlx5_avail or mlx4_avail:
+            extra_libs.add('ibverbs')
+        else:
             print('   NOTE: "libibverbs-dev" does exist, but it does not '
                   'work with MLX PMDs. Instead download OFED from '
                   'http://www.melloanox.com')
-        set_config(DPDK_ORIG_CONFIG, 'CONFIG_RTE_LIBRTE_MLX4_PMD', 'n')
-        set_config(DPDK_ORIG_CONFIG, 'CONFIG_RTE_LIBRTE_MLX5_PMD', 'n')
 
 
 def generate_dpdk_extra_mk():
     with open('core/extra.dpdk.mk', 'w') as fp:
-        fp.write(
-            'LIBS += %s\n' % ' '.join(map(lambda lib: '-l' + lib, extra_libs)))
+        fp.write('LIBS += %s\n' % ' '.join(['-l' + lib for lib in extra_libs]))
 
 
 def find_current_plugins():
@@ -289,14 +304,16 @@ def download_dpdk(quiet=False):
 
 def configure_dpdk():
     print('Configuring DPDK...')
+    cmd('make -C %s config T=%s' % (DPDK_DIR, DPDK_TARGET))
 
     check_kernel_headers()
-
     check_mlx()
-
     generate_dpdk_extra_mk()
 
-    p = cmd('make -C %s config T=%s' % (DPDK_DIR, DPDK_TARGET))
+    arch = os.getenv('CPU')
+    if arch:
+        print(' - Building DPDK with -march=%s' % arch)
+        set_config(DPDK_CONFIG, "CONFIG_RTE_MACHINE", arch)
 
 
 def makeflags():
@@ -331,9 +348,9 @@ def build_dpdk():
     if not os.path.exists('%s/build' % DPDK_DIR):
         configure_dpdk()
 
-    # patch bpf_validate as it conflicts with libpcap
-    cmd('patch -d %s -N -p1 < %s/bpf_validate.patch || true' % (DPDK_DIR, DEPS_DIR),
-        shell=True)
+    for f in glob.glob('%s/*.patch' % DEPS_DIR):
+        print('Applying patch %s' % f)
+        cmd('patch -d %s -N -p1 < %s || true' % (DPDK_DIR, f), shell=True)
 
     print('Building DPDK...')
     nproc = int(cmd('nproc', quiet=True))
@@ -397,10 +414,7 @@ def build_bess():
     sys.stdout.flush()
     cmd('bin/bessctl daemon stop 2> /dev/null || true', shell=True)
     cmd('rm -f core/bessd')  # force relink as DPDK might have been rebuilt
-    p = cmd('make -C core bessd modules all_test %s' % makeflags())
-    # p.wait()
-    # print(p.stdout().decode())
-    print(p)
+    cmd('make -C core bessd modules all_test %s' % makeflags())
 
 
 def build_kmod():
@@ -549,3 +563,4 @@ if __name__ == '__main__':
         sys.exit(main())
     except KeyboardInterrupt:
         sys.exit('\nInterrupted')
+
