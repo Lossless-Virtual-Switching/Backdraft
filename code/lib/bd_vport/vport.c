@@ -10,6 +10,7 @@
 
 #include <rte_malloc.h>
 
+#include "vport_const.h"
 #include "vport.h"
 #include "llring_pool.h"
 #include "list.h"
@@ -84,7 +85,7 @@ struct vport *new_vport(const char *name, uint16_t num_inc_q,
   uint16_t pool_size = (num_inc_q + num_out_q) * 3 / 2 + 64;
   if (pool_size < num_inc_q + num_out_q)
     return NULL;
-  return _new_vport(name, num_inc_q, num_out_q, SLOTS_PER_LLRING, pool_size);
+  return _new_vport(name, num_inc_q, num_out_q, pool_size, SLOTS_PER_LLRING);
 }
 
 struct vport *_new_vport(const char *name, uint16_t num_inc_q,
@@ -145,12 +146,15 @@ struct vport *_new_vport(const char *name, uint16_t num_inc_q,
   // Initialize queue handlers
   for (dir = 0; dir < 2; dir++) {
     for (i = 0; i < num_queues[dir]; i++) {
-      printf("dir: %d qid: %d\n", dir, i);
+      // printf("dir: %d qid: %d\n", dir, i);
       q_handler = &bar->queues[dir][i];
 
       // Assign a llring segment to this queue
       seg = pull_llr(bar->pool);
+
       assert(seg != NULL);
+      // assert(llring_free_count(&seg->ring) > 0);
+
       INIT_LIST_HEAD(&seg->list);
       q_handler->reader_head = seg;
       q_handler->writer_head = seg;
@@ -256,7 +260,7 @@ send_pkts:
   ret &= 0x7fffffff;
   enqueued += ret;
   q->enqueue_pkts += ret;
-  if (ret < cnt) {
+  if (ret < cnt && seg->list.next != &seg->list) {
     // Check if next segment is ready for the remaining packets
     seg = list_entry(seg->list.next, struct llr_seg, list);
     if (llring_count(&seg->ring) == 0) {
@@ -381,8 +385,8 @@ read_pkts:
     // printf("main: %d qid: %d pps: %ld\n", port->_main, qid, rate->pps);
     // printf("main: %d qid: %d size: %d\n",
     //     port->_main, qid, llring_count(&read_seg->ring));
-    printf("main: %d qid: %d empty: %ld cycles: %ld\n",
-        port->_main, qid, q->count_empty, q->empty_cycles);
+    // printf("main: %d qid: %d empty: %ld cycles: %ld\n",
+    //     port->_main, qid, q->count_empty, q->empty_cycles);
     q->count_empty = 0;
     q->empty_cycles = 0;
   }

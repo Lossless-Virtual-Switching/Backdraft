@@ -1,25 +1,11 @@
 #ifndef _VPORT_H
 #define _VPORT_H
 #include <stdint.h>
-#include "list.h"
 #include "llring_pool.h"
 
-// #define MAX_QUEUES_PER_DIR 16384
-#define MAX_QUEUES_PER_DIR 10000
-
-#define SLOTS_PER_LLRING 1024
-#define SLOTS_WATERMARK ((SLOTS_PER_LLRING >> 3) * 7) /* 87.5% */
-
-#define SINGLE_PRODUCER 1
-#define SINGLE_CONSUMER 1
-
 #define PORT_NAME_LEN 128
-#define VPORT_DIR_PREFIX "vports"
-#define PORT_DIR_LEN PORT_NAME_LEN + 256
-#define TMP_DIR "/tmp"
 
 #define RATE_SEQUENCE_SIZE 4
-#define RATE_INIT_VALUE 20000000
 struct rate {
   uint64_t pps;
   uint64_t last_ts;

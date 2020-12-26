@@ -2,7 +2,7 @@
 #define _LLRING_POOL_H
 #include <rte_stack.h>
 #include "llring.h"
-#include "list.h"
+#include "list_types.h"
 
 struct llr_seg {
   struct list_head list;

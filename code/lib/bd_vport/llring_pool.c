@@ -9,6 +9,11 @@
 struct llring_pool *new_llr_pool(const char *name, int socket_id,
                                  uint32_t num_llr, uint16_t count_slots)
 {
+  // Precondition: count_slots should be power of 2
+  assert((count_slots & (count_slots-1)) == 0);
+  // Precondition: name can not be null
+  assert(name != NULL);
+
   uint64_t bytes_per_llr_seg;
   uint64_t llring_region_memory;
   uint64_t size_pool_struct;
@@ -48,8 +53,19 @@ struct llring_pool *new_llr_pool(const char *name, int socket_id,
   for (i = 0; i < num_llr; i++) {
     seg = ptr;
     llr = &seg->ring;
-    llring_init(llr, count_slots, SINGLE_PRODUCER, SINGLE_CONSUMER);
+    rc = llring_init(llr, count_slots, SINGLE_PRODUCER, SINGLE_CONSUMER);
+
+    if (unlikely(rc != 0)) {
+      fprintf(stderr, "initializing llring failed\n");
+      free_llr_pool(pool);
+      return NULL;
+    }
+
     llring_set_water_mark(llr, water_mark);
+
+    // TESTING
+    assert(llring_free_count(llr) > 0);
+
     rc = rte_stack_push(pool->ptr_stack, (void **)&seg, 1);
     assert(rc == 1);
     ptr += bytes_per_llr_seg;
