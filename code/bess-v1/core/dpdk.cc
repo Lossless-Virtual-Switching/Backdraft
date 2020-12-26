@@ -102,12 +102,12 @@ void init_eal(int dpdk_mb_per_socket,
     __attribute__((unused)) std::string nonworker_corelist) {
   CmdLineOpts rte_args{
       "bessd",
-      "--master-lcore",
-      std::to_string(RTE_MAX_LCORE - 1),
+      // "--master-lcore",
+      // std::to_string(RTE_MAX_LCORE - 1),
       "--lcore",
       std::to_string(RTE_MAX_LCORE - 1) + "@" + nonworker_corelist,
-      // "--file-prefix", "bessd-dpdk-prefix",
-      // "--proc-type", "primary",
+      "--file-prefix", "bessd-dpdk-prefix",
+      "--proc-type", "primary",
   };
 
       // Do not bother with /var/run/.rte_config and .rte_hugepage_info,
@@ -131,7 +131,7 @@ void init_eal(int dpdk_mb_per_socket,
 
     // Unlink mapped hugepage files so that memory can be reclaimed as soon as
     // bessd terminates.
-    rte_args.Append({"--huge-unlink"});
+    // rte_args.Append({"--huge-unlink"});
   }
 
   // reset getopt()
@@ -153,10 +153,11 @@ void init_eal(int dpdk_mb_per_socket,
 
   disable_syslog();
 
-  LOG(INFO) << "DPDK Init: \n";
-  for (int i = 0; i < rte_args.Argc(); i++) {
-    LOG(INFO) << std::string(rte_args.Argv()[i]) << "\n";
-  }
+  // // Log DPDK EAL parameters:
+  // LOG(INFO) << "DPDK Init: \n";
+  // for (int i = 0; i < rte_args.Argc(); i++) {
+  //   LOG(INFO) << std::string(rte_args.Argv()[i]) << "\n";
+  // }
 
   int ret = rte_eal_init(rte_args.Argc(), rte_args.Argv());
   if (ret < 0) {

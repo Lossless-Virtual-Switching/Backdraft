@@ -125,12 +125,6 @@ CommandResponse BKDRFTQueueOut::Init(const bess::pb::BKDRFTQueueOutArg &arg) {
 
   per_flow_buffering_ = arg.per_flow_buffering();
 
-  ecn_threshold_ = 20 * 32;
-  if (arg.ecn_threshold())
-    ecn_threshold_ = arg.ecn_threshold();
-	LOG(INFO) << "name: " << name_
-		<<  "ECN Threshold: " << ecn_threshold_ << "\n";
-
   count_packets_in_buffer_ = 0;
   bytes_in_buffer_ = 0;
   pause_call_total = 0;
@@ -142,7 +136,10 @@ CommandResponse BKDRFTQueueOut::Init(const bess::pb::BKDRFTQueueOutArg &arg) {
   if (name_.length() < 1) {
     name_ = "unnamed";
   }
-  LOG(INFO) << "name: " << name_ << "\n";
+
+  ecn_threshold_ = 20 * 32;
+  if (arg.ecn_threshold())
+    ecn_threshold_ = arg.ecn_threshold();
 
   for (i = 0; i < MAX_QUEUES_PER_DIR; i++) {
     q_info_[i] = {
@@ -154,11 +151,13 @@ CommandResponse BKDRFTQueueOut::Init(const bess::pb::BKDRFTQueueOutArg &arg) {
   for (i = 0; i < MAX_QUEUES_PER_DIR; i++)
     failed_ctrl_packets[i] = 0;
 
-  LOG(INFO) << "BKDRFTQueueOut: name: " << name_
-            << " pfq: " << per_flow_buffering_ << " cdq: " << cdq_
-            << " buffering: " << buffering_ << " bp: " << backpressure_ << "\n";
-  LOG(INFO) << "name: " << name_ << " doorbell queue id: "
-            << doorbell_queue_number_ << "\n";
+  LOG(INFO) << "name: " << name_
+            << " pfq: " << per_flow_buffering_
+            << " cdq: " << cdq_
+            << " buffering: " << buffering_
+            << " bp: " << backpressure_
+            << " ecn threshold: " << ecn_threshold_
+            << " doorbell queue id: " << doorbell_queue_number_ << "\n";
 
   ret = SetupFlowControlBlockPool();
   if (ret != 0)
@@ -312,7 +311,7 @@ void BKDRFTQueueOut::BufferBatch(__attribute__((unused)) Flow *flow,
     Port *p = port_;
 
     // TODO: qid in the following stats is not correct
-		// (we are not using per queue stats)
+    // (we are not using per queue stats)
     if (!(p->GetFlags() & DRIVER_FLAG_SELF_OUT_STATS)) {
       const packet_dir_t dir = PACKET_DIR_OUT;
       p->queue_stats[dir][0].packets += 0;
@@ -322,12 +321,12 @@ void BKDRFTQueueOut::BufferBatch(__attribute__((unused)) Flow *flow,
     }
   }
 
-	// ECN Mark packets
-	if (fstate->buffer->pkts >= ecn_threshold_) {
-		for (uint32_t i = 0; i < count_enqueue; i++) {
-			ecnMark(pkts[i]);
-		}
-	}
+  // ECN Mark packets
+  if (fstate->buffer->pkts >= ecn_threshold_) {
+    for (uint32_t i = 0; i < count_enqueue; i++) {
+      ecnMark(pkts[i]);
+    }
+  }
 
   count_packets_in_buffer_ += remaining_pkts;
   bytes_in_buffer_ += remaining_bytes;
@@ -685,9 +684,9 @@ inline void BKDRFTQueueOut::Pause(Context *cntx, const Flow &flow,
   pause_call_total += 1;
 
   // if (log_)
-	LOG(INFO) << "name: " << name_ << " pause qid: " << (int)qid << " pause duration: "
-		<< duration << " until: " << ts
-		<< " pps: " << pps << "\n  flow: " << FlowToString(flow) << "\n";
+  LOG(INFO) << "name: " << name_ << " pause qid: " << (int)qid << " pause duration: "
+    << duration << " until: " << ts
+    << " pps: " << pps << "\n  flow: " << FlowToString(flow) << "\n";
 }
 
 void BKDRFTQueueOut::ProcessBatchWithBuffer(Context *cntx,
@@ -951,18 +950,18 @@ void BKDRFTQueueOut::DeallocateFlowState(__attribute__((unused)) Context *cntx,
   LOG(INFO) << "Deallocate Fow State\n";
 
   struct flow_state *fstate = entry->second;
-	uint32_t prio = fstate->prio;
+  uint32_t prio = fstate->prio;
 
-	bool prio_found = false;
-	for (int i = 0; i < prio_queue_len_[prio]; i++) {
-		if (prio_found) {
-			prio_queue_[prio][i - 1] = prio_queue_[prio][i];
-		} else if (prio_queue_[prio][i] == prio) {
-			prio_found = true;
-		}
-	}
-	if (prio_found)
-		prio_queue_len_[prio]--;
+  bool prio_found = false;
+  for (int i = 0; i < prio_queue_len_[prio]; i++) {
+    if (prio_found) {
+      prio_queue_[prio][i - 1] = prio_queue_[prio][i];
+    } else if (prio_queue_[prio][i] == prio) {
+      prio_found = true;
+    }
+  }
+  if (prio_found)
+    prio_queue_len_[prio]--;
 
   if (per_flow_buffering_) {
     // fstate->buffer->clear();
