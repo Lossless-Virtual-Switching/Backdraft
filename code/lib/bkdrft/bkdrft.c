@@ -189,9 +189,9 @@ int poll_ctrl_queue_expose_qid(const int port, const int ctrl_qid,
   struct rte_mbuf *buf;
   uint16_t dqid;
   uint32_t dq_burst;
-  uint8_t *msg;
+  uint8_t *msg = NULL;
   char msg_type;
-  size_t size;
+  // size_t size;
   int i;
   int queue_found;
 
@@ -214,7 +214,8 @@ poll_doorbell:
 
     for (i = 0; i < nb_ctrl_rx; i++) {
       buf = ctrl_rx_bufs[i];
-      size = get_payload(buf, (void **)(&msg));
+      // size = get_payload(buf, (void **)(&msg));
+      get_payload(buf, (void **)(&msg));
       if (unlikely(msg == NULL)) {
         printf("bkdrft.c: payload is null\n");
         // assume it was a corrupt packet

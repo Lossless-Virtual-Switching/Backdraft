@@ -5,6 +5,7 @@
 #include "packet.h"
 #include "bkdrft_msg.pb-c.h"
 // libbd_vport.a
+#include "vport_const.h"
 #include "vport.h"
 // include directory
 #include "exp.h"

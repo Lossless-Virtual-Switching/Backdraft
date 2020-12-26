@@ -13,6 +13,7 @@
 #include "bkdrft_const.h"
 #include "bkdrft_vport.h"
 #include "vport.h"
+// #include "llring.h"
 #include "exp.h"
 #include "percentile.h"
 #include "arp.h"
@@ -43,6 +44,18 @@ int do_client(void *_cntx) {
   port_type_t port_type = cntx->ptype;
   int dpdk_port = cntx->dpdk_port_id;
   struct vport *virt_port = cntx->virt_port;
+
+  // Testing BD_VPORT:
+  // assert(virt_port->bar != NULL);
+  // assert(virt_port->bar->pool != NULL);
+  // assert(virt_port->bar->queues[1][0].writer_head != NULL);
+  // printf("port name %s (%d, %d)\n", virt_port->bar->name, virt_port->bar->num_inc_q, virt_port->bar->num_out_q);
+  // printf("%x:%x:%x:%x:%x:%x\n",
+  //   virt_port->mac_addr[0],virt_port->mac_addr[1],virt_port->mac_addr[2],
+  //   virt_port->mac_addr[3],virt_port->mac_addr[4],virt_port->mac_addr[5]);
+  // printf("llsize %d\n", llring_free_count(&virt_port->bar->queues[1][0].writer_head->ring));
+  // assert(llring_free_count(&virt_port->bar->queues[1][0].writer_head->ring) > 0);
+
   uint16_t qid = cntx->default_qid;
   uint16_t count_queues = cntx->count_queues;
   struct rte_mempool *tx_mem_pool = cntx->tx_mem_pool;
@@ -56,6 +69,7 @@ int do_client(void *_cntx) {
   unsigned int dst_port; // = cntx->dst_port;
   int payload_length = cntx->payload_length;
   FILE *fp = cntx->fp;
+  // FILE *fp = stdout;
   uint32_t count_flow = cntx->count_flow;
   uint32_t base_port_number = cntx->base_port_number;
   uint8_t use_vlan = cntx->use_vlan;
@@ -368,6 +382,7 @@ int do_client(void *_cntx) {
 
       /* send packets */
       if (port_type == dpdk) {
+        // TODO (farbod): send_pkt + cdq flag , does not need branch
         if (system_mode == system_bess) {
           nb_tx = send_pkt(dpdk_port, selected_q, bufs, burst, 0,
                            ctrl_mem_pool);
@@ -381,6 +396,8 @@ int do_client(void *_cntx) {
         int cdq = system_mode == system_bkdrft;
         nb_tx = vport_send_pkt(virt_port, selected_q, bufs, burst, cdq,
                                BKDRFT_CTRL_QUEUE, ctrl_mem_pool);
+        // if (nb_tx > 0)
+        //   printf("client send packest: %d\n", nb_tx);
       }
 
       if (likely(end_time > start_time + ignore_result_duration * hz)) {

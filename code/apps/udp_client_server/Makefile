@@ -34,7 +34,8 @@ LDFLAGS = -L$(DPDK_LIB_DIR) -Wl,-rpath=$(DPDK_LIB_DIR) \
 
 #  -lgflags
 # $(warning "Warning: mellanox is not active")
-MELLANOX = -lmlx5 -lmlx4 -libverbs
+# TODO: use `ldconfig -v -N | grep mlx5` for checking if library exists
+MELLANOX = # -lmlx5 -lmlx4 -libverbs
 LIBS = -Wl,-non_shared \
        -Wl,--whole-archive -l$(DPDK_LIB) -Wl,--no-whole-archive \
        -Wl,-call_shared \
@@ -68,7 +69,7 @@ $(APP): $(OBJS)
 	$(CC) -o $(CURRENT_DIR)/build/$@ $^ $(LDFLAGS) $(LIBS)
 
 clean:
-	rm $(APP) *.o utils/*.o
+	rm *.o utils/*.o build/$(APP)
 
 .PHONY: clean
 

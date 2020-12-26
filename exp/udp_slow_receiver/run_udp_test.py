@@ -14,7 +14,7 @@ from bkdrft_common import *
 
 # For debuging
 # print applications output directly into the stdout
-DIRECT_OUTPUT = False
+DIRECT_OUTPUT = True
 
 if DIRECT_OUTPUT:
     print('=' * 32)
@@ -24,7 +24,17 @@ if DIRECT_OUTPUT:
 # Select the port type
 PMD = 0
 VPORT = 1
-PORT_TYPE = PMD
+PORT_TYPE = VPORT
+
+def port_type_name(port_type):
+    if port_type == VPORT:
+        return 'BD_Vport'
+    elif port_type == PMD:
+        return 'PMD Port'
+    else:
+        return 'Unknown'
+
+print('\nPort type is {}\n'.format(port_type_name(PORT_TYPE)))
 
 cur_script_dir = os.path.dirname(os.path.abspath(__file__))
 # TODO: use json config file instead of genrating .bess pipeline files
@@ -34,7 +44,8 @@ if PORT_TYPE == VPORT:
 else:
     pipeline_config_temp = os.path.join(cur_script_dir,
             'pmd_port_pipeline.txt')
-    pipeline_config_file = os.path.join(cur_script_dir, 'slow_receiver.bess')
+
+pipeline_config_file = os.path.join(cur_script_dir, 'slow_receiver.bess')
 slow_receiver_exp = os.path.abspath(os.path.join(cur_script_dir,
     '../../code/apps/udp_client_server/build/udp_app'))
 
@@ -106,7 +117,7 @@ def run_server(instance):
                 'bidi={bidi} vport={vdev} {source_ip} {count_queue} '
                 '{sysmod} {mode} {delay}').format(**args)
 
-        print("=" * 32)
+    print("=" * 32)
     print(" " * 13 + "server")
     print(cmd)
     print("=" * 32, end='\n\n')

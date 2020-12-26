@@ -11,7 +11,7 @@
  * */
 int prepare_packet(struct rte_mbuf *buf, unsigned char *payload,
                     struct rte_mbuf *sample_pkt, size_t size) {
-  char *buf_ptr;
+  // char *buf_ptr;
   struct rte_ether_hdr *eth_hdr;
   struct rte_ipv4_hdr *ipv4_hdr;
   struct rte_udp_hdr *udp_hdr;

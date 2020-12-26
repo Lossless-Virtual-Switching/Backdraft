@@ -134,9 +134,6 @@ def bkdrft_pipeline():
         backpressure=BP, lossless=LOSSLESS, cdq=COMMAND_Q, per_flow_buffering=PFQ,
         ecn_threshold=ECNT, overlay=False, mname='client3')
 
-    # client_qout0 = QueueOut(port=host1.name, qid=0)
-    # client_qout1 = QueueOut(port=host1.name, qid=1)
-
     server1_qout::BKDRFTQueueOut(port=host0.name, qid=queue_ids,
         backpressure=BP, lossless=LOSSLESS, cdq=COMMAND_Q, per_flow_buffering=PFQ,
         ecn_threshold=ECNT, overlay=False, mname='server1')
@@ -175,11 +172,11 @@ def bkdrft_pipeline():
         server2_qin = BKDRFTQueueInc(port=host2,
             qid=queue_ids, backpressure=BP, cdq=COMMAND_Q, overlay=False)
 
-        client_qin  -> router         # q1
-        client2_qin -> router         # q1
-        client3_qin -> router         # q1
-        server1_qin -> receive_side_x # q2
-        server2_qin -> receive_side_x # q2
+        client_qin  -> router
+        client2_qin -> router
+        client3_qin -> router
+        server1_qin -> receive_side_x
+        server2_qin -> receive_side_x
 
         client_qin.attach_task(wid=next_wid())
         client2_qin.attach_task(wid=next_wid())

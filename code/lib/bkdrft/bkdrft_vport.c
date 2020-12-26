@@ -1,4 +1,5 @@
 #include <assert.h>
+#include "vport_const.h"
 #include "bkdrft_vport.h"
 #include "bkdrft_const.h"
 #include "bkdrft_msg.pb-c.h" /* bkdrft message protobuf */
