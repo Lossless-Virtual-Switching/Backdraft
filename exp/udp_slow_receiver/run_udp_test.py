@@ -14,17 +14,21 @@ from bkdrft_common import *
 
 # For debuging
 # print applications output directly into the stdout
-DIRECT_OUTPUT = True
+DIRECT_OUTPUT = False
 
-if DIRECT_OUTPUT:
-    print('=' * 32)
-    print(' ' * 5, 'direct output is ON')
-    print('=' * 32)
 
 # Select the port type
 PMD = 0
 VPORT = 1
+# This is overwritten when parsing args
 PORT_TYPE = VPORT
+
+
+cur_script_dir = os.path.dirname(os.path.abspath(__file__))
+pipeline_config_file = os.path.join(cur_script_dir, 'slow_receiver.bess')
+slow_receiver_exp = os.path.abspath(os.path.join(cur_script_dir,
+    '../../code/apps/udp_client_server/build/udp_app'))
+
 
 def port_type_name(port_type):
     if port_type == VPORT:
@@ -33,21 +37,6 @@ def port_type_name(port_type):
         return 'PMD Port'
     else:
         return 'Unknown'
-
-print('\nPort type is {}\n'.format(port_type_name(PORT_TYPE)))
-
-cur_script_dir = os.path.dirname(os.path.abspath(__file__))
-# TODO: use json config file instead of genrating .bess pipeline files
-if PORT_TYPE == VPORT:
-    pipeline_config_temp = os.path.join(cur_script_dir,
-            'vport_pipeline.txt')
-else:
-    pipeline_config_temp = os.path.join(cur_script_dir,
-            'pmd_port_pipeline.txt')
-
-pipeline_config_file = os.path.join(cur_script_dir, 'slow_receiver.bess')
-slow_receiver_exp = os.path.abspath(os.path.join(cur_script_dir,
-    '../../code/apps/udp_client_server/build/udp_app'))
 
 
 def update_config():
@@ -85,7 +74,7 @@ def run_server(instance):
     """
         Start a server process
     """
-    cpu = ['18', '4'][instance]  # on which cpu
+    cpu = ['9', '10'][instance]  # on which cpu
     server_delay = [0, slow][instance]
     args = {
             'bin': slow_receiver_exp,
@@ -135,7 +124,7 @@ def run_client(instance):
         Start a client process
     """
     port = [1008, 8989, 9002][instance]
-    cpu = ['(12,14)', '(10,12)', '(6,8)'][instance]
+    cpu = ['(3,4)', '(5,6)', '(7,8)'][instance]
     # TODO: the following line is an example of code that is not suitable!
     # should switch to run_udp_app instead of this function
     ips = [[_server_ips[1], _server_ips[0]],
@@ -251,7 +240,8 @@ def main():
         # Only run bess config
         return 0
 
-    count_client = 1
+    count_client = 2
+    print ('Number of active clientes: ', count_client)
     clients = []
 
     # Run server
@@ -297,30 +287,15 @@ def main():
         print('+++++++++++++++++++')
 
     print('----- switch stats -----')
-    print('server1\n')
-    p = bessctl_do('show port ex_vhost0', stdout=subprocess.PIPE)
-    txt = p.stdout.decode()
-    print(txt)
-
-    print('server2\n')
-    p = bessctl_do('show port ex_vhost2', stdout=subprocess.PIPE)
-    txt = p.stdout.decode()
-    print(txt)
-
-    print('client\n')
-    p = bessctl_do('show port ex_vhost1', stdout=subprocess.PIPE)
-    txt = p.stdout.decode()
-    print(txt)
-
-    print('client2\n')
-    p = bessctl_do('show port ex_vhost3', stdout=subprocess.PIPE)
-    txt = p.stdout.decode()
-    print(txt)
-
-    print('client3\n')
-    p = bessctl_do('show port ex_vhost4', stdout=subprocess.PIPE)
-    txt = p.stdout.decode()
-    print(txt)
+    tmp_names = (('server1', 'ex_vhost0'),('server2', 'ex_vhost2'),
+            ('client1', 'ex_vhost1'), ('client2', 'ex_vhost3'),
+            ('client3', 'ex_vhost4'))
+    for name, port in tmp_names:
+        print(name)
+        cmd = 'show port {}'.format(port)
+        p = bessctl_do(cmd, stdout=subprocess.PIPE)
+        txt = p.stdout.decode()
+        print(txt)
 
     # bessctl_do('command module client_qout0 get_pause_calls EmptyArg {}')
     FNULL = open(os.devnull, 'w') # pipe output to null
@@ -354,6 +329,8 @@ if __name__ == '__main__':
     parser.add_argument('--duration', type=int, default=10,
             help='experiment duration')
     parser.add_argument('--bessonly', action='store_true', default=False)
+    parser.add_argument('--port_type', choices=('pmd', 'bdvport'),
+        default='bdvport', help='type of port used in pipeline configuration')
 
     args = parser.parse_args()
     count_queue = args.count_queue
@@ -366,6 +343,27 @@ if __name__ == '__main__':
     pfq = args.pfq
     lossless = args.buffering
     duration = args.duration
+
+    if DIRECT_OUTPUT:
+        print('=' * 32)
+        print(' ' * 5, 'direct output is ON')
+        print('=' * 32)
+
+    if args.port_type == 'pmd':
+        print('Port type: PMD')
+        PORT_TYPE = PMD
+    else:
+        print('Port type: BDVPort')
+        PORT_TYPE = VPORT
+
+    # Point to the relevant pipeline configuration based on port type
+    # TODO: use json config file instead of genrating .bess pipeline files
+    if PORT_TYPE == VPORT:
+        pipeline_config_temp = os.path.join(cur_script_dir,
+                                            'vport_pipeline.txt')
+    else:
+        pipeline_config_temp = os.path.join(cur_script_dir,
+                                            'pmd_port_pipeline.txt')
 
     # TODO: having const ips does not scale
     _server_ips = ['10.10.1.3', '10.10.1.4']
