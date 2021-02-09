@@ -179,6 +179,7 @@ def run_udp_app(config):
     * ip
     * count queue
     * system mode (bess, bkdrft)
+    * bidi
     * --- server ---
     * delay
     * ---- client ---

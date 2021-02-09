@@ -11,7 +11,7 @@ def get_mac_address():
     #/sys/class/uio/uio0/device
     print(123)
 
-    config = json.load(open(".pipeline_config.json", "r"))
+    config = json.load(open("pipeline_config.json", "r"))
     cmd = 'cat /sys/class/net/{}/address'.format(config["interface"])
     res = subprocess.run(cmd, shell=True, stdout=subprocess.PIPE)
     if res.returncode == 0:
@@ -23,7 +23,7 @@ def get_mac_address():
 
 
 def get_hostname():
-    cmd = 'cat /etc/hostname'
+    cmd = 'hostname'
     res = subprocess.run(cmd, shell=True, stdout=subprocess.PIPE)
     if res.returncode == 0:
         name = res.stdout.decode().strip()

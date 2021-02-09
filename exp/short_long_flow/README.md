@@ -2,7 +2,7 @@
 For running experiment you can run `setup_node.py`. This scrip reads the
 cluster config file (e.g. file is cluster\_config.yml) and runs some
 containers and connect them to BESS pipeline. The path to the cluster config
-file along other critical values should be provided in `.pipeline_config.json`.
+file along other critical values should be provided in `pipeline_config.json`.
 
 # Configuration
 For running this experiment two configuration files are need.

@@ -4,7 +4,7 @@
   "count_queue": 8,
   "queue_size": 1024,
   "bp": false,
-  "cdq": true,
+  "cdq": false,
   "pfq": false,
   "overlay": false,
   "buffering": false,

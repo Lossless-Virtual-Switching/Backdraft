@@ -1,6 +1,7 @@
 node1:
   ip: "192.168.1.1"
-  mac: "98:f2:b3:cc:12:91"
+  mac: "9c:dc:71:4a:4c:b1"
+  hostname: "node1.dellsw2pcs.uic-dcs-pg0.utah.cloudlab.us"
   instances:
     - port: 1001
       ip: "192.168.1.11"
@@ -13,7 +14,8 @@ node1:
         - node2_0
 node2:
   ip: "192.168.1.2"
-  mac: "98:f2:b3:cb:54:f1" 
+  mac: "9c:dc:71:4a:cc:81"
+  hostname: "node2.dellsw2pcs.uic-dcs-pg0.utah.cloudlab.us"
   instances:
     - port: 2001
       ip: "192.168.1.21"

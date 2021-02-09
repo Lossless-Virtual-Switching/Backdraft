@@ -10,7 +10,7 @@ import json
 
 
 # pipeline config
-config = json.load(open('.pipeline_config.json'))
+config = json.load(open('pipeline_config.json'))
 
 out_pci = config['pci']
 count_queue = config['count_queue']

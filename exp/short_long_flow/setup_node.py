@@ -61,6 +61,7 @@ def setup_container(node_name: str, instance_number: int, config: dict):
     node-name:
       ip: ... (required)
       mac: ... (required)
+      hostname: ... (required)
       instances:
         - port: ... (required)
           type: client
@@ -275,7 +276,7 @@ def run_app(config, app=None):
         p = run_udp_app(config)
         p.wait()
         print(p.stdout.read().decode())
-        # print(p.stderr.read().decode())
+        print(p.stderr.read().decode())
     elif app == 'memcached':
         spin_up_memcached(config)
     elif app == 'shuffle':
@@ -334,7 +335,7 @@ if __name__ == '__main__':
 
 
     # read pipeline config
-    with open('.pipeline_config.json', 'r') as pipeline_config_file:
+    with open('pipeline_config.json', 'r') as pipeline_config_file:
         pipeline_config = json.load(pipeline_config_file)
     print('pipeline config:')
     pprint(pipeline_config)

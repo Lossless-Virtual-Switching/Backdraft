@@ -21,7 +21,7 @@ The measured values should be gathered by this script and reported.
 if __name__ == '__main__':
     pfc = False
 
-    with open('.pipeline_config.json', 'r') as f:
+    with open('pipeline_config.json', 'r') as f:
         pipeline_config = json.load(f)
 
     interface = pipeline_config['interface']
@@ -40,8 +40,10 @@ if __name__ == '__main__':
     output_file  = os.path.join(result_path, node_name)
     logger = Logger(open(output_file, 'w'))
 
+    FNULL = open(os.devnull, 'w')  # pipe output to null
     # make sure every thing is stopped
-    subprocess.check_call('./setup_node.py -kill', shell=True, cwd=here)
+    subprocess.check_call('./setup_node.py -kill', shell=True, cwd=here,
+            stdout=FNULL)
 
     # setup node
     subprocess.check_call('./setup_node.py', shell=True, cwd=here)
@@ -120,5 +122,6 @@ if __name__ == '__main__':
 
     # ===========================================
     # stop
-    subprocess.check_call('./setup_node.py -kill', shell=True, cwd=here)
+    subprocess.check_call('./setup_node.py -kill', shell=True, cwd=here,
+            stdout=FNULL)
 
