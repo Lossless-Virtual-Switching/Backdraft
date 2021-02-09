@@ -2,6 +2,12 @@ import os
 import subprocess
 
 
+def _log_cmd(cmd):
+    print('=' * 40)
+    print(cmd)
+    print('=' * 40)
+
+
 def spin_up_tas(conf):
     """
     Spinup Tas Container
@@ -51,8 +57,8 @@ def spin_up_tas(conf):
             '{message_per_sec} {message_size} {flow_num_msg} {count_threads}'
             ).format(
         tas_script=tas_spinup_script, count_ips=count_ips, _ips=_ips, **conf)
-    # print(cmd)
-    return subprocess.run(cmd, shell=True, stdout=subprocess.PIPE)
+    _log_cmd(cmd)
+    return subprocess.check_call(cmd, shell=True, stdout=subprocess.PIPE)
 
 
 def spin_up_unidir(conf):
@@ -71,8 +77,8 @@ def spin_up_unidir(conf):
     else:
         raise Exception('Container miss configuration: '
                         'expecting type to be client or server')
-    # print(cmd)
-    return subprocess.run(cmd, shell=True, stdout=subprocess.PIPE)
+    _log_cmd(cmd)
+    return subprocess.check_call(cmd, shell=True, stdout=subprocess.PIPE)
 
 
 def spin_up_memcached(conf):
@@ -92,8 +98,8 @@ def spin_up_memcached(conf):
     else:
         raise Exception('Container miss configuration: '
                         'expecting type to be client or server')
-    # print(cmd)
-    return subprocess.run(cmd, shell=True, stdout=subprocess.PIPE)
+    _log_cmd(cmd)
+    return subprocess.check_call(cmd, shell=True, stdout=subprocess.PIPE)
 
 
 def spin_up_memcached_shuffle(conf):
@@ -113,8 +119,8 @@ def spin_up_memcached_shuffle(conf):
     else:
         raise Exception('Container miss configuration: '
                         'expecting type to be client or server')
-    # print(cmd)
-    return subprocess.run(cmd, shell=True, stdout=subprocess.PIPE)
+    _log_cmd(cmd)
+    return subprocess.check_call(cmd, shell=True, stdout=subprocess.PIPE)
 
 
 def spin_up_shuffle(conf):
@@ -155,8 +161,8 @@ def spin_up_shuffle(conf):
     else:
         raise Exception('Container miss configuration: '
                         'expecting type to be client or server')
-    # print(cmd)
-    return subprocess.run(cmd, shell=True, stdout=subprocess.PIPE)
+    _log_cmd(cmd)
+    return subprocess.check_call(cmd, shell=True, stdout=subprocess.PIPE)
 
 
 def run_udp_app(config):
@@ -234,7 +240,7 @@ def run_udp_app(config):
     FNULL = open(os.devnull, 'w') # pipe output to null
     FNULL = None
     FNULL = subprocess.PIPE
-    print(cmd)
+    _log_cmd(cmd)
     proc = subprocess.Popen(cmd, shell=True, close_fds=True,
                             stdout=FNULL, stderr=subprocess.STDOUT)
     return proc
@@ -277,7 +283,7 @@ def run_dummy_app(config):
 
     FNULL = open(os.devnull, 'w')  # pipe output to null
     FNULL = None
-    print(cmd)
+    _log_cmd(cmd)
     proc = subprocess.Popen(cmd, shell=True, close_fds=True,
                             stdout=FNULL, stderr=subprocess.STDOUT)
     return proc

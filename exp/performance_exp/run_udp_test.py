@@ -23,16 +23,10 @@ if DIRECT_OUTPUT:
 # Select the port type
 PMD = 0
 VPORT = 1
+# This is overwritten when parsing args
 PORT_TYPE = PMD
 
 cur_script_dir = os.path.dirname(os.path.abspath(__file__))
-# TODO: use json config file instead of genrating .bess pipeline files
-if PORT_TYPE == VPORT:
-    pipeline_config_temp = os.path.join(cur_script_dir,
-                                        'vport_pipeline.txt')
-else:
-    pipeline_config_temp = os.path.join(cur_script_dir,
-                                        'pmd_port_pipeline.txt')
 pipeline_config_file = os.path.join(cur_script_dir, 'exp_config.bess')
 slow_receiver_exp = os.path.abspath(os.path.join(cur_script_dir,
         '../../code/apps/udp_client_server/build/udp_app'))
@@ -73,7 +67,7 @@ def run_server(instance):
     """
         Start a server process
     """
-    cpu = ['9', '22'][instance]  # on which cpu
+    cpu = ['2', '3'][instance]  # on which cpu
     server_delay = [0, slow][instance]
     args = {
             'bin': slow_receiver_exp,
@@ -123,13 +117,12 @@ def run_client(instance):
         Start a client process
     """
     port = [1008, 8989, 9002][instance]
-    cpu = ['(10-11)', '(30-31)', '(4-5)'][instance]
+    cpu = ['(4-5)', '(6-7)', '(8-9)'][instance]
     # TODO: the following line is an example of code that is not suitable!
     # should switch to run_udp_app instead of this function
     ips = [[_server_ips[0], ],  # latency server ip
            [_server_ips[1]],
            [_server_ips[1]]][instance]
-    mpps = 1000 * 1000
     rate = [1000, 1500000, -1][instance]
     _ips = ' '.join(ips)
     _cnt_flow = [1, count_flow, count_flow][instance]
@@ -208,7 +201,10 @@ def print_pps_from_info_log():
 def main():
     """
     About experiment:
-        BKDRFT UDP Testbed
+      memcached
+      tas_rpc
+      UDP
+      UDP Background
     """
 
     memcached_config = [{
@@ -217,7 +213,7 @@ def main():
         'name': 'tas_mem_server_1',
         'type': 'server',
         'image': 'tas_memcached',
-        'cpu': '14,15,16',
+        'cpu': '10,11,12',
         'socket': '/tmp/tas_mem_server_1.sock',
         'ip': '10.10.1.4',
         'prefix': 'tas_mem_server_1',
@@ -235,7 +231,7 @@ def main():
             'name': 'tas_mem_client_1',
             'type': 'client',
             'image': 'tas_memcached',
-            'cpu': '17,18,19',
+            'cpu': '13,14,15',
             'socket': '/tmp/tas_mem_client_1.sock',
             'ip': '172.20.1.2',
             'prefix': 'tas_mem_client_1',
@@ -259,7 +255,7 @@ def main():
                 'name': 'rpc_server_1',
                 'type': 'server',
                 'image': 'tas_container',
-                'cpu': '6,7,8',
+                'cpu': '16,17,18',
                 'socket': '/tmp/rpc_server_1.sock',
                 'ip': '10.10.1.6',
                 'prefix': 'rpc_server_1',
@@ -271,7 +267,7 @@ def main():
                     'name': 'rpc_client_1',
                     'type': 'client',
                     'image': 'tas_container',
-                    'cpu': '23,24,25',
+                    'cpu': '19,1,8',
                     'socket': '/tmp/rpc_client_1.sock',
                     'ip': '172.40.1.2',
                     'prefix': 'rpc_client_1',
@@ -470,6 +466,8 @@ if __name__ == '__main__':
     parser.add_argument('--duration', type=int, default=10,
       help='experiment duration')
     parser.add_argument('--bessonly', action='store_true', default=False)
+    parser.add_argument('--port_type', choices=('pmd', 'bdvport'),
+      default='pmd', help='type of port used in pipeline configuration')
 
     args = parser.parse_args()
     count_queue = args.count_queue
@@ -482,6 +480,22 @@ if __name__ == '__main__':
     pfq = args.pfq
     buffering = args.buffering
     duration = args.duration
+
+    if args.port_type == 'pmd':
+        print('Port type: PMD')
+        PORT_TYPE = PMD
+    else:
+        print('Port type: BDVPort')
+        PORT_TYPE = VPORT
+
+    # Point to the relevant pipeline configuration based on port type
+    # TODO: use json config file instead of genrating .bess pipeline files
+    if PORT_TYPE == VPORT:
+        pipeline_config_temp = os.path.join(cur_script_dir,
+                                            'vport_pipeline.txt')
+    else:
+        pipeline_config_temp = os.path.join(cur_script_dir,
+                                            'pmd_port_pipeline.txt')
 
     # TODO: having const ips does not scale
     _server_ips = ['10.10.1.3', '10.10.1.5']
