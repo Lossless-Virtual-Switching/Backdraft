@@ -33,9 +33,18 @@ LDFLAGS = -L$(DPDK_LIB_DIR) -Wl,-rpath=$(DPDK_LIB_DIR) \
     -L$(CURRENT_DIR)/../../lib/bd_vport/build/ \
     -L$(CURRENT_DIR)/../../lib/bkdrft/build/ \
 
-#  -lgflags
+# Check if Mellanox is installed
+mellanox_search := $(shell ldconfig -v -N 2> /dev/null | grep mlx5; echo $$?)
+rc := $(lastword $(mellanox_search))
+# $(info shell status: $(rc))
+ifeq ($(rc),0)
+MELLANOX = -lmlx5 -lmlx4 -libverbs
+else
 $(warning "Warning: mellanox is not active")
-MELLANOX = # -lmlx5 -lmlx4 -libverbs
+MELLANOX =
+endif
+
+#  -lgflags
 LIBS = -Wl,-non_shared \
        -Wl,--whole-archive -l$(DPDK_LIB) -Wl,--no-whole-archive \
        -Wl,-call_shared \

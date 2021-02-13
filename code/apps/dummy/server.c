@@ -6,6 +6,7 @@
 #include "bkdrft_msg.pb-c.h"
 // libbd_vport.a
 #include "vport.h"
+#include "vport_const.h"
 // include directory
 #include "exp.h"
 
@@ -173,7 +174,7 @@ int do_server(void *_cntx) {
   uint32_t dpdk_port = cntx->dpdk_port_id;
   struct vport *virt_port = cntx->virt_port;
   // uint16_t num_queues = cntx->num_queues;
-  uint32_t delay_cycles = cntx->delay_cycles;
+  // uint32_t delay_cycles = cntx->delay_cycles;
   double cycles_error = 0; // EWMA
   int cdq = cntx->cdq;
   // struct rte_mempool *tx_mem_pool = cntx->tx_mem_pool;
