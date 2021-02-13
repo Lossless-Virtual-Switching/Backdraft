@@ -36,24 +36,24 @@ extern inline int mark_data_queue(struct rte_mbuf *pkt, uint8_t qid) {
 //   uint16_t tpid;
 //   uint32_t tag;
 //   uint16_t tci = BKDRFT_OVERLAY_VLAN_PRIO << 13 | 0 << 12 | qid;
-// 
+//
 //   new_head = rte_pktmbuf_prepend(pkt, 4);
 //  if (unlikely(new_head == NULL)) {
 //     return  -1; // failed
 //   }
-// 
+//
 //  ethh = _mm_loadu_si128((__m128i *)(new_head + 4));
 //  tpid = rte_be_to_cpu_16(_mm_extract_epi16(ethh, 6));
-// 
+//
 //   if (tpid == RTE_ETHER_TYPE_VLAN) {
 //     tag =  RTE_ETHER_TYPE_QINQ << 16 | tci;
 //   } else {
 //     tag =  RTE_ETHER_TYPE_VLAN << 16 | tci;
 //   }
 //   tag = rte_cpu_to_be_32(tag);
-// 
+//
 //  ethh = _mm_insert_epi32(ethh, tag, 3);
-// 
+//
 //  _mm_storeu_si128((__m128i *)(new_head), ethh);
 //   return 0;
 // }

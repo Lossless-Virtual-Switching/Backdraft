@@ -200,6 +200,7 @@ def run_udp_app(config):
       'duration': 40,
       'port': 5000,
       'bidi': 'false',
+      'rate': -1,
     }
     conf.update(config)
 
@@ -223,7 +224,7 @@ def run_udp_app(config):
         cmd = ('sudo {bin} --no-pci --lcores="{cpu}" --file-prefix={prefix} '
                 '--vdev="{vdev}" --socket-mem=128 -- '
                 'bidi={bidi} {ip} {count_queue} {sysmod} {mode} {cnt_ips} {ips} '
-                '{count_flow} {duration} {port} {delay}'
+                '{count_flow} {duration} {port} {delay} {rate}'
               ).format(bin=udp_app, mode=mode, **conf)
         if 'rate' in conf:
             cmd += ' {}'.format(conf['rate'])

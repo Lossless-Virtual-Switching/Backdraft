@@ -228,6 +228,7 @@ def setup_container(node_name: str, instance_number: int, config: dict):
            'delay': flow_conf.get('delay_cycles', 0),  # no effect on client
            'ips': ips,
            'duration': -1,
+           'rate': -1, # 1000000,
         }
         config.update(app_params)
     elif app == 'memcached':
@@ -276,7 +277,7 @@ def run_app(config, app=None):
         p = run_udp_app(config)
         p.wait()
         print(p.stdout.read().decode())
-        print(p.stderr.read().decode())
+        # print(p.stderr.read().decode())
     elif app == 'memcached':
         spin_up_memcached(config)
     elif app == 'shuffle':

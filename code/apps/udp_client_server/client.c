@@ -1,19 +1,19 @@
 #include <assert.h>
 #include <unistd.h>
 #include <pthread.h>
-
+// dpdk
 #include <rte_cycles.h>
 #include <rte_ethdev.h>
 #include <rte_ether.h>
 #include <rte_ip.h>
 #include <rte_mbuf.h>
 #include <rte_udp.h>
-
+// bkdrft
 #include "bkdrft.h"
 #include "bkdrft_const.h"
 #include "bkdrft_vport.h"
 #include "vport.h"
-// #include "llring.h"
+// current project
 #include "exp.h"
 #include "percentile.h"
 #include "arp.h"
@@ -80,7 +80,7 @@ int do_client(void *_cntx) {
 
   uint64_t start_time, end_time;
   uint64_t duration = (cntx->duration < 0) ? 0 : ((unsigned int)cntx->duration) * rte_get_timer_hz();
-  uint64_t ignore_result_duration = 5;
+  uint64_t ignore_result_duration = 0;
 
   struct rte_mbuf *bufs[BURST_SIZE];
   // struct rte_mbuf *ctrl_recv_bufs[BURST_SIZE];
@@ -106,7 +106,6 @@ int do_client(void *_cntx) {
   int flow = 0;
   int cur_flow = 0;
 
-  // TODO: this will fail for more destinations
   uint16_t prio[count_dst_ip];
   uint16_t _prio = 3;
   uint16_t dei = 0;
@@ -119,7 +118,6 @@ int do_client(void *_cntx) {
 
   // TODO: take rate limit option from config or args, currently it is off
   int rate_limit = cntx->rate_limit;
-  // uint64_t throughput = 0;
   uint64_t throughput[count_dst_ip * count_flow];
   uint64_t tp_limit = cntx->rate;
   uint64_t tp_start_ts = 0;
@@ -235,6 +233,10 @@ int do_client(void *_cntx) {
   // main tx worker loop
   for (;;) {
     end_time = rte_get_timer_cycles();
+
+    // TODO: this is just for testing the switch system
+    // if (total_sent_pkts[0] > 1024) break;
+
     if (duration > 0 && end_time > start_time + duration) {
       if (can_send) {
         can_send = 0;
@@ -382,22 +384,11 @@ int do_client(void *_cntx) {
 
       /* send packets */
       if (port_type == dpdk) {
-        // TODO (farbod): send_pkt + cdq flag , does not need branch
-        if (system_mode == system_bess) {
-          nb_tx = send_pkt(dpdk_port, selected_q, bufs, burst, 0,
-                           ctrl_mem_pool);
-        } else {
-          if (selected_q == 0)
-            printf("warning: sending data pkt on queue zero\n");
-          nb_tx = send_pkt(dpdk_port, selected_q, bufs, burst, 1,
-                           ctrl_mem_pool);
-        }
+        nb_tx = send_pkt(dpdk_port, selected_q, bufs, burst, cdq,
+                               ctrl_mem_pool);
       } else {
-        int cdq = system_mode == system_bkdrft;
         nb_tx = vport_send_pkt(virt_port, selected_q, bufs, burst, cdq,
                                BKDRFT_CTRL_QUEUE, ctrl_mem_pool);
-        // if (nb_tx > 0)
-        //   printf("client send packest: %d\n", nb_tx);
       }
 
       if (likely(end_time > start_time + ignore_result_duration * hz)) {
@@ -423,8 +414,8 @@ int do_client(void *_cntx) {
         }
       }
 
-    } /* end if (can_send) */
-  }
+    } // end if (can_send)
+  } // end of tx worker
 
   if (bidi) {
     // wait for  receive thread to stop
