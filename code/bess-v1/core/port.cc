@@ -282,91 +282,68 @@ void Port::ReleaseQueues(const struct module *m, packet_dir_t dir,
 
 void Port::RecordRate(packet_dir_t dir, queue_t qid,
     __attribute__((unused)) bess::Packet **pkts,
-                      int packets) {
+    int packets) {
   uint64_t now = tsc_to_ns(rdtsc());
   uint64_t diff = 0;
   uint64_t total_bytes = 0;
-  // double tp = 0;
+  struct Rates &rate = rate_[dir][qid];
 
   // TODO: we do not need total bytes
   // for (int pkt = 0; pkt < packets; pkt++) {
   //   total_bytes += pkts[pkt]->total_len();
   // }
 
-  diff = now - rate_.timestamp[dir][qid];
+  rate.packets += packets;
+  rate.last_sec_packets += packets;
+  rate.bytes += total_bytes;
 
-  cur_tp_ += packets;
-  if (unlikely(diff >= second_ns)) {
-    // tp = packets * 1000000000.0f / (double)diff;
-    pkt_sum_ += cur_tp_;
-    tp_queue_[tp_q_tail_] = cur_tp_;
-    tp_q_tail_ = (tp_q_tail_ + 1) % TP_Q_SIZE;
+  diff = now - rate.timestamp;
+  if (dir == PACKET_DIR_OUT && unlikely(diff >= second_ns)) {
+    rate.window_packets -= rate.samples[rate.samples_index];
+    rate.samples[rate.samples_index] = rate.last_sec_packets;
+    rate.window_packets += rate.last_sec_packets;
+    rate.samples_index = (rate.samples_index + 1) % TP_Q_SIZE;
+    rate.pps = rate.window_packets / TP_Q_SIZE;
+    rate.timestamp = now;
 
-    pkt_sum_ -= tp_queue_[tp_q_head_];
-    tp_q_head_ = (tp_q_head_ + 1) % TP_Q_SIZE;
+    // For debugging
+    // LOG(INFO) << "diff: " << diff << " packets: " << packets << "\n";
+    // LOG(INFO) << "TP: " << rate.last_sec_packets << " pkt_sum "
+    //           << rate.window_packets << " qsize " << TP_Q_SIZE << "\n";
+    // LOG(INFO) << "name " << name() << " dir " << dir << " q " << qid <<
+    //              " rate: " << rate_[dir][qid].pps << "\n";
 
-    cur_tp_ = 0;
-    rate_.timestamp[dir][qid] = now;
-    double q_size = TP_Q_SIZE - 1;
-    rate_.pps[dir][qid] = pkt_sum_ / q_size;
-
-    // static uint64_t log_ts = 0;
-    // if (now - log_ts > 1000000000UL) {
-    //   LOG(INFO) << "test: " << tp_q_head_ - tp_q_tail_ << "\n";
-    //   LOG(INFO) << "tp head: " << tp_q_head_ << " tp tail: " << tp_q_tail_ << "\n";
-    //   LOG(INFO) << "diff: " << diff << " packets: " << packets << "\n";
-    //   LOG(INFO) << "TP: " << cur_tp_ << " pkt_sum " << pkt_sum_ << " qsize " << q_size << "\n";
-    //   LOG(INFO) << "name " << name() << " dir " << dir <<
-    //     " rate: " << rate_.pps[dir][qid] << "\n";
-    //   log_ts = now;
-    // }
+    rate.last_sec_packets = 0;
   }
-
-
-  rate_.packets[dir][qid] += packets;
-  rate_.bytes[dir][qid] += total_bytes;
-
-  // if (now - rate_.latest_timestamp[dir][qid] > second_ns) {
-  //   rate_.latest_timestamp[dir][qid] = now;
-  //   if (dir == PACKET_DIR_OUT) {
-  //     LOG(INFO) << rate_.pps[dir][qid] / 1000000 << " TX Rate Mpps "
-  //               << packets << " " << diff<< "\n";
-  //     LOG(INFO) << rate_.bps[dir][qid] / 1000000 << " TX Rate Mbps\n";
-  //   } else {
-  //     LOG(INFO) << rate_.pps[dir][qid] / 1000000 << " RX Rate Mpps\n";
-  //     LOG(INFO) << rate_.bps[dir][qid] / 1000000 << " RX Rate Mbps\n";
-  //   }
-  // }
 }
 
 uint32_t Port::RateLimit(packet_dir_t dir, queue_t qid) {
-  uint32_t token;
-  uint32_t limit;
-  uint32_t allowed_to_send = 0;
-  uint64_t window = 0;
+  uint32_t token = limiter_.token[dir][qid];
+  uint32_t limit = limiter_.limit[dir][qid];
+  uint64_t window;
+  uint32_t allowed_to_send;
   uint64_t now = tsc_to_ns(rdtsc());
 
-  limit = limiter_.limit[dir][qid];
-  token = limiter_.token[dir][qid];
-
-  window = now - limiter_.latest_timestamp[dir][qid];
+  window = now - limiter_.timestamp[dir][qid];
+  if (window > second_ns)
+    window = second_ns;
   allowed_to_send = window * limit / second_ns;
-
-  // limiter_.latest_timestamp[dir][qid] = now;
-
-  if (allowed_to_send + token > limit) {
-    // Throttling
-    if (token > limit)
-      allowed_to_send = 0;
-    else
-      allowed_to_send = limit - token;
+  if (token >= allowed_to_send) {
+    // Already have sent more than limit
+    allowed_to_send = 0;
+  } else {
+    // It will not underflow because token is not more than allowed
+    allowed_to_send -= token;
   }
 
   // if recharing tokens!
-  if (now - limiter_.timestamp[dir][qid] > second_ns) {
+  // window will not grow more than second_ns
+  if (window == second_ns) {
+    // LOG(INFO) << "recharging tokens, name: " << name_ << " dir: " << dir
+    //           << " q: " << (int)qid <<  " limit: " << limit
+    //           << " Used tokens: " << limiter_.token[dir][qid] << "\n";
     limiter_.timestamp[dir][qid] = now;
     limiter_.token[dir][qid] = 0;
-    // LOG(INFO) << "recharging tokens, name: " << name_ << " dir: " << dir << " q: " << (int)qid <<  " limit: " << limit << "\n";
   }
 
   // TODO: estimate RTT and set may_increase with RTT intervals
@@ -375,15 +352,15 @@ uint32_t Port::RateLimit(packet_dir_t dir, queue_t qid) {
   //   may_increase_ts = now;
   // }
 
-  if (allowed_to_send > 31) { //  && allowed_to_send < 129
-    // If client can send and the limit is about to reach, increase the rate
-    // if client can send and if packets are not
-    // dropped then we can assume an ack packet happening.
-    // if client can not send it is because it has used its link capacity
-    //
-    may_increase = false;
-    IncreaseRate(dir, qid);
-  }
+  // if (allowed_to_send > 31) { //  && allowed_to_send < 129
+  //   // If client can send and the limit is about to reach, increase the rate
+  //   // if client can send and if packets are not
+  //   // dropped then we can assume an ack packet happening.
+  //   // if client can not send it is because it has used its link capacity
+  //   //
+  //   may_increase = false;
+  //   IncreaseRate(dir, qid);
+  // }
 
   return allowed_to_send;
 }

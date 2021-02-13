@@ -207,21 +207,26 @@ struct QueueStats {
 };
 
 struct Rates {
-  double pps[PACKET_DIRS][MAX_QUEUES_PER_DIR];
-  double bps[PACKET_DIRS][MAX_QUEUES_PER_DIR];
-  uint64_t bytes[PACKET_DIRS][MAX_QUEUES_PER_DIR];
-  uint64_t packets[PACKET_DIRS][MAX_QUEUES_PER_DIR];
-  uint64_t timestamp[PACKET_DIRS][MAX_QUEUES_PER_DIR];
-  uint64_t latest_timestamp[PACKET_DIRS][MAX_QUEUES_PER_DIR];
-  uint64_t max_rate_no_drop[PACKET_DIRS][MAX_QUEUES_PER_DIR];
-  uint64_t tp[PACKET_DIRS][MAX_QUEUES_PER_DIR];
+  double pps;
+  double bps;
+  // total amount of bytes went through this queue (not implemented)
+  uint64_t bytes;
+  // total number of packets went through this queue
+  uint64_t packets;
+  uint64_t timestamp;
+  // number of packets during last second
+  uint64_t last_sec_packets;
+  // number of packets in moving average window
+  uint64_t window_packets;
+  // moving average samples
+  uint64_t samples[TP_Q_SIZE];
+  uint32_t samples_index;
 };
 
 struct RateLimiter {
-  uint32_t limit[PACKET_DIRS][MAX_QUEUES_PER_DIR];  // bps
+  uint32_t limit[PACKET_DIRS][MAX_QUEUES_PER_DIR];  // pps
   uint32_t token[PACKET_DIRS][MAX_QUEUES_PER_DIR];
   uint64_t timestamp[PACKET_DIRS][MAX_QUEUES_PER_DIR];
-  uint64_t latest_timestamp[PACKET_DIRS][MAX_QUEUES_PER_DIR];
 };
 
 class Port {
@@ -245,18 +250,13 @@ class Port {
     QueueStats out;
   };
 
-  struct Rates rate_;
+  struct Rates rate_[PACKET_DIRS][MAX_QUEUES_PER_DIR];
   struct RateLimiter limiter_;
   bool may_increase = true;
   uint64_t may_increase_ts = 0;
 
   // overide this section to create a new driver -----------------------------
-  Port()
-      : tp_queue_(),
-        tp_q_head_(0),
-        tp_q_tail_(TP_Q_SIZE - 1),
-        pkt_sum_(),
-        cur_tp_(),
+  Port():
         port_stats_(),
         conf_(),
         ptype_(),
@@ -273,34 +273,29 @@ class Port {
     conf_.rate_limiting = false;
 
     // Init rates and limiters per queue
-    // This is a shitty long for loop, there should be some easy way of
+    // TODO: This is a long for loop, there should be some easy way of
     // initialization;
-    for (queue_t q = 0; q < MAX_QUEUES_PER_DIR; q++) {
-      rate_.packets[PACKET_DIR_INC][q] = 0;
-      rate_.packets[PACKET_DIR_OUT][q] = 0;
-      rate_.bytes[PACKET_DIR_INC][q] = 0;
-      rate_.bytes[PACKET_DIR_OUT][q] = 0;
-      rate_.pps[PACKET_DIR_INC][q] = 0;
-      rate_.pps[PACKET_DIR_OUT][q] = 0;
-      rate_.bps[PACKET_DIR_INC][q] = 0;
-      rate_.bps[PACKET_DIR_OUT][q] = 0;
-      rate_.timestamp[PACKET_DIR_OUT][q] = tsc_to_ns(rdtsc());
-      rate_.timestamp[PACKET_DIR_INC][q] = tsc_to_ns(rdtsc());
-      rate_.latest_timestamp[PACKET_DIR_OUT][q] = tsc_to_ns(rdtsc());
-      rate_.latest_timestamp[PACKET_DIR_INC][q] = tsc_to_ns(rdtsc());
-      rate_.max_rate_no_drop[PACKET_DIR_OUT][q] = ULONG_MAX;
-      rate_.max_rate_no_drop[PACKET_DIR_INC][q] = ULONG_MAX;
-      rate_.tp[PACKET_DIR_OUT][q] = 0;
-      rate_.tp[PACKET_DIR_INC][q] = 0;
+    for (int dir = 0; dir < PACKET_DIRS; dir++) {
+      for (queue_t q = 0; q < MAX_QUEUES_PER_DIR; q++) {
+        rate_[dir][q].packets = 0;
+        rate_[dir][q].bytes = 0;
+        rate_[dir][q].pps = 0;
+        rate_[dir][q].bps = 0;
+        rate_[dir][q].timestamp = tsc_to_ns(rdtsc());
+        rate_[dir][q].timestamp = tsc_to_ns(rdtsc());
+        rate_[dir][q].last_sec_packets = 0;
+        rate_[dir][q].window_packets = 0;
+        for (int index = 0; index < TP_Q_SIZE; index++)
+          rate_[dir][q].samples[index] = 0;
+        rate_[dir][q].samples_index = 0;
 
-      limiter_.timestamp[PACKET_DIR_OUT][q] = tsc_to_ns(rdtsc());
-      limiter_.timestamp[PACKET_DIR_INC][q] = tsc_to_ns(rdtsc());
-      limiter_.latest_timestamp[PACKET_DIR_OUT][q] = tsc_to_ns(rdtsc());
-      limiter_.latest_timestamp[PACKET_DIR_INC][q] = tsc_to_ns(rdtsc());
-      limiter_.limit[PACKET_DIR_OUT][q] = 0;
-      limiter_.limit[PACKET_DIR_INC][q] = 0;
-      limiter_.token[PACKET_DIR_OUT][q] = 0;
-      limiter_.token[PACKET_DIR_INC][q] = 0;
+        limiter_.timestamp[PACKET_DIR_OUT][q] = tsc_to_ns(rdtsc());
+        limiter_.timestamp[PACKET_DIR_INC][q] = tsc_to_ns(rdtsc());
+        limiter_.limit[PACKET_DIR_OUT][q] = 0;
+        limiter_.limit[PACKET_DIR_INC][q] = 0;
+        limiter_.token[PACKET_DIR_OUT][q] = 0;
+        limiter_.token[PACKET_DIR_INC][q] = 0;
+      }
     }
   }
 
@@ -377,12 +372,6 @@ class Port {
 
  private:
   inline void IncreaseRate(packet_dir_t dir, queue_t qid);
-
-  uint64_t tp_queue_[TP_Q_SIZE];
-  int64_t tp_q_head_;
-  int64_t tp_q_tail_;
-  uint64_t pkt_sum_;
-  uint64_t cur_tp_;
 
  protected:
   friend class PortBuilder;

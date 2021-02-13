@@ -648,22 +648,19 @@ inline void BKDRFTQueueOut::Pause(Context *cntx, const Flow &flow,
                                   const uint64_t buffer_size) {
   // pause the incoming queue of the flow
   // TODO: get incomming line rate for bandwith-delay estimation
-  Random rng;
+  // Random rng;
   uint64_t pps;
   uint64_t duration;
   uint64_t ts;
-  uint64_t jitter = rng.GetRange(MIN_PAUSE_DURATION);
-  uint64_t effect_time = 0; // 200000; // TODO: find this variable, rtt + ...
-  uint64_t estimated_buffer_len;
+  // uint64_t jitter = rng.GetRange(MIN_PAUSE_DURATION);
   // pps = 3000000;
   Port *p = port_;
-  pps = p->rate_.pps[PACKET_DIR_OUT][qid];
+  pps = p->rate_[PACKET_DIR_OUT][qid].pps;
   if (pps == 0) {
     // LOG(INFO) << "pps is zero\n";
     duration = MIN_PAUSE_DURATION; // 10 us
   } else {
-    estimated_buffer_len = buffer_size + (pps * effect_time / 1000000);
-    duration = ((estimated_buffer_len * 1000000000UL) / pps);
+    duration = ((buffer_size * 1000000000UL) / pps);
     if (duration > MAX_PAUSE_DURATION) {
       // LOG(INFO) << "more than max pause durtaion\n";
       duration = MAX_PAUSE_DURATION;
@@ -673,7 +670,7 @@ inline void BKDRFTQueueOut::Pause(Context *cntx, const Flow &flow,
     }
   }
 
-  ts = cntx->current_ns + duration + jitter;
+  ts = cntx->current_ns + duration; //+ jitter;
 
   // LOG(INFO) << "before pauseing flow\n";
 
@@ -1046,9 +1043,7 @@ int BKDRFTQueueOut::SendOverlay(const Flow &flow, const flow_state *fstate,
   }
 
   auto &OverlayMan = bess::bkdrft::BKDRFTOverlayCtrl::GetInstance();
-  uint64_t rate = port_->rate_.pps[PACKET_DIR_OUT][fstate->qid];
-  // uint64_t rate = port_->rate_.bps[PACKET_DIR_OUT][fstate->qid];
-  uint64_t pps = port_->rate_.pps[PACKET_DIR_OUT][fstate->qid];
+  uint64_t rate = port_->rate_[PACKET_DIR_OUT][fstate->qid].pps;
   uint64_t buffer_size = 0;
   uint64_t bdp = 0; // bandwidth delay product
   uint64_t dt_lw = 0;
@@ -1060,11 +1055,6 @@ int BKDRFTQueueOut::SendOverlay(const Flow &flow, const flow_state *fstate,
       dt_lw = 1000000;
     } else {
       // find out when the low water is reached.
-      auto entry = OverlayMan.getOverlayEntry(flow);
-      if (entry != nullptr) {
-        // uint64_t rtt = 10000000; // us
-        // bdp = entry->port->rate_.bps[PACKET_DIR_INC][entry->qid] * rtt / 1e9;
-      }
       dt_lw = ((buffer_size + bdp) - buffer_len_low_water) * 1e9 / rate;
       if (dt_lw > max_overlay_pause_duration) {
         dt_lw = max_overlay_pause_duration;
@@ -1073,11 +1063,11 @@ int BKDRFTQueueOut::SendOverlay(const Flow &flow, const flow_state *fstate,
   }
 
   // do not set rate to less than a batch.
-  if (pps < 32) {
-    pps = 32;
+  if (rate < 32) {
+    rate = 32;
   }
 
-  int ret = OverlayMan.SendOverlayMessage(flow, pkt, pps, dt_lw);
+  int ret = OverlayMan.SendOverlayMessage(flow, pkt, rate, dt_lw);
   // int ret = OverlayMan.SendOverlayMessage(flow, pkt, 100000, dt_lw);
   // LOG(INFO) << "SendOverlayMessage return value " << ret << "\n";
   if (ret == 0) {
@@ -1085,7 +1075,7 @@ int BKDRFTQueueOut::SendOverlay(const Flow &flow, const flow_state *fstate,
 
     LOG(INFO) << "Buffer size: " << buffer_size <<  "\n";
     LOG(INFO) << "Sending overlay: name: " << name_
-      << "buffer_size: " << buffer_size << " pps: " << pps
+      << "buffer_size: " << buffer_size << " pps: " << rate
       << " pause duration: " << dt_lw << "\n";
   } else {
     bess::Packet::Free(pkt);
