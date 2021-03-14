@@ -25,9 +25,9 @@
       apt: # assume cache has been updated in previous steps
         name: ['docker', 'docker-compose']
     # TODO: install perf, linux-tools-generic $kernel version?
-    # - name: "install perf tool"
-    #   apt:
-    #     nmae: ['linux-tools']
+    - name: "install perf tool"
+      shell: "apt install linux-tools-$(uname -r)"
+      ignore_error: yes
     # protobuf
     - name: "install protobuf c++ dependency"
       apt:
