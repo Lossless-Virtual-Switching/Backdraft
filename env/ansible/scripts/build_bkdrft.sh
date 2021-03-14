@@ -7,9 +7,9 @@ curdir=`realpath $curdir`
 # Build BESS
 bessdir=`realpath $curdir/../../../code/bess-v1/`
 cd $bessdir
-exec ./build.py bess &
+exec ./build.py dpdk &
 wait $!
-# TODO: make sure BESS was built successfully
+# TODO: make sure BESS's dpdk was built successfully
 
 libdir=`realpath $curdir/../../../code/lib/`
 # Build bd_vport
@@ -25,6 +25,13 @@ cd $libbd_dir
 exec ./make.sh &
 wait $!
 # TODO: Make sure libkdrft was built successfully
+
+# Build BESS (bess dependes on libbd_vport)
+bessdir=`realpath $curdir/../../../code/bess-v1/`
+cd $bessdir
+exec ./build.py bess &
+wait $!
+# TODO: make sure BESS was built successfully
 
 apps_dir=`realpath $curdir/../../../code/apps`
 # Build udp_app
