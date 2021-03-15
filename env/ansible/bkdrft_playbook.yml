@@ -26,8 +26,8 @@
         name: ['docker', 'docker-compose']
     # TODO: install perf, linux-tools-generic $kernel version?
     - name: "install perf tool"
-      shell: "apt install linux-tools-$(uname -r)"
-      ignore_error: yes
+      shell: "apt install --yes linux-tools-$(uname -r)"
+      ignore_errors: yes
     # protobuf
     - name: "install protobuf c++ dependency"
       apt:
