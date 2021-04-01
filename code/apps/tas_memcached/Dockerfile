@@ -14,6 +14,7 @@ RUN cd /opt/; \
     git clone https://github.com/google/protobuf.git; \
     git clone https://github.com/protobuf-c/protobuf-c; \
     cd protobuf/; \
+    git checkout aedb8d726c8d2a371d999354d44ca7e1bdbb1e73; \
     ./autogen.sh && ./configure && make -j && make install && ldconfig; \
     cd ../protobuf-c/ ; \
     ./autogen.sh && ./configure && make && make install && ldconfig
