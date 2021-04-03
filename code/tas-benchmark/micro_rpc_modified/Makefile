@@ -1,4 +1,4 @@
-TARGETS = echoserver_linux testclient_linux echoserver_ll \
+TARGETS = echoserver_linux slow_echoserver_linux testclient_linux echoserver_ll \
 	  echoserver_mtcp testclient_mtcp
 
 TAS_CODE?=../../tas
@@ -15,13 +15,16 @@ ESOBJS_COMMON= $(TAS_CODE)/lib/utils/rng.o \
 include ../common/Makefile.mtcp
 
 
-all: echoserver_linux testclient_linux echoserver_ll
+all: echoserver_linux slow_echoserver_linux testclient_linux # echoserver_ll
 all-sockets: echoserver_linux testclient_linux
 all-mtcp: echoserver_mtcp testclient_mtcp
 all-ll: echoserver_ll
 
 
 echoserver_linux: echoserver.o $(ESOBJS_COMMON)
+	$(CC) $(LDFLAGS) -o $@ $^ $(LDLIBS)
+
+slow_echoserver_linux: slow_echoserver.o $(ESOBJS_COMMON)
 	$(CC) $(LDFLAGS) -o $@ $^ $(LDLIBS)
 
 echoserver_ll: echoserver_ll.o $(ESOBJS_COMMON) \

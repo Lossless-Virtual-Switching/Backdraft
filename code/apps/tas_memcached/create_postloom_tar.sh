@@ -22,8 +22,8 @@ echo LIB done
 cp -r $here/../../../code/tas $here/post-loom/code/
 echo TAS done
 
-# cp -r $here/../../../code/tas-benchmark $here/post-loom/code/
-# echo TAS Benchmarks done
+cp -r $here/../../../code/tas-benchmark $here/post-loom/code/
+echo TAS Benchmarks done
 
 echo Creating .tar.xz file
 tar -C $here/ -cz post-loom -f $here/post-loom.tar.xz
