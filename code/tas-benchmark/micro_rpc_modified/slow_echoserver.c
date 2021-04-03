@@ -73,12 +73,15 @@ static uint32_t icache_block = 0;
 static uint16_t listen_port;
 static volatile uint32_t num_ready = 0;
 
-// slow server after some seconds
-static uint64_t slow_after_sec = 15;
+#define sec_in_ns (1000 * 1000 * 1000)
+#define sec_in_us (1000000)
+#define ms_in_ns (1000000)
+static uint64_t danger_region_priod_sec = 15;
+static uint64_t danger_region_duration_sec = 15;
 // a slow incident happens priodically every ...
-static uint64_t incident_after_us = 1000000; // 1 sec
+static uint64_t incident_priod_us = 500000; // 0.5 sec (2 hz)
 // incident slow by ..
-static uint64_t slow_incident_duration_us = 10000; // 10ms
+static uint64_t incident_duration_us = 50000; // 50ms
 
 struct connection {
     int fd;
@@ -390,7 +393,10 @@ static inline void conn_close(struct core *co, struct connection *c)
 static void *thread_run(void *arg)
 {
     uint64_t now = ns();
-    uint64_t incident = now + (slow_after_sec * 1000 * 1000 * 1000);
+    uint64_t danger_region_begin = now + (danger_region_priod_sec * sec_in_ns);
+    uint64_t danger_region_end = danger_region_begin +
+                                    (danger_region_duration_sec * sec_in_ns);
+    uint64_t incident = danger_region_begin;
 
     struct core *co = arg;
     int ret, n, i, cn;
@@ -480,15 +486,29 @@ static void *thread_run(void *arg)
                     co->opaque = kill_cycles(op_delay, co->opaque);
                 }
                 now = ns();
-                if (incident < now) {
-                    // fprintf(stdout, "incident!\n");
-                    struct timespec rqt = {
-                            .tv_sec = slow_incident_duration_us / 1000000,
-                            .tv_nsec =  (slow_incident_duration_us % (1000000)) * 1000,
-                    };
-                    while (nanosleep(&rqt, &rqt) < 0) {
+                if (now  >= danger_region_begin && now <= danger_region_end) {
+                    // inside danger region
+                    if (incident <= now) {
+                        fprintf(stdout, "%ld - incident! [%f ms]\n",
+                                now / ms_in_ns,
+                                incident_duration_us / 1000.0);
+                        struct timespec rqt = {
+                            .tv_sec = incident_duration_us / sec_in_us,
+                            .tv_nsec = (incident_duration_us % sec_in_us)
+                                                                        * 1000,
+                        };
+                        while (nanosleep(&rqt, &rqt) < 0) {
+                        }
+                        // set for next incident 
+                        incident = ns() + (incident_priod_us * 1000);    
                     }
-                    incident = ns() + (incident_after_us * 1000);    
+                }
+                if (now > danger_region_end) {
+                    // set for next danger region
+                    danger_region_begin = ns() +
+                                    (danger_region_priod_sec * sec_in_ns);
+                    danger_region_end = danger_region_begin +
+                                    (danger_region_duration_sec * sec_in_ns);
                 }
                 if (co->workingset != NULL) {
                     off = (utils_rng_gen32(&co->rng) % working_set) & ~63;
