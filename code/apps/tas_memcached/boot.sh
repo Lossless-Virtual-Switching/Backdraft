@@ -1,4 +1,4 @@
-#!/bin/sh
+#!/bin/bash
 
 # Note: This script expects following environment variables to be defined
 # === TAS ===
@@ -33,7 +33,7 @@ then
 fi
 
 # start TAS engine
-exec $TAS_DIR/tas/tas --dpdk-extra=--vdev \
+nohup $TAS_DIR/tas/tas --dpdk-extra=--vdev \
   --dpdk-extra="virtio_user0,path=$socket_file,queues=$count_queues" \
   --dpdk-extra=--file-prefix --dpdk-extra=$prefix \
   --dpdk-extra=--no-pci \
@@ -44,7 +44,7 @@ exec $TAS_DIR/tas/tas --dpdk-extra=--vdev \
   --cc=dctcp-win \
   --fp-cores-max=$cores \
   --count-queue=$count_queues \
-  ${flags} &
+  ${flags}  <&-  &> ./tas_logs.txt &
 
 # wait for tas server to be ready
 sleep 3
