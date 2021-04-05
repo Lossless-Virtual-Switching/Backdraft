@@ -1,6 +1,7 @@
 *.S
 micro_rpc_modified/echoserver_linux
 micro_rpc_modified/slow_echoserver_linux
+micro_rpc_modified/latencyclient_linux
 micro_rpc_modified/echoserver_ll
 micro_rpc_modified/testclient_linux
 micro_unidir/unidir_linux
