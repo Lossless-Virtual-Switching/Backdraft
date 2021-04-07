@@ -79,9 +79,9 @@ static volatile uint32_t num_ready = 0;
 static uint64_t danger_region_priod_sec = 15;
 static uint64_t danger_region_duration_sec = 15;
 // a slow incident happens priodically every ...
-static uint64_t incident_priod_us = 500000; // 0.5 sec (2 hz)
+static uint64_t incident_priod_us = 100; // 10us sec
 // incident slow by ..
-static uint64_t incident_duration_us = 50000; // 50ms
+static uint64_t incident_duration_us = 1000; // 1ms
 
 struct connection {
     int fd;

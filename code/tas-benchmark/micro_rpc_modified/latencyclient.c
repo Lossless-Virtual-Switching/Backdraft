@@ -30,9 +30,9 @@
 #define MIN(a,b) ((b) < (a) ? (b) : (a))
 
 #define CONN_DEBUG(c, co, x...) do { } while (0)
-/*#define CONN_DEBUG(c, co, x...) \
-    do { printf("%d.%d: ", (int) c->id, co->fd); \
-         printf(x); } while (0)*/
+// #define CONN_DEBUG(c, co, x...) \
+//     do { printf("%d.%d: ", (int) c->id, co->fd); \
+//          printf(x); } while (0)
 
 //#define PRINT_STATS
 //#define PRINT_TSS
@@ -64,6 +64,7 @@ static struct sockaddr_in *addrs;
 static size_t addrs_num;
 static volatile int start_running = 0;
 static FILE *file = NULL;
+static uint64_t exp_begin_ts = 0;
 
 struct connection {
     enum conn_state state;
@@ -133,6 +134,17 @@ static void open_all(struct core *c);
 uint64_t max_flow_duration = 0;
 int64_t max_message_ps = -1; // maximum message sent per second
 
+#define sec_in_ns 1000000000UL
+#define DURATION_BETWEEN_PACKETS (sec_in_ns / 1000)
+void wait_to_send_next_packet(uint64_t ns)
+{
+	struct timespec rqt = {
+		.tv_sec = ns / sec_in_ns,
+		.tv_nsec = ns % sec_in_ns,
+	};
+	while(nanosleep(&rqt, &rqt) != 0){}
+}
+
 void handle_sigint(int sig)
 {
     fclose(file);
@@ -162,6 +174,10 @@ static inline void record_latency(struct core *c, uint64_t nanos)
         bucket = HIST_BUCKETS - 1;
     }
     __sync_fetch_and_add(&c->hist[bucket], 1);
+    if (exp_begin_ts == 0)
+	    exp_begin_ts = get_nanos();
+    double now = (get_nanos() - exp_begin_ts) / 1000000000.0;
+    fprintf(file, "%f %lu\n", now, nanos / 1000);
 }
 
 
@@ -284,14 +300,6 @@ static void prepare_core(struct core *c)
     }
 
     abort();
-#if 0
-    if ((ret = mtcp_init_rss(sc, INADDR_ANY, 1, addr.sin_addr.s_addr,
-                    addr.sin_port)) != 0)
-    {
-        fprintf(stderr, "[%d] mtcp_init_rss failed\n", cn);
-        abort();
-    }
-#endif
 #else
     sc = NULL;
 #endif
@@ -453,8 +461,8 @@ static inline int conn_receive(struct core *c, struct connection *co)
 
 static inline int conn_send(struct core *c, struct connection *co)
 {
-    uint64_t now, delta_time;
-    uint64_t refill;
+    // uint64_t now, delta_time;
+    // uint64_t refill;
     int fd, ret, wait_wr;
     int cn;
     uint64_t *tx_ts;
@@ -476,18 +484,18 @@ static inline int conn_send(struct core *c, struct connection *co)
     while ((co->pending < max_pending || max_pending == 0) &&
         (co->tx_cnt < num_msgs || num_msgs == 0) && ret > 0) 
     {
-        if (co->budget == 0) {
-            // update budget
-            now = get_nanos();
-            delta_time = now - co->last_budget_update; 
-            refill = delta_time / co->packet_value;
-            co->budget += refill;
-            if (co->budget > max_message_ps) {
-                co->budget = max_message_ps;
-            }
-            co->last_budget_update = now - (delta_time % co->packet_value);
-            continue;
-        }
+        // if (co->budget == 0) {
+        //     // update budget
+        //     now = get_nanos();
+        //     delta_time = now - co->last_budget_update; 
+        //     refill = delta_time / co->packet_value;
+        //     co->budget += refill;
+        //     if (co->budget > max_message_ps) {
+        //         co->budget = max_message_ps;
+        //     }
+        //     co->last_budget_update = now - (delta_time % co->packet_value);
+        //     continue;
+        // }
 
         /* timestamp if starting a new message */
         if (co->tx_remain == message_size) {
@@ -513,20 +521,20 @@ static inline int conn_send(struct core *c, struct connection *co)
                 co->pending++;
                 co->tx_cnt++;
 
-                if (co->budget > 0) {
-                    // if budget is negative message per sec limit is not active
-                    // message per second limit
-                    // update budget 
-                    now = get_nanos();
-                    delta_time = now - co->last_budget_update; 
-                    refill = delta_time / co->packet_value;
-                    co->budget += refill;
-                    if (co->budget > max_message_ps) {
-                        co->budget = max_message_ps;
-                    }
-                    co->budget--; // pay the price of sending a message
-                    co->last_budget_update = now; // - (delta_time % co->packet_value);
-                }
+                // if (co->budget > 0) {
+                //     // if budget is negative message per sec limit is not active
+                //     // message per second limit
+                //     // update budget 
+                //     now = get_nanos();
+                //     delta_time = now - co->last_budget_update; 
+                //     refill = delta_time / co->packet_value;
+                //     co->budget += refill;
+                //     if (co->budget > max_message_ps) {
+                //         co->budget = max_message_ps;
+                //     }
+                //     co->budget--; // pay the price of sending a message
+                //     co->last_budget_update = now; // - (delta_time % co->packet_value);
+                // }
                 
                 co->tx_remain = message_size;
                 if ((co->pending < max_pending || max_pending == 0) &&
@@ -562,13 +570,13 @@ static inline int conn_send(struct core *c, struct connection *co)
     }
 
     /* shutdown if connection tx limit reached */
-    if (num_msgs > 0 && co->tx_cnt >= num_msgs && co->state == CONN_OPEN) {
-      if (shutdown(co->fd, SHUT_WR) != 0) {
-        conn_error(c, co, "shutdown failed");
-        return -1;
-      }
-      co->state = CONN_CLOSING;
-    }
+    // if (num_msgs > 0 && co->tx_cnt >= num_msgs && co->state == CONN_OPEN) {
+    //   if (shutdown(co->fd, SHUT_WR) != 0) {
+    //     conn_error(c, co, "shutdown failed");
+    //     return -1;
+    //   }
+    //   co->state = CONN_CLOSING;
+    // }
 
     return 0;
 }
@@ -576,6 +584,7 @@ static inline int conn_send(struct core *c, struct connection *co)
 static inline void conn_events(struct core *c, struct connection *co,
         uint32_t events)
 {
+
     int status;
     socklen_t slen;
 #ifdef PRINT_STATS
@@ -612,18 +621,37 @@ static inline void conn_events(struct core *c, struct connection *co,
         c->conn_open++;
     }
 
-    /* receive responses */
-    if (! ((events & SS_EPOLLIN) == SS_EPOLLIN &&
-        conn_receive(c, co) != 0))
+    if ((events & SS_EPOLLIN) == SS_EPOLLIN &&
+        conn_receive(c, co) != 0)
     {
-        /* send out requests */
-        if (conn_send(c, co) == 0) {
-            if ((events & SS_EPOLLHUP) != 0) {
-                conn_error(c, co, "error on hup");
-            }
-        }
-
+        return;
     }
+
+    wait_to_send_next_packet(DURATION_BETWEEN_PACKETS);
+
+    /* send out requests */
+    if (conn_send(c, co) != 0) {
+        return;
+    }
+
+    if ((events & SS_EPOLLHUP) != 0) {
+        conn_error(c, co, "error on hup");
+        return;
+    }
+
+
+    // /* receive responses */
+    // if (! ((events & SS_EPOLLIN) == SS_EPOLLIN &&
+    //     conn_receive(c, co) != 0))
+    // {
+    //     /* send out requests */
+    //     if (conn_send(c, co) == 0) {
+    //         if ((events & SS_EPOLLHUP) != 0) {
+    //             conn_error(c, co, "error on hup");
+    //         }
+    //     }
+
+    // }
 
     // check for connection timeout
     // uint64_t now = get_nanos();
@@ -872,7 +900,7 @@ void print_usage_guide()
         "2) (ip:port)+ (one or more ip:port should be given seperated by space) \n"
         "3) cores \n"
         "4) config (mtcp) \n"
-        "5) [result_file_path] \n"
+        "5) result_file_path \n"
         "6) [message-size] (default=64) \n"
         "7) [max-pendding] \n"
         "8) [total-connections] \n"
@@ -895,7 +923,7 @@ void print_client_config()
         "2) (ip:port)+: [not shown] \n"
         "3) cores: [not shown[not shown]]\n"
         "4) config (mtcp): [not shown]\n"
-        "5) [result_file_path]: [not shown]\n"
+        "5) result_file_path: [not shown]\n"
         "6) [message-size]: %d \n"
         "7) [max-pendding]: %d \n"
         "8) [total-connections]: %d \n"
@@ -972,6 +1000,10 @@ int main(int argc, char *argv[])
     if(argc >= parse_i + 1) {
             file = fopen(argv[parse_i], "w");
             // signal(SIGINT, handle_sigint); 
+    } else {
+	    print_usage_guide();
+	    fprintf(stderr, "Error: result file was not specified\n");
+	    return EXIT_FAILURE;
     }
     parse_i++;
 
@@ -1090,148 +1122,156 @@ int main(int argc, char *argv[])
     while (1) {
         sleep(1);
         t_cur = get_nanos();
-        tp_total = 0;
-        msg_total = 0;
-        open_total = 0;
-        for (i = 0; i < num_threads; i++) {
-            tp = cs[i].messages;
-            open_total += cs[i].conn_open;
-            cs[i].messages = 0;
-            tp /= (double) (t_cur - t_prev) / 1000000000.;
-            ttp[i] = tp;
-            tp_total += tp;
-
-            for (j = 0; j < HIST_BUCKETS; j++) {
-                hx = cs[i].hist[j];
-                msg_total += hx;
-                hist[j] += hx;
-            }
-        }
-        // per flow ===
-	for (k = 0; k < addrs_num; k++) {
-	    perflow_tp[k] = 0;
-	    msg_total2[k] = 0;
-	    for (j = 0; j < HIST_BUCKETS; j++)
-                hist2[k][j] = 0;
-	}
-
-        for (i = 0; i < num_threads; i++) {
-            for (k = 0; k < addrs_num; k++) {
-                tp = cs[i].messages2[k];
-                cs[i].messages2[k] = 0;
-                tp /= (double) (t_cur - t_prev) / 1000000000.;
-                perflow_tp[k] += tp;
-
-                for (j = 0; j < HIST_BUCKETS; j++) {
-                    hist2[k][j] += cs[i].hist2[k][j]; 
-                    msg_total2[k] += cs[i].hist2[k][j]; 
-                }
-            }
-        }
-        // ==========
-
-        hist_fract_buckets(hist, msg_total, fracs, fracs_pos,
-                sizeof(fracs) / sizeof(fracs[0]));
-
-        // per flow =====
-        for (k = 0; k < addrs_num; k++) {
-            hist_fract_buckets(hist2[k], msg_total2[k], fracs, fracs_pos2[k],
-                    count_fracs);
-        }
-        // ===============
-
-
-        printf("TP: total=%'.2Lf mbps  1p=%d us 50p=%d us  90p=%d us  95p=%d us  "
-                "99p=%d us  99.9p=%d us  99.99p=%d us  flows=%lu",
-                tp_total * message_size * 8 / 1000000.,
-                hist_value(fracs_pos[0]), hist_value(fracs_pos[1]),
-                hist_value(fracs_pos[2]), hist_value(fracs_pos[3]),
-                hist_value(fracs_pos[4]), hist_value(fracs_pos[5]),
-                hist_value(fracs_pos[6]), open_total);
-
-        if(file) {
-                fprintf(file, "TP: total=%'.2Lf mbps  1p=%d us 50p=%d us  90p=%d us  95p=%d us  "
-                "99p=%d us  99.9p=%d us  99.99p=%d us  flows=%lu\n",
-                tp_total * message_size * 8 / 1000000.,
-                hist_value(fracs_pos[0]), hist_value(fracs_pos[1]),
-                hist_value(fracs_pos[2]), hist_value(fracs_pos[3]),
-                hist_value(fracs_pos[4]), hist_value(fracs_pos[5]),
-                hist_value(fracs_pos[6]), open_total);
-                fflush(file);
-        }
-
-#ifdef PRINT_PERCORE
-        for (i = 0; i < num_threads; i++) {
-            printf("core[%d]=%'.2Lf mbps  ", i,
-                    ttp[i] * message_size * 8 / 1000000.);
-        }
-#endif
-        printf("\n");
-
-        // per flow ===
-        for (k = 0; k < addrs_num; k++) {
-            printf("flow=%d tp=%'.2Lf mbps tp=%'.2Lf pps  1p=%d us 50p=%d us  90p=%d us  95p=%d us  "
-                    "99p=%d us  99.9p=%d us  99.99p=%d us\n",
-                    k,
-                    perflow_tp[k] * message_size * 8 / 1000000.,
-                    perflow_tp[k],
-                    hist_value(fracs_pos2[k][0]), hist_value(fracs_pos2[k][1]),
-                    hist_value(fracs_pos2[k][2]), hist_value(fracs_pos2[k][3]),
-                    hist_value(fracs_pos2[k][4]), hist_value(fracs_pos2[k][5]),
-		    hist_value(fracs_pos2[k][6]));
-            if(file) {
-                fprintf(file, "flow=%d tp=%'.2Lf mbps tp=%'.2Lf pps  1p=%d us "
-				"50p=%d us  90p=%d us  95p=%d us  "
-                        "99p=%d us  99.9p=%d us  99.99p=%d us\n",
-                        k,
-                        perflow_tp[k] * message_size * 8 / 1000000.,
-                        perflow_tp[k],
-                        hist_value(fracs_pos2[k][0]), 
-                        hist_value(fracs_pos2[k][1]),
-                        hist_value(fracs_pos2[k][2]),
-                        hist_value(fracs_pos2[k][3]),
-                        hist_value(fracs_pos2[k][4]),
-			hist_value(fracs_pos2[k][5]),
-                        hist_value(fracs_pos2[k][6]));
-                fflush(file);
-            }
-        }
-        // ===========
-
-#ifdef PRINT_STATS
-        printf("stats:\n");
-        for (i = 0; i < num_threads; i++) {
-            uint64_t rx_calls = read_cnt(&cs[i].rx_calls);
-            uint64_t rx_cycles = read_cnt(&cs[i].rx_cycles);
-            uint64_t tx_calls = read_cnt(&cs[i].tx_calls);
-            uint64_t tx_cycles = read_cnt(&cs[i].tx_cycles);
-            uint64_t rxc = (rx_calls == 0 ? 0 : rx_cycles / rx_calls);
-            uint64_t txc = (tx_calls == 0 ? 0 : tx_cycles / tx_calls);
-
-            printf("    core %2d: (rt=%"PRIu64", rs=%"PRIu64", rf=%"PRIu64
-                ", rxc=%"PRIu64", rb=%"PRIu64", tt=%"PRIu64", ts=%"PRIu64", tf=%"PRIu64
-                ", txc=%"PRIu64", tb=%"PRIu64")\n", i,
-                rx_calls, read_cnt(&cs[i].rx_short), read_cnt(&cs[i].rx_fail),
-                rxc, read_cnt(&cs[i].rx_bytes),
-                tx_calls, read_cnt(&cs[i].tx_short), read_cnt(&cs[i].tx_fail),
-                txc, read_cnt(&cs[i].tx_bytes));
-        }
-        for (i = 0; i < num_threads; i++) {
-            for (j = 0; j < num_conns; j++) {
-                printf("      t[%d].conns[%d]:  pend=%u  rx_r=%u  tx_r=%u  cnt=%"
-                        PRIu64" fd=%d\n",
-                        i, j, cs[i].conns[j].pending, cs[i].conns[j].rx_remain,
-                        cs[i].conns[j].tx_remain, cs[i].conns[j].cnt,
-                        cs[i].conns[j].fd);
-            }
-        }
-#endif
-
-        fflush(stdout);
-        memset(hist, 0, sizeof(*hist) * HIST_BUCKETS);
-
-        t_prev = t_cur;
+	tp = cs[0].messages;
+        printf("tp: %Lf\n", tp);
+        cs[0].messages = 0;
     }
+    // while (1) {
+    //     sleep(1);
+    //     t_cur = get_nanos();
+    //     tp_total = 0;
+    //     msg_total = 0;
+    //     open_total = 0;
+    //     for (i = 0; i < num_threads; i++) {
+    //         tp = cs[i].messages;
+    //         printf("tp: %Lf\n", tp);
+    //         open_total += cs[i].conn_open;
+    //         cs[i].messages = 0;
+    //         tp /= (double) (t_cur - t_prev) / 1000000000.;
+    //         ttp[i] = tp;
+    //         tp_total += tp;
+
+    //         for (j = 0; j < HIST_BUCKETS; j++) {
+    //             hx = cs[i].hist[j];
+    //             msg_total += hx;
+    //             hist[j] += hx;
+    //         }
+    //     }
+    //     // per flow ===
+    //     for (k = 0; k < addrs_num; k++) {
+    //         perflow_tp[k] = 0;
+    //         msg_total2[k] = 0;
+    //         for (j = 0; j < HIST_BUCKETS; j++)
+    //             hist2[k][j] = 0;
+    //     }
+
+    //     for (i = 0; i < num_threads; i++) {
+    //         for (k = 0; k < addrs_num; k++) {
+    //             tp = cs[i].messages2[k];
+    //             cs[i].messages2[k] = 0;
+    //             tp /= (double) (t_cur - t_prev) / 1000000000.;
+    //             perflow_tp[k] += tp;
+
+    //             for (j = 0; j < HIST_BUCKETS; j++) {
+    //                 hist2[k][j] += cs[i].hist2[k][j]; 
+    //                 msg_total2[k] += cs[i].hist2[k][j]; 
+    //             }
+    //         }
+    //     }
+    //     // ==========
+
+    //     hist_fract_buckets(hist, msg_total, fracs, fracs_pos,
+    //             sizeof(fracs) / sizeof(fracs[0]));
+
+    //     // per flow =====
+    //     for (k = 0; k < addrs_num; k++) {
+    //         hist_fract_buckets(hist2[k], msg_total2[k], fracs, fracs_pos2[k],
+    //                 count_fracs);
+    //     }
+    //     // ===============
+
+
+    //     printf("TP: total=%'.2Lf mbps  1p=%d us 50p=%d us  90p=%d us  95p=%d us  "
+    //             "99p=%d us  99.9p=%d us  99.99p=%d us  flows=%lu",
+    //             tp_total * message_size * 8 / 1000000.,
+    //             hist_value(fracs_pos[0]), hist_value(fracs_pos[1]),
+    //             hist_value(fracs_pos[2]), hist_value(fracs_pos[3]),
+    //             hist_value(fracs_pos[4]), hist_value(fracs_pos[5]),
+    //             hist_value(fracs_pos[6]), open_total);
+
+    //     if(file) {
+    //             fprintf(file, "TP: total=%'.2Lf mbps  1p=%d us 50p=%d us  90p=%d us  95p=%d us  "
+    //             "99p=%d us  99.9p=%d us  99.99p=%d us  flows=%lu\n",
+    //             tp_total * message_size * 8 / 1000000.,
+    //             hist_value(fracs_pos[0]), hist_value(fracs_pos[1]),
+    //             hist_value(fracs_pos[2]), hist_value(fracs_pos[3]),
+    //             hist_value(fracs_pos[4]), hist_value(fracs_pos[5]),
+    //             hist_value(fracs_pos[6]), open_total);
+    //             fflush(file);
+    //     }
+
+    // #ifdef PRINT_PERCORE
+    //     for (i = 0; i < num_threads; i++) {
+    //         printf("core[%d]=%'.2Lf mbps  ", i,
+    //                 ttp[i] * message_size * 8 / 1000000.);
+    //     }
+    // #endif
+    //     printf("\n");
+
+    //     // per flow ===
+    //     for (k = 0; k < addrs_num; k++) {
+    //         printf("flow=%d tp=%'.2Lf mbps tp=%'.2Lf pps  1p=%d us 50p=%d us  90p=%d us  95p=%d us  "
+    //                 "99p=%d us  99.9p=%d us  99.99p=%d us\n",
+    //                 k,
+    //                 perflow_tp[k] * message_size * 8 / 1000000.,
+    //                 perflow_tp[k],
+    //                 hist_value(fracs_pos2[k][0]), hist_value(fracs_pos2[k][1]),
+    //                 hist_value(fracs_pos2[k][2]), hist_value(fracs_pos2[k][3]),
+    //                 hist_value(fracs_pos2[k][4]), hist_value(fracs_pos2[k][5]),
+    //     	    hist_value(fracs_pos2[k][6]));
+    //         if(file) {
+    //             fprintf(file, "flow=%d tp=%'.2Lf mbps tp=%'.2Lf pps  1p=%d us "
+    //     			"50p=%d us  90p=%d us  95p=%d us  "
+    //                     "99p=%d us  99.9p=%d us  99.99p=%d us\n",
+    //                     k,
+    //                     perflow_tp[k] * message_size * 8 / 1000000.,
+    //                     perflow_tp[k],
+    //                     hist_value(fracs_pos2[k][0]), 
+    //                     hist_value(fracs_pos2[k][1]),
+    //                     hist_value(fracs_pos2[k][2]),
+    //                     hist_value(fracs_pos2[k][3]),
+    //                     hist_value(fracs_pos2[k][4]),
+    //     		hist_value(fracs_pos2[k][5]),
+    //                     hist_value(fracs_pos2[k][6]));
+    //             fflush(file);
+    //         }
+    //     }
+    //     // ===========
+
+    // #ifdef PRINT_STATS
+    //     printf("stats:\n");
+    //     for (i = 0; i < num_threads; i++) {
+    //         uint64_t rx_calls = read_cnt(&cs[i].rx_calls);
+    //         uint64_t rx_cycles = read_cnt(&cs[i].rx_cycles);
+    //         uint64_t tx_calls = read_cnt(&cs[i].tx_calls);
+    //         uint64_t tx_cycles = read_cnt(&cs[i].tx_cycles);
+    //         uint64_t rxc = (rx_calls == 0 ? 0 : rx_cycles / rx_calls);
+    //         uint64_t txc = (tx_calls == 0 ? 0 : tx_cycles / tx_calls);
+
+    //         printf("    core %2d: (rt=%"PRIu64", rs=%"PRIu64", rf=%"PRIu64
+    //             ", rxc=%"PRIu64", rb=%"PRIu64", tt=%"PRIu64", ts=%"PRIu64", tf=%"PRIu64
+    //             ", txc=%"PRIu64", tb=%"PRIu64")\n", i,
+    //             rx_calls, read_cnt(&cs[i].rx_short), read_cnt(&cs[i].rx_fail),
+    //             rxc, read_cnt(&cs[i].rx_bytes),
+    //             tx_calls, read_cnt(&cs[i].tx_short), read_cnt(&cs[i].tx_fail),
+    //             txc, read_cnt(&cs[i].tx_bytes));
+    //     }
+    //     for (i = 0; i < num_threads; i++) {
+    //         for (j = 0; j < num_conns; j++) {
+    //             printf("      t[%d].conns[%d]:  pend=%u  rx_r=%u  tx_r=%u  cnt=%"
+    //                     PRIu64" fd=%d\n",
+    //                     i, j, cs[i].conns[j].pending, cs[i].conns[j].rx_remain,
+    //                     cs[i].conns[j].tx_remain, cs[i].conns[j].cnt,
+    //                     cs[i].conns[j].fd);
+    //         }
+    //     }
+    // #endif
+
+    //     fflush(stdout);
+    //     memset(hist, 0, sizeof(*hist) * HIST_BUCKETS);
+
+    //     t_prev = t_cur;
+    // }
     fclose(file);
 
 #ifdef USE_MTCP

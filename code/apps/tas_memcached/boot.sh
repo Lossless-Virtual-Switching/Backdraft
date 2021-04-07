@@ -71,7 +71,7 @@ if [ "$type" = "client" ]; then
   echo Done!
 elif [ "$type" = "server" ]; then
   LD_PRELOAD=$TAS_DIR/lib/libtas_interpose.so \
-    memcached -m $memory -u root -l $ip -t $threads
+    memcached -m $memory -u root -l $ip -t $threads -d
 else
   echo "type variable is not supported (type=$type)"
 fi

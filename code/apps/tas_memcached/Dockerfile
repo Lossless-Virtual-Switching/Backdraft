@@ -45,7 +45,7 @@ git checkout b3df070d564973c9d6a4a0e143de7703043c5713; \
 ./autogen.sh && ./configure && make -j && make install
 
 # add boot script
-COPY ./boot.sh ./boot.sh
+COPY ["boot.sh", "run.sh", "kill.sh", "tcp.sh", "latency.sh", "./"]
 
 ENTRYPOINT ["/root/boot.sh"]
 
