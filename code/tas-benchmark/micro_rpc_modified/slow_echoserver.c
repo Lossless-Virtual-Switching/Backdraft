@@ -39,6 +39,7 @@
 #include <signal.h>
 #include <errno.h>
 #include <inttypes.h>
+#include <getopt.h>
 
 #include <utils.h>
 #include <utils_rng.h>
@@ -62,6 +63,7 @@ extern uint64_t icache_fill64(uint64_t x);
 extern uint64_t icache_fill256(uint64_t x);
 extern uint64_t icache_fill512(uint64_t x);
 
+// Notice: these values will be overriten in the main!
 static uint32_t listen_backlog = 512;
 static uint32_t max_events = 128;
 static uint32_t max_flows = 4096;
@@ -76,12 +78,61 @@ static volatile uint32_t num_ready = 0;
 #define sec_in_ns (1000 * 1000 * 1000)
 #define sec_in_us (1000000)
 #define ms_in_ns (1000000)
-static uint64_t danger_region_priod_sec = 15;
-static uint64_t danger_region_duration_sec = 15;
-// a slow incident happens priodically every ...
-static uint64_t incident_priod_us = 100; // 10us sec
-// incident slow by ..
-static uint64_t incident_duration_us = 1000; // 1ms
+
+struct params {
+  uint16_t port;
+  uint32_t threads;
+  char *config;
+  uint32_t max_flows;
+  uint32_t max_bytes;
+  uint32_t op_delay;
+  uint32_t working_set;
+  char * icache;
+  uint32_t listen_backlog;
+  uint32_t max_epevents;
+  int slow;
+  uint64_t danger_region_priod_sec;
+  uint64_t danger_region_duration_sec;
+  uint64_t incident_priod_us;
+  uint64_t incident_duration_us;
+};
+static struct params params = {
+  .port = 1234,
+  .threads = 1,
+  .config = NULL,
+  .max_flows = 4096,
+  .max_bytes = 1024,
+  .op_delay = 0,
+  .working_set = 0,
+  .icache = NULL,
+  .listen_backlog = 512,
+  .max_epevents = 128,
+  .slow = 1,
+  .danger_region_priod_sec = 15,
+  .danger_region_duration_sec = 15,
+  .incident_priod_us = 100,
+  .incident_duration_us = 1000,
+};
+struct option long_options[] = {
+  /* Thses options set flag */
+  {"no-slow", no_argument, &params.slow, 0},
+  /* Others ... */
+  {"--help", no_argument, 0, 'h'},
+  {"thread",  required_argument, 0, 't'},
+  {"config",  required_argument, 0, 'c'},
+  {"max-flows",  required_argument, 0, 'f'},
+  {"max-bytes",  required_argument, 0, 'b'},
+  {"op-delay",    required_argument, 0, 'o'},
+  {"working-set",    required_argument, 0, 'w'},
+  {"icache-set",    required_argument, 0, 'i'},
+  {"listen-backlog",    required_argument, 0, 'l'},
+  {"max-epoll-events",    required_argument, 0, 'e'},
+  {"dpriod (sec)",    required_argument, 0, 1000},
+  {"dduration (sec)",    required_argument, 0, 1001},
+  {"ipriod (us)",    required_argument, 0, 1002},
+  {"iduration (us)",    required_argument, 0, 1003},
+  {0, 0, 0, 0}
+};
 
 struct connection {
     int fd;
@@ -132,7 +183,7 @@ static inline uint64_t get_nanos(void)
     return 0;
 #endif
 }
- 
+
 static inline uint64_t ns(void)
 {
     struct timespec ts;
@@ -393,9 +444,10 @@ static inline void conn_close(struct core *co, struct connection *c)
 static void *thread_run(void *arg)
 {
     uint64_t now = ns();
-    uint64_t danger_region_begin = now + (danger_region_priod_sec * sec_in_ns);
+    uint64_t danger_region_begin = now +
+      (params.danger_region_priod_sec * sec_in_ns);
     uint64_t danger_region_end = danger_region_begin +
-                                    (danger_region_duration_sec * sec_in_ns);
+      (params.danger_region_duration_sec * sec_in_ns);
     uint64_t incident = danger_region_begin;
 
     struct core *co = arg;
@@ -485,31 +537,35 @@ static void *thread_run(void *arg)
                 if (op_delay > 0) {
                     co->opaque = kill_cycles(op_delay, co->opaque);
                 }
-                now = ns();
-                if (now  >= danger_region_begin && now <= danger_region_end) {
+                // Slow Receiver --------------------------
+                if (params.slow) {
+                  now = ns();
+                  if (now  >= danger_region_begin && now <= danger_region_end) {
                     // inside danger region
                     if (incident <= now) {
-                        fprintf(stdout, "%ld - incident! [%f ms]\n",
-                                now / ms_in_ns,
-                                incident_duration_us / 1000.0);
-                        struct timespec rqt = {
-                            .tv_sec = incident_duration_us / sec_in_us,
-                            .tv_nsec = (incident_duration_us % sec_in_us)
-                                                                        * 1000,
-                        };
-                        while (nanosleep(&rqt, &rqt) < 0) {
-                        }
-                        // set for next incident 
-                        incident = ns() + (incident_priod_us * 1000);    
+                      fprintf(stdout, "%ld - incident! [%f ms]\n",
+                          now / ms_in_ns,
+                          params.incident_duration_us / 1000.0);
+                      struct timespec rqt = {
+                        .tv_sec = params.incident_duration_us / sec_in_us,
+                        .tv_nsec = (params.incident_duration_us % sec_in_us)
+                          * 1000,
+                      };
+                      while (nanosleep(&rqt, &rqt) < 0) {
+                      }
+                      // set for next incident
+                      incident = ns() + (params.incident_priod_us * 1000);
                     }
-                }
-                if (now > danger_region_end) {
+                  }
+                  if (now > danger_region_end) {
                     // set for next danger region
                     danger_region_begin = ns() +
-                                    (danger_region_priod_sec * sec_in_ns);
+                      (params.danger_region_priod_sec * sec_in_ns);
                     danger_region_end = danger_region_begin +
-                                    (danger_region_duration_sec * sec_in_ns);
+                      (params.danger_region_duration_sec * sec_in_ns);
+                  }
                 }
+                // -----------------------------------------------
                 if (co->workingset != NULL) {
                     off = (utils_rng_gen32(&co->rng) % working_set) & ~63;
                     c->buf[0] = (*((volatile uint32_t *) (co->workingset + off)))++;
@@ -559,6 +615,115 @@ static void *thread_run(void *arg)
     return NULL;
 }
 
+void log_params(void)
+{
+  printf(
+    "{\n"
+    ".port = %d,\n"
+    ".threads = %d,\n"
+    ".max_bytes = %d,\n"
+    ".slow = %d,\n"
+    ".danger_region_priod_sec = %ld,\n"
+    ".danger_region_duration_sec = %ld,\n"
+    ".incident_priod_us = %ld,\n"
+    ".incident_duration_us = %ld,\n"
+    "}\n"
+    ,params.port,
+    params.threads,
+    params.max_bytes,
+    params.slow,
+    params.danger_region_priod_sec,
+    params.danger_region_duration_sec,
+    params.incident_priod_us,
+    params.incident_duration_us
+    );
+}
+
+void usage(void)
+{
+  int index = 0;
+  printf("usage:\n");
+  while (1) {
+    printf("\t--%s\n", long_options[index].name);
+    index += 1;
+    if (long_options[index].name == NULL) break;
+  }
+}
+
+void parse_opt(int argc, char *argv[])
+{
+  int c;
+  int optindex = 0;
+  char optstr[] = "h"; // only accpets long options
+  while (1) {
+    c = getopt_long(argc, argv, optstr, long_options, &optindex);
+    if (c == -1) break;
+
+    switch (c)
+    {
+      case 0:
+        /* If this option set a flag, do nothing else now. */
+        if (long_options[optindex].flag != 0)
+          break;
+        printf ("warning: option %s", long_options[optindex].name);
+        if (optarg)
+          printf (" with arg %s", optarg);
+        printf ("\n");
+        break;
+      case 1000:
+        params.danger_region_priod_sec = atoi(optarg);
+        break;
+      case 1001:
+        params.danger_region_duration_sec = atoi(optarg);
+        break;
+      case 1002:
+        params.incident_priod_us = atoi(optarg);
+        break;
+      case 1003:
+        params.incident_duration_us = atoi(optarg);
+        break;
+      case 't':
+        params.threads = atoi(optarg);
+        break;
+      case 'c':
+        params.config = optarg;
+        break;
+      case 'f':
+        params.max_flows = atoi(optarg);
+        break;
+      case 'b':
+        params.max_bytes = atoi(optarg);
+        break;
+      case 'o':
+        params.op_delay = atoi(optarg);
+        break;
+      case 'w':
+        params.working_set = atoi(optarg);
+        break;
+      case 'i':
+        params.icache = optarg;
+        break;
+      case 'l':
+        params.listen_backlog = atoi(optarg);
+        break;
+      case 'e':
+        params.max_epevents = atoi(optarg);
+        break;
+      case 'h':
+        usage();
+        exit(0);
+      case '?':
+        /* getopt_long already printed an error message. */
+        break;
+      default:
+        abort ();
+    }
+  }
+  if (optind < argc) {
+    params.port = atoi(argv[optind]);
+  }
+}
+
 int main(int argc, char *argv[])
 {
     unsigned num_threads, i;
@@ -574,51 +739,35 @@ int main(int argc, char *argv[])
     int ret;
 #endif
 
-    if (argc < 4 || argc > 11) {
-        fprintf(stderr, "Usage: ./echoserver PORT THREADS CONFIG [MAX-FLOWS] "
-            "[MAX-BYTES] [OP-DELAY] [WORKING-SET] [ICACHE-SET] "
-            "[LISTEN-BACKLOG] [MAX-EPEVENTS]\n");
-        return EXIT_FAILURE;
-    }
-    listen_port = atoi(argv[1]);
-    num_threads = atoi(argv[2]);
+    parse_opt(argc, argv);
+    listen_port = params.port;
+    num_threads = params.threads;
 
     signal(SIGPIPE, SIG_IGN);
 
 
 #ifdef USE_MTCP
-    if ((ret = mtcp_init(argv[3])) != 0) {
+    if ((ret = mtcp_init(params.config)) != 0) {
         fprintf(stderr, "mtcp_init failed: %d\n", ret);
         return EXIT_FAILURE;
     }
 #endif
 
-    if (argc >= 5) {
-        max_flows = atoi(argv[4]);
-    }
-    if (argc >= 6) {
-        max_bytes = atoi(argv[5]);
-    }
-    if (argc >= 7) {
-        op_delay = atoi(argv[6]);
-    }
-    if (argc >= 8) {
-        working_set = atoi(argv[7]);
-    }
-    if (argc >= 9) {
-        if ((end = strchr(argv[8], ',')) == NULL) {
+    max_flows = params.max_flows;
+    max_bytes = params.max_bytes;
+    op_delay = params.op_delay;
+    working_set = params.working_set;
+    if (params.icache != NULL) {
+        if ((end = strchr(params.icache, ',')) == NULL) {
             return EXIT_FAILURE;
         }
         *end = 0;
-        icache_block = atoi(argv[8]);
+        icache_block = atoi(params.icache);
         icache_set = atoi(end + 1);
     }
-    if (argc >= 10) {
-        listen_backlog = atoi(argv[9]);
-    }
-    if (argc >= 11) {
-        max_events = atoi(argv[10]);
-    }
+    listen_backlog = params.listen_backlog;
+    max_events = params.max_epevents;
+    log_params();
 
     pts = calloc(num_threads, sizeof(*pts));
     cs = calloc(num_threads, sizeof(*cs));

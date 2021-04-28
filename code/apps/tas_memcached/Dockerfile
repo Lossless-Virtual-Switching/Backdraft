@@ -16,7 +16,7 @@ RUN cd /opt/; \
     git clone https://github.com/protobuf-c/protobuf-c; \
     cd protobuf/; \
     git checkout aedb8d726c8d2a371d999354d44ca7e1bdbb1e73; \
-    ./autogen.sh && ./configure && make -j && make install && ldconfig; \
+    ./autogen.sh && ./configure DIST_LANG=cpp && make -j && make install && ldconfig; \
     cd ../protobuf-c/ ; \
     ./autogen.sh && ./configure && make && make install && ldconfig
 
@@ -34,15 +34,16 @@ RUN cd post-loom/code/dpdk; \
     make;
 
 # setup mutilate
-RUN git clone https://github.com/erfan111/mutilate; \                           
-  cd mutilate; \                                                                
-  scons 
+RUN git clone https://github.com/erfan111/mutilate; \
+    cd mutilate; \
+    scons
 
+# SOCKPERF was not used in experiment
 # setup sockperf
-RUN git clone https://github.com/Mellanox/sockperf.git; \
-cd sockperf/; \
-git checkout b3df070d564973c9d6a4a0e143de7703043c5713; \
-./autogen.sh && ./configure && make -j && make install
+# RUN git clone https://github.com/Mellanox/sockperf.git; \
+# cd sockperf/; \
+# git checkout b3df070d564973c9d6a4a0e143de7703043c5713; \
+# ./autogen.sh && ./configure && make -j && make install
 
 # add boot script
 COPY ["boot.sh", "run.sh", "kill.sh", "tcp.sh", "latency.sh", "./"]
