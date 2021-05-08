@@ -70,6 +70,7 @@ def draw(config):
         # print(config.x_limit)
         # ax.set_xlim(eval(config.x_limit))
         ax.set_xlim((x_axis_data[0] + config.x_limit[0], x_axis_data[0] + config.x_limit[1]))
+        # ax.set_xlim((x_axis_data[0] + config.x_limit[0], x_axis_data[-1]))
 
     if config.y_limit:
         ax.set_ylim(eval(config.y_limit))
@@ -93,7 +94,7 @@ def draw(config):
     plt.tight_layout()
     
     # Don't you want to save this nice figure?
-    fig.savefig(config.fig_name, dpi=config.dpi)
+    fig.savefig(config.fig_name + ".pdf", dpi=config.dpi)
     ##########################################
 
 if __name__ == '__main__':

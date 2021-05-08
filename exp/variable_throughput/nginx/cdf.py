@@ -33,7 +33,7 @@ def plot(data_file, fig, ax, label):
 
 
 # print('data loaded (%d)' % k)
-fig = plt.figure()
+fig = plt.figure(figsize=(4,4))
 ax = fig.add_subplot(1, 1, 1)
 ax.set_xlabel('Throughput (Mbps)')
 ax.set_ylabel('ECDF')
@@ -51,15 +51,18 @@ argc = len(argv)
 if argc < 2:
     sys.exit(1)
 
+window = [None, "wnd=20", "wnd=50", "wnd=100", "wnd=150", "wnd=200"]
 for i in range(1, argc):
     path = argv[i]
     label = os.path.basename(path)
-    plot(path, fig, ax, label)
+    # plot(path, fig, ax, label)
+    plot(path, fig, ax, window[i])
 # plot('./with_slow_recv/tmp.txt', fig, ax, 'slow')
 # plot('./without_slow_recv/tmp.txt', fig, ax, 'no slow')
 
 plt.legend()
-filename = 'cdffig.jpg'
+plt.tight_layout()
+filename = 'cdffig.pdf'
 fig.savefig(filename, dpi=300)
 print('file saved at', filename)
 

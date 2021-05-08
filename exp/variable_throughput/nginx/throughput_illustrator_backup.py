@@ -3,8 +3,8 @@ import yaml
 import numpy as np
 
 # data = np.loadtxt("1M_Req_1_Concurrency.txt")
-# data = np.loadtxt("/tmp/ab_stats_7.txt")
-data = np.loadtxt("/tmp/ab_stats_4_core.txt")
+data = np.loadtxt("/tmp/ab_stats_7.txt")
+# data = np.loadtxt("/tmp/ab_stats_7_core.txt")
 # data = np.loadtxt("/tmp/ab_stats_2_core.txt")
 
 ts_data = [] 
@@ -77,56 +77,59 @@ import matplotlib
 import matplotlib.pyplot as plt
 import itertools
 
-def draw():
+# Some preparation that are not all necessary
+master_linestyles = ['-', '--', '-.', ':']
+master_markers = ['o', 'D', 'v', '^', '<', '>', 's', 'p', '*', '+', 'x']
+my_colors = ['tab:blue', 'tab:red']
 
-    # Some preparation that are not all necessary
-    master_linestyles = ['-', '--', '-.', ':']
-    master_markers = ['o', 'D', 'v', '^', '<', '>', 's', 'p', '*', '+', 'x']
-    my_colors = ['tab:blue', 'tab:red']
-    
-    linescycle = itertools.cycle(master_linestyles)
-    markercycle = itertools.cycle(master_markers)
-    
-    # Data for plotting
-    t = np.arange(0, len(t_data), 1)
-    
-    # Getting the fig and ax
-    fig, ax = plt.subplots(figsize=(4,4))
-    # ax.plot(ts_data[:len(t_data)], t_data, marker=next(markercycle), linewidth=3, linestyle=next(linescycle))
-    
-    # Here we draw the figure, I'm picking the first column only
-    # ts_data = np.array(ts_data)
-    # ax.plot(ts_data[:len(t_data)][:, 0], t_data, linewidth=2, linestyle=next(linescycle))
-    ax.plot(ts_data[:len(t_data)], t_data, linewidth=2, linestyle=next(linescycle))
-    
-    # limiting the x axis
-    # ax.set_xlim((ts_data[0] + 11000000, ts_data[0] + 11010000))
-    ax.set_xlim((ts_data[0] + 11004000, ts_data[0] + 11005000))
-    
-    # limiting the y axis
-    # ax.set_ylim((0.5, 1.3))
-    
-    # setting the tick value and locations
-    locs, labels = plt.xticks()            # Get locations and labels
-    ax.set_xticks(locs)
-    ax.set_xticklabels([0, 200, 400, 600, 800, '1K'])
-    # ax.set_xticklabels([0, 2, 4, 6, 8, 10])
-    
-    # setting x and y labels
-    # ax.set(xlabel='time (ns)', ylabel='Throughput (Mbps)')
-    # ax.set(xlabel='time (ms)', ylabel='Throughput (Mbps)')
-    ax.set(xlabel='time (us)', ylabel='Throughput (Mbps)')
-    
-    # grid stuff
-    yax = ax.get_yaxis()
-    yax.grid(True, linestyle="dotted")
-    
-    # Let's save some space
-    plt.tight_layout()
-    
-    # Don't you want to save this nice figure?
-    fig.savefig("throughput.png", dpi=300)
-    ##########################################
+linescycle = itertools.cycle(master_linestyles)
+markercycle = itertools.cycle(master_markers)
+
+# Data for plotting
+t = np.arange(0, len(t_data), 1)
+
+# Getting the fig and ax
+fig, ax = plt.subplots(figsize=(4,4))
+# ax.plot(ts_data[:len(t_data)], t_data, marker=next(markercycle), linewidth=3, linestyle=next(linescycle))
+
+# np.savetxt("x_data.txt", ts_data)
+# np.savetxt("y_data.txt", t_data)
+
+# ts_data = np.loadtxt("x_data.txt")
+# t_data = np.loadtxt("y_data.txt")
+# Here we draw the figure, I'm picking the first column only
+# ts_data = np.array(ts_data)
+# ax.plot(ts_data[:len(t_data)][:, 0], t_data, linewidth=2, linestyle=next(linescycle))
+ax.plot(ts_data[:len(t_data)], t_data, linewidth=2, linestyle=next(linescycle))
+
+# limiting the x axis
+# ax.set_xlim((ts_data[0] + 11000000, ts_data[0] + 11010000))
+# ax.set_xlim((ts_data[0] + 11004000, ts_data[0] + 11005000))
+
+# limiting the y axis
+# ax.set_ylim((0.5, 1.3))
+
+# setting the tick value and locations
+#locs, labels = plt.xticks()            # Get locations and labels
+# ax.set_xticks(locs)
+# ax.set_xticklabels([0, 200, 400, 600, 800, '1K'])
+# ax.set_xticklabels([0, 2, 4, 6, 8, 10])
+
+# setting x and y labels
+# ax.set(xlabel='time (ns)', ylabel='Throughput (Mbps)')
+# ax.set(xlabel='time (ms)', ylabel='Throughput (Mbps)')
+ax.set(xlabel='time (ns)', ylabel='Throughput (Mbps)')
+
+# grid stuff
+yax = ax.get_yaxis()
+yax.grid(True, linestyle="dotted")
+
+# Let's save some space
+plt.tight_layout()
+
+# Don't you want to save this nice figure?
+fig.savefig("throughput.png", dpi=300)
+##########################################
 # latency
 
 # t = np.arange(0, len(data), 1)
@@ -141,14 +144,3 @@ def draw():
 # ax.grid()
 # 
 # fig.savefig("latency.png")
-
-if __name__ == '__main__':
-    yaml_data = None
-    with open("fig_descriptor.yaml", 'r') as steam:
-        try:
-            # print(yaml.safe_load(stream))
-            yaml_data = yaml.safe_load(steam)
-        except yaml.YAMLError as exc:
-            print(exc)
-
-        print(yaml_data)

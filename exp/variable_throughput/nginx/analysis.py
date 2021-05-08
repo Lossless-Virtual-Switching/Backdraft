@@ -3,22 +3,21 @@
 import numpy as np
 import sys
 
-if len(sys.argv) < 2:
+if len(sys.argv) < 3:
     print("Error: Invalid parameters: Path to trace not existed")
-    print("usage: ./program [<path_to_trace>]")
+    print("usage: ./program window [<path_to_trace>]")
     exit(0)
 
-path_to_trace = sys.argv[1]
 # data = np.loadtxt("1M_Req_1_Concurrency.txt")
 # data = np.loadtxt("/tmp/ab_stats_7.txt")
 ts_data = [] 
 
 try:
-    for j in range(1, len(sys.argv)):
+    for j in range(2, len(sys.argv)):
         path_to_trace = sys.argv[j]
         data = np.loadtxt(path_to_trace)
         size = 79
-        if j == 2:
+        if j == 3:
            size = 237 
         print(size)
         for i in data:
@@ -37,7 +36,10 @@ ts_data =  ts_data[ts_data[:, 0].argsort()]
 
 t_data = []
 
-sliding_wnd = 20000000
+sliding_wnd = 50
+if sys.argv[1]:
+    sliding_wnd = int(sys.argv[1])
+
 # bytes_per_request = 79
 counter = 0
 tput = 0
@@ -95,8 +97,12 @@ print(e_wnd_idx)
 
 # This part is just verification
 print(len(t_data), len(ts_data))
+# f = ts_data[0]
+# for i in range(1, len(ts_data)):
+#     ts_data[i][0] = ts_data[i][0] - f[0]
+# f[0] = 0
 
 np.savetxt("x_data.txt", ts_data[:,0])
-np.savetxt("y_data_20s.txt", t_data)
+np.savetxt("y_data_200.txt", t_data)
 
 

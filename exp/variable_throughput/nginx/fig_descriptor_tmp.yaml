@@ -5,9 +5,9 @@
   x_axis_data: "x_data.txt"
   y_axis_data: "y_data.txt"
   dimension_size:
-  x_tick_labels:  # [0, 200, 400, 600, 800, '1K']
+  x_tick_labels:  [0, 200, 400, 600, 800, '1K']
   y_limit:
-  x_limit: [1050000, 1051000]
+  x_limit:  [11540000, 11541000]
   x_label: "time (us)"
   y_label: "Throughput (Mbps)"
   grid: True
