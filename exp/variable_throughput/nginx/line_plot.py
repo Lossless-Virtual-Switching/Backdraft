@@ -5,6 +5,7 @@ import matplotlib
 import matplotlib.pyplot as plt
 import itertools
 import numpy as np
+import sys
 
 class Map(dict):
     def __init__(self, *args, **kwargs):
@@ -56,7 +57,7 @@ def draw(config):
     # Here we draw the figure, I'm picking the first column only
     # ts_data = np.array(ts_data)
     # ax.plot(ts_data[:len(t_data)][:, 0], t_data, linewidth=2, linestyle=next(linescycle))
-    min_dimension = min(len(config.x_axis_data), len(config.y_axis_data))
+    min_dimension = min(len(x_axis_data), len(y_axis_data))
     if config.dimension_size:
         min_dimension = config.dimension_size
 
@@ -66,8 +67,9 @@ def draw(config):
     # ax.set_xlim((ts_data[0] + 11000000, ts_data[0] + 11010000))
     if config.x_limit:
         # ax.set_xlim(ts_data[0] + 11004000, ts_data[0] + 11005000))
-        print(config.x_limit)
-        ax.set_xlim(eval(config.x_limit))
+        # print(config.x_limit)
+        # ax.set_xlim(eval(config.x_limit))
+        ax.set_xlim((x_axis_data[0] + config.x_limit[0], x_axis_data[0] + config.x_limit[1]))
 
     if config.y_limit:
         ax.set_ylim(eval(config.y_limit))
@@ -76,9 +78,7 @@ def draw(config):
     if config.x_tick_labels:
         locs, labels = plt.xticks()            # Get locations and labels
         ax.set_xticks(locs)
-        # ax.set_xticklabels([0, 200, 400, 600, 800, '1K'])
         ax.set_xticklabels(config.x_tick_labels)
-    # ax.set_xticklabels([0, 2, 4, 6, 8, 10])
     
     # setting x and y labels
     # ax.set(xlabel='time (ms)', ylabel='Throughput (Mbps)')
@@ -98,7 +98,8 @@ def draw(config):
 
 if __name__ == '__main__':
     yaml_data = None
-    with open("fig_descriptor.yaml", 'r') as steam:
+    config_file = sys.argv[1]
+    with open(config_file, 'r') as steam:
         try:
             # print(yaml.safe_load(stream))
             yaml_data = yaml.safe_load(steam)
