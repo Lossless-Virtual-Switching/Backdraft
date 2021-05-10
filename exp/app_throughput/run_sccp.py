@@ -17,6 +17,7 @@ def parse_args():
     parser.add_argument('--base', default='/tmp/')
     parser.add_argument('--num-thread', '-t', type=int, default=1)
     parser.add_argument('--count-files', type=int, default=10)
+    parser.add_argument('--large', '-l', action='store_true')
     args = parser.parse_args()
     return args
 
@@ -31,8 +32,10 @@ def scp_client(index, args):
 
     k = 0
     while not kill:
-        filename = '{}.txt'.format(k)
-        # filename = 'large.img'
+        if args.large:
+            filename = 'large.img'
+        else:
+            filename = '{}.txt'.format(k)
         filepath = os.path.join(args.target_path, filename)
         # cmd = 'scp scp://{user}@{server}:{port}/{path} ./'
         cmd = 'scp {user}@{server}:/{path} ./'
@@ -46,6 +49,7 @@ def scp_client(index, args):
             break
         k = (k + 1) % args.count_files
         # time.sleep(1) # just for testing
+    print('worker ', index, 'done!')
 
 
 def main():
@@ -53,6 +57,8 @@ def main():
     if not os.path.isdir(args.base):
         print('base directory not found', file=sys.stderr)
         sys.exit(1)
+
+    subprocess.run('sudo pkill -KILL scp', shell=True)
 
     for i in range(args.num_thread):
         name = 'worker_{}'.format(i)

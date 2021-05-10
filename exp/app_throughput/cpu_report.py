@@ -15,7 +15,7 @@ CLS='\033[2J\033[;H'
 def main():
     cmd = 'mpstat -o JSON -N ALL -P ALL -u 1 1'
     cpu_per_line = 10
-    report_interval = 2
+    report_interval = 1
     while True:
         try:
             res = subprocess.check_output(cmd, shell=True)
