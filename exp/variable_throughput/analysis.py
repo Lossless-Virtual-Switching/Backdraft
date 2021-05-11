@@ -14,7 +14,7 @@ def main(args):
     
     try:
         if args.trace_type == "NGINX":
-            for j in trace_files:
+            for j in args.trace_files:
                 path_to_trace = j
                 data = np.loadtxt(path_to_trace)
                 size = 79
@@ -24,7 +24,7 @@ def main(args):
                 for i in data:
                     ts_data.append((i[0] + i[1], size))
         else:
-            for j in trace_files:
+            for j in args.trace_files:
                 path_to_trace = j
                 # data = np.loadtxt(path_to_trace, delimiter=" ", usecols=(1,4))
                 with open(path_to_trace, 'r') as f:
@@ -41,7 +41,7 @@ def main(args):
     
     # ts_data.sort()
     
-    if TRACE_TYPE == "MEMCACHED":
+    if args.trace_type == "MEMCACHED":
         ts_data =  ts_data[ts_data[:, 0].argsort()]
     
     t_data = []
@@ -117,8 +117,9 @@ def main(args):
     print(ts_data[0])
     # np.savetxt(args.x_file_path, ts_data[:,0])
     # np.savetxt(args.y_file_path, t_data)
-    np.savetxt(args.res_dir + "/x_data.txt", ts_data[:,0])
-    np.savetxt(args.res_dir + "/y_data.txt")
+    print(args.dir_res)
+    np.savetxt(args.dir_res + "/x_data.txt", ts_data[:,0])
+    np.savetxt(args.dir_res + "/y_data.txt", t_data)
 
 if __name__ == "__main__":
     
@@ -132,7 +133,7 @@ if __name__ == "__main__":
 
     args = parser.parse_args()
     # window_size = args.wnd_size
-    print(args)
+    # print(args)
     print(args.trace_files)
 
     main(args)
