@@ -1,0 +1,14 @@
+- fig-descriptor:
+  experiment: "memcached variable throughput for 4 cores"
+  fig_name: "memcached/test_50ms_4_core"
+  fig_size: [4,4]
+  x_axis_data: "memcached/x_data.txt"
+  y_axis_data: "memcached/y_data.txt"
+  dimension_size:
+  x_tick_labels: # 1 # [0, 150, 300, 450, 600, 750, '1K']  # [0, 150, 300, 450, 600, 750, '1K']
+  y_limit: [0, 50]
+  x_limit: [4807762, 4808762] # [4807762, 4857762] # [4807762, 4808762]
+  x_label: "time (us)"
+  y_label: "Throughput (Mbps)"
+  grid: True
+  dpi: 300
