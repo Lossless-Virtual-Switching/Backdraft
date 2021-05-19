@@ -1,0 +1,10 @@
+server:
+taskset -c 1-4 memcached -l 192.168.1.1 -m 50000 -c 2000 -t 4
+
+agent (3 agents):
+./mutilate -A -T 60
+
+master:
+./mutilate -s node0 --loadonly --keysize=fb_key --valuesize=fb_value --iadist=fb_ia --update=0.033
+
+./mutilate_merge_logs.py -s node0 -a node2 -a node3 -a node4 --noload -T 16 -c 1 --keysize=fb_key --valuesize=fb_value --iadist=fb_ia --update=0.033 --save=/tmp/latency.txt --agent-sampling
