@@ -50,12 +50,8 @@ def main(args):
             for j in args.trace_files:
                 path_to_trace = j
                 data = np.loadtxt(path_to_trace)
-                size = 79
-                if j == 3:
-                   size = 237
-                print(size)
                 for i in data:
-                    ts_data.append((i[0] + i[1], size))
+                    ts_data.append((i[0] + i[1], int(i[2])))
         else:
             for j in args.trace_files:
                 path_to_trace = j
@@ -74,7 +70,8 @@ def main(args):
 
     # ts_data.sort()
 
-    if args.trace_type == "MEMCACHED":
+    # if args.trace_type == "MEMCACHED":
+    if not args.skip_sorting:
         ts_data =  ts_data[ts_data[:, 0].argsort()]
 
     sliding_wnd = args.wnd_size
@@ -170,6 +167,9 @@ if __name__ == "__main__":
     parser.add_argument("trace_files", nargs='+', help="Trace files, pass as much as you want")
     parser.add_argument("--tick-interval", help="distance between ticks",
             type=int, default=1)
+    parser.add_argument("--skip-sorting", action='store_true', default=False,
+            help="if data is already sorted by timestamp "
+            "then this operation can be skipped")
 
     args = parser.parse_args()
     # window_size = args.wnd_size
