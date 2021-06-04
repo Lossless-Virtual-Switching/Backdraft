@@ -1,0 +1,645 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN"
+"https://www.w3.org/TR/html4/loose.dtd">
+
+<html>
+<head>
+<meta http-equiv="Content-Type" content="text/html; charset=ISO-8859-1">
+<title>8th USENIX Symposium on Networked Systems Design and Implementation (NSDI '11)</title>
+
+<style type="text/css">
+<!--
+@import url(https://www.usenix.org/legacy/style.css);
+@import url(https://www.usenix.org/legacy/events/conf.css);
+@import url(https://www.usenix.org/legacy/events/nsdi11/nsdi11.css);
+-->
+</style>
+
+</head>
+
+<a href="https://www.usenix.org"><img src="https://www.usenix.org/graphics/new_usenix.jpg" width="288" height="232" alt="Check out the new USENIX Web site." align="right"></a>
+
+
+
+<body id="home" bgcolor="#ffffff">
+<center>
+<!--START TABLE 1-->
+<table style="background:url(https://www.usenix.org/legacy/events/nsdi11/art/back_border.gif);" width=750 border=0 cellpadding=0 cellspacing=0> 
+<tr>
+	<!--banner-->
+	<td colspan="2">
+			<img src="https://www.usenix.org/legacy/events/nsdi11/art/nsdi11_banner.jpg" width=750 height=120 alt="NSDI '11 Banner"></td>
+	<!--end banner-->
+	</tr>
+
+	<tr>
+		<td bgcolor="#ffffff" colspan="2" valign="bottom">
+		<!-- insert topmenu -->
+		<ul id="topbar" class="nav">
+<!--<li id="topbar-01"><a href="/legacy/events/nsdi11/">NSDI '11 Home</a></li> -->
+
+<li id="topbar-02"><a href="https://www.usenix.org/legacy/">USENIX Home</a></li>
+
+<li id="topbar-03"><a href="https://www.usenix.org/legacy/events/">Conferences</a></li>
+
+<li id="topbar-04"><a href="https://www.usenix.org/legacy/publications/library/proceedings/">Publications</a></li>
+
+<li id="topbar-05"><a href="https://www.usenix.org/legacy/membership/">Membership</a></li>
+
+  </ul>
+		</td>
+	</tr>
+
+	<!--begin spacer-->
+	<tr>
+		<td colspan="2" height="6">
+			<img src="https://www.usenix.org/legacy/events/nsdi11/art/longbar.gif" width=750 height=6 alt="">
+			</td>
+	</tr>
+	<!--end spacer-->
+
+	<tr>
+		<td width="150" valign="top">
+		<!--begin left menu-->
+			<ul id="left-navlist" class="nav">
+			<!-- insert menu -->
+			<li><a href="https://www.usenix.org/legacy/events/nsdi11/nsdi11.html" id="nav-home"><b>NSDI '11 Home</b></a></li>
+
+<li><a href="https://www.usenix.org/legacy/events/nsdi11/registration/"  id="nav-reg"><b>Registration</b></a></li>
+
+<li><a href="https://www.usenix.org/legacy/events/nsdi11/discounts.html" id="nav-discounts"><b>Discounts</b></a></li>
+
+<li><a href="https://www.usenix.org/legacy/events/nsdi11/organizers.html" id="nav-organizers"><b>Organizers</b></a></li>
+
+<!--<li><a href="/legacy/events/nsdi11/invitation.html" id="nav-invitation"><b>Invitation</b></a></li>-->
+
+<li><span id="bar"><img src="https://www.usenix.org/legacy/events/nsdi11/art/left_bar.gif" width="150" height="2" border="0" alt=""></span></li>
+
+<li><a href="https://www.usenix.org/legacy/events/nsdi11/ataglance.html" id="nav-glance"><b>At a Glance</b></a></li>
+
+<li><a href="https://www.usenix.org/legacy/events/nsdi11/calendar.html" id="nav-calendar"><b>Calendar</b></a></li>
+
+<!--<li><a href="/legacy/events/nsdi11/tutorials/" id="nav-tut"><b>Tutorials</b></a></li>-->
+
+<li><a href="https://www.usenix.org/legacy/events/nsdi11/tech/" id="nav-tech"><b>Tech Sessions</b></a></li>
+
+<!--<li><a href="/legacy/events/nsdi11/activities.html#wips" id="nav-wips"><b>WiPs</b></a></li>-->
+
+<li><a href="https://www.usenix.org/legacy/events/nsdi11/poster.html" id="nav-poster"><b>Poster Session</b></a></li>
+
+<li><a href="https://www.usenix.org/legacy/events/nsdi11/bofs.html" id="nav-bofs"><b>BoFs</b></a></li>
+
+<li><a href="https://www.usenix.org/legacy/events/nsdi11/workshops.html" id="nav-workshops"><b>Workshops</b></a></li>
+
+<li><span id="bar"><img src="https://www.usenix.org/legacy/events/nsdi11/art/left_bar.gif" width="150" height="2" border="0" alt=""></span></li>
+
+<li><a href="https://www.usenix.org/legacy/events/nsdi11/sponsors.html" id="nav-sponsors"><b>Sponsors</b></a></li>
+
+<li><a href="https://www.usenix.org/legacy/events/nsdi11/activities.html" id="nav-activities"><b>Activities</b></a></li>
+
+<li><a href="https://www.usenix.org/legacy/events/nsdi11/hotel.html" id="nav-hotel"><b>Hotel/Travel</b></a></li>
+
+<li><a href="https://www.usenix.org/legacy/events/nsdi11/services.html" id="nav-services"><b>Services</b></a></li>
+
+<li><span id="bar"><img src="https://www.usenix.org/legacy/events/nsdi11/art/left_bar.gif" width="150" height="2" border="0" alt=""></span></li>
+
+<li><a href="https://www.usenix.org/legacy/events/nsdi11/students.html" id="nav-students"><b>Students</b></a></li>
+
+<li><a href="https://www.usenix.org/legacy/events/nsdi11/questions.html" id="nav-questions"><b>Questions?</b></a></li>
+
+<li><a href="https://www.usenix.org/legacy/events/nsdi11/promote.html" id="nav-promote"><b>Help Promote!</b></a></li>
+
+<li><a href="https://www.usenix.org/legacy/events/nsdi11/nsdi11_flyer.pdf" ID="nav-brochure"><b>Flyer PDF</b></a></li>
+
+<li><span id="bar"><img src="https://www.usenix.org/legacy/events/nsdi11/art/left_bar.gif" width="150" height="2" border="0" alt=""></span></li>
+
+<li><a href="https://www.usenix.org/legacy/events/nsdi11/instrux" id="nav-authors"><b>For Participants</b></a></li>
+
+<li><a href="https://www.usenix.org/legacy/events/nsdi11/cfp/" id="nav-cfp"><b>Call for Papers</b></a></li>
+
+<li><a href="https://www.usenix.org/legacy/events/bytopic/nsdi.html" id="nav-past"><b>Past Proceedings</b></a></li>
+
+<li><span id="bar"><img src="https://www.usenix.org/legacy/events/nsdi11/art/left_bottom.gif" alt="" width="150" height="20"></span></li>
+
+</ul>
+
+
+		<!--end left menu--></ul>
+
+		
+<!--start sidebar images-->
+
+<!--BEGIN SPONSORS TABLE-->
+<table width="100%" cellspacing="3" cellpadding="3" border="0">
+	
+<tr align="center">
+<td class="center">
+<p class="sponsorhead">THANKS TO OUR SPONSORS</p>
+
+<p class="sponsorhead">Gold Sponsor</p>
+<p class="sponsorlogo">
+<a href="https://www.infosys.com/" target="_blank">
+<img src="https://www.usenix.org/legacy/events/nsdi11/art/promoters/infosys_151x59.gif" width="151" height="59" border="0" alt="Infosys"></a>
+</p>
+
+<p class="sponsorhead">Silver Sponsors</p>
+<!--<p class="sponsorlogo">
+<a href="https://www.facebook.com/" target="blank">
+<img src="art/promoters/facebook_150x50.jpg" width="150" height="50" border="0" alt="Facebook"></a>
+</p>-->
+	
+<p class="sponsorlogo">
+<a href="https://www.emc.com/" target="_blank">
+<img src="https://www.usenix.org/legacy/events/nsdi11/art/promoters/emc_150x55.jpg" width="150" height="55" border="0" alt="EMC"></a>
+</p>
+
+<p class="sponsorlogo">
+<a href="https://research.google.com/" target="_blank">
+<img src="https://www.usenix.org/legacy/events/nsdi11/art/promoters/google_140x58.gif" width="140" height="58" border="0" alt="Google"></a>
+</p>
+
+<p class="sponsorlogo">
+<a href="https://www.nsf.gov" target="_blank">
+<img src="https://www.usenix.org/legacy/events/nsdi11/art/promoters/nsf_125x123.gif" width="125" height="123" border="0" alt="National Science Foundation"></a>
+</p>
+
+<p class="sponsorlogo">
+<a href="https://www.vmware.com/" target="_blank">
+<img src="https://www.usenix.org/legacy/events/nsdi11/art/promoters/vmware_150x23.jpg" width="150" height="23" border="0" alt="VMware"></a>
+</p>
+
+<!--<p class="sponsorlogo">
+<a href="https://www.nsf.gov/" target="blank">
+<img src="art/promoters/nsf_125x123.gif" width="125" height="123" border="0" alt="NSF"></a>
+</p>-->
+
+<p class="sponsorhead">Bronze Sponsors</p>
+
+<p class="sponsorlogo">
+<a href="https://www.akamai.com/" target="_blank">
+<img src="https://www.usenix.org/legacy/events/nsdi11/art/promoters/akamai_139x61.jpg" width="139" height="61" border="0" alt="Akamai"></a>
+</p>
+
+<p class="sponsorlogo"> 
+<a href="https://www.cisco.com/" target="_blank"> 
+<img src="https://www.usenix.org/legacy/events/nsdi11/art/promoters/cisco_133x74.jpg" width="133" height="74" border="0" alt="Cisco"></a> 
+</p> 
+
+<p class="sponsorlogo">
+<a href="https://www.hpl.hp.com" target="_blank">
+<img src="https://www.usenix.org/legacy/events/nsdi11/art/promoters/hp_100x98.jpg" width="100" height="98" border="0" alt="HP Labs"></a>
+</p>
+
+<p class="sponsorlogo">
+<a href="https://www.intel.com/" target="_blank">
+<img src="https://www.usenix.org/legacy/events/nsdi11/art/promoters/intel_125x86.jpg" width="125" height="86" border="0" alt="Intel"></a>
+</p>
+
+<p class="sponsorlogo">
+<a href="https://www.research.microsoft.com" target="_blank">
+<img src="https://www.usenix.org/legacy/events/nsdi11/art/promoters/microsoft_research_151x42.gif" width="151" height="42" border="0" alt="Microsoft Research"></a>
+</p>
+
+<!--<p class="sponsorhead">Industry Partner</p>
+<p class="sponsorlogo">
+<a href="https://www.govirtual.org/" target="blank">
+<img src="art/promoters/govirtual_125x18.jpg" width="125" height="18" border="0" alt="GoVirtual.org"></a>
+</p>-->
+
+<p class="sponsorhead">Media Sponsors and Industry Partners</p>
+<p class="sponsorlogo">
+<a href="https://queue.acm.org/" target="blank">
+<img src="https://www.usenix.org/legacy/events/nsdi11/art/promoters/acmqueue_125x40.jpg" width="125" height="40" border="0" alt="ACM QUEUE"></a>
+</p>
+
+<p class="sponsorlogo">
+<a href="https://www.admin-magazine.com/" target="blank">
+<img src="https://www.usenix.org/legacy/events/nsdi11/art/promoters/admin_125x47.jpg" width="125" height="47" border="0" alt="Admin Magazine: Network & Security"></a>
+</p>
+
+<!--<p class="sponsorlogo">
+<a href="https://www.betanews.com/" target="blank">
+<img src="art/promoters/betanews_125x23.jpg" width="125" height="23" border="0" alt="BetaNews"></a>
+</p>-->
+
+<p class="sponsorlogo">
+<a href="https://www.conferenceguru.com/" target="blank">
+<img src="https://www.usenix.org/legacy/events/nsdi11/art/promoters/confguru_135x28.jpg" width="135" height="28" border="0" alt="Conference Guru"></a>
+</p>
+
+<p class="sponsorlogo">
+<a href="https://datacenterjournal.com/" target="blank">
+<img src="https://www.usenix.org/legacy/events/nsdi11/art/promoters/dcj_135x25.jpg" width="135" height="25" border="0" alt="Data Center Journal"></a>
+</p>
+
+<p class="sponsorlogo">
+<a href="https://www.dmtf.org/" target="blank">
+<img src="https://www.usenix.org/legacy/events/nsdi11/art/promoters/dmtf_115x41.jpg" width="115" height="41" border="0" alt="Distributed Management Task Force, Inc."></a>
+</p>
+
+<p class="sponsorlogo">
+<a href="https://www.freesoftwaremagazine.com" target="blank">
+<img src="https://www.usenix.org/legacy/events/nsdi11/art/promoters/fsm_125x36.gif" width="125" height="36" border="0" alt="Free Software Magazine"></a>
+</p>
+
+<p class="sponsorlogo">
+<a href="https://www.girlsintech.net/" target="blank">
+<img src="https://www.usenix.org/legacy/events/nsdi11/art/promoters/git_125x33.jpg" width="125" height="33" border="0" alt="Girls In Tech"></a>
+</p>
+
+<!--<p class="sponsorlogo">
+<a href="https://www.hpcwire.com/" target="blank">
+<img src="art/promoters/hpcwire_125x39.jpg" width="125" height="39" border="0" alt="HPCwire"></a>
+</p>
+
+<p class="sponsorlogo">
+<a href="https://www.computer.org/portal/site/security/" target="blank">
+<img src="art/promoters/ieee_sp_125x30.gif" width="125" height="30" border="0" alt="IEEE Security & Privacy"></a>
+</p>-->
+
+<p class="sponsorlogo">
+<a href="https://www.infosecnews.org/" target="blank">
+<img src="https://www.usenix.org/legacy/events/nsdi11/art/promoters/infosecnews_100x80.gif" width="100" height="80" border="0" alt="InfoSec News"></a>
+</p>
+
+<p class="sponsorlogo">
+<a href="https://www.itknowledgeexchange.com/" target="blank">
+<img src="https://www.usenix.org/legacy/events/nsdi11/art/promoters/itke_135x49.jpg" width="135" height="49" border="0" alt="IT Knowledge Exchange"></a>
+</p>
+
+<p class="sponsorlogo">
+<a href="https://www.linuxgazette.net/" target="blank">
+<img src="https://www.usenix.org/legacy/events/nsdi11/art/promoters/linux_gazette_125x125.gif" width="125" height="125" border="0" alt="Linux Gazette"></a>
+</p>
+
+<p class="sponsorlogo">
+<a href="https://www.linuxjournal.com" target="blank">
+<img src="https://www.usenix.org/legacy/events/nsdi11/art/promoters/linux_journal_100x48.jpg" width="100" height="48" border="0" alt="Linux Journal"></a>
+</p>
+
+<p class="sponsorlogo">
+<a href="https://www.linuxpromagazine.com/" target="blank">
+<img src="https://www.usenix.org/legacy/events/nsdi11/art/promoters/linuxpro_115x44.jpg" width="115" height="44" border="0" alt="Linux Pro Magazine"></a>
+</p>
+
+<p class="sponsorlogo">
+<a href="https://lxer.com/" target="blank">
+<img src="https://www.usenix.org/legacy/events/nsdi11/art/promoters/lxer_100x35.jpg" width="100" height="35" border="0" alt="LXer.com"></a>
+</p>
+
+<p class="sponsorlogo">
+<a href="https://mashable.com/" target="blank">
+<img src="https://www.usenix.org/legacy/events/nsdi11/art/promoters/mashable_125x41.jpg" width="125" height="41" border="0" alt="Mashable"></a>
+</p>
+
+<!--<p class="sponsorlogo">
+<a href="https://bnpmedia-sub.halldata.com/site/BNP001069JRland/init.do?&PK=S4FREE" target="blank">
+<img src="art/promoters/mc_125x48.jpg" width="125" height="48" border="0" alt="Mission Critical"></a>
+</p>
+
+<p class="sponsorlogo">
+<a href="https://www.nostarch.com/" target="blank">
+<img src="art/promoters/nostarch_90x104.jpg" width="90" height="104" border="0" alt="No Starch Press"></a>
+</p>
+
+<p class="sponsorlogo">
+<a href="https://www.opensourc3.org/" target="blank">
+<img src="art/promoters/opensourc3_125x24.jpg" width="125" height="24" border="0" alt="Open Sourc3"></a>
+</p>-->
+
+<p class="sponsorlogo">
+<a href="https://www.snia.org/" target="blank">
+<img src="https://www.usenix.org/legacy/events/nsdi11/art/promoters/snia_115x61.jpg" width="115" height="61" border="0" alt="SNIA"></a>
+</p>
+
+<p class="sponsorlogo">
+<a href="https://www.toolbox.com" target="blank">
+<img src="https://www.usenix.org/legacy/events/nsdi11/art/promoters/toolbox_100x76.gif" width="100" height="76" border="0" alt="Toolbox.com"></a>
+</p>
+
+<p class="sponsorlogo">
+<a href="https://www.userfriendly.org/" target="blank">
+<img src="https://www.usenix.org/legacy/events/nsdi11/art/promoters/userfriendly_125x26.gif" width="125" height="26" border="0" alt="UserFriendly.org"></a>
+</p>
+
+<p class="sponsorlogo">
+<a href="https://labs.vmware.com/" target="_blank">
+<img src="https://www.usenix.org/legacy/events/nsdi11/art/promoters/vmwlabs_150x16.jpg" width="150" height="16" border="0" alt="VMware Labs"></a>
+</p>
+
+</td>
+</tr>
+
+</td>
+</tr>
+</table>
+
+<!--END SPONSORS TABLE-->
+<!--End Sidebar Images-->
+</td>
+	
+<td width="590" valign="top" align="left">
+
+<!--START TABLE 2: BEGIN MAIN TABLE-->
+<table width="100%" border="0" cellspacing="0" cellpadding="10" align="center">
+<tr>
+<td valign="top">
+
+<img src="https://www.usenix.org/legacy/graphics/dot_clear.gif" width="2" height="7" alt=""><br>
+
+<!--REGISTER NOW BUTTON-->
+<table width="100%" border="0" cellspacing="0" cellpadding="0">
+<tr>
+<td class="left">
+<img src="https://www.usenix.org/legacy/graphics/dot_clear.gif" width="95" height="16" alt="">
+</td>
+
+<td class="right"">
+<b>Connect on&nbsp;&nbsp;</b>
+</td>
+
+<td align="left">
+<a href="https://www.facebook.com/event.php?eid=179095438791775&num_event_invites=0" target="other">
+<img src="https://www.usenix.org/legacy/graphics/facebook.png" width="24" height="24" hspace="0" vspace="0" alt="Facebook"></a>&nbsp;&nbsp;
+<a href="https://twitter.com/usenix" target="other">
+<img src="https://www.usenix.org/legacy/graphics/twitter.png" width="24" height="24" hspace="0" vspace="0" alt="Twitter"></a> 
+</td>
+
+<td align="left">
+<b>#NSDI11</b>
+</td>
+</tr>
+</table>
+
+<!-- START OF PAGE CONTENTS -->
+
+<!--<p>
+<span style="color:#d02227;"><b>There's still time!</b></span> Register on-site at the dates and times listed <a href="registration">here</a>.
+</p>-->
+
+<!--<P><b>The Hotel Reservation Discount Deadline has been extended!</b> <a href="hotel.html">Book your room</a> by Friday, March 11, 2011, to receive our special rate.
+</p>-->
+
+<!--<p><b>Join us in Boston, MA, March 30&ndash;April 1, 2011,
+ for the 8th USENIX Symposium on Networked Systems Design and Implementation.</b> NSDI '11 will focus on the design principles, implementation, and practical evaluation of large-scale networked and distributed systems.</p>
+
+<p><b>Don't miss the 7th USENIX Symposium on Network Design and Implementation, taking place April 28&#150;30, 2010, in San Jose, CA.</b> Focusing on the design principles of large-scale networked and distributed systems, NSDI '10 brings together researchers from across the networking and systems community in fostering cross-disciplinary approaches and addressing shared research challenges.
+</p>
+
+
+<P>
+Get the NSDI '11 schedule in <a href="calendar.html">Google Calendar and iCal</a>.
+</p>
+
+           <P class="desc"><b>E-Book Proceedings</b>: Read the proceedings on the go in <a href="https://www.usenix.org/nsdi11/epub">EPUB</a> format or <a href="https://www.usenix.org/nsdi11/mobi">Kindle-friendly Mobipocket</a> format.</p>
+          
+<p>
+
+<a href="discounts.html">
+<img src="art/nsdi11_discounts_161x27.jpg" border="0" width="161" height="27" alt="Discounts Available!" align="LEFT" hspace="0" vspace="-5"></a>
+USENIX has new ways for you to save. Check out the discounts!
+
+<br><img src="art/dot_clear.gif" width=1 height=10 alt=""><br>
+
+<a href="promote.html">
+<img src="art/nsdi11_promote_139x27.jpg" border="0" width="139" height="27" alt="Help Us Promote!" align="LEFT" hspace="0" vspace="-5"></a>
+Click here to find banners and buttons, and a printable PDF of the flyer.
+</p>
+
+
+<P>
+This year's <a href="tech/">program</a> includes 27 technical papers carefully selected from 157 submissions. The high-quality papers represent a diverse range of hot research areas including data-intensive computing, energy and storage, debugging and correctness, and more.
+</p>
+
+<P>
+In addition, NSDI '11 will feature a poster session where attendees can discuss emerging ideas in networked systems design with leading researchers who are introducing their ongoing work. Check out the list of <a href="poster.html">accepted posters</a>.
+</p>
+
+<P>
+Take advantage of this opportunity to join researchers from across the networking and systems community in fostering a broad approach to addressing common research challenges.
+</p>
+
+<P>
+There's still time. <a href="registration/">Register today!</a>
+</p>
+
+<hr>
+
+<p>
+Don't miss these workshops, which will be co-located with NSDI '11, and will take place on Tuesday, March 29, 2011:
+</p>
+
+<p class="desc">
+<ul>
+<li>4th USENIX Workshop on Large-Scale Exploits and Emergent Threats (<a href="https://www.usenix.org/events/leet11">LEET '11</a>)
+</li>
+
+<li>Workshop on Hot Topics in Management of Internet, Cloud, and Enterprise Networks and Services <br>(<a href="https://www.usenix.org/events/hotice11">Hot-ICE '11</a>)
+</li>
+</ul>
+</p>-->
+
+
+<P class="subhead2">Thank You for Coming!</p>
+<P class="desc">
+ Thanks to those of you who joined us in Boston for NSDI '11. Check out the videos of the talks, online proceedings, and slides <a href="https://www.usenix.org/legacy/events/nsdi11/tech/">here</a>. <!--Also see <a href="/legacy/about/newsroom/#fast10">what people are saying</a> about FAST '10.-->
+</p>
+
+<p>
+The NSDI '11 <a href="https://www.usenix.org/publications/login/2011-06/openpdfs/NSDI11reports.pdf" target="_self">Conference Reports</a> from <i>;login:</i> are now available.
+</p>
+
+<p><img src="https://www.usenix.org/legacy/graphics/video_icon.gif" alt="Video" title="View the video" 
+		height="25" width="25" style="margin-bottom:-1px"><b>Just Up!</b> <a href="https://www.usenix.org/legacy/events/nsdi11/tech/">Videos</a> of the presentations will be posted as soon as they become available. Access is currently restricted to USENIX members and NSDI '11 symposium attendees. Not a member? <a href="https://www.usenix.org/membership/membership.html">Join</a> today!
+		</p>
+
+<!--<p>
+Check out the Best Papers:
+<ul>
+<li>
+<b><a href="tech/full_papers/batsakis/batsakis_html/index.html">CA-NFS: A Congestion-Aware Network File System</a></b><br>
+		Alexandros Batsakis, <i>NetApp and Johns Hopkins University;</i> Randal Burns, <i>Johns Hopkins University;</i> Arkady Kanevsky, James Lentini, and Thomas Talpey, <i>NetApp</i>
+</li>
+<br>	
+<li>
+<b><a href="tech/full_papers/agrawal/agrawal_html/index.html">Generating Realistic Impressions for File-System Benchmarking</a></b><br>
+		Nitin Agrawal, Andrea C. Arpaci-Dusseau, and Remzi H. Arpaci-Dusseau, <i>University of Wisconsin, Madison</i>
+</li>
+</ul>
+</p>-->
+
+<p>We hope you enjoyed NSDI '11 and look forward to seeing you next year:</p>
+
+<p class="subhead2">Save the Date!</p>
+<p class="nospace"><b>NSDI '12: 9th USENIX Symposium on Networked Systems Design and Implementation</b><br>
+April 25&#150;27, 2012<br>
+San Jose, CA<br>
+</p>
+
+<img src="https://www.usenix.org/legacy/graphics/dot_clear.gif" width="2" height="3" ALT="" border="0">
+
+<HR>
+
+<p class="subhead1">SYMPOSIUM ORGANIZERS
+</p>
+
+<P class="desc">
+<b>Program Co-Chairs</b><BR>
+David G. Andersen, <i>Carnegie Mellon University</i><BR>
+Sylvia Ratnasamy, <i>Intel Labs Berkeley</i>
+</p>
+
+<P>
+<b>Program Committee</b><BR>
+Aditya Akella, <i>University of Wisconsin&mdash;Madison</i><BR>
+Katerina Argyraki, <i>&Eacute;cole Polytechnique F&eacute;d&eacute;rale de Lausanne (EPFL)</i><BR>
+Remzi Arpaci-Dusseau, <i>University of Wisconsin&mdash;Madison</i><BR>
+Hari Balakrishnan, <i>Massachusetts Institute of Technology</i><BR>
+Andrew Birrell, <i>Microsoft Research</i><BR>
+Byung-Gon Chun,<i> Intel Labs Berkeley </i><BR>
+Jason Flinn, <i>University of Michigan</i><BR>
+Rodrigo Fonseca, <i>Brown University</i><BR>
+Paul Francis, <i>Max Planck Institute for Software Systems</i><BR>
+Brad Karp, <i>University College London</i><BR>
+Dina Katabi, <i>Massachusetts Institute of Technology</i><BR>
+Eddie Kohler, <i>University of California, Los Angeles, and Meraki</i><BR>
+Jinyang Li, <i>New York University </i><BR>
+Bruce Maggs, <i>Duke University and Akamai Technologies</i><BR>
+Ratul Mahajan, <i>Microsoft Research</i><BR>
+David Maltz, <i>Microsoft Research</i><BR>
+David Mazi&egrave;res, <i>Stanford University</i><BR>
+Jitendra Padhye, <i>Microsoft Research</i><BR>
+KyoungSoo Park, <i>KAIST (Korea Advanced Institute of Science and Technology)</i><BR>
+Jennifer Rexford, <i>Princeton University</i><BR>
+Alex C. Snoeren, <i>University of California, San Diego </i><BR>
+Lakshminarayanan Subramanian, <i>New York University</i><BR>
+Helen Wang, <i>Microsoft Research</i><BR>
+Bill Weihl, <i>Google</i>
+
+</p>
+
+<P>
+<b>Poster Session Chair</b><BR>
+Michael Walfish, <i>The University of Texas at Austin</i>
+</p>
+
+<P>
+<b>Steering Committee</b><BR>
+Thomas Anderson, <i>University of Washington</i><BR>
+Brian Noble, <i>University of Michigan</i><BR>
+Jennifer Rexford, <i>Princeton University</i><BR>
+Mike Schroeder, <i>Microsoft Research</i><BR>
+Chandu Thekkath, <i>Microsoft Research</i><BR>
+Amin Vahdat, <i>University of California, San Diego</i><BR>
+Ellie Young, <i>USENIX</i>
+</p>
+
+
+</td>
+
+<!--START RIGHT COLUMN LEVEL 1-->
+<td width="174" valign="top">
+<!--<p class="subhead3center">
+EARLY-BIRD REGISTRATION DEADLINE<br>
+Monday, March 7, 2011
+</p>-->
+
+<!--START TABLE 3-->
+<table width="100%" cellpadding="5" cellspacing="0" border="0">
+
+<tr>
+		<td class="center">
+		<img src="https://www.usenix.org/legacy/events/nsdi11/art/nsdi11_sponsored_by.jpg" border="0" width="135" height="82" alt="NSDI '11 is sponsored by"></a><br>
+		<img src="https://www.usenix.org/legacy/graphics/dot_clear.gif" width="2" height="1" alt="">
+		</td>
+</tr>
+	
+<tr>
+		<td class="center">
+	<a href="https://www.usenix.org/legacy/">
+<img src="https://www.usenix.org/legacy/events/nsdi11/art/usenix_95x36.jpg" border="0" width="95" height="36" alt="USENIX"></a><BR>
+		<img src="https://www.usenix.org/legacy/graphics/dot_clear.gif" width="2" height="1" alt="">
+		</td>
+</tr>
+
+<tr>
+		<td class="center">
+		<img src="https://www.usenix.org/legacy/events/nsdi11/art/nsdi11_incoop.jpg" border="0" width="135" height="12" alt="in cooperation with"></a><br>
+		<img src="https://www.usenix.org/legacy/graphics/dot_clear.gif" width="2" height="7" alt="">
+		<center><b><a href="https://www.acm.org/sigcomm" style="text-decoration: none; color: #000000;">ACM SIGCOMM</a></b><br>
+		<img src="https://www.usenix.org/legacy/graphics/dot_clear.gif" width="2" height="1" alt=""><br>
+		<b><a href="https://www.acm.org/sigops/" style="text-decoration: none; color: #000000;">ACM SIGOPS</a></b></center>
+		</td>
+</tr>
+
+<tr>
+<td valign="top">
+<p class="subhead3center">
+CO&#8209;LOCATED&nbsp;WORKSHOPS<br>
+<img src="https://www.usenix.org/legacy/graphics/dot_clear.gif" width="2" height="10" alt=""><br>
+<!--<span style="color:#d02227;">Register Now</span><br>
+<img src="/legacy/graphics/dot_clear.gif" width="2" height="7" alt=""><br>-->
+
+<a href="https://www.usenix.org/events/leet11/">
+<img src="https://www.usenix.org/legacy/events/nsdi11/art/leet11_button.jpg" border="0" width="170" height="75" alt="LEET '11"></a><br>
+<img src="https://www.usenix.org/legacy/graphics/dot_clear.gif" width="2" height="7" alt=""><br>
+
+<a href="https://www.usenix.org/events/hotice11/">
+<img src="https://www.usenix.org/legacy/events/nsdi11/art/hotice11_button.jpg" border="0" width="170" height="75" alt="Hot-ICE '11"></a>
+
+
+</p>
+
+</td>
+</tr>
+
+</table>
+
+<!--END TABLE 3-->
+
+</td>
+</tr>
+</table>
+
+		</td>
+	</tr>
+
+	<tr>
+		<td colspan="2">
+		<!--begin footer-->
+		<img src="https://www.usenix.org/legacy/events/nsdi11/art/footer.gif" alt="">
+		<!--end footer-->
+		</td>
+	</tr>
+</table>
+<!--END TABLE 1: END MAIN TABLE-->
+
+<!--START BOTTOM TABLE-->
+<table width="750">
+	<tr>
+		<td align="left" valign="top">
+		<img src="https://www.usenix.org/legacy/events/nsdi11/art/questmark.gif" width=12 height=16
+		alt="?" hspace=2 align="left">Need help? 
+		<a href="https://www.usenix.org/legacy/about/contacts.html">
+		Use our Contacts page.</a>
+
+		<br clear="left">
+		<img src="https://www.usenix.org/legacy/events/nsdi11/art/dot_clear.gif" width=1 height=5 alt=""><br>
+		<!-- EDIT THE DATE AND YOUR LOGIN NAME BELOW -->
+		<i>Last changed: 2 June 2011 jel</i><br>
+		</td>
+	</tr>
+</table>
+</center>
+<!--Google Analytics-->
+<script type="text/javascript">
+var gaJsHost = (("https:" == document.location.protocol) ? "https://ssl." : "https://www.");
+document.write(unescape("%3Cscript src='" + gaJsHost + "google-analytics.com/ga.js' type='text/javascript'%3E%3C/script%3E"));
+</script>
+<script type="text/javascript">
+try {
+var pageTracker = _gat._getTracker("UA-3633391-4");
+pageTracker._trackPageview();
+} catch(err) {}</script>
+<!--END Google Analytics-->
+</body>
+</html>
