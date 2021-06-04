@@ -82,8 +82,7 @@ def load_file_from_line(path, start_line, end_line):
     return np.array(data)
 
 
-def draw(config):
-    # Load data
+def conf_load_data(config):
     if config.x_limit:
         # Only load part of the file which is relevant
         x_axis_data, file_start_index, file_end_index = load_file_from_ts(
@@ -94,6 +93,14 @@ def draw(config):
         # Load all the file
         x_axis_data = np.loadtxt(config.x_axis_data)
         y_axis_data = np.loadtxt(config.y_axis_data)
+    # TODO: assertion fails
+    # assert x_axis_data.shape == y_axis_data.shape, '{} {}'.format(x_axis_data.shape, y_axis_data.shape)
+    return (x_axis_data, y_axis_data)
+
+
+def draw(config):
+    # Load data
+    x_axis_data, y_axis_data = conf_load_data(config)
 
     # Convert y_data to Gbps
     print('Warning: converting y data to Gbps')
