@@ -5,8 +5,18 @@ then
   echo "Please set EXP_SSH_USER before running this script!"
   exit 1
 fi
+
+# Check if results of previous try will not be overwriten
+aggregate_dir=/tmp/nginx_exp_multinode
+if [ -e $aggregate_dir ]
+then
+	echo "Results from previous execution are left at $aggregate_dir please change the folder's name"
+	exit 1
+fi
+
 # MACHINES to ssh and run experiment on
-MACHINES=(node2 node3 node4)
+MACHINES=()
+# MACHINES=(node2 node3 node4)
 
 echo "These machines will cooperate in experiment"
 echo "    ${MACHINES[@]}"
@@ -24,13 +34,68 @@ links+=(http://$server_ip:$server_port/conference/nsdi21/instructions-presenters
 links+=(http://$server_ip:$server_port/conference/nsdi21/presentation/ferguson.html)
 links+=(http://$server_ip:$server_port/conference/nsdi21/files/nsdi21-liu-guyue.pdf)
 
-echo "Target URLs are:"
-echo
-for link in ${links[@]}
-do
-  echo "    $link"
-done
-echo
+links+=(http://$server_ip:$server_port/conference/nsdi21.html)
+links+=(http://$server_ip:$server_port/conference/nsdi21/call-for-papers.html)
+links+=(http://$server_ip:$server_port/conference/nsdi21/technical-sessions.html)
+links+=(http://$server_ip:$server_port/conference/nsdi21/instructions-presenters.html)
+links+=(http://$server_ip:$server_port/conference/nsdi21/presentation/ferguson.html)
+links+=(http://$server_ip:$server_port/conference/nsdi21/files/nsdi21-liu-guyue.pdf)
+links+=(http://$server_ip:$server_port/conference/nsdi21.html)
+links+=(http://$server_ip:$server_port/conference/nsdi21/call-for-papers.html)
+links+=(http://$server_ip:$server_port/conference/nsdi21/technical-sessions.html)
+links+=(http://$server_ip:$server_port/conference/nsdi21/instructions-presenters.html)
+links+=(http://$server_ip:$server_port/conference/nsdi21/presentation/ferguson.html)
+links+=(http://$server_ip:$server_port/conference/nsdi21/files/nsdi21-liu-guyue.pdf)
+links+=(http://$server_ip:$server_port/conference/nsdi21.html)
+links+=(http://$server_ip:$server_port/conference/nsdi21/call-for-papers.html)
+links+=(http://$server_ip:$server_port/conference/nsdi21/technical-sessions.html)
+links+=(http://$server_ip:$server_port/conference/nsdi21/instructions-presenters.html)
+links+=(http://$server_ip:$server_port/conference/nsdi21/presentation/ferguson.html)
+links+=(http://$server_ip:$server_port/conference/nsdi21/files/nsdi21-liu-guyue.pdf)
+links+=(http://$server_ip:$server_port/conference/nsdi21.html)
+links+=(http://$server_ip:$server_port/conference/nsdi21/call-for-papers.html)
+links+=(http://$server_ip:$server_port/conference/nsdi21/technical-sessions.html)
+links+=(http://$server_ip:$server_port/conference/nsdi21/instructions-presenters.html)
+links+=(http://$server_ip:$server_port/conference/nsdi21/presentation/ferguson.html)
+links+=(http://$server_ip:$server_port/conference/nsdi21/files/nsdi21-liu-guyue.pdf)
+links+=(http://$server_ip:$server_port/conference/nsdi21.html)
+links+=(http://$server_ip:$server_port/conference/nsdi21/call-for-papers.html)
+links+=(http://$server_ip:$server_port/conference/nsdi21/technical-sessions.html)
+links+=(http://$server_ip:$server_port/conference/nsdi21/instructions-presenters.html)
+links+=(http://$server_ip:$server_port/conference/nsdi21/presentation/ferguson.html)
+links+=(http://$server_ip:$server_port/conference/nsdi21/files/nsdi21-liu-guyue.pdf)
+links+=(http://$server_ip:$server_port/conference/nsdi21.html)
+links+=(http://$server_ip:$server_port/conference/nsdi21/call-for-papers.html)
+links+=(http://$server_ip:$server_port/conference/nsdi21/technical-sessions.html)
+links+=(http://$server_ip:$server_port/conference/nsdi21/instructions-presenters.html)
+links+=(http://$server_ip:$server_port/conference/nsdi21/presentation/ferguson.html)
+links+=(http://$server_ip:$server_port/conference/nsdi21/files/nsdi21-liu-guyue.pdf)
+links+=(http://$server_ip:$server_port/conference/nsdi21.html)
+links+=(http://$server_ip:$server_port/conference/nsdi21/call-for-papers.html)
+links+=(http://$server_ip:$server_port/conference/nsdi21/technical-sessions.html)
+links+=(http://$server_ip:$server_port/conference/nsdi21/instructions-presenters.html)
+links+=(http://$server_ip:$server_port/conference/nsdi21/presentation/ferguson.html)
+links+=(http://$server_ip:$server_port/conference/nsdi21/files/nsdi21-liu-guyue.pdf)
+links+=(http://$server_ip:$server_port/conference/nsdi21.html)
+links+=(http://$server_ip:$server_port/conference/nsdi21/call-for-papers.html)
+links+=(http://$server_ip:$server_port/conference/nsdi21/technical-sessions.html)
+links+=(http://$server_ip:$server_port/conference/nsdi21/instructions-presenters.html)
+links+=(http://$server_ip:$server_port/conference/nsdi21/presentation/ferguson.html)
+links+=(http://$server_ip:$server_port/conference/nsdi21/files/nsdi21-liu-guyue.pdf)
+links+=(http://$server_ip:$server_port/conference/nsdi21.html)
+links+=(http://$server_ip:$server_port/conference/nsdi21/call-for-papers.html)
+links+=(http://$server_ip:$server_port/conference/nsdi21/technical-sessions.html)
+links+=(http://$server_ip:$server_port/conference/nsdi21/instructions-presenters.html)
+links+=(http://$server_ip:$server_port/conference/nsdi21/presentation/ferguson.html)
+links+=(http://$server_ip:$server_port/conference/nsdi21/files/nsdi21-liu-guyue.pdf)
+
+# echo "Target URLs are:"
+# echo
+# for link in ${links[@]}
+# do
+#   echo "    $link"
+# done
+# echo
 
 
 NGINX_EXPERIMENT_FIN_FILE=/tmp/_nginx_exp_finished
@@ -46,10 +111,10 @@ function run_exp {
   # else set the path
   # ab=/users/$EXP_SSH_USER/httpd-ab/support/ab
   ab=/proj/uic-dcs-PG0/$EXP_SSH_USER/httpd-ab/support/ab
-  req=250000
+  req=10000
   concurrent=1
   k=0
-  echo "Trace files are here:"
+  # echo "Trace files are here:"
   for link in ${links[@]}
   do
     k=$((k+1)) 
@@ -57,8 +122,8 @@ function run_exp {
     filename=${filename%.*}
     filename="${k}_${filename}"
     trace_file="/tmp/$filename.txt"
-    echo "    $trace_file"
-    $ab -k -n $req -c $concurrent -a $trace_file $link > /tmp/stdout_$filename.txt &> /dev/null &
+    # echo "    $trace_file"
+    taskset -c $k $ab -k -n $req -c $concurrent -a $trace_file $link 1> /tmp/stdout_$filename.txt 2> /dev/null &
   done
   echo
 
@@ -107,7 +172,6 @@ do
   trace_files+=($trace_file)
 done
 
-aggregate_dir=/tmp/nginx_exp_multinode
 mkdir -p $aggregate_dir
 k=0
 for m in ${MACHINES[@]}
@@ -122,6 +186,14 @@ do
     fi
   done
 done
+for f in ${trace_files[@]}
+do
+  k=$((k+1))
+  mv $f $aggregate_dir/$k.txt
+done
 echo "All trace files should have been gathered at:"
 echo "        $aggregate_dir"
+
+sort -k1 -n $aggregate_dir/*.txt > $aggregate_dir/sorted.txt
+echo "All files are merged and sorted in to one file!"
 echo Done

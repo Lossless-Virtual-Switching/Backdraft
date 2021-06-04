@@ -60,9 +60,9 @@ def load_file_from_ts(path, start, end):
         for i, line in enumerate(f):
             cur = float(line)
             if cur > end:
-                end_index = start_index + i + 1
                 break
             data.append(cur)
+            end_index = start_index + i + 1
     return np.array(data), start_index, end_index
 
 
@@ -95,6 +95,10 @@ def draw(config):
         x_axis_data = np.loadtxt(config.x_axis_data)
         y_axis_data = np.loadtxt(config.y_axis_data)
 
+    # Convert y_data to Gbps
+    print('Warning: converting y data to Gbps')
+    y_axis_data /= 1000
+
     # Some preparation that are not all necessary
     master_linestyles = ['-', '--', '-.', ':']
     master_markers = ['o', 'D', 'v', '^', '<', '>', 's', 'p', '*', '+', 'x']
@@ -126,6 +130,14 @@ def draw(config):
 
     # setting the tick value and locations
     arr = []
+    count_ticks = 4
+    min_ = x_axis_data[0]
+    max_ = x_axis_data[-1]
+    delta_ = (max_ - min_) / count_ticks
+    ticks = [(min_ + i * delta_) for i in range(count_ticks + 1)]
+    tick_lbls = [str(int((t - min_) % 1000)) for t in ticks]
+    plt.xticks(ticks)
+    ax.set_xticklabels(tick_lbls)
     if config.x_tick_labels:
         # import math
         locs, labels = plt.xticks()            # Get locations and labels
@@ -137,7 +149,8 @@ def draw(config):
         #         last = 50 / len(locs)
         #     arr.append(math.floor(last))
         # print(arr)
-        ax.set_xticklabels(config.x_axis_ticks)
+        print(config.x_tick_labels)
+        ax.set_xticklabels(config.x_tick_labels)
 
 
     # setting x and y labels

@@ -1,14 +1,16 @@
 - fig-descriptor:
   experiment: "memcached variable throughput"
   fig_name: "/tmp/test"
-  fig_size: [13,8]
+  fig_size: [4,4]
   x_axis_data: "/tmp/x_data.txt"
   y_axis_data: "/tmp/y_data.txt"
   dimension_size:
   x_tick_labels: # 1 # [0, 150, 300, 450, 600, 750, '1K']  # [0, 150, 300, 450, 600, 750, '1K']
   y_limit: # [0, 50]
-  x_limit:  [1500000, 1500100]
-  x_label: "Time (ms)"
-  y_label: "Throughput (Mbps)"
+  x_limit:  [2500400, 2500500]
+  # x_limit:  # [3000000, 8000000]
+  # x_limit:  [30000, 30100]
+  x_label: "Time (us)"
+  y_label: "Throughput (Gbps)"
   grid: True
   dpi: 300

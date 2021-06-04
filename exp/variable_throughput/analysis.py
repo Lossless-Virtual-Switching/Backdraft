@@ -1,10 +1,11 @@
 #!/usr/bin/python3
-
+import argparse
+from intervaltree import Interval, IntervalTree
+import math
+import multiprocessing
 import numpy as np
 import sys
-import csv
-import argparse
-
+import time
 
 
 def sliding_window_throughput(ts_data, ticks, window_size):
@@ -12,152 +13,171 @@ def sliding_window_throughput(ts_data, ticks, window_size):
     Calculates throughput based on packet timestamps for
     the given ticks.
     -----------------------------------------
-    ts_data: np.array, [[ts, req size],...]
-    ticks: np.array, [int, ...]
+    ts_data: IntervalTree
+    ticks: np.array, [int, ...] . This the queries
+           asking throughput at specific timestamps.
+           assume sorted.
     window_size: int
-    returns: np.array, [throughput, ...]
+    returns: np.array, [throughput, ...] (Mbps)
     """
-    # size_data[i] is the minimum index of ts_data that its timestamp value
-    # is greater than or equal to the ticks[i].
-    size_data = ts_data.shape[0]
+    assert(window_size > 1)
     count_ticks = ticks.shape[0]
-    start_index = np.zeros(count_ticks)
-    end_index = np.zeros(count_ticks)
-    bytes_in_wnd = np.zeros(count_ticks)
-    # bytes_in_wnd = np.array(tuple(-1 for i in range(count_ticks)))
-    k = 0
-    for i, t in enumerate(ticks):
-        while k < size_data and ts_data[k, 0] <= t:
-            k += 1
-        start_index[i] = k - 1
-        p = k - 1
-        end = t + window_size
-        while p < size_data and ts_data[p, 0] <= end:
-            bytes_in_wnd[i] += ts_data[p, 1]
-            p += 1
-        assert(p > k - 1)
-        end_index[i] = p -1
-    return bytes_in_wnd / window_size
+    mbps_wnd = np.zeros(count_ticks)
+    pps = np.zeros(count_ticks)
+    istart = ts_data.begin()
+    iend = ts_data.end()
+    for i, wnd_start in enumerate(ticks):
+        if wnd_start > iend:
+            break
+        wnd_end = wnd_start + window_size
+        if wnd_end < istart:
+            continue
+        intervals = ts_data.overlap(wnd_start, wnd_end)
+        for interval in intervals:
+            s = interval[0]
+            e = interval[1]
+            if s >= wnd_start and e <= wnd_end:
+                overlap = e - s
+            elif e <= wnd_end:
+                overlap = e - wnd_start
+            elif s >= wnd_start:
+                overlap =  wnd_end - s
+            else:
+                overlap = window_size
+            # Size (bytes) x 8 x overlay div latency = bits in window
+            tmp = interval[2] * 8 * overlap / (e - s)
+            assert (overlap / (e-s)) <= 1 , '{} / {}'.format(overlap, (e-s))
+            mbps_wnd[i] += tmp
+            pps[i] += 1
+        mbps_wnd[i] /= window_size
+        pps[i] /= window_size
+    return mbps_wnd, pps
 
 
-# data = np.loadtxt("1M_Req_1_Concurrency.txt")
-# data = np.loadtxt("/tmp/ab_stats_7.txt")
+# A function to pass to multiprocessing pool
+def pool_fn(x):
+    return sliding_window_throughput(x[0], x[1], x[2])
+
+
+def sec_to_us(s):
+    return int(s * 1000000)
+
+
+def load_nginx(path_to_trace):
+    tree = IntervalTree()
+    data = np.loadtxt(path_to_trace, dtype='i8')
+    offset = data[0][0]
+    print("Warning: converting ns to us")
+    for i in data:
+        # (ts_start, ts_end, size)
+        start = i[0] - offset
+        end = start + i[1]
+        size = int(i[2])
+
+        # convert ns to us
+        start = start // 1000
+        end = end // 1000
+        tree.addi(start, end, size)
+    return tree
+
+
+def load_mem(path_to_trace):
+    tree = IntervalTree()
+    with open(path_to_trace, 'r') as f:
+        for line in f:
+            raw = line.split()
+            latency = int(math.ceil(float(raw[2])))
+            end = sec_to_us(float(raw[1]))
+            start = end - latency
+            size = int(raw[4][7:-1])
+            tree.addi(start, end, size)
+    return tree
+
+
+def load_tree(file_path, trace_type):
+    if trace_type  == "NGINX":
+        return load_nginx(file_path)
+    elif trace_type == "MEMCACHED":
+        return load_mem(file_path)
+    else:
+        raise Exception("Unknown trace type")
+
+
+def general_pool_fn(x):
+    """
+    x[0]: function to call
+    x[1] to x[n]: arguments of the function
+    """
+    return x[0](*x[1:])
+
+
+_boot = time.monotonic()
+def log(*args):
+    ts = time.monotonic() - _boot
+    print('{:.4f}'.format(ts), *args)
+
+
+def end_to_end_tp(tree):
+    tmp = 0
+    for s, e, d in tree:
+        tmp += d
+    duration = tree.end() - tree.begin()
+    tp = tmp / duration
+    print(tp)
+    return tp
+
+
 def main(args):
-    ts_data = []
+    # ts_data = IntervalTree()
+    COUNT_PROCESS = args.parallel
+    log('USING {} Processes!'.format(COUNT_PROCESS))
 
-    try:
-        if args.trace_type == "NGINX":
-            for j in args.trace_files:
-                path_to_trace = j
-                data = np.loadtxt(path_to_trace)
-                for i in data:
-                    ts_data.append((i[0] + i[1], int(i[2])))
-        else:
-            for j in args.trace_files:
-                path_to_trace = j
-                # data = np.loadtxt(path_to_trace, delimiter=" ", usecols=(1,4))
-                with open(path_to_trace, 'r') as f:
-                    reader = csv.reader(f, delimiter=' ')
-                    for i in reader:
-                        # print(i[1], int(i[4][i[4].find("(") + 1: i[4].find(")")]))
-                        ts_data.append((float(i[1]) * 1000000, int(i[4][i[4].find("(") + 1: i[4].find(")")])))
+    # For running in parallel first split the file and pass multiple trace files
+    _args = ((load_tree, f, args.trace_type) for f in args.trace_files)
+    with multiprocessing.Pool(COUNT_PROCESS) as pool:
+        trees = pool.map(general_pool_fn, _args)
+    count_tree = len(trees)
+    log('loading data to memory finished', 'number of trees:', count_tree)
 
-    except Exception as e:
-        print("Error: ", e)
-        exit(0)
-
-    ts_data = np.array(ts_data)
-
-    # ts_data.sort()
-
-    # if args.trace_type == "MEMCACHED":
-    if not args.skip_sorting:
-        ts_data =  ts_data[ts_data[:, 0].argsort()]
+    end_to_end_tp(trees[0])
 
     sliding_wnd = args.wnd_size
+    start_ts = min(tree.begin() for tree in trees)
+    end_ts = max(tree.end() for tree in trees)
+    count_ticks = int((end_ts - start_ts) // args.tick_interval)
+    chunk_ticks = int(count_ticks // COUNT_PROCESS)
+    log('count ticks:', count_ticks, 'chunks:',
+            chunk_ticks, 'real:', COUNT_PROCESS * chunk_ticks)
+    MAX_TICK_SIZE = 100000000
+    tick_chunks = tuple(np.arange(start_ts + i * chunk_ticks,
+            start_ts + (i+1) * chunk_ticks, dtype='i8')
+            for i in range(COUNT_PROCESS))
 
-    # bytes_per_request = 79
-    ## t_data = []
-    ## counter = 0
-    ## tput = 0
-    ## window = []
-    ## total_bytes = ts_data[0][1]
+    _args = ((tree, tick, sliding_wnd)
+            for tick in tick_chunks for tree in trees)
+    with multiprocessing.Pool(COUNT_PROCESS) as pool:
+        res = pool.map(pool_fn, _args)
+    log('calculation finished, merging...')
+    merge_same_ticks = list()
+    for i in range (COUNT_PROCESS):
+        mbps, pps = res[i * count_tree]
+        for j in range(1, count_tree):
+            mbps += res[i * count_tree + j][0]
+            pps += res[i * count_tree + j][1]
+        merge_same_ticks.append((mbps, pps))
+    log('merge same tick finished')
+    t_data = np.concatenate(tuple(r[0] for r in merge_same_ticks))
+    pps = np.concatenate(tuple(r[1] for r in merge_same_ticks))
+    ticks = np.concatenate(tick_chunks)
 
-    ## cnt = 0
-    ## size = len(ts_data)
-    ## s_wnd_idx = 0
-    ## e_wnd_idx = 0
+    # Save results
+    log('saving results at', args.dir_res)
+    np.savetxt(args.dir_res + "/x_data.txt", ticks, fmt='%d')
+    np.savetxt(args.dir_res + "/y_data.txt", t_data, fmt='%.2f')
+    np.savetxt(args.dir_res + 'pps_data.txt', pps, fmt='%.2f')
 
-
-    ## while(e_wnd_idx < size - 1 or e_wnd_idx != s_wnd_idx):
-
-    ##     if e_wnd_idx < size - 1 and ts_data[e_wnd_idx][0] - ts_data[s_wnd_idx][0] <= sliding_wnd:
-    ##         e_wnd_idx += 1
-    ##         total_bytes += ts_data[e_wnd_idx][1]
-    ##         continue
-
-
-    ##     tput = (total_bytes - ts_data[e_wnd_idx][1]) / sliding_wnd
-    ##     t_data.append(tput)
-
-    ##     total_bytes -= ts_data[s_wnd_idx][1]
-    ##     s_wnd_idx += 1
-
-    ## tput = (total_bytes/sliding_wnd)
-    ## t_data.append(tput)
-
-    ## t_data = np.array(t_data)
-
-
-    ## print(s_wnd_idx)
-    ## print(e_wnd_idx)
-
-
-    #     if e_wnd_idx % 1000000 == 0:
-    #         print("total size: ", size, " cur index:", e_wnd_idx)
-    #     if e_wnd_idx - s_wnd_idx + 1 > 1 and ts_data[e_wnd_idx][0] - ts_data[s_wnd_idx][0] >= sliding_wnd:
-    #         # print("len window", wind_size)
-    #         #calculate the throughput
-    #         # tput = bytes_per_request * (len(window) - 1) / sliding_wnd
-    #         # tput = total_bytes * (e_wnd_idx - s_wnd_idx) / sliding_wnd
-    #         tput = (total_bytes - ts_data[e_wnd_idx][1]) / sliding_wnd
-    #         t_data.append(tput)
-    #         total_bytes -= ts_data[s_wnd_idx][1]
-    #         s_wnd_idx += 1
-    #         continue
-    #     total_bytes += ts_data[e_wnd_idx][1]
-    #     e_wnd_idx += 1
-    #
-
-    # if e_wnd_idx - s_wnd_idx > 0:
-    #     tput = total_bytes / sliding_wnd
-    #     t_data.append(tput)
-    #
-
-
-    ticks = np.arange(ts_data[0, 0], ts_data[-1, 0], args.tick_interval)
-    print('count ticks:', ticks.shape[0])
-    t_data = sliding_window_throughput(ts_data, ticks, sliding_wnd)
-    # This part is just verification
-    print(len(t_data), len(ts_data))
-    # f = ts_data[0]
-    # for i in range(1, len(ts_data)):
-    #     ts_data[i][0] = ts_data[i][0] - f[0]
-    # f[0] = 0
-    # print(t_data)
-    # print(ts_data)
-
-    print(ts_data[0])
-    # np.savetxt(args.x_file_path, ts_data[:,0])
-    # np.savetxt(args.y_file_path, t_data)
-    print(args.dir_res)
-    # np.savetxt(args.dir_res + "/x_data.txt", ts_data[:,0])
-    np.savetxt(args.dir_res + "/x_data.txt", ticks)
-    np.savetxt(args.dir_res + "/y_data.txt", t_data)
-    np.savetxt(args.dir_res + "/tmp_data.txt", ts_data)
 
 if __name__ == "__main__":
-
     parser = argparse.ArgumentParser()
     parser.add_argument("wnd_size", help="size of the window for analysis", type=int)
     parser.add_argument("trace_type", help="trace_type should be MEMCACHED or NGINX")
@@ -167,13 +187,13 @@ if __name__ == "__main__":
     parser.add_argument("trace_files", nargs='+', help="Trace files, pass as much as you want")
     parser.add_argument("--tick-interval", help="distance between ticks",
             type=int, default=1)
-    parser.add_argument("--skip-sorting", action='store_true', default=False,
-            help="if data is already sorted by timestamp "
-            "then this operation can be skipped")
+    # parser.add_argument("--skip-sorting", action='store_true', default=False,
+    #         help="if data is already sorted by timestamp "
+    #         "then this operation can be skipped")
+    parser.add_argument("--parallel", help="Number of prallel processes",
+            type=int, default=1)
 
     args = parser.parse_args()
-    # window_size = args.wnd_size
-    # print(args)
     print(args.trace_files)
 
     main(args)
