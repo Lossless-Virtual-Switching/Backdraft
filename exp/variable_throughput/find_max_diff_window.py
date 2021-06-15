@@ -88,8 +88,14 @@ def process(config):
             max_diff = diff
             max_diff_start = start
             max_diff_end = end
-    print('max diff:', max_diff, 'start:', max_diff_start,
-            'end:', max_diff_end)
+    # print('max diff:', max_diff, 'start:', max_diff_start,
+    #         'end:', max_diff_end)
+    print('max diff:', max_diff)
+    start_line = 0
+    if config.x_limit:
+        start_line = config.x_limit[0]
+    print('Result:\n', 'from line:', max_diff_start + start_line,
+            'to line:', start_line + max_diff_end)
     result_data_x = x_data[max_diff_start: max_diff_end+1]
     result_data_y = y_data[max_diff_start: max_diff_end+1]
     np.savetxt(os.path.join(args.output_dir , 'max_diff_x_data.txt'), result_data_x, fmt='%d')

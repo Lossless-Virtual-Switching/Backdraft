@@ -123,14 +123,18 @@ def draw(config):
 
     ax.plot(x_axis_data[:min_dimension], y_axis_data[:min_dimension],
             linewidth=2, linestyle=next(linescycle))
+    if config.highlight:
+        l, r = config.highlight
+        _y_vals = y_axis_data[l:r]
+        _y_range = (np.min(_y_vals), np.max(_y_vals))
+        _x_range = (x_axis_data[l], x_axis_data[r])
+        plt.fill_betweenx(_y_range, [_x_range[0]], [_x_range[1]],
+                color='#ffe7d6', hatch='', edgecolor='r', linewidth=0.1)
+
 
     # limiting the x axis
     if config.x_limit:
-        # ax.set_xlim(ts_data[0] + 11004000, ts_data[0] + 11005000))
-        # print(config.x_limit)
-        # ax.set_xlim((x_axis_data[0] + config.x_limit[0], x_axis_data[0] + config.x_limit[1]))
         ax.set_xlim((x_axis_data[0], x_axis_data[-1]))
-        # ax.set_xlim((x_axis_data[0] + config.x_limit[0], x_axis_data[-1]))
 
     if config.y_limit:
         ax.set_ylim(config.y_limit)
@@ -140,11 +144,19 @@ def draw(config):
     count_ticks = 4
     min_ = x_axis_data[0]
     max_ = x_axis_data[-1]
+    print(min_, max_)
     delta_ = (max_ - min_) / count_ticks
     ticks = [(min_ + i * delta_) for i in range(count_ticks + 1)]
-    tick_lbls = [str(int((t - min_) % 1000)) for t in ticks]
+    if config.highlight:
+        ticks[2] = _x_range[0]
+        ticks.insert(3, _x_range[1])
+    tick_lbls = [str(int((t - min_) % 10000)) for t in ticks]
     plt.xticks(ticks)
-    ax.set_xticklabels(tick_lbls)
+    if config.tick_rotation:
+        ax.set_xticklabels(tick_lbls, rotation=config.tick_rotation)
+    else:
+        ax.set_xticklabels(tick_lbls)
+
     if config.x_tick_labels:
         # import math
         locs, labels = plt.xticks()            # Get locations and labels
