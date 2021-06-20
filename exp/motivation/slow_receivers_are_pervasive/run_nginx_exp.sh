@@ -8,7 +8,7 @@ server_ip=node0
 server_cores=4
 
 wrk_threads=16
-wrk_connections=800
+wrk_connections=80
 wrk_duration=20
 
 remote_machines=(node2 node3 node4)
