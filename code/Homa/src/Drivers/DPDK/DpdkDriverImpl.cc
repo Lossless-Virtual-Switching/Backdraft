@@ -37,10 +37,10 @@ namespace Drivers {
 namespace DPDK {
 
 /// Default number of arguments for EAL init.
-const int default_eal_argc = 1;
+const int default_eal_argc = 3;
 
 /// Default arguments for EAL init.
-const char* default_eal_argv[] = {"homa", NULL};
+const char* default_eal_argv[] = {"homa", "--no-pci", "--vdev=virtio_user0,path=/tmp/vhost_1.sock,queues=1" ,NULL};
 
 /**
  * Construct a DPDK Packet backed by a DPDK mbuf.
@@ -590,11 +590,13 @@ DpdkDriver::Impl::_init()
     RTE_ETH_FOREACH_DEV(p)
     {
         struct ether_addr mac;
+        NOTICE("How many times in Here");
         rte_eth_macaddr_get(p, &mac);
-        if (MacAddress(mac.addr_bytes) == localMac) {
+        //if (MacAddress(mac.addr_bytes) == localMac) {
+            NOTICE("How many times in Here");
             port = p;
-            break;
-        }
+        //    break;
+        //}
     }
     NOTICE("Using interface %s, ip %s, mac %s, port %u", ifname.c_str(),
            IpAddress::toString(localIp).c_str(), localMac.toString().c_str(),
