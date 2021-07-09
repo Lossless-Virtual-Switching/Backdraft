@@ -29,7 +29,10 @@
 #       installed in under a common install prefix.
 
 find_path(Dpdk_INCLUDE_DIR rte_config.h
-    PATH_SUFFIXES "dpdk"
+	PATH_SUFFIXES "dpdk"
+)
+find_path(Dpdk_INCLUDE_DIR_1 rte_common.h
+	PATH_SUFFIXES "dpdk"
 )
 find_library(Dpdk_LIBRARY dpdk)
 find_library(Numa_LIBRARY numa)
@@ -44,6 +47,7 @@ find_package_handle_standard_args(Dpdk
     FOUND_VAR Dpdk_FOUND
     REQUIRED_VARS
         Dpdk_INCLUDE_DIR
+        Dpdk_INCLUDE_DIR_1
         Dpdk_LIBRARY
         Numa_LIBRARY
         Dl_LIBRARY
@@ -54,6 +58,7 @@ if(Dpdk_FOUND AND NOT TARGET Dpdk::Dpdk)
     set_target_properties(Dpdk::Dpdk PROPERTIES
         INTERFACE_COMPILE_OPTIONS "-march=native"
         INTERFACE_INCLUDE_DIRECTORIES "${Dpdk_INCLUDE_DIR}"
+        INTERFACE_INCLUDE_DIRECTORIES "${Dpdk_INCLUDE_DIR_1}"
     )
     target_link_libraries(Dpdk::Dpdk
         INTERFACE
@@ -73,10 +78,12 @@ if(Dpdk_FOUND AND NOT TARGET Dpdk::Dpdk)
         )
     endif()
     if (DPDK_rte_pmd_mlx5_LIBRARY)
+	message("Alireza")
         target_link_libraries(Dpdk::Dpdk
             INTERFACE
                 -libverbs
                 -lmlx5
+                -lmnl
         )
     endif()
 endif()
