@@ -1,0 +1,18 @@
+---
+Language:        Cpp
+BasedOnStyle:  Google
+AccessModifierOffset: -2
+AllowShortFunctionsOnASingleLine: Empty
+AllowShortIfStatementsOnASingleLine: false
+AlwaysBreakAfterReturnType: TopLevelDefinitions
+AlwaysBreakTemplateDeclarations: true
+BraceWrapping:   
+  AfterFunction:   true
+  SplitEmptyFunction: false
+BreakBeforeBraces: Custom
+BreakConstructorInitializers: BeforeComma
+ConstructorInitializerAllOnOneLineOrOnePerLine: false
+DerivePointerAlignment: false
+IndentWidth:     4
+ObjCSpaceBeforeProtocolList: false
+...
