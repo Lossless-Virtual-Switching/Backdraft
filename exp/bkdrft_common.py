@@ -14,6 +14,18 @@ __bessctl_bin = os.path.join(__bessctl_dir, 'bessctl')
 __bess_kmod_dir = os.path.join(__bess_dir, 'core/kmod')
 
 
+
+def override_bess_path(bess_dir_path):
+    global __bess_dir
+    global __bessctl_dir
+    global __bessctl_bin
+    global __bess_kmod_dir
+
+    __bess_dir = os.path.abspath(bess_dir_path)
+    __bessctl_dir = os.path.join(__bess_dir, 'bessctl')
+    __bessctl_bin = os.path.join(__bessctl_dir, 'bessctl')
+    __bess_kmod_dir = os.path.join(__bess_dir, 'core/kmod')
+
 # ----------- BESS --------------
 def bessctl_do(command, stdout=None, stderr=None, cpu_list=None):
     """
