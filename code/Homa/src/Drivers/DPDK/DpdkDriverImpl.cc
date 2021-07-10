@@ -40,7 +40,7 @@ namespace DPDK {
 const int default_eal_argc = 3;
 
 /// Default arguments for EAL init.
-const char* default_eal_argv[] = {"homa", "--no-pci", "--vdev=virtio_user0,path=/tmp/vhost_1.sock,queues=1" ,NULL};
+const char* default_eal_argv[] = {"homa", "--no-pci", "--vdev=virtio_user0,path=/tmp/vhost_0.sock,queues=1" ,NULL};
 
 /**
  * Construct a DPDK Packet backed by a DPDK mbuf.

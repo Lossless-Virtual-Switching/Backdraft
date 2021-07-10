@@ -26,7 +26,7 @@
 static const char USAGE[] = R"(DPDK Driver Test.
 
     Usage:
-        dpdk_test [options] <iface> (--server | <server_ip>)
+        dpdk_test [options] ( <iface> | --vhost-port <socket> <count_queue> ) (--server | <server_ip>)
 
     Options:
         -h --help           Show this screen.
@@ -38,16 +38,32 @@ int
 main(int argc, char* argv[])
 {
     std::map<std::string, docopt::value> args =
-            docopt::docopt(USAGE, {argv + 1, argv + argc},
-                    true,                       // show help if requested
-                    "DPDK Driver Test");        // version string
+        docopt::docopt(USAGE, {argv + 1, argv + argc},
+                       true,                 // show help if requested
+                       "DPDK Driver Test");  // version string
 
-    std::string iface = args["<iface>"].asString();
+    // for (auto const& arg : args) {
+    //     std::cout << arg.first <<  arg.second << std::endl;
+    // }
+
+    bool isVirtioHostPort = args["--vhost-port"].asBool();
+    std::string socket_addr, count_queue;
+    std::string iface;
+    if (isVirtioHostPort) {
+        socket_addr = args["<socket>"].asString();
+        count_queue = args["<count_queue>"].asString();
+        std::cout << "vhost port on ---> socket address is => " << socket_addr
+                  << " | Queue Count => " << count_queue << std::endl;
+    } else {
+        iface = args["<iface>"].asString();
+    }
     bool isServer = args["--server"].asBool();
     std::string server_ip_string;
     if (!isServer) {
         server_ip_string = args["<server_ip>"].asString();
     }
+
+    return 0;
 
     Homa::Drivers::DPDK::DpdkDriver driver(iface.c_str());
 
