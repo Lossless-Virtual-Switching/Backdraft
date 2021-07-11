@@ -160,6 +160,7 @@ class DpdkDriver::Impl {
   private:
     void _eal_init(int argc, char* argv[]);
     void _init();
+    void _init_vhost();
     static uint16_t txBurstCallback(uint16_t port_id, uint16_t queue,
                                     struct rte_mbuf* pkts[], uint16_t nb_pkts,
                                     void* user_param);

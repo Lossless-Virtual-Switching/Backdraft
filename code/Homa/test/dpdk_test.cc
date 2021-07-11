@@ -26,47 +26,69 @@
 static const char USAGE[] = R"(DPDK Driver Test.
 
     Usage:
-        dpdk_test [options] ( <iface> | --vhost-port <socket> <count_queue> ) (--server | <server_ip>)
+        dpdk_test [options] --iface=<iface> (--server | <server_ip>) [--dpdk-extra=<arg>]...
 
     Options:
         -h --help           Show this screen.
         --version           Show version.
         --timetrace         Enable TimeTrace output [default: false].
+	--vhost-port        Vhost port config which should fill the iface if added
 )";
 
+// --extra-dpdk PARAM  Extra DPDK parameters
 int
 main(int argc, char* argv[])
 {
+
+    int dpdk_extra_count = 0;
+    char ** dpdk_extra_params;
     std::map<std::string, docopt::value> args =
         docopt::docopt(USAGE, {argv + 1, argv + argc},
                        true,                 // show help if requested
                        "DPDK Driver Test");  // version string
 
     // for (auto const& arg : args) {
-    //     std::cout << arg.first <<  arg.second << std::endl;
+    //     std::cout << arg.first << " " <<  arg.second << std::endl;
     // }
 
     bool isVirtioHostPort = args["--vhost-port"].asBool();
-    std::string socket_addr, count_queue;
-    std::string iface;
+    std::string vhost_conf;
+    std::string iface = args["--iface"].asString();
     if (isVirtioHostPort) {
-        socket_addr = args["<socket>"].asString();
-        count_queue = args["<count_queue>"].asString();
-        std::cout << "vhost port on ---> socket address is => " << socket_addr
-                  << " | Queue Count => " << count_queue << std::endl;
-    } else {
-        iface = args["<iface>"].asString();
+        vhost_conf = iface;
+        dpdk_extra_count+=2;
+        dpdk_extra_params = (char**)malloc(sizeof(char*) * (dpdk_extra_count + 1));
+        dpdk_extra_params[0] = strdup("homa");
+        dpdk_extra_params[1] = strdup(vhost_conf.c_str());
+        dpdk_extra_params[2] = NULL;
     }
+
     bool isServer = args["--server"].asBool();
     std::string server_ip_string;
     if (!isServer) {
         server_ip_string = args["<server_ip>"].asString();
     }
 
-    return 0;
+    std::vector<std::string> param_list = args["--dpdk-extra"].asStringList();
+    int extra_size = param_list.size();
+    if (extra_size > 0) {
+        dpdk_extra_count += extra_size;
+        dpdk_extra_params = (char**)realloc(dpdk_extra_params,
+                                            (dpdk_extra_count + 1) * sizeof(char*));
+        for (int i = 2; i < dpdk_extra_count; i++) {
+            dpdk_extra_params[i] = strdup(param_list[i - 2].c_str());
+            // std::cout << dpdk_extra_params[i] << std::endl;
+        }
 
-    Homa::Drivers::DPDK::DpdkDriver driver(iface.c_str());
+        dpdk_extra_params[dpdk_extra_count] = NULL;
+    }
 
+    std::cout << dpdk_extra_count << std::endl;
+    for(int i = 0; i <= dpdk_extra_count; i++) {
+        std::cout << i << " " << dpdk_extra_params[i] << std::endl;
+    }
+    Homa::Drivers::DPDK::DpdkDriver driver(iface.c_str(), dpdk_extra_count,
+                                           dpdk_extra_params);
     if (isServer) {
         std::cout << Homa::IpAddress::toString(driver.getLocalAddress())
                   << std::endl;

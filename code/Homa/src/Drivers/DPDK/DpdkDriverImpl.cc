@@ -40,7 +40,7 @@ namespace DPDK {
 const int default_eal_argc = 3;
 
 /// Default arguments for EAL init.
-const char* default_eal_argv[] = {"homa", "--no-pci", "--vdev=virtio_user0,path=/tmp/vhost_0.sock,queues=1" ,NULL};
+const char* default_eal_argv[] = {"homa", "--vdev=virtio_user0,path=/tmp/vhost_0.sock,queues=1", "--no-pci", NULL};
 
 /**
  * Construct a DPDK Packet backed by a DPDK mbuf.
@@ -121,8 +121,12 @@ DpdkDriver::Impl::Impl(const char* ifname, int argc, char* argv[],
                                 "Unable to get existing thread affinity");
     }
 
+    // NOTICE("%d %s %s %s %s\n", argc, argv[0], argv[1], argv[2], argv[3]);
+    // NOTICE("%d %s %s %s %s\n", default_eal_argc, default_eal_argv[0], default_eal_argv[1], default_eal_argv[2], default_eal_argv[3]);
     _eal_init(argc, argv);
-    _init();
+    // _eal_init(default_eal_argc, const_cast<char**>(default_eal_argv));
+    _init_vhost();
+    // _init();
 
     // restore the original thread affinity
     s = pthread_setaffinity_np(thread, sizeof(cpu_set_t), &cpuset);
@@ -527,6 +531,186 @@ DpdkDriver::Impl::_eal_init(int argc, char* argv[])
  * Separated out to be used by different constructor methods.
  */
 void
+DpdkDriver::Impl::_init_vhost()
+{
+    struct rte_eth_conf portConf;
+    int ret;
+    uint16_t mtu;
+
+    // Populate the ARP table with records in /proc/net/arp (inspired by
+    // net-tools/arp.c)
+    std::ifstream input("/proc/net/arp");
+    for (std::string line; getline(input, line);) {
+        char ip[100];
+        char hwa[100];
+        char mask[100];
+        char dev[100];
+        int type, flags;
+        int cols = sscanf(line.c_str(), "%s 0x%x 0x%x %99s %99s %99s\n", ip,
+                          &type, &flags, hwa, mask, dev);
+        if (cols != 6)
+            continue;
+        arpTable.emplace(IpAddress::fromString(ip), hwa);
+    }
+
+    // Iterate over ethernet devices to locate the port identifier.
+    // I assume that there is only one vhost port for this particular app.
+    int p;
+    RTE_ETH_FOREACH_DEV(p)
+    {
+        struct ether_addr mac;
+        rte_eth_macaddr_get(p, &mac);
+        port = p;
+    }
+
+    // NOTICE("Using interface %s, ip %s, mac %s, port %u", ifname.c_str(),
+    //        IpAddress::toString(localIp).c_str(), localMac.toString().c_str(),
+    //        port);
+
+    std::string poolName = StringUtil::format("homa_mbuf_pool_%u", port);
+    std::string ringName = StringUtil::format("homa_loopback_ring_%u", port);
+
+    NOTICE("Using DPDK version %s", rte_version());
+
+    // create an memory pool for accommodating packet buffers
+    mbufPool =
+        rte_pktmbuf_pool_create(poolName.c_str(), NB_MBUF, MEMPOOL_CACHE_SIZE,
+                                0, RTE_MBUF_DEFAULT_BUF_SIZE, rte_socket_id());
+    if (!mbufPool) {
+        throw DriverInitFailure(
+            HERE_STR, StringUtil::format(
+                          "Failed to allocate memory for packet buffers: %s",
+                          rte_strerror(rte_errno)));
+    }
+
+    // ensure that DPDK was able to detect a compatible and available NIC
+    if (!rte_eth_dev_is_valid_port(port)) {
+        throw DriverInitFailure(
+            HERE_STR,
+            StringUtil::format("Ethernet port %u doesn't exist", port));
+    }
+
+    // configure some default NIC port parameters
+    memset(&portConf, 0, sizeof(portConf));
+    portConf.rxmode.max_rx_pkt_len = ETHER_MAX_VLAN_FRAME_LEN;
+    rte_eth_dev_configure(port, 1, 1, &portConf);
+
+    // Set up a NIC/HW-based filter on the ethernet type so that only
+    // traffic to a particular port is received by this driver.
+    struct rte_eth_ethertype_filter filter;
+    ret = rte_eth_dev_filter_supported(port, RTE_ETH_FILTER_ETHERTYPE);
+    if (ret < 0) {
+        NOTICE("ethertype filter is not supported on port %u.", port);
+        hasHardwareFilter = false;
+    } else {
+        memset(&filter, 0, sizeof(filter));
+        ret = rte_eth_dev_filter_ctrl(port, RTE_ETH_FILTER_ETHERTYPE,
+                                      RTE_ETH_FILTER_ADD, &filter);
+        if (ret < 0) {
+            WARNING("failed to add ethertype filter\n");
+            hasHardwareFilter = false;
+        }
+    }
+
+    // setup and initialize the receive and transmit NIC queues,
+    // and activate the port.
+    rte_eth_rx_queue_setup(port, 0, NDESC, rte_eth_dev_socket_id(port), NULL,
+                           mbufPool);
+    rte_eth_tx_queue_setup(port, 0, NDESC, rte_eth_dev_socket_id(port), NULL);
+
+    // Install tx callback to track NIC queue length.
+    if (rte_eth_add_tx_callback(port, 0, txBurstCallback, &tx.stats) == NULL) {
+        throw DriverInitFailure(
+            HERE_STR,
+            StringUtil::format("Cannot set tx callback on port %u", port));
+    }
+
+    // Initialize TX buffers
+    tx.buffer = static_cast<rte_eth_dev_tx_buffer*>(
+        rte_zmalloc_socket("tx_buffer", RTE_ETH_TX_BUFFER_SIZE(MAX_PKT_BURST),
+                           0, rte_eth_dev_socket_id(port)));
+    if (tx.buffer == NULL) {
+        throw DriverInitFailure(
+            HERE_STR, StringUtil::format(
+                          "Cannot allocate buffer for tx on port %u", port));
+    }
+    rte_eth_tx_buffer_init(tx.buffer, MAX_PKT_BURST);
+
+    // get the current MTU.
+    ret = rte_eth_dev_get_mtu(port, &mtu);
+    if (ret < 0) {
+        throw DriverInitFailure(
+            HERE_STR,
+            StringUtil::format("rte_eth_dev_get_mtu on port %u returned "
+                               "ENODEV; unable to read current mtu",
+                               port));
+    }
+    // set the MTU that the NIC port should support
+    if (mtu != MAX_PAYLOAD_SIZE) {
+        ret = rte_eth_dev_set_mtu(port, MAX_PAYLOAD_SIZE);
+        if (ret != 0) {
+            throw DriverInitFailure(
+                HERE_STR,
+                StringUtil::format("Failed to set the MTU on Ethernet port %u: "
+                                   "%s; current MTU is %u",
+                                   port, strerror(ret), mtu));
+        }
+        mtu = MAX_PAYLOAD_SIZE;
+    }
+
+    ret = rte_eth_dev_start(port);
+    if (ret != 0) {
+        throw DriverInitFailure(
+            HERE_STR,
+            StringUtil::format("Couldn't start port %u, error %d (%s)", port,
+                               ret, strerror(ret)));
+    }
+
+    // Retrieve the link speed and compute information based on it.
+    struct rte_eth_link link;
+    rte_eth_link_get(port, &link);
+    if (!link.link_status) {
+        throw DriverInitFailure(
+            HERE_STR, StringUtil::format(
+                          "Failed to detect a link on Ethernet port %u", port));
+    }
+    if (link.link_speed != ETH_SPEED_NUM_NONE) {
+        // Be conservative about the link speed. We use bandwidth in
+        // QueueEstimator to estimate # bytes outstanding in the NIC's
+        // TX queue. If we overestimate the bandwidth, under high load,
+        // we may keep queueing packets faster than the NIC can consume,
+        // and build up a queue in the TX queue.
+        bandwidthMbps = (uint32_t)(link.link_speed * 0.98);
+    } else {
+        WARNING(
+            "Can't retrieve network bandwidth from DPDK; "
+            "using default of %d Mbps",
+            bandwidthMbps.load());
+    }
+    // Reset the queueEstimator with the updated bandwidth.
+    new (&tx.stats.queueEstimator)
+        Util::QueueEstimator<std::chrono::steady_clock>(bandwidthMbps);
+
+    // create an in-memory ring, used as a software loopback in order to
+    // handle packets that are addressed to the localhost.
+    loopbackRing =
+        rte_ring_create(ringName.c_str(), NB_LOOPBACK_SLOTS, SOCKET_ID_ANY, 0);
+    if (NULL == loopbackRing) {
+        throw DriverInitFailure(
+            HERE_STR, StringUtil::format("Failed to allocate loopback ring: %s",
+                                         rte_strerror(rte_errno)));
+    }
+
+    NOTICE("DpdkDriver address: %s, bandwidth: %d Mbits/sec, MTU: %u",
+           localMac.toString().c_str(), bandwidthMbps.load(), mtu);
+}
+/**
+ * Does most of the real work on initializing the DpdkDriver during
+ * construction.
+ *
+ * Separated out to be used by different constructor methods.
+ */
+void
 DpdkDriver::Impl::_init()
 {
     struct rte_eth_conf portConf;
@@ -590,13 +774,11 @@ DpdkDriver::Impl::_init()
     RTE_ETH_FOREACH_DEV(p)
     {
         struct ether_addr mac;
-        NOTICE("How many times in Here");
         rte_eth_macaddr_get(p, &mac);
-        //if (MacAddress(mac.addr_bytes) == localMac) {
-            NOTICE("How many times in Here");
+        if (MacAddress(mac.addr_bytes) == localMac) {
             port = p;
-        //    break;
-        //}
+            break;
+        }
     }
     NOTICE("Using interface %s, ip %s, mac %s, port %u", ifname.c_str(),
            IpAddress::toString(localIp).c_str(), localMac.toString().c_str(),
