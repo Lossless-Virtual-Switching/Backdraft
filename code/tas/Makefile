@@ -8,7 +8,7 @@ BKDRFT_LIB = -L../lib/bkdrft/build/ -lbkdrft -lprotobuf-c
 
 CPPFLAGS += -Iinclude/ $(BKDRFT_INCLUDE)
 CPPFLAGS += $(EXTRA_CPPFLAGS)
-CFLAGS += -std=gnu99 -O3 -g -Wall -Werror -march=native -fno-omit-frame-pointer
+CFLAGS += -std=gnu99 -O3 -g -Wall -Werror -march=native -fno-omit-frame-pointer -Wno-address-of-packed-member
 CFLAGS += $(EXTRA_CFLAGS)
 CFLAGS_SHARED += $(CFLAGS) -fPIC
 LDFLAGS += -pthread -g
