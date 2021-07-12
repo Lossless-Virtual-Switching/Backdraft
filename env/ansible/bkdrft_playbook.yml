@@ -6,27 +6,27 @@
   become: true
   tasks:
     # python
-    - name: "install python3"
-      apt:
-        update_cache: yes
-        name: ['python3', 'python3-pip']
-    - name: "update python3 pip"
-      command: "python3 -m pip install --upgrade pip"
-    - name: "install python3 pyyaml"
-      shell: "python3 -m pip install pyyaml && python3 -m pip install -U pyyaml"
-      ignore_errors: yes
-    - name: "install python2"
-      apt:
-        update_cache: no
-        name: ['python', 'python-pip']
-      when: ansible_distribution == 'Ubuntu' and ansible_lsb.major_release|int < 20
-    - name: "update python2 pip"
-      command: "python2 -m pip install --upgrade pip"
-      when: ansible_distribution == 'Ubuntu' and ansible_lsb.major_release|int < 20
-    - name: "install python2 pyyaml"
-      shell: "python2 -m pip install pyyaml && python2 -m pip install -U pyyaml"
-      ignore_errors: yes
-      when: ansible_distribution == 'Ubuntu' and ansible_lsb.major_release|int < 20
+    # - name: "install python3"
+    #   apt:
+    #     update_cache: yes
+    #     name: ['python3', 'python3-pip']
+    # - name: "update python3 pip"
+    #   command: "python3 -m pip install --upgrade pip"
+    # - name: "install python3 pyyaml"
+    #   shell: "python3 -m pip install pyyaml && python3 -m pip install -U pyyaml"
+    #   ignore_errors: yes
+    # - name: "install python2"
+    #   apt:
+    #     update_cache: no
+    #     name: ['python', 'python-pip']
+    #   when: ansible_distribution == 'Ubuntu' and ansible_lsb.major_release|int < 20
+    # - name: "update python2 pip"
+    #   command: "python2 -m pip install --upgrade pip"
+    #   when: ansible_distribution == 'Ubuntu' and ansible_lsb.major_release|int < 20
+    # - name: "install python2 pyyaml"
+    #   shell: "python2 -m pip install pyyaml && python2 -m pip install -U pyyaml"
+    #   ignore_errors: yes
+    #   when: ansible_distribution == 'Ubuntu' and ansible_lsb.major_release|int < 20
     # docker
     - name: "install docker daemon and docker-compose"
       apt: # assume cache has been updated in previous steps
