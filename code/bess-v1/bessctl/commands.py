@@ -29,8 +29,8 @@
 # ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
 # POSSIBILITY OF SUCH DAMAGE.
 
-from __future__ import print_function
-from __future__ import absolute_import
+
+
 import os
 import os.path
 import sys
@@ -816,7 +816,7 @@ def _get_bess_module_and_port_creators(cli, rsvd):
     # using the same name twice as-module class or port-driver.
     # But the C++ code does not have the restriction on using
     # Foo() as *both* module *and* port-driver.
-    counts = collections.Counter(rsvd.keys())
+    counts = collections.Counter(list(rsvd.keys()))
     counts.update(class_names)
     counts.update(driver_names)
     dups = [k for k in counts if counts[k] > 1]
@@ -931,13 +931,13 @@ def _run_file(cli, conf_file, env_map):
         try:
             original_env = copy.copy(os.environ)
 
-            for k, v in env_map.items():
+            for k, v in list(env_map.items()):
                 os.environ[k] = str(v)
 
             _do_run_file(cli, conf_file)
         finally:
             os.environ.clear()
-            for k, v in original_env.items():
+            for k, v in list(original_env.items()):
                 os.environ[k] = v
     else:
         _do_run_file(cli, conf_file)
@@ -1367,7 +1367,9 @@ def _draw_pipeline(cli, field, units, last_stats=None, graph_args=[]):
                              stderr=subprocess.PIPE)
 
         for m in modules:
-            print('[%s]' % node_labels[m.name], file=f.stdin)
+            # print('[%s]' % node_labels[m.name], file=f.stdin)
+            _tmp = '[%s]' % node_labels[m.name]
+            f.stdin.write(_tmp.encode('utf-8'))
 
         for name in names:
             gates = cli.bess.get_module_info(name).ogates
@@ -1394,13 +1396,18 @@ def _draw_pipeline(cli, field, units, last_stats=None, graph_args=[]):
                 edge_attr = '{label::%d  %s %s %d:;}' % (
                     gate.ogate, label, units, gate.igate)
 
-                print('[%s] ->%s [%s]' % (
+                # print('[%s] ->%s [%s]' % (
+                #     node_labels[name],
+                #     edge_attr,
+                #     node_labels[gate.name]), file=f.stdin)
+                _tmp = '[%s] ->%s [%s]' % (
                     node_labels[name],
                     edge_attr,
-                    node_labels[gate.name]), file=f.stdin)
+                    node_labels[gate.name])
+                f.stdin.write(_tmp.encode('utf-8'))
         output, error = f.communicate()
         f.wait()
-        return output
+        return output.decode()
 
     except IOError as e:
         if e.errno == errno.EPIPE:
@@ -1789,11 +1796,11 @@ def _monitor_ports(cli, *ports):
         else:
             out_mbps = 0.
 
-        data = (inc_mbps, delta.inc_packets / 1e6, long(delta.inc_dropped), out_mbps, delta.out_packets / 1e6,
-                long(delta.out_dropped))
+        data = (inc_mbps, delta.inc_packets / 1e6, int(delta.inc_dropped), out_mbps, delta.out_packets / 1e6,
+                int(delta.out_dropped))
         cli.fout.write('{:<20}{:>14.1f}{:>10.3f}{:>10d}        {:>14.1f}{:>10.3f}{:>10d}\n'.format(port, *data))
         if csv_f is not None:
-            csv_f.write('{},{},{}\n'.format(time.strftime('%X'), port, ','.join(map(lambda x: '{:.3f}'.format(x), data))))
+            csv_f.write('{},{},{}\n'.format(time.strftime('%X'), port, ','.join(['{:.3f}'.format(x) for x in data])))
 
     def get_total(arr):
         total = copy.deepcopy(arr[0])
@@ -1905,11 +1912,11 @@ def _monitor_tcs(cli, *tcs):
         else:
             cpp = 0.
 
-        data = (delta.cycles / 1e6, long(delta.count), delta.packets / 1e6, delta.bits / 1e6, ppb, cpp)
+        data = (delta.cycles / 1e6, int(delta.count), delta.packets / 1e6, delta.bits / 1e6, ppb, cpp)
         fmt = '{:<%d}{:>12.3f}{:>12d}{:>12.3f}{:>12.3f}{:>12.3f}{:>12.3f}\n' % (name_len,)
         cli.fout.write(fmt.format(tc, *data))
         if csv_f is not None:
-            csv_f.write('{},{},{}\n'.format(time.strftime('%X'), tc, ','.join(map(lambda x: '{:.3f}'.format(x), data))))
+            csv_f.write('{},{},{}\n'.format(time.strftime('%X'), tc, ','.join(['{:.3f}'.format(x) for x in data])))
 
     def print_loop(csv=None):
         while True:
