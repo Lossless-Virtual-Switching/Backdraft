@@ -17,7 +17,8 @@ pipeline_config_file = os.path.join(cur_script_dir,
 
 def parse_args():
     parser = argparse.ArgumentParser()
-    parser.add_argument('--client', action='store_true')
+    parser.add_argument('--client', action='store_true', help='run client')
+    parser.add_argument('--ccwnd', action='store_true', help='constant congestion window')
     args = parser.parse_args()
     return args
 
@@ -42,7 +43,7 @@ def main():
     pending = 32
 
     current_ip = '192.168.1.3' if args.client else server_ip
-    tas_proc = setup_tas_engine({
+    tas_params = {
         'dpdk--vdev': 'virtio_user0,path=/tmp/tmp_vhost0.sock,queues=1',
         'dpdk--no-pci': True,
         'ip-addr': current_ip,
@@ -50,12 +51,10 @@ def main():
         'fp-no-xsumoffload': True,
         'fp-no-autoscale': True,
         'fp-no-ints': True,
-        }, cpuset='4,6,8')
-    # tas_proc = setup_tas_engine({
-    #     'dpdk-w': '41:00.0',
-    #     'ip-addr': current_ip,
-    #     'fp-cores-max': 1,
-    #     })
+        }
+    if args.ccwnd:
+        tas_params['cc'] = 'const-rate'
+    tas_proc = setup_tas_engine(tas_params, cpuset='4,6,8')
     sleep(3)
     if tas_proc.returncode is not None:
         print ('Failed to setup TAS')
