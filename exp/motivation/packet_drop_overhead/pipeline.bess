@@ -1,0 +1,53 @@
+import os
+import subprocess
+
+count_queue = 1
+count_vhost = 1
+q_size = 2048
+pci = os.environ.get('PCI', '41:00.0')
+drop_prob = float(os.environ.get('DROP', '0'))
+msg='Check if this values are correct:\npci addr: {}\ndrop probability: {}'
+msg = msg.format(pci, drop_prob)
+print(msg)
+
+bess.add_worker(0, 0)
+
+
+socket_dir='/tmp'
+sockets = [os.path.join(socket_dir, 'tmp_vhost{}.sock'.format(i))
+                            for i in range(count_vhost)]
+vdevs = ["eth_vhost{},iface={},queues={}".format(i, socket, count_queue)
+                            for i, socket in enumerate(sockets)]
+
+# Remove previous socket files
+for socket in sockets:
+    if os.path.exists(socket):
+        if os.path.isdir(socket):
+            subprocess.call('sudo rm -r {}'.format(socket), shell=True)
+        else:
+            subprocess.call('sudo rm {}'.format(socket), shell=True)
+
+pmd_ports = []
+for i, vdev in enumerate(vdevs):
+    port = PMDPort(name="tmp_vhost{}".format(i),
+            vdev=vdev,
+            num_inc_q = count_queue,
+            num_out_q = count_queue,
+            size_inc_q= q_size,
+            size_out_q= q_size)
+    pmd_ports.append(port)
+
+nic = PMDPort(pci = pci,
+        num_inc_q=count_queue,
+        num_out_q=count_queue,
+        size_inc_q= q_size,
+        size_out_q= q_size)
+
+
+# Pipeline
+drop = RandomSplit(drop_rate=drop_prob, gates=[0,])
+PortInc(port=pmd_ports[0]) -> drop
+drop:0 -> PortOut(port=nic)
+# PortInc(port=pmd_ports[0]) -> PortOut(port=nic)
+PortInc(port=nic) -> PortOut(port=pmd_ports[0])
+
