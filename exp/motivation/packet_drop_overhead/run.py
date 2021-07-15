@@ -19,8 +19,21 @@ def parse_args():
     parser = argparse.ArgumentParser()
     parser.add_argument('--client', action='store_true', help='run client')
     parser.add_argument('--ccwnd', action='store_true', help='constant congestion window')
+    parser.add_argument('--cpulimit', type=float, default=1,
+            help='what fraction of cpu the application can use (0, 1]')
+    parser.add_argument('--duration', type=int, default=-1)
     args = parser.parse_args()
+    if args.cpulimit < 0 or args.cpulimit > 1:
+        print('cpulimt shoud be in range of (0, 1]')
+        sys.exit(1)
     return args
+
+
+def check_cpulimit():
+    ret = subprocess.run('which cpulimit', shell=True, stdout=subprocess.PIPE)
+    if ret.returncode != 0:
+        print('please install cpulimimt')
+        sys.exit(1)
 
 
 def main():
@@ -28,6 +41,9 @@ def main():
         print('Need root permision to run TAS and ...')
         return 1
     args = parse_args()
+    if args.cpulimit != 1:
+        check_cpulimit()
+
     ret = setup_bess_pipeline(pipeline_config_file)
     if not ret:
         print('Failed to setup BESS')
@@ -67,18 +83,37 @@ def main():
             '../../../code/tas-benchmark/micro_rpc_modified/')
     if args.client:
         print('client')
-        binary = os.path.join(tas_app_dir, 'testclient_linux')
-        app_cmd = '{} 1 {}:{} 1 foo {} {} {} 1'.format(binary,
-                server_ip, server_port, log_file, msgsz, pending)
+        binname = 'testclient_linux'
+        binary = os.path.join(tas_app_dir, binname)
+        app_args = '1 {}:{} 1 foo {} {} {} 1'.format(server_ip,
+                server_port, log_file, msgsz, pending)
     else:
         print('server')
-        binary = os.path.join(tas_app_dir, 'echoserver_linux')
-        app_cmd = '{} {} 1 foo 1024 64'.format(binary, server_port)
-    cmd = 'sudo LD_PRELOAD={} {}'.format(libinterpose, app_cmd)
+        binname = 'echoserver_linux'
+        binary = os.path.join(tas_app_dir, binname)
+        app_args = '{} 1 foo 1024 64'.format(server_port)
+    app_cmd = '{} {}'.format(binary, app_args)
+    cmd = 'LD_PRELOAD={} taskset -c 10,12,14 {}'.format(libinterpose, app_cmd)
     try:
-        subprocess.run(cmd, shell=True)
+        # print ('app cmd:', cmd)
+        sh_proc = subprocess.Popen(cmd, shell=True)
+        if args.cpulimit != 1:
+            pid = int(subprocess.check_output('pidof -s tas', shell=True))
+            percent = args.cpulimit * 200
+            cmd = 'cpulimit -p {} -l {}'.format(pid, percent)
+            cpulimit_proc = subprocess.Popen(cmd, shell=True)
+        if args.duration > 0:
+            try:
+                sh_proc.wait(args.duration)
+            except:
+                # os.kill(pid, subprocess.signal.SIGINT)
+                subprocess.run('pkill testclient_linu', shell=True)
+        else:
+            sh_proc.wait()
     except KeyboardInterrupt as e:
         pass
+    except Exception as e:
+        print(e)
 
     tas_proc.send_signal(subprocess.signal.SIGINT)
     ret = bessctl_do('daemon stop', stderr=subprocess.PIPE)
