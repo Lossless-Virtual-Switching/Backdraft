@@ -46,6 +46,19 @@ target_link_libraries(dpdk_test
         PerfUtils
 )
 
+
+## dpdk_test_client #################################################################
+
+add_executable(dpdk_test_client
+    dpdk_test_client.cc
+)
+target_link_libraries(dpdk_test_client
+    PRIVATE
+        Homa::DpdkDriver
+        docopt
+        PerfUtils
+)
+
 ## Perf ########################################################################
 
 add_executable(Perf

@@ -37,10 +37,12 @@ namespace Drivers {
 namespace DPDK {
 
 /// Default number of arguments for EAL init.
-const int default_eal_argc = 3;
+// const int default_eal_argc = 3;
+const int default_eal_argc = 1;
 
 /// Default arguments for EAL init.
-const char* default_eal_argv[] = {"homa", "--vdev=virtio_user0,path=/tmp/vhost_0.sock,queues=1", "--no-pci", NULL};
+// const char* default_eal_argv[] = {"homa", "--vdev=virtio_user0,path=/tmp/vhost_0.sock,queues=1", "--no-pci", NULL};
+const char* default_eal_argv[] = {"homa", NULL};
 
 /**
  * Construct a DPDK Packet backed by a DPDK mbuf.
@@ -104,7 +106,7 @@ DpdkDriver::Impl::Impl(const char* ifname, int argc, char* argv[],
     , tx()
     , hasHardwareFilter(true)  // Cleared later if not applicable
     , corked(0)
-    , bandwidthMbps(10000)  // Default bandwidth = 10 gbs
+    , bandwidthMbps(100000)  // Default bandwidth = 10 gbs
 {
     // DPDK during initialization (rte_eal_init()) the running thread is pinned
     // to a single processor which may be not be what the applications wants.
@@ -125,8 +127,11 @@ DpdkDriver::Impl::Impl(const char* ifname, int argc, char* argv[],
     // NOTICE("%d %s %s %s %s\n", default_eal_argc, default_eal_argv[0], default_eal_argv[1], default_eal_argv[2], default_eal_argv[3]);
     _eal_init(argc, argv);
     // _eal_init(default_eal_argc, const_cast<char**>(default_eal_argv));
-    _init_vhost();
-    // _init();
+    if (argc > 1) {
+        _init_vhost();
+    } else {
+        _init();
+    }
 
     // restore the original thread affinity
     s = pthread_setaffinity_np(thread, sizeof(cpu_set_t), &cpuset);
@@ -160,7 +165,7 @@ DpdkDriver::Impl::Impl(const char* ifname,
     , tx()
     , hasHardwareFilter(true)  // Cleared later if not applicable
     , corked(0)
-    , bandwidthMbps(10000)  // Default bandwidth = 10 gbs
+    , bandwidthMbps(100000)  // Default bandwidth = 10 gbs
 {
     _init();
 }
