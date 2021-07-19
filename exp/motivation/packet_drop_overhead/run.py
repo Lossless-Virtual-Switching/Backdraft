@@ -57,6 +57,7 @@ def main():
 
     msgsz = 64
     pending = 32
+    pps = -1  # Not working well
 
     current_ip = '192.168.1.3' if args.client else server_ip
     tas_params = {
@@ -85,8 +86,8 @@ def main():
         print('client')
         binname = 'testclient_linux'
         binary = os.path.join(tas_app_dir, binname)
-        app_args = '1 {}:{} 1 foo {} {} {} 1'.format(server_ip,
-                server_port, log_file, msgsz, pending)
+        app_args = '1 {}:{} 1 foo {} {} {} 1 0 {}'.format(server_ip,
+                server_port, log_file, msgsz, pending, pps)
     else:
         print('server')
         binname = 'echoserver_linux'
@@ -99,7 +100,8 @@ def main():
         sh_proc = subprocess.Popen(cmd, shell=True)
         if args.cpulimit != 1:
             pid = int(subprocess.check_output('pidof -s tas', shell=True))
-            percent = args.cpulimit * 200
+            percent = int(args.cpulimit * 200)
+            print('cpulimit:', percent)
             cmd = 'cpulimit -p {} -l {}'.format(pid, percent)
             cpulimit_proc = subprocess.Popen(cmd, shell=True)
         if args.duration > 0:
@@ -116,6 +118,7 @@ def main():
         print(e)
 
     tas_proc.send_signal(subprocess.signal.SIGINT)
+    bessctl_do('show port')
     ret = bessctl_do('daemon stop', stderr=subprocess.PIPE)
     if ret.stderr is not None:
         print('Failed to stop BESS daemon')
