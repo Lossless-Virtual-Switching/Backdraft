@@ -45,7 +45,7 @@ void signal_handler(int signal)
 static const char USAGE[] = R"(Homa System Test.
 
     Usage:
-        system_test <count> [-v | -vv | -vvv | -vvvv] [options]
+        system_test <count> [-v | -vv | -vvv | -vvvv] [--dpdk-extra=<arg>]... [options]
         system_test (-h | --help)
         system_test --version
 
@@ -56,6 +56,13 @@ static const char USAGE[] = R"(Homa System Test.
         --servers=<n>   Number of virtual servers [default: 1].
         --size=<n>      Number of bytes to send as a payload [default: 10].
         --lossRate=<f>  Rate at which packets are lost [default: 0.0].
+        --vhost-port          Vhost port config which should fill the iface if added.
+        --slow-down=CYCLES    Cycles to wait before receiving the packet batch [default: 0].
+        --tx-pkt-length=SIZE  Sender packet length [default 64].
+        --rx-pkt-length=SIZE  Receiver packet length [default 64].
+        --vhost-port-ip=IP    Vhost port ip, this is highly useful for vhost port.
+        --vhost-port-mac=MAC  Vhost port mac address, this is highly useful for vhost port.
+        --iface=IFACE         Interface for the vhost port mostly
 )";
 
 bool _PRINT_CLIENT_ = false;
@@ -67,9 +74,11 @@ struct MessageHeader {
 } __attribute__((packed));
 
 struct Node {
-    explicit Node(uint64_t id)
+    explicit Node(uint64_t id, std::string ip, std::string mac, int dpdk_param_size, char **dpdk_params)
         : id(id)
-        , driver("ens3f0")
+        // , driver("ens3f0")
+        // , driver("ens3f0", )
+	, driver("ens3f0", ip.c_str(), mac.c_str(), dpdk_param_size, dpdk_params)
         , transport(Homa::Transport::create(&driver, id))
         , thread()
         , run(false)
@@ -114,66 +123,66 @@ serverMain(Node* server, std::vector<Homa::IpAddress> addresses)
  * @return
  *      Number of Op that failed.
  */
-int
-clientMain(int count, int size, std::vector<Homa::IpAddress> addresses)
-{
-    std::random_device rd;
-    std::mt19937 gen(rd());
-    std::uniform_int_distribution<> randAddr(0, addresses.size() - 1);
-    std::uniform_int_distribution<char> randData(0);
-
-    std::vector<Output::Latency> times;
-    uint64_t start;
-    uint64_t stop; 
-
-    uint64_t nextId = 0;
-    int numFailed = 0;
-
-    Node client(1);
-    for (int i = 0; i < count; ++i) {
-        uint64_t id = nextId++;
-        char payload[size];
-        for (int i = 0; i < size; ++i) {
-            payload[i] = randData(gen);
-        }
-
-        Homa::IpAddress destAddress = addresses[randAddr(gen)];
-
-        Homa::unique_ptr<Homa::OutMessage> message = client.transport->alloc(0);
-        {
-            MessageHeader header;
-            header.id = id;
-            header.length = size;
-            message->append(&header, sizeof(MessageHeader));
-            message->append(payload, size);
-            if (_PRINT_CLIENT_) {
-                std::cout << "Client -> (opId: " << header.id << ")"
-                          << std::endl;
-            }
-        }
-
-	start = PerfUtils::Cycles::rdtsc();
-        message->send(Homa::SocketAddress{destAddress, 60001});
-
-        while (1) {
-            Homa::OutMessage::Status status = message->getStatus();
-            if (status == Homa::OutMessage::Status::COMPLETED) {
-		stop = PerfUtils::Cycles::rdtsc();
-		times.emplace_back(PerfUtils::Cycles::toSeconds(stop - start));
-                break;
-            } else if (status == Homa::OutMessage::Status::FAILED) {
-                numFailed++;
-                break;
-            }
-            client.transport->poll();
-        }
-    }
-
-    std::cout << Output::basicHeader() << std::endl;
-    std::cout << Output::basic(times, "Homa Transport Testing") << std::endl;
-
-    return numFailed;
-}
+// int
+// clientMain(int count, int size, std::vector<Homa::IpAddress> addresses)
+// {
+//     std::random_device rd;
+//     std::mt19937 gen(rd());
+//     std::uniform_int_distribution<> randAddr(0, addresses.size() - 1);
+//     std::uniform_int_distribution<char> randData(0);
+// 
+//     std::vector<Output::Latency> times;
+//     uint64_t start;
+//     uint64_t stop; 
+// 
+//     uint64_t nextId = 0;
+//     int numFailed = 0;
+// 
+//     Node client(1);
+//     for (int i = 0; i < count; ++i) {
+//         uint64_t id = nextId++;
+//         char payload[size];
+//         for (int i = 0; i < size; ++i) {
+//             payload[i] = randData(gen);
+//         }
+// 
+//         Homa::IpAddress destAddress = addresses[randAddr(gen)];
+// 
+//         Homa::unique_ptr<Homa::OutMessage> message = client.transport->alloc(0);
+//         {
+//             MessageHeader header;
+//             header.id = id;
+//             header.length = size;
+//             message->append(&header, sizeof(MessageHeader));
+//             message->append(payload, size);
+//             if (_PRINT_CLIENT_) {
+//                 std::cout << "Client -> (opId: " << header.id << ")"
+//                           << std::endl;
+//             }
+//         }
+// 
+// 	start = PerfUtils::Cycles::rdtsc();
+//         message->send(Homa::SocketAddress{destAddress, 60001});
+// 
+//         while (1) {
+//             Homa::OutMessage::Status status = message->getStatus();
+//             if (status == Homa::OutMessage::Status::COMPLETED) {
+// 		stop = PerfUtils::Cycles::rdtsc();
+// 		times.emplace_back(PerfUtils::Cycles::toSeconds(stop - start));
+//                 break;
+//             } else if (status == Homa::OutMessage::Status::FAILED) {
+//                 numFailed++;
+//                 break;
+//             }
+//             client.transport->poll();
+//         }
+//     }
+// 
+//     std::cout << Output::basicHeader() << std::endl;
+//     std::cout << Output::basic(times, "Homa Transport Testing") << std::endl;
+// 
+//     return numFailed;
+// }
 
 int
 main(int argc, char* argv[])
@@ -208,6 +217,51 @@ main(int argc, char* argv[])
         Homa::Debug::setLogPolicy(Homa::Debug::logPolicyFromString("VERBOSE"));
     }
 
+
+    // Here I start parsing DPDK specific parameters
+    int dpdk_extra_count = 0;
+    char ** dpdk_extra_params;
+    uint64_t pkt_length = 64;
+
+    if(args["--tx-pkt-length"]) {
+        pkt_length = args["--tx-pkt-length"].asLong();
+    }
+
+    bool isVirtioHostPort = args["--vhost-port"].asBool();
+    std::string iface = args["--iface"].asString();
+    std::string vhost_conf;
+    std::string vhost_ip;
+    std::string vhost_mac;
+    std::string server_ip_string;
+
+    if (isVirtioHostPort) {
+        vhost_conf = iface;
+        dpdk_extra_count+=2;
+        dpdk_extra_params = (char**)malloc(sizeof(char*) * (dpdk_extra_count + 1));
+        dpdk_extra_params[0] = strdup("homa");
+        dpdk_extra_params[1] = strdup(vhost_conf.c_str());
+        dpdk_extra_params[2] = NULL;
+
+        // IP and MAC
+        vhost_ip = args["--vhost-port-mac"].asString();
+        vhost_mac = args["--vhost-port-ip"].asString();
+    }
+
+    std::vector<std::string> param_list = args["--dpdk-extra"].asStringList();
+    int extra_size = param_list.size();
+    if (extra_size > 0) {
+        dpdk_extra_count += extra_size;
+        dpdk_extra_params = (char**)realloc(dpdk_extra_params,
+                                            (dpdk_extra_count + 1) * sizeof(char*));
+        for (int i = 2; i < dpdk_extra_count; i++) {
+            dpdk_extra_params[i] = strdup(param_list[i - 2].c_str());
+            // std::cout << dpdk_extra_params[i] << std::endl;
+        }
+        dpdk_extra_params[dpdk_extra_count] = NULL;
+    }
+
+    // Parameter parsing is done
+
     // Installing the signal
     std::signal(SIGINT, signal_handler);
 
@@ -218,8 +272,10 @@ main(int argc, char* argv[])
     std::vector<Homa::IpAddress> addresses;
     std::vector<Node*> servers;
     for (int i = 0; i < numServers; ++i) {
-        Node* server = new Node(nextServerId++);
-        addresses.emplace_back(server->driver.getLocalAddress());
+        // Node* server = new Node(nextServerId++);
+	Node* server = new Node(nextServerId++, vhost_ip, vhost_mac,
+			dpdk_extra_count, dpdk_extra_params);
+	addresses.emplace_back(server->driver.getLocalAddress());
         servers.push_back(server);
     }
 
