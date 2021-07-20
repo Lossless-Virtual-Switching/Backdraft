@@ -138,6 +138,8 @@ class DpdkDriver::Impl {
     Impl(const char* ifname, const Config* const config = nullptr);
     Impl(const char* ifname, int argc, char* argv[],
          const Config* const config = nullptr);
+    Impl(const char* ifname, const char* mac, const char* ip, int argc, char* argv[],
+         const Config* const config = nullptr);
     Impl(const char* ifname, NoEalInit _, const Config* const config = nullptr);
     virtual ~Impl();
 

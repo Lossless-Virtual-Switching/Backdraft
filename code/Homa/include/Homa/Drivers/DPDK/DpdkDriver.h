@@ -88,6 +88,36 @@ class DpdkDriver : public Driver {
     DpdkDriver(const char* ifname, int argc, char* argv[],
                const Config* const config = nullptr);
 
+    /**
+     * Construct a DpdkDriver and initialize the DPDK EAL using the provided
+     * _argc_ and _argv_. [Advanced Usage]
+     *
+     * This constructor should be used if the caller wants to control what
+     * parameters are provided to DPDK EAL initialization. The input parameters
+     * _argc_ and _argv_ will be provided to rte_eal_init() directly. See the
+     * DPDK documentation for initialization options.
+     *
+     * This constructor will maintain the currently set thread affinity by
+     * overriding the default affinity set by rte_eal_init().
+     *
+     * @param port
+     *      Selects which network interface to use for communication.
+     * @param mac
+     * 	    Sets an optional mac address for a vhost port
+     * @param ip
+     * 	    Set the ip address for a vhost port
+     * @param argc
+     *      Parameter passed to rte_eal_init().
+     * @param argv
+     *      Parameter passed to rte_eal_init().
+     * @param config
+     *      Optional configuration parameters (see Config).
+     * @throw DriverInitFailure
+     *      Thrown if DpdkDriver fails to initialize for any reason.
+     */
+    DpdkDriver(const char* ifname, const char* mac, const char *ip, int argc, char* argv[],
+               const Config* const config = nullptr);
+
     /// Used to signal to the DpdkDriver constructor that the DPDK EAL should
     /// not be initialized.
     enum NoEalInit { NO_EAL_INIT };

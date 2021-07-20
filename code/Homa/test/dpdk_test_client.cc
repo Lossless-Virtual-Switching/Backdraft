@@ -78,7 +78,9 @@ main(int argc, char* argv[])
             PerfUtils::TimeTrace::record("allocPacket");
             ping->length = 100;
             PerfUtils::TimeTrace::record("set ping args");
+	    std::cout << "test" << std::endl;
             driver.sendPacket(ping, server_ip, 0);
+	    std::cout << "testr1" << std::endl;
             PerfUtils::TimeTrace::record("sendPacket");
             driver.releasePackets(&ping, 1);
             PerfUtils::TimeTrace::record("releasePacket");

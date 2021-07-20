@@ -59,6 +59,30 @@ target_link_libraries(dpdk_test_client
         PerfUtils
 )
 
+## dpdk_client_system_test #########################################################
+
+add_executable(dpdk_client_system_test
+    dpdk_client_system_test.cc 
+)
+target_link_libraries(dpdk_client_system_test
+    PRIVATE
+        Homa::DpdkDriver
+        docopt
+        PerfUtils
+)
+
+## dpdk_server_system_test #########################################################
+
+add_executable(dpdk_server_system_test
+    dpdk_server_system_test.cc 
+)
+target_link_libraries(dpdk_server_system_test
+    PRIVATE
+        Homa::DpdkDriver
+        docopt
+        PerfUtils
+)
+
 ## Perf ########################################################################
 
 add_executable(Perf

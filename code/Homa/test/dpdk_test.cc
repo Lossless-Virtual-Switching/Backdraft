@@ -3,9 +3,7 @@
  * Permission to use, copy, modify, and/or distribute this software for any
  * purpose with or without fee is hereby granted, provided that the above
  * copyright notice and this permission notice appear in all copies.
- *
- * THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES
- * WITH REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF
+ * * THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES * WITH REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF
  * MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR
  * ANY SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES
  * WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN
@@ -31,13 +29,15 @@ static const char USAGE[] = R"(DPDK Driver Test.
         dpdk_test [options] --iface=<iface> (--server | <server_ip>) [--dpdk-extra=<arg>]...
 
     Options:
-        -h --help           Show this screen.
-        --version           Show version.
-        --timetrace         Enable TimeTrace output [default: false].
-	--vhost-port        Vhost port config which should fill the iface if added.
-	--slow-down=CYCLES  Cycles to wait before receiving the packet batch [default: 0].
-	--tx-pkt-length=SIZE Sender packet length [default 64].
-	--rx-pkt-length=SIZE Receiver packet length [default 64].
+        -h --help             Show this screen.
+        --version             Show version.
+        --timetrace           Enable TimeTrace output [default: false].
+	--vhost-port          Vhost port config which should fill the iface if added.
+	--slow-down=CYCLES    Cycles to wait before receiving the packet batch [default: 0].
+	--tx-pkt-length=SIZE  Sender packet length [default 64].
+	--rx-pkt-length=SIZE  Receiver packet length [default 64].
+	--vhost-port-ip=IP    Vhost port ip, this is highly useful for vhost port.
+	--vhost-port-mac=MAC  Vhost port mac address, this is highly useful for vhost port.
 )";
 
 // --extra-dpdk PARAM  Extra DPDK parameters
@@ -65,6 +65,8 @@ main(int argc, char* argv[])
     bool isVirtioHostPort = args["--vhost-port"].asBool();
     std::string vhost_conf;
     std::string iface = args["--iface"].asString();
+    std::string vhost_ip;
+    std::string vhost_mac;
     if (isVirtioHostPort) {
         vhost_conf = iface;
         dpdk_extra_count+=2;
@@ -72,6 +74,10 @@ main(int argc, char* argv[])
         dpdk_extra_params[0] = strdup("homa");
         dpdk_extra_params[1] = strdup(vhost_conf.c_str());
         dpdk_extra_params[2] = NULL;
+
+	// IP and MAC 
+	vhost_ip = args["--vhost-port-mac"].asString();	
+	vhost_mac = args["--vhost-port-ip"].asString();
     }
 
     bool isServer = args["--server"].asBool();
@@ -108,7 +114,8 @@ main(int argc, char* argv[])
     // else
     //     driver = Homa::Drivers::DPDK::DpdkDriver::DpdkDriver(iface.c_str());
     
-    Homa::Drivers::DPDK::DpdkDriver driver(iface.c_str(), dpdk_extra_count, dpdk_extra_params);
+    // Homa::Drivers::DPDK::DpdkDriver driver(iface.c_str(), dpdk_extra_count, dpdk_extra_params);
+    Homa::Drivers::DPDK::DpdkDriver driver(iface.c_str(), vhost_ip.c_str(), vhost_mac.c_str(), dpdk_extra_count, dpdk_extra_params); // Finally new interace 
     
     // Homa::Drivers::DPDK::DpdkDriver driver(iface.c_str());
 

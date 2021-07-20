@@ -30,6 +30,11 @@ DpdkDriver::DpdkDriver(const char* ifname, int argc, char* argv[],
     : pImpl(new Impl(ifname, argc, argv, config))
 {}
 
+DpdkDriver::DpdkDriver(const char* ifname, const char * mac, const char * ip, int argc, char* argv[],
+                       const Config* const config)
+    : pImpl(new Impl(ifname, mac, ip, argc, argv, config))
+{}
+
 DpdkDriver::DpdkDriver(const char* ifname, NoEalInit _,
                        const Config* const config)
     : pImpl(new Impl(ifname, _, config))

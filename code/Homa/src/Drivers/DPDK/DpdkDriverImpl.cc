@@ -53,8 +53,7 @@ const char* default_eal_argv[] = {"homa", NULL};
  *      Memory location in the mbuf where the packet data should be stored.
  */
 DpdkDriver::Impl::Packet::Packet(struct rte_mbuf* mbuf, void* data)
-    : base{.payload = data, .length = 0}
-    , bufType(MBUF)
+    : base{.payload = data, .length = 0} , bufType(MBUF)
     , bufRef()
 {
     bufRef.mbuf = mbuf;
@@ -81,6 +80,64 @@ DpdkDriver::Impl::Impl(const char* ifname, const Config* const config)
     : Impl(ifname, default_eal_argc, const_cast<char**>(default_eal_argv),
            config)
 {}
+
+/**
+ * See DpdkDriver::DpdkDriver()
+ */
+DpdkDriver::Impl::Impl(const char* ifname, const char* mac, const char* ip, int argc, char* argv[],
+                       const Config* const config)
+    : ifname(ifname)
+    , port()
+    , arpTable()
+    , localIp(IpAddress::fromString(ip))
+    , localMac(mac)
+    , HIGHEST_PACKET_PRIORITY(
+          (config == nullptr || config->HIGHEST_PACKET_PRIORITY_OVERRIDE < 0)
+              ? Homa::Util::arrayLength(PRIORITY_TO_PCP) - 1
+              : config->HIGHEST_PACKET_PRIORITY_OVERRIDE)
+    , packetLock()
+    , packetPool()
+    , overflowBufferPool()
+    , mbufsOutstanding(0)
+    , mbufPool(nullptr)
+    , loopbackRing(nullptr)
+    , rx()
+    , tx()
+    , hasHardwareFilter(true)  // Cleared later if not applicable
+    , corked(0)
+    , bandwidthMbps(10000)  // Default bandwidth = 10 gbs
+{
+    int s;
+    cpu_set_t cpuset;
+    pthread_t thread;
+    thread = pthread_self();
+    CPU_ZERO(&cpuset);
+    s = pthread_getaffinity_np(thread, sizeof(cpu_set_t), &cpuset);
+    if (s != 0) {
+        throw DriverInitFailure(HERE_STR,
+                                "Unable to get existing thread affinity");
+    }
+
+    
+    // Set mac address beforehand:
+    // memcpy(localMac.address, mac, 6);
+
+
+    // NOTICE("%d %s %s %s %s\n", argc, argv[0], argv[1], argv[2], argv[3]);
+    // NOTICE("%d %s %s %s %s\n", default_eal_argc, default_eal_argv[0], default_eal_argv[1], default_eal_argv[2], default_eal_argv[3]);
+    _eal_init(argc, argv);
+    // _eal_init(default_eal_argc, const_cast<char**>(default_eal_argv));
+    //
+       
+    _init_vhost();
+
+    // restore the original thread affinity
+    s = pthread_setaffinity_np(thread, sizeof(cpu_set_t), &cpuset);
+    if (s != 0) {
+        throw DriverInitFailure(HERE_STR,
+                                "Unable to restore original thread affinity");
+    }
+}
 
 /**
  * See DpdkDriver::DpdkDriver()
@@ -132,6 +189,7 @@ DpdkDriver::Impl::Impl(const char* ifname, int argc, char* argv[],
     } else {
         _init();
     }
+
 
     // restore the original thread affinity
     s = pthread_setaffinity_np(thread, sizeof(cpu_set_t), &cpuset);
@@ -269,7 +327,7 @@ DpdkDriver::Impl::sendPacket(Driver::Packet* packet, IpAddress destination,
     // frame type (i.e., IEEE 802.1Q VLAN tagging).
     auto it = arpTable.find(destination);
     if (it == arpTable.end()) {
-        WARNING("Failed to find ARP record for packet; dropping packet");
+        WARNING("Failed to find ARP record for packet; dropping packet\n");
         return;
     }
     MacAddress& destMac = it->second;
@@ -558,6 +616,21 @@ DpdkDriver::Impl::_init_vhost()
         arpTable.emplace(IpAddress::fromString(ip), hwa);
     }
 
+    // I really don't remember what's going on here but just trying to do the experiment
+    // I have to think a little bit more to come up with a nice design of getting mac addresses
+    // throughout ARP messages
+    arpTable.emplace(IpAddress::fromString("192.168.1.10"), "1c:34:da:41:ce:f4");
+    arpTable.emplace(IpAddress::fromString("192.168.1.9"), "1c:34:da:41:c7:14");
+    // arpTable.emplace(IpAddress::fromString("192.168.1.9"), "1c:34:da:41:c7:14");
+
+    for (int i=1; i < 9; i++)
+    {
+	// char buff[20];
+	// sprintf(buff, "192.168.1.%d", i)
+	std::string ip = StringUtil::format("192.168.1.%d", i);
+    	arpTable.emplace(IpAddress::fromString(ip.c_str()), "1c:34:da:41:ce:f4");
+    }
+
     // Iterate over ethernet devices to locate the port identifier.
     // I assume that there is only one vhost port for this particular app.
     int p;
@@ -565,12 +638,13 @@ DpdkDriver::Impl::_init_vhost()
     {
         struct ether_addr mac;
         rte_eth_macaddr_get(p, &mac);
+	// memcpy(localMac.address, &mac, 6);
         port = p;
     }
 
-    // NOTICE("Using interface %s, ip %s, mac %s, port %u", ifname.c_str(),
-    //        IpAddress::toString(localIp).c_str(), localMac.toString().c_str(),
-    //        port);
+    NOTICE("Using interface %s, ip %s, mac %s, port %u", ifname.c_str(),
+           IpAddress::toString(localIp).c_str(), localMac.toString().c_str(),
+           port);
 
     std::string poolName = StringUtil::format("homa_mbuf_pool_%u", port);
     std::string ringName = StringUtil::format("homa_loopback_ring_%u", port);
