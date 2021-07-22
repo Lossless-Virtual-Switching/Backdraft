@@ -31,6 +31,7 @@
 #include "StringUtil.h"
 #include "docopt.h"
 #include "Output.h"
+#include "Perf.h"
 
 namespace
 {
@@ -40,6 +41,7 @@ namespace
 void signal_handler(int signal)
 {
 	gSignalStatus = signal;
+	std::cout << "Catched Signal " << gSignalStatus << std::endl;
 }
 
 static const char USAGE[] = R"(Homa System Test.
@@ -291,6 +293,37 @@ main(int argc, char* argv[])
     while(gSignalStatus != 2) {
         // busy wait
     }
+
+    Homa::Perf::Stats stats;
+    Homa::Perf::getStats(&stats);
+
+    std::cout << "active_cycles " << stats.active_cycles << std::endl;
+    std::cout << "idle_cycles " << stats.idle_cycles << std::endl;
+    std::cout << "allocated_rx_messages " << stats.allocated_rx_messages << std::endl;
+    std::cout << "received_rx_messages " << stats.received_rx_messages << std::endl;
+    std::cout << "delivered_rx_messages " << stats.delivered_rx_messages << std::endl;
+    std::cout << "destroyed_rx_messages " << stats.destroyed_rx_messages << std::endl;
+    std::cout << "allocated_tx_messages " << stats.allocated_tx_messages << std::endl;
+    std::cout << "released_tx_messages " << stats.released_tx_messages << std::endl;
+    std::cout << "destroyed_tx_messages " << stats.destroyed_tx_messages << std::endl;
+    std::cout << "tx_bytes " << stats.tx_bytes << std::endl;
+    std::cout << "rx_bytes " << stats.rx_bytes << std::endl;
+    std::cout << "tx_data_pkts " << stats.tx_data_pkts << std::endl;
+    std::cout << "rx_data_pkts " << stats.rx_data_pkts << std::endl;
+    std::cout << "tx_grant_pkts " << stats.tx_grant_pkts << std::endl;
+    std::cout << "rx_grant_pkts " << stats.rx_grant_pkts << std::endl;
+    std::cout << "tx_done_pkts " << stats.tx_done_pkts << std::endl;
+    std::cout << "rx_done_pkts " << stats.rx_done_pkts << std::endl;
+    std::cout << "tx_resend_pkts " << stats.tx_resend_pkts << std::endl;
+    std::cout << "rx_resend_pkts " << stats.rx_resend_pkts << std::endl;
+    std::cout << "tx_busy_pkts " << stats.tx_busy_pkts << std::endl;
+    std::cout << "rx_busy_pkts " << stats.rx_busy_pkts << std::endl;
+    std::cout << "tx_ping_pkts " << stats.tx_ping_pkts << std::endl;
+    std::cout << "rx_ping_pkts " << stats.rx_ping_pkts << std::endl;
+    std::cout << "tx_unknown_pkts " << stats.tx_unknown_pkts << std::endl;
+    std::cout << "rx_unknown_pkts " << stats.rx_unknown_pkts << std::endl;
+    std::cout << "tx_error_pkts " << stats.tx_error_pkts << std::endl;
+    std::cout << "rx_error_pkts " << stats.rx_error_pkts << std::endl;
     
     // addresses.emplace_back(Homa::IpAddress::fromString("192.168.1.9"));
     // int numFails = clientMain(numTests, numBytes, addresses);
@@ -313,5 +346,6 @@ main(int argc, char* argv[])
     // }
 
     // return numFails;
+
     return 0;
 }

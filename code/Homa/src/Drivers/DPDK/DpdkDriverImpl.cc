@@ -317,10 +317,10 @@ DpdkDriver::Impl::sendPacket(Driver::Packet* packet, IpAddress destination,
         // If the mbuf is still transmitting from a previous call to send,
         // we don't want to modify the buffer when the send is occuring.
         // Thus if the mbuf is in use and drop this send request.
-        if (unlikely(rte_mbuf_refcnt_read(mbuf) > 1)) {
-            NOTICE("Packet still sending; dropping resend request");
-            return;
-        }
+        // if (unlikely(rte_mbuf_refcnt_read(mbuf) > 1)) {
+        //     NOTICE("Packet still sending; dropping resend request");
+        //     return;
+        // }
     }
 
     // Fill out the destination and source MAC addresses plus the Ethernet
@@ -391,12 +391,14 @@ DpdkDriver::Impl::sendPacket(Driver::Packet* packet, IpAddress destination,
         SpinLock::Lock statsLock(tx.stats.mutex);
         tx.stats.bufferedBytes += rte_pktmbuf_pkt_len(mbuf);
     }
+
+    // rte_eth_tx_burst(port, 0, &mbuf, 1);
     rte_eth_tx_buffer(port, 0, tx.buffer, mbuf);
 
     // Flush packets now if the driver is not corked.
-    if (corked.load() < 1) {
-        rte_eth_tx_buffer_flush(port, 0, tx.buffer);
-    }
+    // if (corked.load() < 1) {
+    rte_eth_tx_buffer_flush(port, 0, tx.buffer);
+    // }
 }
 
 // See Driver::cork()

@@ -1,15 +1,7 @@
 /* Copyright (c) 2019-2020, Stanford University
  *
  * Permission to use, copy, modify, and/or distribute this software for any
- * purpose with or without fee is hereby granted, provided that the above
- * copyright notice and this permission notice appear in all copies.
- *
- * THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES
- * WITH REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF
- * MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR
- * ANY SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES
- * WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN
- * ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF
+ * purpose with or without fee is hereby granted, provided that the above * copyright notice and this permission notice appear in all copies.  * * THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES * WITH REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF * MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR * ANY SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES * WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN * ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF
  * OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
  */
 
@@ -27,10 +19,13 @@
 #include <string>
 #include <thread>
 #include <vector>
+#include <sys/time.h>
+
 
 #include "StringUtil.h"
 #include "docopt.h"
 #include "Output.h"
+#include "Perf.h"
 
 static const char USAGE[] = R"(Homa System Test.
 
@@ -130,6 +125,13 @@ clientMain(int count, int size, std::vector<Homa::IpAddress> addresses,
     uint64_t start;
     uint64_t stop;
 
+    // struct timeval current_time;
+    // struct timespec tps;
+    // struct timespec tpe;
+
+    // uint64_t duration_timespec_us;
+
+
 
     Node client(1, ip, mac, dpdk_param_size, dpdk_params);
     for (int i = 0; i < count; ++i) {
@@ -154,18 +156,23 @@ clientMain(int count, int size, std::vector<Homa::IpAddress> addresses,
             }
         }
         start = PerfUtils::Cycles::rdtsc();
+	//clock_gettime(CLOCK_MONOTONIC, &tps);
+        // message->send(Homa::SocketAddress{destAddress, 60001}, Homa::OutMessage::Options::NO_RETRY);
         message->send(Homa::SocketAddress{destAddress, 60001});
 
         while (1) {
             Homa::OutMessage::Status status = message->getStatus();
             if (status == Homa::OutMessage::Status::COMPLETED) {
 		stop = PerfUtils::Cycles::rdtsc();
+	 	//clock_gettime(CLOCK_MONOTONIC, &tpe);
                 times.emplace_back(PerfUtils::Cycles::toSeconds(stop - start));
+		// duration_timespec_us = (tpe.tv_sec - tps.tv_sec) * 1000000000L + (tpe.tv_nsec - tps.tv_nsec)*1L;
+                // times.emplace_back(duration_timespec_us);
                 break;
             } else if (status == Homa::OutMessage::Status::FAILED) {
                 numFailed++;
                 break;
-            }
+	    }
             client.transport->poll();
         }
     }
@@ -275,9 +282,12 @@ main(int argc, char* argv[])
     //
     addresses.emplace_back(Homa::IpAddress::fromString("192.168.1.9"));
 
+    uint64_t start = PerfUtils::Cycles::rdtsc();
     int numFails = clientMain(numTests, numBytes, addresses, vhost_ip,
 		    vhost_mac, dpdk_extra_count, dpdk_extra_params);
-
+    uint64_t end = PerfUtils::Cycles::rdtsc();
+    uint64_t duration = PerfUtils::Cycles::toNanoseconds(end - start);
+    double duration_s = PerfUtils::Cycles::toSeconds(end - start);
     // for (auto it = servers.begin(); it != servers.end(); ++it) {
     //     Node* server = *it;
     //     server->run = false;
@@ -288,6 +298,42 @@ main(int argc, char* argv[])
     if (printSummary) {
         std::cout << numTests << " Messages tested: " << numTests - numFails
                   << " completed, " << numFails << " failed" << std::endl;
+	Homa::Perf::Stats stats;
+	Homa::Perf::getStats(&stats);
+	std::cout << "active_cycles " << stats.active_cycles << std::endl;
+	std::cout << "idle_cycles " << stats.idle_cycles << std::endl;
+	std::cout << "allocated_rx_messages " << stats.allocated_rx_messages << std::endl;
+	std::cout << "received_rx_messages " << stats.received_rx_messages << std::endl;
+	std::cout << "delivered_rx_messages " << stats.delivered_rx_messages << std::endl;
+	std::cout << "destroyed_rx_messages " << stats.destroyed_rx_messages << std::endl;
+	std::cout << "allocated_tx_messages " << stats.allocated_tx_messages << std::endl;
+	std::cout << "released_tx_messages " << stats.released_tx_messages << std::endl;
+	std::cout << "destroyed_tx_messages " << stats.destroyed_tx_messages << std::endl;
+	std::cout << "tx_bytes " << stats.tx_bytes << std::endl;
+	std::cout << "rx_bytes " << stats.rx_bytes << std::endl;
+	std::cout << "tx_data_pkts " << stats.tx_data_pkts << std::endl;
+	std::cout << "rx_data_pkts " << stats.rx_data_pkts << std::endl;
+	std::cout << "tx_grant_pkts " << stats.tx_grant_pkts << std::endl;
+	std::cout << "rx_grant_pkts " << stats.rx_grant_pkts << std::endl;
+	std::cout << "tx_done_pkts " << stats.tx_done_pkts << std::endl;
+	std::cout << "rx_done_pkts " << stats.rx_done_pkts << std::endl;
+	std::cout << "tx_resend_pkts " << stats.tx_resend_pkts << std::endl;
+	std::cout << "rx_resend_pkts " << stats.rx_resend_pkts << std::endl;
+	std::cout << "tx_busy_pkts " << stats.tx_busy_pkts << std::endl;
+	std::cout << "rx_busy_pkts " << stats.rx_busy_pkts << std::endl;
+	std::cout << "tx_ping_pkts " << stats.tx_ping_pkts << std::endl;
+	std::cout << "rx_ping_pkts " << stats.rx_ping_pkts << std::endl;
+	std::cout << "tx_unknown_pkts " << stats.tx_unknown_pkts << std::endl;
+	std::cout << "rx_unknown_pkts " << stats.rx_unknown_pkts << std::endl;
+	std::cout << "tx_error_pkts " << stats.tx_error_pkts << std::endl;
+	std::cout << "rx_error_pkts " << stats.rx_error_pkts << std::endl;
+
+	std::cout << "Duration ns " << duration << std::endl;
+	std::cout << "Duration s " << duration_s << std::endl;
+
+	std::cout << "rx tput " << stats.rx_bytes * 8 / double(duration) << std::endl;
+	std::cout << "tx tput " << stats.tx_bytes * 8 / double(duration) << std::endl;
+
     }
 
     return numFails;

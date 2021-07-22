@@ -2,13 +2,19 @@ import os
 import json
 import subprocess
 
+
+
 config = json.load(open('.pipeline_config.json'))
 
 count_cores = config['count_core']
 count_queue = config['count_queue']
 pci = config['pci_address']
-
 count_vhost_ports = config['vhost_port_count']
+server = config['server']
+drop_prob = config['drop_prob']
+drop_prob = float(os.environ.get("DROP"))
+
+print("Drop Prob {}".format(drop_prob))
 
 # generating vhost port:
 vhost_ports = []
@@ -28,28 +34,67 @@ for i in range(count_vhost_ports):
 pci_port = PMDPort(pci=pci, num_inc_q=count_queue, num_out_q=count_queue)
 
 
-# For now I assume that there is one vhost port
-for i in vhost_ports:
-  qin1 = QueueInc(port=pci_port, qid=0)
-  qout1 = QueueOut(port=i, qid=0)
-  qin1 -> qout1
-  qin1 = QueueInc(port=i, qid=0)
-  qout1 = QueueOut(port=pci_port, qid=0)
-  qin1 -> qout1
+print(drop_prob)
+if drop_prob > 0:
+    drop = RandomSplit(drop_rate=drop_prob, gates=[0,])
+    QueueInc(port=vhost_ports[0], qid=0)-> drop
+    drop:0 -> QueueOut(port=pci_port, qid=0)
+    QueueInc(port=pci_port, qid=0) -> QueueOut(port=vhost_ports[0], qid=0)
+else:
+    QueueInc(port=vhost_ports[0], qid=0) -> QueueOut(port=pci_port, qid=0)
+    QueueInc(port=pci_port, qid=0) -> QueueOut(port=vhost_ports[0], qid=0)
 
-  # qin1 -> qout2
-  # qin2 -> qout1
+
+# # Outgress
+# merger = Merge()
+# for i in vhost_ports:
+#   qin1 = QueueInc(port=i, qid=0)
+#   qin1 -> merger
+# 
+# pci_port_qout = QueueOut(port=pci_port, qid=0)
+# merger -> pci_port_qout
+# # -------------------
+# 
+# # fw::ACL(rules=[{'src_ip': '192.168.1.9/32', 'drop': False}])
+# # fw::ACL(rules=[{'src_ip': '192.168.1.0/24', 'drop': False}])
+# 
+# #Ingress
+# 
+# switch = L2Forward()
+# 
+# 
+# iplookup = IPLookup()
+# qin1 = QueueInc(port=pci_port, qid=0)
+# qin1 -> VLANPop() -> switch:0 -> iplookup
+# 
+# 
+# if server:
+#   switch.add(entries=[{'addr': "1c:34:da:41:c7:14", 'gate': 0}])
+#   iplookup.add(prefix="192.168.1.9", prefix_len=32, gate=0) 
+#   iplookup.add(prefix="0.0.0.0", prefix_len=0, gate=1) 
+#   
+#   # iplookup:0 -> VLANPush() -> QueueOut(port=vhost_ports[0], qid=0)
+#   iplookup:0 -> VLANPush() -> QueueOut(port=vhost_ports[0], qid=0)
+#   iplookup:1 -> Sink()
+#   
+# else:
+#   switch.add(entries=[{'addr': "1c:34:da:41:ce:f4", 'gate': 0}])
+#   for i in range(count_vhost_ports):
+#     ip = "192.168.1.{}".format(i + 1)
+#     print(ip)
+#     iplookup.add(prefix=ip, prefix_len=32, gate=i)
+#     qout1 = QueueOut(port=vhost_ports[i], qid=0)
+#     # iplookup:i -> VLANPush() -> qout1
+#     iplookup:i -> VLANPush() -> qout1
+# 
+#   iplookup.add(prefix="0.0.0.0", prefix_len=0, gate=count_vhost_ports) 
+#   iplookup:count_vhost_ports -> Sink()
+
+# -------------------
+
 
 #This only works single core for now. This statically maps bess on core 0
 bess.add_worker(0, 0)
-
-
-
-
-
-
-
-
 
 
 # # ports = []

@@ -30,6 +30,7 @@ struct TimeDist {
     Latency p90;   // 90th percentile time/op (seconds).
     Latency p99;   // 99th percentile time/op (seconds).
     Latency p999;  // 99.9th percentile time/op (seconds).
+    Latency p9999; // 99.99th percentile time/op (seconds).
 };
 
 std::string
@@ -69,7 +70,7 @@ formatTime(Latency seconds)
 std::string
 basicHeader()
 {
-    return "median       min       p90       p99      p999     description";
+    return "median       min       p90       p99      p999	p9999     description";
 }
 
 std::string
@@ -105,6 +106,13 @@ basic(std::vector<Latency>& times, const std::string description)
     } else {
         dist.p999 = dist.p99;
     }
+    index = count - (count + 5000) / 10000;
+    if (index < count) {
+       dist.p9999 = times.at(index);
+    }
+    else {
+        dist.p9999 = dist.p999;
+    }
 
     std::string output = "";
     output += format("%9s", formatTime(dist.p50).c_str());
@@ -112,6 +120,7 @@ basic(std::vector<Latency>& times, const std::string description)
     output += format(" %9s", formatTime(dist.p90).c_str());
     output += format(" %9s", formatTime(dist.p99).c_str());
     output += format(" %9s", formatTime(dist.p999).c_str());
+    output += format(" %9s", formatTime(dist.p9999).c_str());
     output += "  ";
     output += description;
     return output;
