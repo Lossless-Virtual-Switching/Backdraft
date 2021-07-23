@@ -10,7 +10,7 @@ msg='Check if this values are correct:\npci addr: {}\ndrop probability: {}'
 msg = msg.format(pci, drop_prob)
 print(msg)
 
-bess.add_worker(0, 0)
+bess.add_worker(0, 30)
 
 
 socket_dir='/tmp'

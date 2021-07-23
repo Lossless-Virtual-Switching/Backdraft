@@ -138,7 +138,7 @@ function install_mutilate {
     # https://oauth-key-goes-here@github.com/username/repo.git https://oauth-key-goes-here@github.com/username/repo.git
     git clone https://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@github.com/fshahinfar1/mutilate.git
     cd mutilate
-    if [ "$VERSION_ID" -eq "20.04" ]
+    if [ "$VERSION_ID" = "20.04" ]
     then
       mv SConstruct3 SConstruct
     fi
