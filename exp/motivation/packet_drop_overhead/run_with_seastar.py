@@ -22,7 +22,6 @@ def parse_args():
     parser.add_argument('--client', action='store_true', help='run client')
     parser.add_argument('--cpulimit', type=float, default=1,
             help='what fraction of cpu the application can use (0, 1]')
-    parser.add_argument('--duration', type=int, default=-1)
     args = parser.parse_args()
     if args.cpulimit < 0 or args.cpulimit > 1:
         print('cpulimt shoud be in range of (0, 1]')
