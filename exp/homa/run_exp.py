@@ -17,6 +17,7 @@ from bkdrft_common import *
 cur_script_dir = os.path.dirname(os.path.abspath(__file__))
 
 pipeline_config_file = os.path.join(cur_script_dir,
+# pipeline_config_file = os.path.join("/tmp",
     'pipeline.bess')
 
 homa_base = os.path.join(cur_script_dir, '../../code/Homa')
@@ -81,7 +82,7 @@ def run_system_perf_server(conf):
     # --dpdk-extra=--no-pci --dpdk-extra='-l 6' --slow-down={} --tx-pkt-length={} --vhost-port-ip={} --vhost-port-mac={}".format(conf["slow_down"], conf["tx_pkt_length"],
     #         conf["ip"], conf["mac"])
 
-    cmd = "sudo ./build/test/dpdk_server_system_test 100 --server=1 -v --vhost-port \
+    cmd = "sudo ./build/test/dpdk_server_system_test 100 --server=1 -vvv --vhost-port \
     --iface='--vdev=virtio_user0,path=/tmp/vhost_0.sock,queues=1' --dpdk-extra=--no-pci \
     --dpdk-extra='-l 6' --vhost-port-ip={} --vhost-port-mac={}".format(conf["ip"], conf["mac"])
 
@@ -111,9 +112,9 @@ def get_delta_pfc(before, after):
 
 def main():
     # Write pipeline config file
-    if os.path.exists('.pipeline_config.json'):
+    if os.path.exists('/tmp/.pipeline_config.json'):
         try:
-            pipeline_conf = json.load(open('.pipeline_config.json'))
+            pipeline_conf = json.load(open('/tmp/.pipeline_config.json'))
         except:
             pipeline_conf = {}
     else:
@@ -149,8 +150,9 @@ def main():
             # 'vdev': 'virtio_user0,path=/tmp/vhost_0.sock,queues={}'.format(count_queue),
             # 'count_queue': count_queue,
             # 'type': app_mode,
-            'mac': '1c:34:da:41:c7:14',
-            'ip': '192.168.1.9',
+            # 'mac': '1c:34:da:41:c7:14',
+            'mac': '1c:34:da:41:d0:0c',
+            'ip': '192.168.1.1',
             'slow_down': slow_down,
             'tx_pkt_length': tx_size
             }
@@ -192,8 +194,9 @@ def main():
               'slow_down': slow_down,
               'tx_pkt_length': tx_size,
               'file_prefix': i,
-              'ip': "192.168.1.{}".format(i + 1),
-              'mac': "1c:34:da:41:ce:f4"
+              'ip': "192.168.1.{}".format(i + 3), # This should be plus 3 based on the current cluster
+              # 'mac': "1c:34:da:41:ce:f4"
+              'mac': "1c:34:da:41:c7:4c"
             }
 
             # run_client(client_conf)

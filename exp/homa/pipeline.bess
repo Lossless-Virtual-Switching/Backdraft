@@ -3,8 +3,37 @@ import json
 import subprocess
 
 
+def setup_server_pipeline(vhost_ports, pci_port):
+    QueueInc(port=vhost_ports[0], qid=0) -> QueueOut(port=pci_port, qid=0)
+    QueueInc(port=pci_port, qid=0) -> QueueOut(port=vhost_ports[0], qid=0)
 
-config = json.load(open('.pipeline_config.json'))
+def setup_client_pipeline(vhost_ports, pci_port):
+    # Outgress
+    merger = Merge()
+    for i in vhost_ports:
+      qin1 = QueueInc(port=i, qid=0)
+      qin1 -> merger
+    
+    pci_port_qout = QueueOut(port=pci_port, qid=0)
+    merger -> pci_port_qout
+
+
+    # Outgress
+    iplookup = IPLookup()
+    qin1 = QueueInc(port=pci_port, qid=0)
+    qin1 -> iplookup
+    for i in range(count_vhost_ports):
+        ip = "192.168.1.{}".format(i + 3)
+        print(ip)
+        iplookup.add(prefix=ip, prefix_len=32, gate=i)
+        qout1 = QueueOut(port=vhost_ports[i], qid=0)
+        iplookup:i -> qout1
+    
+    iplookup.add(prefix="0.0.0.0", prefix_len=0, gate=count_vhost_ports) 
+    iplookup:count_vhost_ports -> Sink()
+
+
+config = json.load(open('/tmp/.pipeline_config.json'))
 
 count_cores = config['count_core']
 count_queue = config['count_queue']
@@ -12,9 +41,11 @@ pci = config['pci_address']
 count_vhost_ports = config['vhost_port_count']
 server = config['server']
 drop_prob = config['drop_prob']
-drop_prob = float(os.environ.get("DROP"))
 
-print("Drop Prob {}".format(drop_prob))
+drop_prob = 0
+if os.environ.get("DROP"):
+	drop_prob = float(os.environ.get("DROP"))
+	print("Drop Prob {}".format(drop_prob))
 
 # generating vhost port:
 vhost_ports = []
@@ -41,15 +72,20 @@ if drop_prob > 0:
     drop:0 -> QueueOut(port=pci_port, qid=0)
     QueueInc(port=pci_port, qid=0) -> QueueOut(port=vhost_ports[0], qid=0)
 else:
+    # Now there is probablity stuff
     QueueInc(port=vhost_ports[0], qid=0) -> QueueOut(port=pci_port, qid=0)
     QueueInc(port=pci_port, qid=0) -> QueueOut(port=vhost_ports[0], qid=0)
+    print("This is not a drop experiment")
+    # if (server):
+    #     setup_server_pipeline(vhost_ports, pci_port)
+    # else:
+    #     setup_client_pipeline(vhost_ports, pci_port)
 
 
 # # Outgress
 # merger = Merge()
 # for i in vhost_ports:
-#   qin1 = QueueInc(port=i, qid=0)
-#   qin1 -> merger
+#   qin1 = QueueInc(port=i, qid=0) #   qin1 -> merger
 # 
 # pci_port_qout = QueueOut(port=pci_port, qid=0)
 # merger -> pci_port_qout

@@ -41,6 +41,8 @@ as expected.
 Required:
   * CMake (>= 3.11)
   * DPDK (18.11)
+  * Mellanox Drivers (OFED 5.0)
+  * libmnl-dev
   
 Optional:
   * Doxygen

@@ -31,6 +31,7 @@
 #include "Homa/Util.h"
 #include "StringUtil.h"
 
+
 namespace Homa {
 
 namespace Drivers {
@@ -344,8 +345,17 @@ DpdkDriver::Impl::sendPacket(Driver::Packet* packet, IpAddress destination,
     vlanHdr->eth_proto = rte_cpu_to_be_16(EthPayloadType::HOMA);
 
     // Store our local IP address right before the payload.
-    *rte_pktmbuf_mtod_offset(mbuf, uint32_t*, PACKET_HDR_LEN - 4) =
-        (uint32_t)localIp;
+    // *rte_pktmbuf_mtod_offset(mbuf, uint32_t*, PACKET_HDR_LEN - 8) =
+    //
+    uint32_t * first_ip = reinterpret_cast<uint32_t *>(vlanHdr + 1);
+    uint32_t * second_ip = reinterpret_cast<uint32_t *>(vlanHdr + 2);
+    *first_ip = (uint32_t) destination;
+    *second_ip = (uint32_t) localIp;
+    
+    // *rte_pktmbuf_mtod_offset(mbuf, uint32_t*, PACKET_HDR_LEN - 8) =
+    //     (uint32_t)destination;
+    // *rte_pktmbuf_mtod_offset(mbuf, uint32_t*, PACKET_HDR_LEN - 4) =
+    //     (uint32_t)localIp;
 
     // In the normal case, we pre-allocate a pakcet's mbuf with enough
     // storage to hold the MAX_PAYLOAD_SIZE.  If the actual payload is
@@ -397,8 +407,8 @@ DpdkDriver::Impl::sendPacket(Driver::Packet* packet, IpAddress destination,
 
     // Flush packets now if the driver is not corked.
     // if (corked.load() < 1) {
-    rte_eth_tx_buffer_flush(port, 0, tx.buffer);
-    // }
+      rte_eth_tx_buffer_flush(port, 0, tx.buffer);
+    //}
 }
 
 // See Driver::cork()
@@ -485,9 +495,13 @@ DpdkDriver::Impl::receivePackets(uint32_t maxPackets,
             }
         }
 
+        uint32_t destIp = *rte_pktmbuf_mtod_offset(m, uint32_t*, headerLength);
+	headerLength += sizeof(destIp);
+	// NOTICE("destIP %d\n", rte_be_to_cpu_32(destIp));
         uint32_t srcIp = *rte_pktmbuf_mtod_offset(m, uint32_t*, headerLength);
+	// NOTICE("srcIP %d\n", rte_be_to_cpu_32(srcIp));
         headerLength += sizeof(srcIp);
-        payload += sizeof(srcIp);
+        payload += sizeof(srcIp) + sizeof(destIp);
         assert(rte_pktmbuf_pkt_len(m) >= headerLength);
         uint32_t length = rte_pktmbuf_pkt_len(m) - headerLength;
         assert(length <= MAX_PAYLOAD_SIZE);
