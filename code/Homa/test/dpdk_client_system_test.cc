@@ -116,9 +116,10 @@ clientMain(int count, int size, std::vector<Homa::IpAddress> addresses,
     std::random_device rd;
     std::mt19937 gen(rd());
     std::uniform_int_distribution<> randAddr(0, addresses.size() - 1);
+    std::uniform_int_distribution<> randAddrID(0, 100);
     std::uniform_int_distribution<char> randData(0);
 
-    uint64_t nextId = 0;
+    // uint64_t nextId = 0;
     int numFailed = 0;
 
     std::vector<Output::Latency> times;
@@ -131,9 +132,12 @@ clientMain(int count, int size, std::vector<Homa::IpAddress> addresses,
 
     // uint64_t duration_timespec_us;
 
+    // uint64_t nextId = 0;// randAddrID(gen) * count;
+    uint64_t nextId = randAddrID(gen) * count;
+    int id = randAddrID(gen);
+    Node client(id, ip, mac, dpdk_param_size, dpdk_params);
+    std::cout << "ID: " << id << std::endl;
 
-
-    Node client(1, ip, mac, dpdk_param_size, dpdk_params);
     for (int i = 0; i < count; ++i) {
         uint64_t id = nextId++;
         char payload[size];

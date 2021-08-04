@@ -106,7 +106,7 @@ DpdkDriver::Impl::Impl(const char* ifname, const char* mac, const char* ip, int 
     , hasHardwareFilter(true)  // Cleared later if not applicable
     , corked(0)
     // , bandwidthMbps(100000)  // Default bandwidth = 10 gbs
-    , bandwidthMbps(40000)  // Default bandwidth = 10 gbs
+    , bandwidthMbps(40000)  // Default bandwidth = 40 gbs
 {
     int s;
     cpu_set_t cpuset;
@@ -342,11 +342,29 @@ DpdkDriver::Impl::sendPacket(Driver::Packet* packet, IpAddress destination,
     // set to 0).
     struct vlan_hdr* vlanHdr = reinterpret_cast<struct vlan_hdr*>(ethHdr + 1);
     vlanHdr->vlan_tci = rte_cpu_to_be_16(PRIORITY_TO_PCP[priority]);
-    vlanHdr->eth_proto = rte_cpu_to_be_16(EthPayloadType::HOMA);
+    // vlanHdr->eth_proto = rte_cpu_to_be_16(EthPayloadType::HOMA);
+
+    vlanHdr->eth_proto = rte_cpu_to_be_16(ETHER_TYPE_IPv4);
+
+    // Add IP header after VLAN
+    struct ipv4_hdr *ip_hdr =
+        reinterpret_cast<struct ipv4_hdr *>(vlanHdr + 1);
+    ip_hdr->version_ihl = 0x45;
+    ip_hdr->type_of_service =0;
+    ip_hdr->total_length = rte_cpu_to_be_16(20 + pkt->base.length); // ip header + payload
+    ip_hdr->packet_id = 0;
+    ip_hdr->fragment_offset = 0;
+    ip_hdr->time_to_live = 64;
+    ip_hdr->next_proto_id = IPPROTO_HOMA;
+    ip_hdr->hdr_checksum = 0;
+    // ip_hdr->src_addr = (uint32_t)localIp;
+    ip_hdr->src_addr = rte_cpu_to_be_32((uint32_t)localIp);
+    // ip_hdr->dst_addr = (uint32_t)destination;
+    ip_hdr->dst_addr = rte_cpu_to_be_32((uint32_t)destination);
 
     // Store our local IP address right before the payload.
-    *rte_pktmbuf_mtod_offset(mbuf, uint32_t*, PACKET_HDR_LEN - 4) =
-        (uint32_t)localIp;
+    // *rte_pktmbuf_mtod_offset(mbuf, uint32_t*, PACKET_HDR_LEN - 4) =
+    //     (uint32_t)localIp;
 
     // In the normal case, we pre-allocate a pakcet's mbuf with enough
     // storage to hold the MAX_PAYLOAD_SIZE.  If the actual payload is
@@ -476,19 +494,43 @@ DpdkDriver::Impl::receivePackets(uint32_t maxPackets,
             headerLength += VLAN_TAG_LEN;
             payload += VLAN_TAG_LEN;
         }
-        if (!hasHardwareFilter) {
+
+	if (ether_type != rte_cpu_to_be_16(ETHER_TYPE_IPv4)) {
+            VERBOSE("packet not ipv4; ether_type = %x", ether_type);
+            rte_pktmbuf_free(m);
+            continue;
+        }
+
+	struct ipv4_hdr *ip_hdr =
+            // reinterpret_cast<struct ipv4_hdr *>(vlanHdr + 1);
+            reinterpret_cast<struct ipv4_hdr *>(payload);
+        uint8_t ip_proto = ip_hdr->next_proto_id;
+        headerLength += sizeof(struct ipv4_hdr);
+        payload += sizeof(struct ipv4_hdr);
+
+	 if (!hasHardwareFilter) {
             // Perform packet filtering by software to skip irrelevant
             // packets such as ipmi or kernel TCP/IP traffic.
-            if (ether_type != rte_cpu_to_be_16(EthPayloadType::HOMA)) {
-                VERBOSE("packet filtered; ether_type = %x", ether_type);
+            if (ip_proto != IPPROTO_HOMA) {
+                VERBOSE("packet filtered; ip proto = %x", ip_proto);
                 rte_pktmbuf_free(m);
                 continue;
             }
         }
+        // if (!hasHardwareFilter) {
+        //     // Perform packet filtering by software to skip irrelevant
+        //     // packets such as ipmi or kernel TCP/IP traffic.
+        //     if (ether_type != rte_cpu_to_be_16(EthPayloadType::HOMA)) {
+        //         VERBOSE("packet filtered; ether_type = %x", ether_type);
+        //         rte_pktmbuf_free(m);
+        //         continue;
+        //     }
+        // }
 
-        uint32_t srcIp = *rte_pktmbuf_mtod_offset(m, uint32_t*, headerLength);
-        headerLength += sizeof(srcIp);
-        payload += sizeof(srcIp);
+	// uint32_t srcIp = *rte_pktmbuf_mtod_offset(m, uint32_t*, headerLength);
+        uint32_t srcIp = rte_be_to_cpu_32(uint32_t(ip_hdr->src_addr));
+        // headerLength += sizeof(srcIp);
+        // payload += sizeof(srcIp);
         assert(rte_pktmbuf_pkt_len(m) >= headerLength);
         uint32_t length = rte_pktmbuf_pkt_len(m) - headerLength;
         assert(length <= MAX_PAYLOAD_SIZE);

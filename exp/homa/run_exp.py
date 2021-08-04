@@ -66,9 +66,9 @@ def run_system_perf_client(conf):
     # --dpdk-extra=--no-pci --dpdk-extra='-l 6' --slow-down={} --tx-pkt-length={} --vhost-port-ip={} --vhost-port-mac={}".format(conf["slow_down"], conf["tx_pkt_length"],
     #         conf["ip"], conf["mac"])
 
-    cmd = "sudo ./build/test/dpdk_client_system_test 10000 -v --vhost-port \
-    --iface='--vdev=virtio_user0,path=/tmp/vhost_0.sock,queues=1' --dpdk-extra=--no-pci \
-    --size=10000 --dpdk-extra='-l 6' --vhost-port-ip={} --vhost-port-mac={}".format(conf["ip"], conf["mac"])
+    cmd = "sudo ./build/test/dpdk_client_system_test 100000 -v --vhost-port \
+    --iface='--vdev=virtio_user0,path={}' --dpdk-extra=--no-pci \
+    --size=10000 --dpdk-extra='--file-prefix=mg-{} '--dpdk-extra='-l {}' --vhost-port-ip={} --vhost-port-mac={}".format(conf["path"], conf["ip"], conf["cpuset"], conf["ip"], conf["mac"])
 
     print("client {}".format(cmd))
 
@@ -117,15 +117,16 @@ def get_delta_pfc(before, after):
 
 def main():
     # Write pipeline config file
-    if os.path.exists('.pipeline_config.json'):
+    # if os.path.exists('.pipeline_config.json'):
+    if os.path.exists('/tmp/.pipeline_config.json'):
         try:
-            pipeline_conf = json.load(open('.pipeline_config.json'))
+            pipeline_conf = json.load(open('/tmp/.pipeline_config.json'))
         except:
             pipeline_conf = {}
     else:
         pipeline_conf = {}
 
-    with open('.pipeline_config.json', 'w') as f:
+    with open('/tmp/.pipeline_config.json', 'w') as f:
       pipeline_conf['count_core'] = count_core
       pipeline_conf['count_queue'] = count_queue
       pipeline_conf['queue_size'] = queue_size
@@ -189,7 +190,7 @@ def main():
 
 
     server_process = None
-    client_process = None
+    client_process = []
 
     if mode == "server": 
         # run_server(server_conf)
@@ -197,7 +198,7 @@ def main():
         sleep(time + 10) # This means you only have 10 seconds to run the server.
     else:
         for i in range(vhost_port_count):
-            print('ip ' + "192.168.1.{}".format(i + 1))
+            # print('ip ' + "192.168.1.{}".format(i + 1))
             client_conf = {
               'cpuset': i+7, # it is just random
             # 'prefix': 'client',
@@ -210,8 +211,11 @@ def main():
             }
 
             # run_client(client_conf)
-            client_process = run_system_perf_client(client_conf)
-            client_process.wait() 
+            cp = run_system_perf_client(client_conf)
+            client_process.append(cp)
+
+        client_process[len(client_process) - 1].wait()
+
 
     # pfc_stats_before = get_pfc_results()
 
@@ -253,7 +257,7 @@ def main():
     # log = ret.stdout.decode()
     # log = log.strip()
     # print(log)
-    for i in range(1):
+    for i in range(vhost_port_count):
       ret = bessctl_do('show port port_{}'.format(i), subprocess.PIPE)
       # if(ret != 0):
       #   print("failed to run: " +'show port port_{}'.format(i))
@@ -281,8 +285,9 @@ def main():
     print ('throughput: {:2f} (Mpps) {:2f} (Gbps)'.format(sum_pkts / 40 / 1e6, sum_bytes * 8 / 40 / 1e9))
 
     if client_process:
-        stdout = client_process.communicate()[0]
-        print('STDOUT:{}'.format(stdout))
+        for proc in client_process:
+            stdout = proc.communicate()[0]
+            print('STDOUT:{}'.format(stdout))
 
     _stop_everything()
 
