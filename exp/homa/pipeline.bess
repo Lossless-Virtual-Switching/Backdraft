@@ -11,10 +11,12 @@ count_queue = config['count_queue']
 pci = config['pci_address']
 count_vhost_ports = config['vhost_port_count']
 server = config['server']
-drop_prob = config['drop_prob']
-drop_prob = float(os.environ.get("DROP"))
 
-print("Drop Prob {}".format(drop_prob))
+drop_prob = 0
+if os.environ.get("DROP"):
+  drop_prob = float(os.environ.get("DROP"))
+  print("Drop Prob {}".format(drop_prob))
+
 
 # generating vhost port:
 vhost_ports = []
@@ -31,6 +33,7 @@ for i in range(count_vhost_ports):
 
 
 # PCI port
+print(pci, count_queue)
 pci_port = PMDPort(pci=pci, num_inc_q=count_queue, num_out_q=count_queue)
 
 

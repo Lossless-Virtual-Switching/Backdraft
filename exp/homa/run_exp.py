@@ -27,7 +27,7 @@ def _stop_everything():
     try:
       bessctl_do('daemon stop') # this may show an error it is nothing
     except:
-      # bess was not running
+      # bess was not running pass
       pass
 
     subprocess.run('sudo pkill dpdk_test', shell=True)
@@ -66,9 +66,9 @@ def run_system_perf_client(conf):
     # --dpdk-extra=--no-pci --dpdk-extra='-l 6' --slow-down={} --tx-pkt-length={} --vhost-port-ip={} --vhost-port-mac={}".format(conf["slow_down"], conf["tx_pkt_length"],
     #         conf["ip"], conf["mac"])
 
-    cmd = "sudo ./build/test/dpdk_client_system_test 100000 -v --vhost-port \
+    cmd = "sudo ./build/test/dpdk_client_system_test 10000 -v --vhost-port \
     --iface='--vdev=virtio_user0,path=/tmp/vhost_0.sock,queues=1' --dpdk-extra=--no-pci \
-    --size=100 --dpdk-extra='-l 6' --vhost-port-ip={} --vhost-port-mac={}".format(conf["ip"], conf["mac"])
+    --size=10000 --dpdk-extra='-l 6' --vhost-port-ip={} --vhost-port-mac={}".format(conf["ip"], conf["mac"])
 
     print("client {}".format(cmd))
 
@@ -84,6 +84,12 @@ def run_system_perf_server(conf):
     cmd = "sudo ./build/test/dpdk_server_system_test 100 --server=1 -v --vhost-port \
     --iface='--vdev=virtio_user0,path=/tmp/vhost_0.sock,queues=1' --dpdk-extra=--no-pci \
     --dpdk-extra='-l 6' --vhost-port-ip={} --vhost-port-mac={}".format(conf["ip"], conf["mac"])
+
+    if conf["slow_down"]:
+        cmd = "sudo cpulimit -l {} -- ./build/test/dpdk_server_system_test 100 --server=1 -v --vhost-port \
+    --iface='--vdev=virtio_user0,path=/tmp/vhost_0.sock,queues=1' --dpdk-extra=--no-pci \
+    --dpdk-extra='-l 6' --vhost-port-ip={} --vhost-port-mac={}".format(conf["slow_down"], conf["ip"], conf["mac"])
+        
 
     print("server {}".format(cmd))
 
@@ -149,8 +155,8 @@ def main():
             # 'vdev': 'virtio_user0,path=/tmp/vhost_0.sock,queues={}'.format(count_queue),
             # 'count_queue': count_queue,
             # 'type': app_mode,
-            'mac': '1c:34:da:41:c7:14',
-            'ip': '192.168.1.9',
+            'mac': '1c:34:da:41:c8:04',
+            'ip': '192.168.1.1',
             'slow_down': slow_down,
             'tx_pkt_length': tx_size
             }
@@ -176,6 +182,12 @@ def main():
     file_path = pipeline_config_file
     ret = bessctl_do('daemon start -- run file {}'.format(file_path))
 
+    print(ret.returncode)
+    if ret.returncode != 0:
+      print("bess has issues")
+      return 1
+
+
     server_process = None
     client_process = None
 
@@ -185,6 +197,7 @@ def main():
         sleep(time + 10) # This means you only have 10 seconds to run the server.
     else:
         for i in range(vhost_port_count):
+            print('ip ' + "192.168.1.{}".format(i + 1))
             client_conf = {
               'cpuset': i+7, # it is just random
             # 'prefix': 'client',
@@ -192,7 +205,7 @@ def main():
               'slow_down': slow_down,
               'tx_pkt_length': tx_size,
               'file_prefix': i,
-              'ip': "192.168.1.{}".format(i + 1),
+              'ip': "192.168.1.{}".format(i + 2),
               'mac': "1c:34:da:41:ce:f4"
             }
 
@@ -200,9 +213,6 @@ def main():
             client_process = run_system_perf_client(client_conf)
             client_process.wait() 
 
-    # Kill anything running
-    # _stop_everything()
- 
     # pfc_stats_before = get_pfc_results()
 
     # clients = []
@@ -245,6 +255,9 @@ def main():
     # print(log)
     for i in range(1):
       ret = bessctl_do('show port port_{}'.format(i), subprocess.PIPE)
+      # if(ret != 0):
+      #   print("failed to run: " +'show port port_{}'.format(i))
+      #   continue
       log = ret.stdout.decode()
       log = log.strip()
       print(log)
