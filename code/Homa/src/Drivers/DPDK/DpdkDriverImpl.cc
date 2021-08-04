@@ -105,7 +105,8 @@ DpdkDriver::Impl::Impl(const char* ifname, const char* mac, const char* ip, int 
     , tx()
     , hasHardwareFilter(true)  // Cleared later if not applicable
     , corked(0)
-    , bandwidthMbps(10000)  // Default bandwidth = 10 gbs
+    // , bandwidthMbps(100000)  // Default bandwidth = 10 gbs
+    , bandwidthMbps(40000)  // Default bandwidth = 10 gbs
 {
     int s;
     cpu_set_t cpuset;
@@ -621,14 +622,12 @@ DpdkDriver::Impl::_init_vhost()
     // I really don't remember what's going on here but just trying to do the experiment
     // I have to think a little bit more to come up with a nice design of getting mac addresses
     // throughout ARP messages
-    arpTable.emplace(IpAddress::fromString("192.168.1.10"), "1c:34:da:41:ce:f4");
-    arpTable.emplace(IpAddress::fromString("192.168.1.9"), "1c:34:da:41:c7:14");
-    // arpTable.emplace(IpAddress::fromString("192.168.1.9"), "1c:34:da:41:c7:14");
+    // Server
+    arpTable.emplace(IpAddress::fromString("192.168.1.1"), "1c:34:da:41:c8:04");
 
-    for (int i=1; i < 9; i++)
+    // This is all for clients
+    for (int i=2; i < 9; i++)
     {
-	// char buff[20];
-	// sprintf(buff, "192.168.1.%d", i)
 	std::string ip = StringUtil::format("192.168.1.%d", i);
     	arpTable.emplace(IpAddress::fromString(ip.c_str()), "1c:34:da:41:ce:f4");
     }

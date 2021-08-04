@@ -280,7 +280,7 @@ main(int argc, char* argv[])
     //     server->thread = std::move(std::thread(&serverMain, server, addresses));
     // }
     //
-    addresses.emplace_back(Homa::IpAddress::fromString("192.168.1.9"));
+    addresses.emplace_back(Homa::IpAddress::fromString("192.168.1.1"));
 
     uint64_t start = PerfUtils::Cycles::rdtsc();
     int numFails = clientMain(numTests, numBytes, addresses, vhost_ip,
