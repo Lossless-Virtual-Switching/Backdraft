@@ -12,7 +12,7 @@ from tas_containers import *
 
 cur_script_dir = os.path.dirname(os.path.abspath(__file__))
 pipeline_config_file = os.path.join(cur_script_dir,
-    'pipeline.bess')
+    'seastar_pipeline.bess')
 
 seastar_memcached = '/proj/uic-dcs-PG0/fshahi5/seastar/build/release/app/memcached/memcached'
 
@@ -20,6 +20,7 @@ seastar_memcached = '/proj/uic-dcs-PG0/fshahi5/seastar/build/release/app/memcach
 def parse_args():
     parser = argparse.ArgumentParser()
     parser.add_argument('--client', action='store_true', help='run client')
+    parser.add_argument('--cores', help='number of server cores', default=1, type=int)
     parser.add_argument('--cpulimit', type=float, default=1,
             help='what fraction of cpu the application can use (0, 1]')
     args = parser.parse_args()
@@ -30,6 +31,9 @@ def parse_args():
 
 
 def check_cpulimit():
+    """
+    Check if cpulimit tool is installed
+    """
     ret = subprocess.run('which cpulimit', shell=True, stdout=subprocess.PIPE)
     if ret.returncode != 0:
         print('please install cpulimimt')
@@ -40,7 +44,9 @@ def print_client_command():
     print("Client flag is not implemented!"
             "\nFor running client install mutilate and use"
             "\nthis command:"
-            "\n\t./mutilate -s node0 -t 30 -K 24 -V 24 -r 10 -w 5 -T 16 -c 1")
+            "\n\t./mutilate -s node0 -t 30 -w 5 \\"
+            "\n\t\t--keysize=fb_key --valuesize=fb_value --iadist=fb_ia \\"
+            "\n\t\t--update=0.033 -T 32 -c 4 -a node2")
 
 
 def main():
@@ -51,33 +57,40 @@ def main():
     if args.cpulimit != 1:
         check_cpulimit()
 
-    ret = setup_bess_pipeline(pipeline_config_file)
+    ret = setup_bess_pipeline(pipeline_config_file, env={'cores': str(args.cores)})
     if not ret:
         print('Failed to setup BESS')
         return 1
     print('Bess pipeline setup')
     sleep(1)
 
-    cores = 1  # server cores
+    cores = args.cores  # server cores
     release = 'release'
     stack = 'native'
+    ip =  '192.168.1.2'
+    print('host ip is ', ip, 'fix this if it is wrong')
     # coremask = ','.join([2 * i + 4 for i in range(cores)])
     # stack = 'posix'
     if args.client:
         print_client_command()
     else:
+        cpuset = ','.join([str(i * 2) for i in range(cores)])
+        virtio = 'virtio_user0,path=/tmp/tmp_vhost0.sock,queues={}'.format(cores)
         memcd_bin = f'/proj/uic-dcs-PG0/fshahi5/tmp/seastar/build/{release}/apps/memcached/memcached'
-        memcd_args = ['--port=11211', '--dhcp=0', '--host-ipv4-addr=192.168.1.1',
+        memcd_args = ['--port=11211', '--dhcp=0', '--host-ipv4-addr={}'.format(ip),
         '--netmask-ipv4-addr=255.255.255.0', f'--network-stack={stack}', '-m', '8G',
-        '--dpdk-pmd', f'--smp={cores}']
+        '--dpdk-pmd', f'--smp={cores}', '--cpuset={}'.format(cpuset),
+        '--dpdk-extra=--no-pci',
+        '--dpdk-extra=--vdev', '--dpdk-extra={}'.format(virtio)]
         # cmd = ['/usr/bin/taskset', '-c', f'{coremask}',  memcd_bin] + memcd_args
         cmd = [memcd_bin] + memcd_args
         print('CMD:', cmd)
         memcd_proc = subprocess.Popen(cmd)
         if args.cpulimit != 1:
-            limit = int(args.cpulimit * 100)
+            limit = int(args.cpulimit * 100 * cores)
             print('limiting usage to', limit, 'percent')
-            subprocess.Popen(['/usr/bin/cpulimit', '-p', f'{memcd_proc.pid}', '-l', f'{limit:.0f}'])
+            subprocess.Popen(['/usr/bin/cpulimit', '-p',
+                f'{memcd_proc.pid}', '-l', f'{limit:.0f}'])
         try:
             memcd_proc.wait()
         except KeyboardInterrupt:

@@ -15,7 +15,7 @@ __bess_kmod_dir = os.path.join(__bess_dir, 'core/kmod')
 
 
 # ----------- BESS --------------
-def bessctl_do(command, stdout=None, stderr=None, cpu_list=None):
+def bessctl_do(command, stdout=None, stderr=None, cpu_list=None, env=None):
     """
     Run bessctl command
     """
@@ -23,11 +23,11 @@ def bessctl_do(command, stdout=None, stderr=None, cpu_list=None):
     if cpu_list is not None:
         assert isinstance(cpu_list, str)
         cmd  = 'taskset -c {} {}'.format(cpu_list, cmd)
-    ret = subprocess.run(cmd, shell=True, stdout=stdout, stderr=stderr)
+    ret = subprocess.run(cmd, shell=True, stdout=stdout, stderr=stderr, env=env)
     return ret
 
 
-def setup_bess_pipeline(pipeline_config_path):
+def setup_bess_pipeline(pipeline_config_path, env=None):
     """
     Returns boolean
     """
@@ -44,7 +44,7 @@ def setup_bess_pipeline(pipeline_config_path):
     #     return -1
     # Run a configuration (pipeline)
     cmd = 'daemon start -- run file {}'.format(pipeline_config_path)
-    ret = bessctl_do(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    ret = bessctl_do(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, env=env)
     print(ret.stdout.decode())
     print(ret.stderr.decode())
     return not ret.stderr
