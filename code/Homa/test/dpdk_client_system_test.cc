@@ -27,6 +27,8 @@
 #include "Output.h"
 #include "Perf.h"
 
+#define BATCH_SIZE 32
+
 static const char USAGE[] = R"(Homa System Test.
 
     Usage:
@@ -103,6 +105,104 @@ struct Node {
 //         server->transport->poll();
 //     }
 // }
+
+/**
+ * @return
+ *      Number of Op that failed.
+ */
+int
+clientMainBatch(int count, int size, std::vector<Homa::IpAddress> addresses,
+		std::string ip, std::string mac, int
+		dpdk_param_size, char **dpdk_params)
+{
+    std::random_device rd;
+    std::mt19937 gen(rd());
+    std::uniform_int_distribution<> randAddr(0, addresses.size() - 1);
+    std::uniform_int_distribution<> randAddrID(0, 100);
+    std::uniform_int_distribution<char> randData(0);
+
+    // uint64_t nextId = 0;
+    int numFailed = 0;
+
+    std::vector<Output::Latency> times;
+    uint64_t start;
+    uint64_t stop;
+
+    // uint64_t nextId = 0;// randAddrID(gen) * count;
+    uint64_t nextId = randAddrID(gen) * count;
+    int id = randAddrID(gen);
+    Node client(id, ip, mac, dpdk_param_size, dpdk_params);
+    std::cout << "ID: " << id << std::endl;
+
+	Homa::unique_ptr<Homa::OutMessage> batch[BATCH_SIZE];
+	uint64_t batch_start_timestamp[BATCH_SIZE];
+    
+    // Homa::IpAddress destAddress = addresses[randAddr(gen)];
+    Homa::IpAddress destAddress = addresses[0];
+	
+    for (int i = 0; i < count; i = i + BATCH_SIZE) {
+        char payload[size];
+        uint64_t id = nextId++;
+        for (int i = 0; i < size; ++i) {
+            payload[i] = randData(gen);
+        }
+
+		for(int j = 0; j < BATCH_SIZE; j++) {
+			// Homa::unique_ptr<Homa::OutMessage> message = batch[j];
+			// message = client.transport->alloc(0);
+            batch[j] = client.transport->alloc(0);
+
+	        {
+	            MessageHeader header;
+	            header.id = id;
+	            header.length = size;
+	            batch[j]->append(&header, sizeof(MessageHeader));
+	            batch[j]->append(payload, size);
+	            if (_PRINT_CLIENT_) {
+	                std::cout << "Client -> (opId: " << header.id << ")"
+	                          << std::endl;
+	            }
+	        }
+
+
+			// set time stamp
+        	batch_start_timestamp[j] = PerfUtils::Cycles::rdtsc();
+			// send the message
+        	batch[j]->send(Homa::SocketAddress{destAddress, 60001});
+		}
+		// Whole batch is already sent;
+
+		// Now wait for the responses;
+		uint64_t done = 0;
+		
+		while (done < BATCH_SIZE) {
+            Homa::OutMessage::Status status;
+			// Homa::unique_ptr<Homa::OutMessage> message;
+			for(int i = 0; i < BATCH_SIZE; i++) {
+				// message = batch[i];
+				status = batch[i]->getStatus();
+
+            	if (status == Homa::OutMessage::Status::COMPLETED) {
+					stop = PerfUtils::Cycles::rdtsc();
+            	    times.emplace_back(PerfUtils::Cycles::toSeconds(stop - batch_start_timestamp[i]));
+					done++;
+            	} 
+				
+				if (status == Homa::OutMessage::Status::FAILED) {
+            	    numFailed++;
+					done++;
+	    		}
+
+            	client.transport->poll();
+			}
+		}
+	}
+	
+    std::cout << Output::basicHeader() << std::endl;
+    std::cout << Output::basic(times, "Homa Transport Testing") << std::endl;
+
+    return numFailed;
+}
 
 /**
  * @return
@@ -287,7 +387,8 @@ main(int argc, char* argv[])
     addresses.emplace_back(Homa::IpAddress::fromString("192.168.1.1"));
 
     uint64_t start = PerfUtils::Cycles::rdtsc();
-    int numFails = clientMain(numTests, numBytes, addresses, vhost_ip,
+    // int numFails = clientMain(numTests, numBytes, addresses, vhost_ip,
+    int numFails = clientMainBatch(numTests, numBytes, addresses, vhost_ip,
 		    vhost_mac, dpdk_extra_count, dpdk_extra_params);
     uint64_t end = PerfUtils::Cycles::rdtsc();
     uint64_t duration = PerfUtils::Cycles::toNanoseconds(end - start);

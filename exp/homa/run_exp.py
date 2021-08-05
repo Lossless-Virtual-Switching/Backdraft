@@ -81,15 +81,19 @@ def run_system_perf_server(conf):
     # --dpdk-extra=--no-pci --dpdk-extra='-l 6' --slow-down={} --tx-pkt-length={} --vhost-port-ip={} --vhost-port-mac={}".format(conf["slow_down"], conf["tx_pkt_length"],
     #         conf["ip"], conf["mac"])
 
-    cmd = "sudo ./build/test/dpdk_server_system_test 100 --server=1 -v --vhost-port \
-    --iface='--vdev=virtio_user0,path=/tmp/vhost_0.sock,queues=1' --dpdk-extra=--no-pci \
-    --dpdk-extra='-l 6' --vhost-port-ip={} --vhost-port-mac={}".format(conf["ip"], conf["mac"])
+    cmd = "sudo ./build/test/dpdk_server_system_test 100 --server=1 -v \
+    --vhost-port --iface='--vdev=virtio_user0,path={}' --dpdk-extra=--no-pci \
+    --dpdk-extra='-l {}' --dpdk-extra='--file-prefix=mg-{}' --vhost-port-ip={} \
+    --vhost-port-mac={}".format(conf['path'], conf['cpuset'], conf['cpuset'],
+            conf["ip"], conf["mac"])
 
     if conf["slow_down"]:
-        cmd = "sudo cpulimit -l {} -- ./build/test/dpdk_server_system_test 100 --server=1 -v --vhost-port \
-    --iface='--vdev=virtio_user0,path=/tmp/vhost_0.sock,queues=1' --dpdk-extra=--no-pci \
-    --dpdk-extra='-l 6' --vhost-port-ip={} --vhost-port-mac={}".format(conf["slow_down"], conf["ip"], conf["mac"])
-        
+        cmd = "sudo cpulimit -l {} -- ./build/test/dpdk_server_system_test 100 \
+        --server=1 -v --vhost-port --iface='--vdev=virtio_user0,path={}' \
+        --dpdk-extra=--no-pci --dpdk-extra='-l {}' \
+        --dpdk-extra='--file-prefix=mg-{}' --vhost-port-ip={} \
+        --vhost-port-mac={}".format(conf["slow_down"], conf['path'],
+                conf['cpuset'], conf['cpuset'], conf["ip"], conf["mac"])
 
     print("server {}".format(cmd))
 
@@ -150,17 +154,17 @@ def main():
     if override_vswitch_path:
         override_bess_path("/proj/uic-dcs-PG0/alireza/homa-bess/bess")
 
-    server_conf = {
-            # 'cpuset': cpuset,
-            # 'prefix': 'server',
-            # 'vdev': 'virtio_user0,path=/tmp/vhost_0.sock,queues={}'.format(count_queue),
-            # 'count_queue': count_queue,
-            # 'type': app_mode,
-            'mac': '1c:34:da:41:c8:04',
-            'ip': '192.168.1.1',
-            'slow_down': slow_down,
-            'tx_pkt_length': tx_size
-            }
+    # server_conf = {
+    #         'cpuset': 7,
+    #         # 'prefix': 'server',
+    #         'vdev': 'path=/tmp/vhost_0.sock,queues={}'.format(count_queue),
+    #         # 'count_queue': count_queue,
+    #         # 'type': app_mode,
+    #         'mac': '1c:34:da:41:c8:04',
+    #         'ip': '192.168.1.1',
+    #         'slow_down': slow_down,
+    #         'tx_pkt_length': tx_size
+    #         }
 
     # client_conf = {
     #          'cpuset': cpuset,
@@ -189,12 +193,28 @@ def main():
       return 1
 
 
-    server_process = None
+    server_process = []
     client_process = []
+
 
     if mode == "server": 
         # run_server(server_conf)
-        server_process = run_system_perf_server(server_conf)
+        for i in range(vhost_port_count):
+            server_conf = {
+                    'cpuset': i + 32,
+                    # 'prefix': 'server',
+                    'path': '/tmp/vhost_{}.sock,queues={}'.format(i, count_queue),
+                    # 'count_queue': count_queue,
+                    # 'type': app_mode,
+                    'mac': '1c:34:da:41:c8:04',
+                    'ip': '192.168.1.1',
+                    'slow_down': slow_down,
+                    'tx_pkt_length': tx_size
+            }
+            sp = run_system_perf_server(server_conf)
+            server_process.append(sp)
+
+        ############## SLEEEEEEEEEEEEEEEP
         sleep(time + 10) # This means you only have 10 seconds to run the server.
     else:
         for i in range(vhost_port_count):
@@ -202,7 +222,7 @@ def main():
             client_conf = {
               'cpuset': i+7, # it is just random
             # 'prefix': 'client',
-              'path': '/tmp/vhost_{}.sock'.format(i),
+              'path': '/tmp/vhost_{}.sock,queues={}'.format(i, count_queue),
               'slow_down': slow_down,
               'tx_pkt_length': tx_size,
               'file_prefix': i,
@@ -292,8 +312,10 @@ def main():
     _stop_everything()
 
     if server_process:
-        stdout = server_process.communicate()[0]
-        print('STDOUT:{}'.format(stdout))
+        print(server_process)
+        for proc in server_process:
+            stdout = proc.communicate()[0]
+            print('STDOUT:{}'.format(stdout))
 
     # pfc_stats_after = get_pfc_results()
     # pfc_stats = get_delta_pfc(pfc_stats_before, pfc_stats_after) 
