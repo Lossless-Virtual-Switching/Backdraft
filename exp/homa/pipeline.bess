@@ -62,7 +62,7 @@ else:
         # Ingress
         hs = HashLB(mode='l3', gates=range(count_vhost_ports))
         pci_port_qinc = QueueInc(port=pci_port, qid=0)
-        pci_port_qinc -> hs
+        pci_port_qinc -> MeasurePPS() -> hs 
         pci_port_qinc.attach_task(wid=1)
         for i in range(count_vhost_ports):
             qout1 = QueueOut(port=vhost_ports[i], qid=0)

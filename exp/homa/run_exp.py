@@ -277,7 +277,15 @@ def main():
     # log = ret.stdout.decode()
     # log = log.strip()
     # print(log)
+    ret = bessctl_do('command module measure_pps0 get_summary EmptyArg', subprocess.PIPE)
+    if ret.returncode != 0:
+        print("command measure pps failed")
+    else:
+        stdout = ret.stdout.decode()
+        print('STDOUT:{}'.format(stdout))
+
     for i in range(vhost_port_count):
+
       ret = bessctl_do('show port port_{}'.format(i), subprocess.PIPE)
       # if(ret != 0):
       #   print("failed to run: " +'show port port_{}'.format(i))
