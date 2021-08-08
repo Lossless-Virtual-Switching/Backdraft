@@ -23,6 +23,7 @@ def parse_args():
     parser.add_argument('--cores', help='number of server cores', default=1, type=int)
     parser.add_argument('--cpulimit', type=float, default=1,
             help='what fraction of cpu the application can use (0, 1]')
+    parser.add_argument('--server_ip', type=str, default='192.168.1.1')
     args = parser.parse_args()
     if args.cpulimit < 0 or args.cpulimit > 1:
         print('cpulimt shoud be in range of (0, 1]')
@@ -67,7 +68,7 @@ def main():
     cores = args.cores  # server cores
     release = 'release'
     stack = 'native'
-    ip =  '192.168.1.2'
+    ip = args.server_ip 
     print('host ip is ', ip, 'fix this if it is wrong')
     # coremask = ','.join([2 * i + 4 for i in range(cores)])
     # stack = 'posix'

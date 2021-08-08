@@ -1,16 +1,19 @@
 import os
 import subprocess
 
-count_queue = 1
+count_core = int(os.environ.get('cores', 1))
+count_queue = int(os.environ.get('queues', 1))
+print('pipeline with', count_core, 'number of cores')
 count_vhost = 1
-q_size = 2048
+q_size = 4096
 pci = os.environ.get('PCI', '41:00.0')
 drop_prob = float(os.environ.get('DROP', '0'))
 msg='Check if this values are correct:\npci addr: {}\ndrop probability: {}'
 msg = msg.format(pci, drop_prob)
 print(msg)
 
-bess.add_worker(0, 30)
+for i in range(count_core):
+	bess.add_worker(i, i)
 
 
 socket_dir='/tmp'
