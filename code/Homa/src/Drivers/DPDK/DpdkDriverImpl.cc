@@ -332,23 +332,23 @@ DpdkDriver::Impl::sendPacket(Driver::Packet* packet, IpAddress destination,
         return;
     }
     MacAddress& destMac = it->second;
-    struct ether_hdr* ethHdr = rte_pktmbuf_mtod(mbuf, struct ether_hdr*);
-    rte_memcpy(&ethHdr->d_addr, destMac.address, ETHER_ADDR_LEN);
-    rte_memcpy(&ethHdr->s_addr, localMac.address, ETHER_ADDR_LEN);
-    ethHdr->ether_type = rte_cpu_to_be_16(ETHER_TYPE_VLAN);
+    struct rte_ether_hdr* ethHdr = rte_pktmbuf_mtod(mbuf, struct rte_ether_hdr*);
+    rte_memcpy(&ethHdr->d_addr, destMac.address, RTE_ETHER_ADDR_LEN);
+    rte_memcpy(&ethHdr->s_addr, localMac.address, RTE_ETHER_ADDR_LEN);
+    ethHdr->ether_type = rte_cpu_to_be_16(RTE_ETHER_TYPE_VLAN);
 
     // Fill out the PCP field and the Ethernet frame type of the
     // encapsulated frame (DEI and VLAN ID are not relevant and trivially
     // set to 0).
-    struct vlan_hdr* vlanHdr = reinterpret_cast<struct vlan_hdr*>(ethHdr + 1);
+    struct rte_vlan_hdr* vlanHdr = reinterpret_cast<struct rte_vlan_hdr*>(ethHdr + 1);
     vlanHdr->vlan_tci = rte_cpu_to_be_16(PRIORITY_TO_PCP[priority]);
     // vlanHdr->eth_proto = rte_cpu_to_be_16(EthPayloadType::HOMA);
 
-    vlanHdr->eth_proto = rte_cpu_to_be_16(ETHER_TYPE_IPv4);
+    vlanHdr->eth_proto = rte_cpu_to_be_16(RTE_ETHER_TYPE_IPV4);
 
     // Add IP header after VLAN
-    struct ipv4_hdr *ip_hdr =
-        reinterpret_cast<struct ipv4_hdr *>(vlanHdr + 1);
+    struct rte_ipv4_hdr *ip_hdr =
+        reinterpret_cast<struct rte_ipv4_hdr *>(vlanHdr + 1);
     ip_hdr->version_ihl = 0x45;
     ip_hdr->type_of_service =0;
     ip_hdr->total_length = rte_cpu_to_be_16(20 + pkt->base.length); // ip header + payload
@@ -483,30 +483,30 @@ DpdkDriver::Impl::receivePackets(uint32_t maxPackets,
             continue;
         }
 
-        struct ether_hdr* ethHdr = rte_pktmbuf_mtod(m, struct ether_hdr*);
+        struct rte_ether_hdr* ethHdr = rte_pktmbuf_mtod(m, struct rte_ether_hdr*);
         uint16_t ether_type = ethHdr->ether_type;
-        uint32_t headerLength = ETHER_HDR_LEN;
+        uint32_t headerLength = RTE_ETHER_HDR_LEN;
         char* payload = reinterpret_cast<char*>(ethHdr + 1);
-        if (ether_type == rte_cpu_to_be_16(ETHER_TYPE_VLAN)) {
-            struct vlan_hdr* vlanHdr =
-                reinterpret_cast<struct vlan_hdr*>(payload);
+        if (ether_type == rte_cpu_to_be_16(RTE_ETHER_TYPE_VLAN)) {
+            struct rte_vlan_hdr* vlanHdr =
+                reinterpret_cast<struct rte_vlan_hdr*>(payload);
             ether_type = vlanHdr->eth_proto;
             headerLength += VLAN_TAG_LEN;
             payload += VLAN_TAG_LEN;
         }
 
-	if (ether_type != rte_cpu_to_be_16(ETHER_TYPE_IPv4)) {
+	if (ether_type != rte_cpu_to_be_16(RTE_ETHER_TYPE_IPV4)) {
             VERBOSE("packet not ipv4; ether_type = %x", ether_type);
             rte_pktmbuf_free(m);
             continue;
         }
 
-	struct ipv4_hdr *ip_hdr =
+	struct rte_ipv4_hdr *ip_hdr =
             // reinterpret_cast<struct ipv4_hdr *>(vlanHdr + 1);
-            reinterpret_cast<struct ipv4_hdr *>(payload);
+            reinterpret_cast<struct rte_ipv4_hdr *>(payload);
         uint8_t ip_proto = ip_hdr->next_proto_id;
-        headerLength += sizeof(struct ipv4_hdr);
-        payload += sizeof(struct ipv4_hdr);
+        headerLength += sizeof(struct rte_ipv4_hdr);
+        payload += sizeof(struct rte_ipv4_hdr);
 
 	 if (!hasHardwareFilter) {
             // Perform packet filtering by software to skip irrelevant
@@ -665,13 +665,13 @@ DpdkDriver::Impl::_init_vhost()
     // I have to think a little bit more to come up with a nice design of getting mac addresses
     // throughout ARP messages
     // Server
-    arpTable.emplace(IpAddress::fromString("192.168.1.1"), "1c:34:da:41:c8:04");
+    arpTable.emplace(IpAddress::fromString("192.168.1.1"), "1c:34:da:41:c6:fc");
 
     // This is all for clients
     for (int i=2; i < 100; i++)
     {
 	std::string ip = StringUtil::format("192.168.1.%d", i);
-    	arpTable.emplace(IpAddress::fromString(ip.c_str()), "1c:34:da:41:ce:f4");
+    	arpTable.emplace(IpAddress::fromString(ip.c_str()), "1c:34:da:41:d0:0c");
     }
 
     // Iterate over ethernet devices to locate the port identifier.
@@ -679,7 +679,7 @@ DpdkDriver::Impl::_init_vhost()
     int p;
     RTE_ETH_FOREACH_DEV(p)
     {
-        struct ether_addr mac;
+        struct rte_ether_addr mac;
         rte_eth_macaddr_get(p, &mac);
 	// memcpy(localMac.address, &mac, 6);
         port = p;
@@ -714,7 +714,7 @@ DpdkDriver::Impl::_init_vhost()
 
     // configure some default NIC port parameters
     memset(&portConf, 0, sizeof(portConf));
-    portConf.rxmode.max_rx_pkt_len = ETHER_MAX_VLAN_FRAME_LEN;
+    portConf.rxmode.max_rx_pkt_len = RTE_ETHER_MAX_VLAN_FRAME_LEN;
     rte_eth_dev_configure(port, 1, 1, &portConf);
 
     // Set up a NIC/HW-based filter on the ethernet type so that only
@@ -895,7 +895,7 @@ DpdkDriver::Impl::_init()
     int p;
     RTE_ETH_FOREACH_DEV(p)
     {
-        struct ether_addr mac;
+        struct rte_ether_addr mac;
         rte_eth_macaddr_get(p, &mac);
         if (MacAddress(mac.addr_bytes) == localMac) {
             port = p;
@@ -931,7 +931,7 @@ DpdkDriver::Impl::_init()
 
     // configure some default NIC port parameters
     memset(&portConf, 0, sizeof(portConf));
-    portConf.rxmode.max_rx_pkt_len = ETHER_MAX_VLAN_FRAME_LEN;
+    portConf.rxmode.max_rx_pkt_len = RTE_ETHER_MAX_VLAN_FRAME_LEN;
     rte_eth_dev_configure(port, 1, 1, &portConf);
 
     // Set up a NIC/HW-based filter on the ethernet type so that only

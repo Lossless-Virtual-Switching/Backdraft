@@ -74,16 +74,16 @@ const uint32_t VLAN_TAG_LEN = 4;
 /// however, it currently only records the source IP address right after the
 /// Ethernet header for simplicity.
 // const uint32_t IP_HDR_LEN = sizeof(IpAddress);
-const uint32_t IP_HDR_LEN = sizeof(struct ipv4_hdr);
+const uint32_t IP_HDR_LEN = sizeof(struct rte_ipv4_hdr);
 // const uint32_t IP_HDR_LEN = 20;
 
 // Size of Ethernet header including VLAN tag plus IP header, in bytes.
-const uint32_t PACKET_HDR_LEN = ETHER_HDR_LEN + VLAN_TAG_LEN + IP_HDR_LEN;
+const uint32_t PACKET_HDR_LEN = RTE_ETHER_HDR_LEN + VLAN_TAG_LEN + IP_HDR_LEN;
 
 // The MTU (Maximum Transmission Unit) size of an Ethernet frame, which is the
 // maximum size of the packet an Ethernet frame can carry in its payload. This
 // is normally 1500 bytes.
-const uint32_t MAX_PAYLOAD_SIZE = ETHER_MTU;
+const uint32_t MAX_PAYLOAD_SIZE = RTE_ETHER_MTU;
 
 /// Map from priority levels to values of the PCP field. Note that PCP = 1
 /// is actually the lowest priority, while PCP = 0 is the second lowest.
