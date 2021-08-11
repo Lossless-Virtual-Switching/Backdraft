@@ -57,8 +57,8 @@ terminate_remote_seastar
 sleep 2
 
 # Gather results
-REMOTE_SW_RES="`cat $LOG | grep -A 5 "Driver PMDPort"`"
-LOCAL_SW_RES="`echo "$tmp" | grep -A 5 "Driver PMDPort"`"
+REMOTE_SW_RES="`cat $LOG | grep -A 5 "Driver"`"
+LOCAL_SW_RES="`echo "$tmp" | grep -A 5 "Driver"`"
 LAST_STATS="`echo "$tmp" | grep stats | tail -n 1`"
 CLIENT_RES="`echo "$tmp" | grep "flow="`"
 echo "~~~~~~~~~~~~~~" >> $OUTPUT

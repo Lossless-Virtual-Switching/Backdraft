@@ -12,7 +12,7 @@ from tas_containers import *
 
 cur_script_dir = os.path.dirname(os.path.abspath(__file__))
 pipeline_config_file = os.path.join(cur_script_dir,
-    'pipeline.bess')
+    'ecn_pipeline.bess')
 
 
 def parse_args():
