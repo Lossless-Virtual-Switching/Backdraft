@@ -1,0 +1,19 @@
+syntax = "proto3";
+
+package bkdrft.pb;
+
+message ECNPMDPortArg {
+    bool loopback = 1;
+    oneof port {
+        uint64 port_id = 2;
+        string pci = 3;
+        string vdev = 4;
+    }
+    // See http://dpdk.org/doc/dts/test_plans/dual_vlan_test_plan.html
+    bool vlan_offload_rx_strip = 5;
+    bool vlan_offload_rx_filter = 6;
+    bool vlan_offload_rx_qinq = 7;
+    bool rate_limiting = 8;
+    uint32 rate = 10;
+    bool data_mapping = 13; // map data packets to a specific queue
+}

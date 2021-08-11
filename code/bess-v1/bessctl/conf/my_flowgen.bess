@@ -1,0 +1,53 @@
+import os
+import subprocess
+import scapy.all as scapy
+
+pkt_size = 84
+
+pci = os.environ.get('PCI', '7:00.1')
+host_ip = '192.168.1.1'
+dst_ip = '192.168.1.2'
+host_mac = '1c:34:da:41:c6:fc'
+dst_mac = '1c:34:da:41:d0:0c'
+
+# FlowGen Args
+eth = scapy.Ether(src=host_mac, dst=dst_mac)
+ip  = scapy.IP(src=host_ip, dst=dst_ip)
+tcp = scapy.TCP(sport=8080, dport=8080)
+payload = ('hello' + '0123456789' * 200)[:pkt_size-len(eth/ip/tcp)]
+pkt = eth/ip/tcp/payload
+pkt_data = bytes(pkt)
+template = pkt_data
+
+pps = 100000000
+flow_rate=5
+flow_duration=1
+
+count_q = 32
+size_q = 256
+port_type = 1
+if port_type == 0:
+    port = ECNPMDPort(name='nic_port', num_inc_q=count_q,
+            num_out_q=count_q, size_inc_q=size_q,
+            size_out_q=size_q, pci=pci)
+else:
+    # Vhost Port
+    socket = os.path.join('/tmp/', 'tmp_vhost{}.sock'.format(0))
+    if os.path.isfile(socket):
+        subprocess.run('sudo rm {}'.format(socket))
+    vdev = "eth_vhost{},iface={},queues={}".format(0, socket, 1)
+    port = ECNPMDPort(name="tmp_vhost{}".format(0),
+            vdev=vdev,
+            num_inc_q = 1,
+            num_out_q = 1,
+            size_inc_q= 512,
+            size_out_q= 512)
+
+FlowGen(template=template, pps=pps, flow_rate=flow_rate,
+    flow_duration=flow_duration, arrival="uniform",
+    quick_rampup=True,
+    ip_src_range=1, ip_dst_range=1,
+    port_src_range=1,
+    port_dst_range=1) -> PortOut(port=port)
+PortInc(port=port) -> Sink()
+
