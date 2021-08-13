@@ -1,0 +1,14 @@
+syntax = "proto3";
+package bkdrft.pb;
+
+message BPQIncArg {
+  string port = 1; /// The portname to connect to (read from).
+  uint64 qid = 2; /// The queue on that port to read from. qid starts from 0.
+  bool prefetch = 3; /// When prefetch is enabled, the module will perform CPU prefetch on the first 64B of each packet onto CPU L1 cache. Default value is false.
+}
+
+
+message BPQOutArg {
+  string port = 1; /// The portname to connect to.
+  uint64 qid = 2; /// The queue on that port to write out to.
+}

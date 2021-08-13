@@ -392,6 +392,7 @@ class alignas(64) Module {
     if (overload_) {
       return;
     }
+
     for (auto const &p : parent_tasks_) {
       ++(p->children_overload_);
     }
@@ -409,6 +410,48 @@ class alignas(64) Module {
       --(p->children_overload_);
     }
 
+    overload_ = false;
+  }
+
+  void SignalOverloadBP() {
+    if (overload_) {
+      return;
+    }
+    for (size_t i = 0; i < igates_.size(); i++) {
+        if (!igates_[i]) {
+            continue;
+        }
+        const std::vector<bess::OGate *> &up_ogates = igates_[i]->ogates_upstream();
+        for (const bess::OGate *o : up_ogates) {
+            Module *m = o->module();
+            ++(m->children_overload_);
+            if (m->propagate_workers_ && m->children_overload_ == 1) {
+                // LOG(INFO) << "propagate overlaod from: "
+                //     << name_ << " to " << m->name_ << std::endl;
+                m->SignalOverloadBP();
+            }
+        }
+    }
+    overload_ = true;
+  }
+
+  void SignalUnderloadBP() {
+    if (!overload_) {
+      return;
+    }
+    for (size_t i = 0; i < igates_.size(); i++) {
+        if (!igates_[i]) {
+            continue;
+        }
+        const std::vector<bess::OGate *> &up_ogates = igates_[i]->ogates_upstream();
+        for (const bess::OGate *o : up_ogates) {
+            Module *m = o->module();
+            --(m->children_overload_);
+            if (m->propagate_workers_ && m->children_overload_ == 0) {
+                m->SignalUnderloadBP();
+            }
+        }
+    }
     overload_ = false;
   }
 
