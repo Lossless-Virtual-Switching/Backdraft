@@ -54,7 +54,8 @@ client_vlan_pop = VLANPop()
 server_vlan_pop = VLANPop()
 iplookup = IPLookup()
 
-client_vlan_pop -> hs
+# Monitoring the throughput in the measure_pps module
+client_vlan_pop -> MeasurePPS() -> hs
 server_vlan_pop -> iplookup
 
 for index,port in enumerate(client_ports):

@@ -207,6 +207,14 @@ def main():
     sum_pkts = 0
     sum_bytes = 0
 
+    # Measuring the throughput
+    ret = bessctl_do('command module measure_pps0 get_summary EmptyArg', subprocess.PIPE)
+    if ret.returncode != 0:
+        print("command measure pps failed")
+    else:
+        stdout = ret.stdout.decode()
+        print('STDOUT:{}'.format(stdout))
+
     # ret = bessctl_do('show port', subprocess.PIPE)
     # log = ret.stdout.decode()
     # log = log.strip()
