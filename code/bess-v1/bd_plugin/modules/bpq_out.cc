@@ -1,9 +1,7 @@
 #include "bpq_out.h"
 
-#include "port.h"
 #include "utils/format.h"
 #include "utils/mcslock.h"
-#include "utils/spin_lock.h"
 
 #define DEFAULT_QUEUE_SIZE 256
 
@@ -33,6 +31,13 @@ CommandResponse BPQOut::Init(const bkdrft::pb::BPQOutArg &arg) {
     if (tid == INVALID_TASK_ID) {
         return CommandFailure(ENOMEM, "Task creation failed");
     }
+
+    // Init SpinLock
+    // lock_ = new SpinLock();
+
+    // Init Buffer
+    cnt_mbufs_ = 0;
+
     // Init queue_
     llring *new_queue;
     int slots = DEFAULT_QUEUE_SIZE;
@@ -42,7 +47,7 @@ CommandResponse BPQOut::Init(const bkdrft::pb::BPQOutArg &arg) {
     if (!new_queue) {
         return CommandFailure(ENOMEM);
     }
-    ret = llring_init(new_queue, slots, 0, 0);
+    ret = llring_init(new_queue, slots, false, true);
     if (ret) {
         std::free(new_queue);
         return CommandFailure(EINVAL);
@@ -60,6 +65,8 @@ void BPQOut::DeInit() {
         port_->ReleaseQueues(reinterpret_cast<const module *>(this), PACKET_DIR_OUT,
                 &qid_, 1);
     }
+
+    // delete lock_;
 }
 
 std::string BPQOut::GetDesc() const {
@@ -125,11 +132,11 @@ void BPQOut::ProcessBatch(Context *, bess::PacketBatch *batch) {
 
 #define unused __attribute__((unused))
 struct task_result BPQOut::RunTask(Context *, bess::PacketBatch *, void *) {
-    static SpinLock lock;
-    static bess::Packet *mbufs[bess::PacketBatch::kMaxBurst] = {};
-    static int cnt_mbufs = 0;
+    // static SpinLock lock;
+    // static bess::Packet *mbufs[bess::PacketBatch::kMaxBurst] = {};
+    // static int cnt_mbufs = 0;
 
-    lock.lock();
+    // lock_->lock();
 
     Port *p = port_;
     const queue_t qid = qid_;
@@ -140,39 +147,39 @@ struct task_result BPQOut::RunTask(Context *, bess::PacketBatch *, void *) {
     const int pkt_overhead = 24;
 
     while (true) {
-        if (cnt_mbufs > 0) {
-            // If there are some packets in the mbufs ...
-            sent_pkts = p->SendPackets(qid, (bess::Packet **)&mbufs, cnt_mbufs);
+        if (cnt_mbufs_ > 0) {
+            // If there are some packets in the mbufs_ ...
+            sent_pkts = p->SendPackets(qid, (bess::Packet **)&mbufs_, cnt_mbufs_);
 
             for (int i = 0; i < sent_pkts; i++) {
-                total_sent_bytes += mbufs[i]->total_len();
+                total_sent_bytes += mbufs_[i]->total_len();
             }
             total_sent_packets += sent_pkts;
 
-            if (sent_pkts < cnt_mbufs) {
+            if (sent_pkts < cnt_mbufs_) {
                 // EXIT
-                // shift_array_left(mbufs, sent_pkts, cnt_mbufs);
-                for(int i = sent_pkts; i < cnt_mbufs; i++) {
-                    mbufs[i - sent_pkts] = mbufs[i];
+                // shift_array_left(mbufs_, sent_pkts, cnt_mbufs_);
+                for(int i = sent_pkts; i < cnt_mbufs_; i++) {
+                    mbufs_[i - sent_pkts] = mbufs_[i];
                 }
-                cnt_mbufs -= sent_pkts;
+                cnt_mbufs_ -= sent_pkts;
 
                 if (!(p->GetFlags() & DRIVER_FLAG_SELF_OUT_STATS)) {
                     const packet_dir_t dir = PACKET_DIR_OUT;
                     p->queue_stats[dir][qid].packets += total_sent_packets;
                     p->queue_stats[dir][qid].bytes += total_sent_bytes;
                 }
-                lock.unlock();
+                // lock_->unlock();
                 return {.block = false,
                     .packets = total_sent_packets,
                     .bits = (total_sent_bytes + total_sent_packets * pkt_overhead) * 8};
             }
-            cnt_mbufs = 0;
+            cnt_mbufs_ = 0;
         }
 
-        // when dequeueing there should be no packet in mbufs
+        // when dequeueing there should be no packet in mbufs_
         // otherwise they are overwritten!
-        uint32_t cnt = llring_mc_dequeue_burst(queue_, (void **)mbufs, burst_);
+        uint32_t cnt = llring_sc_dequeue_burst(queue_, (void **)mbufs_, burst_);
         if (cnt == 0) {
             // EXIT
             // There are no packets left in the queue_
@@ -181,12 +188,12 @@ struct task_result BPQOut::RunTask(Context *, bess::PacketBatch *, void *) {
                 p->queue_stats[dir][qid].packets += total_sent_packets;
                 p->queue_stats[dir][qid].bytes += total_sent_bytes;
             }
-            lock.unlock();
+            // lock_->unlock();
             return {.block = false,
                 .packets = total_sent_packets,
                 .bits = (total_sent_bytes + total_sent_packets * pkt_overhead) * 8};
         }
-        cnt_mbufs = cnt;
+        cnt_mbufs_ = cnt;
 
         //
         if (llring_count(queue_) < low_water_) {

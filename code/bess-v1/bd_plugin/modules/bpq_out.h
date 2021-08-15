@@ -2,9 +2,11 @@
 #define BD_MODULES_BPQ_OUT_H_
 
 #include "module.h"
-#include "pb/bkdrft_module_msg.pb.h"
 #include "port.h"
+
 #include "kmod/llring.h"
+#include "utils/spin_lock.h"
+#include "pb/bkdrft_module_msg.pb.h"
 
 class BPQOut final : public Module {
 public:
@@ -48,6 +50,11 @@ private:
     struct llring *queue_;
     size_t size_;
     int burst_; 
+
+    int cnt_mbufs_;
+    // Spinglock is not necessary now
+    // SpinLock *lock_;
+    bess::Packet *mbufs_[bess::PacketBatch::kMaxBurst];
 
 };
 
