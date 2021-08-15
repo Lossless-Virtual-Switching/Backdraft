@@ -1,0 +1,18 @@
+import scapy.all as scapy
+
+pkt_size = 88
+eth = scapy.Ether(src='02:1e:67:9f:4d:ae', dst='06:16:3e:1b:72:32')
+ip = scapy.IP(src='10.0.0.1', dst='10.0.0.2')   # dst IP is overwritten
+tcp = scapy.TCP(sport=10001, dport=10002)
+udp = scapy.UDP(sport=10001, dport=10002)
+payload_tcp = ('hello' + '0123456789' * 200)[:pkt_size-len(eth/ip/tcp)]
+payload_udp = ('hello' + '0123456789' * 200)[:pkt_size-len(eth/ip/udp)]
+pkt_tcp = eth/ip/tcp/payload_tcp
+pkt_udp = eth/ip/udp/payload_udp
+pkt_data_tcp = bytes(pkt_tcp)
+pkt_data_udp = bytes(pkt_udp)
+
+FlowGen(template=pkt_data_udp, pps=10000, flow_rate=1, flow_duration=1,
+	arrival='uniform', duration='uniform', quick_rampup=True,
+	ip_src_range=1, ip_dst_range=1, port_src_range=1,
+	port_dst_range=1) -> MeasurePPS() -> Sink()

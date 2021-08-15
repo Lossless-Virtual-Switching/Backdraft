@@ -1,0 +1,20 @@
+syntax = "proto3";
+package bkdrft.pb;
+
+/**
+ * The measure pps module tracks throughput
+ */
+message MeasurePPSArg {
+}
+
+/**
+ * The MeasurePPS module function `get_summary()` retunrs the following values.
+ */
+message MeasurePPSCommandGetSummaryResponse {
+  message Record {
+    uint64 pps = 1; // Packet Per Second
+    uint64 bps = 2; // Bit Per Second
+    uint64 timestamp = 3;
+  }
+  repeated Record records = 1;
+}
