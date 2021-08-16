@@ -1,4 +1,4 @@
-CLIENT_COUNT=10
+CLIENT_COUNT=29
 SERVER_COUNT=1
 
 python3 ./setup_single_node_exp.py --count_queue 1 --queue_size 512 \

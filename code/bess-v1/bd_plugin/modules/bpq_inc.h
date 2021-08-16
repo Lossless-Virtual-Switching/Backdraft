@@ -7,6 +7,7 @@
 
 class BPQInc final : public Module {
  public:
+  static const Commands cmds;
   static const gate_idx_t kNumIGates = 0;
 
   BPQInc() : Module(), port_(), qid_(), prefetch_(), burst_() {}
@@ -18,6 +19,9 @@ class BPQInc final : public Module {
                              void *arg) override;
 
   std::string GetDesc() const override;
+
+  CommandResponse CommandGetSummary(const bess::pb::EmptyArg &arg);
+  CommandResponse CommandClear(const bess::pb::EmptyArg &arg);
 
  private:
   Port *port_;

@@ -9,7 +9,7 @@ const Commands BPQOut::cmds = {
     {"get_summary", "EmptyArg",
      MODULE_CMD_FUNC(&BPQOut::CommandGetSummary), Command::THREAD_SAFE},
     {"clear", "EmptyArg", MODULE_CMD_FUNC(&BPQOut::CommandClear),
-     Command::THREAD_SAFE},
+     Command::THREAD_UNSAFE},
 };
 
 CommandResponse BPQOut::Init(const bkdrft::pb::BPQOutArg &arg) {
@@ -210,10 +210,12 @@ struct task_result BPQOut::RunTask(Context *, bess::PacketBatch *, void *) {
 
 CommandResponse BPQOut::CommandGetSummary(const bess::pb::EmptyArg &) {
   bkdrft::pb::BPQOutCommandGetSummaryResponse r;
+
   r.set_rx_pause_frame(rx_pause_frame_);
   r.set_tx_pause_frame(tx_pause_frame_);
   r.set_rx_resume_frame(rx_resume_frame_);
   r.set_tx_resume_frame(tx_resume_frame_);
+
   return CommandSuccess(r);
 }
 

@@ -418,11 +418,12 @@ class alignas(64) Module {
   }
 
   void SignalOverloadBP() {
+    rx_pause_frame_++; // We have just received a pause frame message
+
     if (overload_) {
       return;
     }
 
-    rx_pause_frame_++; // We have just received a pause frame message
 
     for (size_t i = 0; i < igates_.size(); i++) {
         if (!igates_[i]) {
@@ -444,11 +445,12 @@ class alignas(64) Module {
   }
 
   void SignalUnderloadBP() {
+    rx_resume_frame_++;
+
     if (!overload_) {
       return;
     }
 
-    rx_resume_frame_++;
 
     for (size_t i = 0; i < igates_.size(); i++) {
         if (!igates_[i]) {

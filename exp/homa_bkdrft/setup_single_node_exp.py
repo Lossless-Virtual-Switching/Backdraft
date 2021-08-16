@@ -208,7 +208,7 @@ def main():
     sum_bytes = 0
 
     # Measuring the throughput
-    ret = bessctl_do('command module measure_pps0 get_summary EmptyArg', subprocess.PIPE)
+    ret = bessctl_do('command module measure_pps0 get_summary EmptyArg {}', subprocess.PIPE)
     if ret.returncode != 0:
         print("command measure pps failed")
     else:
@@ -251,6 +251,17 @@ def main():
         sum_pkts += pkts
         sum_bytes += byte
 
+        # pause frame
+        name = 'bpq_inc{}'.format(i)
+        ret = bessctl_do('command module {} get_summary EmptyArg {{}}'.format(name), subprocess.PIPE)
+        log = ret.stdout.decode()
+        print(log)
+
+        name = 'bpq_out{}'.format(i)
+        ret = bessctl_do('command module {} get_summary EmptyArg {{}}'.format(name), subprocess.PIPE)
+        log = ret.stdout.decode()
+        print(log)
+
     # I don't have the time of experiment.
     print ('throughput: {:2f} (Mpps) {:2f} (Gbps)'.format(sum_pkts / 40 / 1e6, sum_bytes * 8 / 40 / 1e9))
 
@@ -278,6 +289,20 @@ def main():
         byte = float(raw[4].replace(',', ''))
         sum_pkts += pkts
         sum_bytes += byte
+
+        # pause frame
+        name = 'bpq_inc{}'.format(i)
+        ret = bessctl_do('command module {} get_summary EmptyArg {{}}'.format(name), subprocess.PIPE)
+        log = ret.stdout.decode()
+        print(log)
+
+        name = 'bpq_out{}'.format(i)
+        ret = bessctl_do('command module {} get_summary EmptyArg {{}}'.format(name), subprocess.PIPE)
+        log = ret.stdout.decode()
+        print(log)
+
+
+
 
     # I don't have the time of experiment.
     print ('throughput: {:2f} (Mpps) {:2f} (Gbps)'.format(sum_pkts / 40 / 1e6, sum_bytes * 8 / 40 / 1e9))

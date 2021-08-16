@@ -3,6 +3,13 @@
 #include "port.h"
 #include "utils/format.h"
 
+const Commands BPQInc::cmds = {
+    {"get_summary", "EmptyArg",
+     MODULE_CMD_FUNC(&BPQInc::CommandGetSummary), Command::THREAD_SAFE},
+    {"clear", "EmptyArg", MODULE_CMD_FUNC(&BPQInc::CommandClear),
+     Command::THREAD_SAFE},
+};
+
 CommandResponse BPQInc::Init(const bkdrft::pb::BPQIncArg &arg) {
     const char *port_name;
     task_id_t tid;
@@ -100,5 +107,19 @@ struct task_result BPQInc::RunTask(Context *ctx, bess::PacketBatch *batch,
         .bits = (received_bytes + cnt * pkt_overhead) * 8};
 }
 
-ADD_MODULE(BPQInc, "queue_inc",
+CommandResponse BPQInc::CommandGetSummary(const bess::pb::EmptyArg &) {
+  bkdrft::pb::BPQIncCommandGetSummaryResponse r;
+  r.set_rx_pause_frame(rx_pause_frame_);
+  r.set_tx_pause_frame(tx_pause_frame_);
+  r.set_rx_resume_frame(rx_resume_frame_);
+  r.set_tx_resume_frame(tx_resume_frame_);
+
+  return CommandSuccess(r);
+}
+
+CommandResponse BPQInc::CommandClear(const bess::pb::EmptyArg &) {
+  return CommandResponse();
+}
+
+ADD_MODULE(BPQInc, "bpq_inc",
         "receives packets from a port via a specific queue")
