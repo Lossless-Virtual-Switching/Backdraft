@@ -7,8 +7,18 @@ message BPQIncArg {
   bool prefetch = 3; /// When prefetch is enabled, the module will perform CPU prefetch on the first 64B of each packet onto CPU L1 cache. Default value is false.
 }
 
-
 message BPQOutArg {
   string port = 1; /// The portname to connect to.
   uint64 qid = 2; /// The queue on that port to write out to.
 }
+
+/**
+ * The BPQOut module function `get_summary()` retunrs the following values.
+ */
+message BPQOutCommandGetSummaryResponse {
+  uint64 rx_pause_frame = 1;
+  uint64 tx_pause_frame = 2;
+  uint64 rx_resume_frame = 3;
+  uint64 tx_resume_frame = 4;
+}
+

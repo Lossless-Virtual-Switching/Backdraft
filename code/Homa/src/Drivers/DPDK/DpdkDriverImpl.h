@@ -171,6 +171,8 @@ class DpdkDriver::Impl {
     static uint16_t txBurstCallback(uint16_t port_id, uint16_t queue,
                                     struct rte_mbuf* pkts[], uint16_t nb_pkts,
                                     void* user_param);
+    static void bufferUnsentTxPktErrorCallback(struct rte_mbuf **unsent,
+		    uint16_t count, void *userdata);
 
     /// Name of the Linux network interface to be used by DPDK.
     std::string ifname;
@@ -261,6 +263,14 @@ class DpdkDriver::Impl {
             Util::QueueEstimator<std::chrono::steady_clock> queueEstimator;
         } stats;
     } tx;
+
+    struct pv_user_data {
+	        struct rte_eth_dev_tx_buffer * buffer;
+		Tx::Stats* stats;
+	        uint64_t port_id;
+	     	uint8_t queue_id;
+    } pv_tx_data;
+
 
     /// Hardware packet filter is provided by the NIC
     std::atomic<bool> hasHardwareFilter;

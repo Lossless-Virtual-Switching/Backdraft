@@ -204,7 +204,11 @@ class alignas(64) Module {
         node_constraints_(UNCONSTRAINED_SOCKET),
         min_allowed_workers_(1),
         max_allowed_workers_(1),
-        propagate_workers_(true) {}
+        propagate_workers_(true),
+        rx_pause_frame_(0),
+	tx_pause_frame_(0),
+        rx_resume_frame_(0),
+	tx_resume_frame_(0) {}
   virtual ~Module() {}
 
   CommandResponse Init(const bess::pb::EmptyArg &arg);
@@ -417,6 +421,9 @@ class alignas(64) Module {
     if (overload_) {
       return;
     }
+
+    rx_pause_frame_++; // We have just received a pause frame message
+
     for (size_t i = 0; i < igates_.size(); i++) {
         if (!igates_[i]) {
             continue;
@@ -426,9 +433,10 @@ class alignas(64) Module {
             Module *m = o->module();
             ++(m->children_overload_);
             if (m->propagate_workers_ && m->children_overload_ == 1) {
-                // LOG(INFO) << "propagate overlaod from: "
+		tx_pause_frame_++; // Now we are sending pause frames to others too.
+                m->SignalOverloadBP(); 
+		// LOG(INFO) << "propagate overlaod from: "
                 //     << name_ << " to " << m->name_ << std::endl;
-                m->SignalOverloadBP();
             }
         }
     }
@@ -439,6 +447,9 @@ class alignas(64) Module {
     if (!overload_) {
       return;
     }
+
+    rx_resume_frame_++;
+
     for (size_t i = 0; i < igates_.size(); i++) {
         if (!igates_[i]) {
             continue;
@@ -448,6 +459,7 @@ class alignas(64) Module {
             Module *m = o->module();
             --(m->children_overload_);
             if (m->propagate_workers_ && m->children_overload_ == 0) {
+		tx_resume_frame_++;
                 m->SignalUnderloadBP();
             }
         }
@@ -532,6 +544,25 @@ class alignas(64) Module {
   // Note, one should override the `AddActiveWorker` method in more complex
   // cases.
   bool propagate_workers_;
+
+  // RX pause frame
+  // This will increament for every received overload signal
+  uint64_t rx_pause_frame_;
+
+  // TX pause frame
+  // This will increament for every call to overload for children
+  // modules
+  uint64_t tx_pause_frame_;
+
+  // RX resume frame
+  // This will increament for every received underload signal
+  uint64_t rx_resume_frame_;
+
+  // TX resume frame
+  // This will increament for every call to underload for children
+  // modules 
+  uint64_t tx_resume_frame_;
+
   DISALLOW_COPY_AND_ASSIGN(Module);
 };
 

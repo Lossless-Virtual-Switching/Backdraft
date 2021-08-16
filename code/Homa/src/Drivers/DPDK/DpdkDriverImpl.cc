@@ -758,6 +758,27 @@ DpdkDriver::Impl::_init_vhost()
     }
     rte_eth_tx_buffer_init(tx.buffer, MAX_PKT_BURST);
 
+    // SeEt callback for unsent packets
+
+
+//     pv_tx_data.buffer = tx.buffer;
+//     pv_tx_data.stats = &tx.stats;
+//     pv_tx_data.port_id = port;
+//     pv_tx_data.queue_id = 0;
+// 
+//     ret = rte_eth_tx_buffer_set_err_callback(tx.buffer,
+// 		    bufferUnsentTxPktErrorCallback, (void *)&pv_tx_data);
+    
+//     if (ret < 0)
+//         throw DriverInitFailure(
+//             HERE_STR,
+//             StringUtil::format("rte_eth_dev_get_mtu on port %u returned "
+//                                "ENODEV; unable to read current mtu",
+//                                port));
+        // rte_exit(EXIT_FAILURhhh,
+        // "Cannot set error callback for tx buffer on port %u\n",
+        //      port_id);
+
     // get the current MTU.
     ret = rte_eth_dev_get_mtu(port, &mtu);
     if (ret < 0) {
@@ -1081,6 +1102,20 @@ DpdkDriver::Impl::txBurstCallback(uint16_t port_id, uint16_t queue,
     stats->bufferedBytes -= bytesToSend;
     stats->queueEstimator.signalBytesSent(bytesToSend);
     return nb_pkts;
+}
+
+/*
+ * Tx buffer error callback
+ */
+void 
+DpdkDriver::Impl::bufferUnsentTxPktErrorCallback(struct rte_mbuf **unsent,
+		uint16_t count, void *userdata) {
+    struct pv_user_data * data = (struct pv_user_data *) userdata;
+    for (int i = 0; i < count; i++) {
+	rte_eth_tx_buffer(data->port_id, data->queue_id, data->buffer, unsent[i]); // Recursive problems
+    	data->stats->bufferedBytes += rte_pktmbuf_pkt_len(unsent[i]);
+    }
+
 }
 
 }  // namespace DPDK

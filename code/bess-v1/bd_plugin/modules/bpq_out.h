@@ -10,6 +10,7 @@
 
 class BPQOut final : public Module {
 public:
+    static const Commands cmds;
     static const gate_idx_t kNumOGates = 0;
 
     BPQOut() :
@@ -27,6 +28,9 @@ public:
     }
 
     CommandResponse Init(const bkdrft::pb::BPQOutArg &arg);
+    CommandResponse CommandGetSummary(const bess::pb::EmptyArg &arg);
+    CommandResponse CommandClear(const bess::pb::EmptyArg &arg);
+
 
     void DeInit() override;
 
@@ -40,8 +44,8 @@ private:
     void Buffer(bess::Packet **pkts, int cnt);
 
 private:
-    const double kHighWaterRatio = 0.50;
-    const double kLowWaterRatio = 0.15;
+    const double kHighWaterRatio = 0.75;
+    const double kLowWaterRatio = 0.50;
 
     Port *port_;
     queue_t qid_;
