@@ -150,10 +150,6 @@ else:
 # -------------------
 
 
-#This only works single core for now. This statically maps bess on core 0
-# bess.add_worker(0, 0)
-
-
 # # ports = []
 # cpu_id = 0
 # for i in range(0, 2 * count_cores, 2):

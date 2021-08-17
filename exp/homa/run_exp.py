@@ -66,9 +66,9 @@ def run_system_perf_client(conf):
     # --dpdk-extra=--no-pci --dpdk-extra='-l 6' --slow-down={} --tx-pkt-length={} --vhost-port-ip={} --vhost-port-mac={}".format(conf["slow_down"], conf["tx_pkt_length"],
     #         conf["ip"], conf["mac"])
 
-    cmd = "sudo ./build/test/dpdk_client_system_test 100000 -v --vhost-port \
+    cmd = "sudo ./build/test/dpdk_client_system_test 1000000 -v --vhost-port \
     --iface='--vdev=virtio_user0,path={}' --dpdk-extra=--no-pci \
-    --size=10000 --dpdk-extra='--file-prefix=mg-{} '--dpdk-extra='-l {}' --vhost-port-ip={} --vhost-port-mac={}".format(conf["path"], conf["ip"], conf["cpuset"], conf["ip"], conf["mac"])
+    --size=1400 --dpdk-extra='--file-prefix=mg-{}' --dpdk-extra='-l'  --dpdk-extra='{}' --vhost-port-ip={} --vhost-port-mac={}".format(conf["path"], conf["ip"], conf["cpuset"], conf["ip"], conf["mac"])
 
     print("client {}".format(cmd))
 
@@ -83,14 +83,14 @@ def run_system_perf_server(conf):
 
     cmd = "sudo ./build/test/dpdk_server_system_test 100 --server=1 -v \
     --vhost-port --iface='--vdev=virtio_user0,path={}' --dpdk-extra=--no-pci \
-    --dpdk-extra='-l {}' --dpdk-extra='--file-prefix=mg-{}' --vhost-port-ip={} \
+    --dpdk-extra='-l' --dpdk-extra='{}' --dpdk-extra='--file-prefix=mg-{}' --vhost-port-ip={} \
     --vhost-port-mac={}".format(conf['path'], conf['cpuset'], conf['cpuset'],
             conf["ip"], conf["mac"])
 
     if conf["slow_down"]:
         cmd = "sudo cpulimit -l {} -- ./build/test/dpdk_server_system_test 100 \
         --server=1 -v --vhost-port --iface='--vdev=virtio_user0,path={}' \
-        --dpdk-extra=--no-pci --dpdk-extra='-l {}' \
+        --dpdk-extra=--no-pci --dpdk-extra='-l' --dpdk-extra='{}' \
         --dpdk-extra='--file-prefix=mg-{}' --vhost-port-ip={} \
         --vhost-port-mac={}".format(conf["slow_down"], conf['path'],
                 conf['cpuset'], conf['cpuset'], conf["ip"], conf["mac"])
@@ -201,12 +201,12 @@ def main():
         # run_server(server_conf)
         for i in range(vhost_port_count):
             server_conf = {
-                    'cpuset': i + 32,
+                    'cpuset': i*2 + 32,
                     # 'prefix': 'server',
                     'path': '/tmp/vhost_{}.sock,queues={}'.format(i, count_queue),
                     # 'count_queue': count_queue,
                     # 'type': app_mode,
-                    'mac': '1c:34:da:41:c8:04',
+                    'mac': '1c:34:da:41:c6:fc',
                     'ip': '192.168.1.1',
                     'slow_down': slow_down,
                     'tx_pkt_length': tx_size
@@ -227,14 +227,15 @@ def main():
               'tx_pkt_length': tx_size,
               'file_prefix': i,
               'ip': "192.168.1.{}".format(i + 2),
-              'mac': "1c:34:da:41:ce:f4"
+              'mac': "1c:34:da:41:d0:0c"
             }
 
             # run_client(client_conf)
             cp = run_system_perf_client(client_conf)
             client_process.append(cp)
 
-        client_process[len(client_process) - 1].wait()
+        for i in range(vhost_port_count):
+            client_process[i].wait()
 
 
     # pfc_stats_before = get_pfc_results()
