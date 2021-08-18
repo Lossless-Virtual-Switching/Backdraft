@@ -115,6 +115,13 @@ serverMain(Node* server, std::vector<Homa::IpAddress> addresses)
                 std::cout << "  -> Server " << server->id
                           << " (opId: " << header.id << ")" << std::endl;
             }
+
+ 	    // uint64_t t, now;
+	    // t = now  = PerfUtils::Cycles::rdtsc();
+	    // while (now - t < 5000) {
+	    //     now = PerfUtils::Cycles::rdtsc();
+	    // }
+
             message->acknowledge();
         }
         server->transport->poll();
