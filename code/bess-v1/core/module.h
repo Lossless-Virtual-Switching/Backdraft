@@ -206,9 +206,9 @@ class alignas(64) Module {
         max_allowed_workers_(1),
         propagate_workers_(true),
         rx_pause_frame_(0),
-	tx_pause_frame_(0),
+    tx_pause_frame_(0),
         rx_resume_frame_(0),
-	tx_resume_frame_(0) {}
+    tx_resume_frame_(0) {}
   virtual ~Module() {}
 
   CommandResponse Init(const bess::pb::EmptyArg &arg);
@@ -417,7 +417,7 @@ class alignas(64) Module {
     overload_ = false;
   }
 
-  void SignalOverloadBP() {
+  virtual void SignalOverloadBP() {
     rx_pause_frame_++; // We have just received a pause frame message
 
     if (overload_) {
@@ -434,9 +434,9 @@ class alignas(64) Module {
             Module *m = o->module();
             ++(m->children_overload_);
             if (m->propagate_workers_ && m->children_overload_ == 1) {
-		tx_pause_frame_++; // Now we are sending pause frames to others too.
+        tx_pause_frame_++; // Now we are sending pause frames to others too.
                 m->SignalOverloadBP(); 
-		// LOG(INFO) << "propagate overlaod from: "
+        // LOG(INFO) << "propagate overlaod from: "
                 //     << name_ << " to " << m->name_ << std::endl;
             }
         }
@@ -461,7 +461,7 @@ class alignas(64) Module {
             Module *m = o->module();
             --(m->children_overload_);
             if (m->propagate_workers_ && m->children_overload_ == 0) {
-		tx_resume_frame_++;
+        tx_resume_frame_++;
                 m->SignalUnderloadBP();
             }
         }

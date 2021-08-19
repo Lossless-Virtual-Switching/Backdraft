@@ -60,6 +60,11 @@ std::string BPQInc::GetDesc() const {
 struct task_result BPQInc::RunTask(Context *ctx, bess::PacketBatch *batch,
         void *arg) {
     if (children_overload_ > 0) {
+        if (may_signal_overlay) {
+            may_signal_overlay = false;
+            LOG(INFO) << "EmitPacket for Overlay Generation" << std::endl;
+            EmitPacket(ctx, pause_pkt_sample, kPauseGeneratorGate);
+        }
         return {.block = true, .packets = 0, .bits = 0};
     }
     Port *p = port_;
