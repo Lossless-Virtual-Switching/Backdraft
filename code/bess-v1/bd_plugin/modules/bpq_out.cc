@@ -6,6 +6,7 @@
 #include "utils/ether.h"
 
 #define DEFAULT_QUEUE_SIZE 1024
+#define unused __attribute__((unused))
 
 static void FillBkdrftHeader(bess::Packet *src, bool over) { 
   using bess::utils::Ethernet;
@@ -128,7 +129,7 @@ void BPQOut::Buffer(bess::Packet **pkts, int cnt)
   int queued = llring_mp_enqueue_burst(queue_, (void **)pkts, cnt);
 
   if (llring_count(queue_) > high_water_) {
-    // LOG(INFO) << "Signal overload bpq_out: " << std::endl;
+    LOG(INFO) << "Signal overload bpq_out: " << std::endl;
     bess::Packet *pkt = PreparePacket(pkts[cnt - 1]);
     if (pkt) {
       FillBkdrftHeader(pkt, true);
@@ -186,7 +187,6 @@ void BPQOut::ProcessBatch(Context *, bess::PacketBatch *batch) {
   }                                      \
 }
 
-#define unused __attribute__((unused))
 struct task_result BPQOut::RunTask(Context *, bess::PacketBatch *, void *) {
   // static SpinLock lock;
   // static bess::Packet *mbufs[bess::PacketBatch::kMaxBurst] = {};
@@ -245,7 +245,6 @@ struct task_result BPQOut::RunTask(Context *, bess::PacketBatch *, void *) {
         p->queue_stats[dir][qid].packets += total_sent_packets;
         p->queue_stats[dir][qid].bytes += total_sent_bytes;
       }
-      // lock_->unlock();
       return {.block = false,
         .packets = total_sent_packets,
         .bits = (total_sent_bytes + total_sent_packets * pkt_overhead) * 8};

@@ -31,3 +31,8 @@ message BPQIncCommandGetSummaryResponse {
   uint64 rx_resume_frame = 3;
   uint64 tx_resume_frame = 4;
 }
+
+message CommandSetOverlayPortArg {
+  string port = 1;
+  uint32 qid = 2;
+}

@@ -8,13 +8,11 @@
 class BPQInc final : public Module {
  public:
   static const Commands cmds;
-  static const gate_idx_t kNumIGates = 0;
+  static const gate_idx_t kNumIGates = 1;
   static const gate_idx_t kNumOGates = 5;
   static const int kPauseGeneratorGate = 1;
 
-  BPQInc() : Module(), port_(), qid_(), prefetch_(), burst_(),
-    overload_pkt_sample(nullptr), underload_pkt_sample(nullptr),
-    may_signal_overlay(false), may_signal_underload(false) {}
+  BPQInc() : Module(), port_(), qid_(), prefetch_(), burst_() {}
 
   CommandResponse Init(const bkdrft::pb::BPQIncArg &arg);
   void DeInit() override;
@@ -26,6 +24,7 @@ class BPQInc final : public Module {
 
   CommandResponse CommandGetSummary(const bess::pb::EmptyArg &arg);
   CommandResponse CommandClear(const bess::pb::EmptyArg &arg);
+  CommandResponse CommandSetOverlayPort(const bkdrft::pb::CommandSetOverlayPortArg &arg);
 
   void SignalOverloadBP(bess::Packet *pkt) override {
     rx_pause_frame_++; // We have just received a pause frame message
@@ -33,9 +32,10 @@ class BPQInc final : public Module {
       return;
     }
     overload_ = true;
-    overload_pkt_sample = pkt;
-    may_signal_overlay = true;
-    may_signal_underload = false;
+    overlay_port_->SendPackets(overlay_qid_, &pkt, 1);
+    // overload_pkt_sample = pkt;
+    // may_signal_overlay = true;
+    // may_signal_underload = false;
   }
 
   void SignalUnderloadBP(bess::Packet *pkt) override {
@@ -44,9 +44,10 @@ class BPQInc final : public Module {
       return;
     }
     overload_ = false;
-    underload_pkt_sample = pkt;
-    may_signal_underload = true;
-    may_signal_overlay = false;
+    overlay_port_->SendPackets(overlay_qid_, &pkt, 1);
+    // underload_pkt_sample = pkt;
+    // may_signal_underload = true;
+    // may_signal_overlay = false;
   }
 
  private:
@@ -55,10 +56,12 @@ class BPQInc final : public Module {
   int prefetch_;
   int burst_;
   // pause packet generation stuff
-  bess::Packet *overload_pkt_sample;
-  bess::Packet *underload_pkt_sample;
-  bool may_signal_overlay;
-  bool may_signal_underload;
+  // bess::Packet *overload_pkt_sample;
+  // bess::Packet *underload_pkt_sample;
+  // bool may_signal_overlay;
+  // bool may_signal_underload;
+  Port *overlay_port_;
+  queue_t overlay_qid_;
 };
 
 #endif

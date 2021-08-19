@@ -1,0 +1,54 @@
+import os
+import subprocess
+import scapy.all as scapy
+
+pkt_size = 84
+
+pci = os.environ.get('PCI', '7:00.1')
+host_ip = '192.168.1.1'
+dst_ip = '192.168.1.2'
+host_mac = '1c:34:da:41:c6:fc'
+dst_mac = '1c:34:da:41:d0:0c'
+
+# FlowGen Args
+eth = scapy.Ether(src=host_mac, dst=dst_mac)
+ip  = scapy.IP(src=host_ip, dst=dst_ip)
+tcp = scapy.TCP(sport=8080, dport=8080)
+payload = ('hello' + '0123456789' * 200)[:pkt_size-len(eth/ip/tcp)]
+pkt = eth/ip/tcp/payload
+pkt_data = bytes(pkt)
+template = pkt_data
+
+pps = 100000000
+flow_rate=5
+flow_duration=1
+
+size_q = 256
+queue_count = 2
+# Vhost Port
+sockets = [os.path.join('/tmp/', 'tmp_vhost{}.sock'.format(i)) for i in range(2)]
+ports = []
+
+for i, socket in enumerate(sockets):
+    if os.path.isfile(socket):
+        subprocess.run('sudo rm {}'.format(socket))
+
+for i, socket in enumerate(sockets):
+    vdev = "eth_vhost{},iface={},queues={}".format(i, socket, queue_count)
+    port = PMDPort(name="tmp_vhost{}".format(i),
+            vdev=vdev,
+            num_inc_q = queue_count,
+            num_out_q = queue_count,
+            size_inc_q= 512,
+            size_out_q= 512)
+    ports.append(port)
+
+qin = BPQInc(port=ports[0], qid=0)
+qin:0 -> BPQOut(port=ports[1], qid=0)
+qin.set_overlay_port(port=ports[1].name, qid=1)
+
+qin = BPQInc(port=ports[1], qid=0)
+qin:0 -> BPQOut(port=ports[0], qid=0)
+qin.set_overlay_port(port=ports[0].name, qid=1)
+
+

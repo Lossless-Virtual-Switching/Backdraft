@@ -436,16 +436,16 @@ class alignas(64) Module {
             Module *m = o->module();
             ++(m->children_overload_);
             if (m->propagate_workers_ && m->children_overload_ == 1) {
-		to_be_freed = false;
-		tx_pause_frame_++; // Now we are sending pause frames to others too.
-                m->SignalOverloadBP(pkt); 
-		// LOG(INFO) << "propagate overlaod from: "
+                to_be_freed = false;
+                tx_pause_frame_++; // Now we are sending pause frames to others too.
+                m->SignalOverloadBP(pkt);
+                // LOG(INFO) << "propagate overlaod from: "
                 //     << name_ << " to " << m->name_ << std::endl;
             }
         }
     }
 
-    if (to_be_freed)
+    if (pkt != nullptr && to_be_freed)
       bess::Packet::Free(pkt);
 
     overload_ = true;
@@ -470,8 +470,8 @@ class alignas(64) Module {
             Module *m = o->module();
             --(m->children_overload_);
             if (m->propagate_workers_ && m->children_overload_ == 0) {
-		to_be_freed = false;
-		tx_resume_frame_++;
+        to_be_freed = false;
+        tx_resume_frame_++;
                 m->SignalUnderloadBP(pkt);
             }
         }
@@ -576,7 +576,7 @@ class alignas(64) Module {
 
   // TX resume frame
   // This will increament for every call to underload for children
-  // modules 
+  // modules
   uint64_t tx_resume_frame_;
 
   DISALLOW_COPY_AND_ASSIGN(Module);
