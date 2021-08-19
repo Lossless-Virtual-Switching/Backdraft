@@ -417,7 +417,7 @@ class alignas(64) Module {
     overload_ = false;
   }
 
-  void SignalOverloadBP(bess::Packet *pkt) {
+  virtual void SignalOverloadBP(bess::Packet *pkt) {
     bool to_be_freed = true;
     rx_pause_frame_++; // We have just received a pause frame message
 
@@ -451,7 +451,7 @@ class alignas(64) Module {
     overload_ = true;
   }
 
-  void SignalUnderloadBP(bess::Packet *pkt) {
+  virtual void SignalUnderloadBP(bess::Packet *pkt) {
     bool to_be_freed = true;
     rx_resume_frame_++;
 

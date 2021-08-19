@@ -2,8 +2,48 @@
 
 #include "utils/format.h"
 #include "utils/mcslock.h"
+#include "utils/ip.h"
+#include "utils/ether.h"
 
 #define DEFAULT_QUEUE_SIZE 1024
+
+static void FillBkdrftHeader(bess::Packet *src, bool over) { 
+  using bess::utils::Ethernet;
+  using bess::utils::Ipv4;
+
+  Ethernet *eth = src->head_data<Ethernet *>();
+  Ipv4 *ip = reinterpret_cast<Ipv4 *>(eth + 1);
+  Ethernet::Address tmp;
+
+  tmp = eth->dst_addr;
+  eth->dst_addr = eth->src_addr;
+  eth->src_addr = tmp;
+
+  ip->header_length = 6; // bess::utils::be16_t(6);
+  bess::utils::be32_t * temp = reinterpret_cast<bess::utils::be32_t *>(ip + 1); 
+
+  if (over)
+    // Overload
+    *temp = bess::utils::be32_t(765);
+  else
+    // Underload
+    *temp = bess::utils::be32_t(764);
+
+}
+
+static bess::Packet *PreparePacket(bess::Packet *src) {
+  DCHECK(src->is_linear());
+
+  // bess::Packet *dst = reinterpret_cast<bess::Packet *>(rte_pktmbuf_alloc(src->pool_));
+  bess::Packet *dst = current_worker.packet_pool()->Alloc();
+  if (!dst) {
+    return nullptr;  // FAIL.
+  }
+
+  bess::utils::CopyInlined(dst->append(64), src->head_data(), 34, true); // Copying only Eth + IP
+
+  return dst;
+}
 
 const Commands BPQOut::cmds = {
     {"get_summary", "EmptyArg",
@@ -84,6 +124,16 @@ std::string BPQOut::GetDesc() const {
 void BPQOut::Buffer(bess::Packet **pkts, int cnt)
 {
     int queued = llring_mp_enqueue_burst(queue_, (void **)pkts, cnt);
+    
+    if (llring_count(queue_) > high_water_) {
+        // LOG(INFO) << "Signal overload bpq_out: " << std::endl;
+	bess::Packet *pkt = PreparePacket(pkts[cnt - 1]);
+	if (pkt) {
+	  FillBkdrftHeader(pkt, true);
+          SignalOverloadBP(pkt);
+	}
+    }
+
     if (queued < cnt) {
         // Drop packets!
         bess::Packet::Free(pkts + queued, cnt - queued);
@@ -92,10 +142,7 @@ void BPQOut::Buffer(bess::Packet **pkts, int cnt)
             p->queue_stats[PACKET_DIR_OUT][qid_].dropped += (cnt - queued);
         }
     }
-    if (llring_count(queue_) > high_water_) {
-        // LOG(INFO) << "Signal overload bpq_out: " << std::endl;
-        SignalOverloadBP();
-    }
+    
     // size_t qlen = llring_count(queue_);
     // if (qlen > DEFAULT_QUEUE_SIZE) {
     //     LOG(ERROR) << "queue_ size is : " << qlen << std::endl;
@@ -187,6 +234,7 @@ struct task_result BPQOut::RunTask(Context *, bess::PacketBatch *, void *) {
         // when dequeueing there should be no packet in mbufs_
         // otherwise they are overwritten!
         uint32_t cnt = llring_sc_dequeue_burst(queue_, (void **)mbufs_, burst_);
+
         if (cnt == 0) {
             // EXIT
             // There are no packets left in the queue_
@@ -200,11 +248,17 @@ struct task_result BPQOut::RunTask(Context *, bess::PacketBatch *, void *) {
                 .packets = total_sent_packets,
                 .bits = (total_sent_bytes + total_sent_packets * pkt_overhead) * 8};
         }
-        cnt_mbufs_ = cnt;
 
         if (llring_count(queue_) < low_water_) {
-            SignalUnderloadBP();
-        }
+	  bess::Packet *pkt = PreparePacket(mbufs_[cnt - 1]);
+	  if (pkt) {
+	    FillBkdrftHeader(pkt, true);
+            SignalUnderloadBP(pkt);
+          }
+	}
+
+        cnt_mbufs_ = cnt;
+
     }
 }
 
@@ -222,6 +276,7 @@ CommandResponse BPQOut::CommandGetSummary(const bess::pb::EmptyArg &) {
 CommandResponse BPQOut::CommandClear(const bess::pb::EmptyArg &) {
   return CommandResponse();
 }
+
 
 ADD_MODULE(BPQOut, "bpq_out",
         "sends packets to a port via a specific queue")

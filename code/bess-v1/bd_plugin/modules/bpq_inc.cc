@@ -62,11 +62,21 @@ struct task_result BPQInc::RunTask(Context *ctx, bess::PacketBatch *batch,
     if (children_overload_ > 0) {
         if (may_signal_overlay) {
             may_signal_overlay = false;
-            LOG(INFO) << "EmitPacket for Overlay Generation" << std::endl;
+            LOG(INFO) << "EmitPacket for Overlay Generation OVER" << std::endl;
             EmitPacket(ctx, pause_pkt_sample, kPauseGeneratorGate);
         }
         return {.block = true, .packets = 0, .bits = 0};
+    } else {
+        if (may_signal_underload) {
+            may_signal_underload = false;
+            LOG(INFO) << "EmitPacket for Overlay Generation UNDER" << std::endl;
+            EmitPacket(ctx, pause_pkt_sample, kPauseGeneratorGate);
+        }
+
     }
+
+    
+
     Port *p = port_;
     if (!p->conf().admin_up) {
         return {.block = true, .packets = 0, .bits = 0};
