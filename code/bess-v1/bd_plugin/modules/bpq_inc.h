@@ -9,12 +9,12 @@ class BPQInc final : public Module {
  public:
   static const Commands cmds;
   static const gate_idx_t kNumIGates = 0;
-  static const gate_idx_t kNumOGates = 2;
+  static const gate_idx_t kNumOGates = 5;
   static const int kPauseGeneratorGate = 1;
 
   BPQInc() : Module(), port_(), qid_(), prefetch_(), burst_(),
-	pause_pkt_sample(nullptr), may_signal_overlay(false),
-	may_signal_underload(false) {}
+    overload_pkt_sample(nullptr), underload_pkt_sample(nullptr),
+    may_signal_overlay(false), may_signal_underload(false) {}
 
   CommandResponse Init(const bkdrft::pb::BPQIncArg &arg);
   void DeInit() override;
@@ -33,8 +33,9 @@ class BPQInc final : public Module {
       return;
     }
     overload_ = true;
-    pause_pkt_sample = pkt;
+    overload_pkt_sample = pkt;
     may_signal_overlay = true;
+    may_signal_underload = false;
   }
 
   void SignalUnderloadBP(bess::Packet *pkt) override {
@@ -43,8 +44,9 @@ class BPQInc final : public Module {
       return;
     }
     overload_ = false;
-    pause_pkt_sample = pkt;
+    underload_pkt_sample = pkt;
     may_signal_underload = true;
+    may_signal_overlay = false;
   }
 
  private:
@@ -53,7 +55,8 @@ class BPQInc final : public Module {
   int prefetch_;
   int burst_;
   // pause packet generation stuff
-  bess::Packet *pause_pkt_sample;
+  bess::Packet *overload_pkt_sample;
+  bess::Packet *underload_pkt_sample;
   bool may_signal_overlay;
   bool may_signal_underload;
 };
