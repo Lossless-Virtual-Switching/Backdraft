@@ -417,55 +417,70 @@ class alignas(64) Module {
     overload_ = false;
   }
 
-  void SignalOverloadBP() {
+  void SignalOverloadBP(bess::Packet *pkt) {
+    bool to_be_freed = true;
     rx_pause_frame_++; // We have just received a pause frame message
 
     if (overload_) {
+      bess::Packet::Free(pkt);
       return;
     }
-
 
     for (size_t i = 0; i < igates_.size(); i++) {
         if (!igates_[i]) {
             continue;
         }
+
         const std::vector<bess::OGate *> &up_ogates = igates_[i]->ogates_upstream();
         for (const bess::OGate *o : up_ogates) {
             Module *m = o->module();
             ++(m->children_overload_);
             if (m->propagate_workers_ && m->children_overload_ == 1) {
+		to_be_freed = false;
 		tx_pause_frame_++; // Now we are sending pause frames to others too.
-                m->SignalOverloadBP(); 
+                m->SignalOverloadBP(pkt); 
+		
 		// LOG(INFO) << "propagate overlaod from: "
                 //     << name_ << " to " << m->name_ << std::endl;
             }
         }
     }
+
+    if (to_be_freed)
+      bess::Packet::Free(pkt);
+
     overload_ = true;
   }
 
-  void SignalUnderloadBP() {
+  void SignalUnderloadBP(bess::Packet *pkt) {
+    bool to_be_freed = true;
     rx_resume_frame_++;
 
     if (!overload_) {
+      bess::Packet::Free(pkt);
       return;
     }
-
 
     for (size_t i = 0; i < igates_.size(); i++) {
         if (!igates_[i]) {
             continue;
         }
+
         const std::vector<bess::OGate *> &up_ogates = igates_[i]->ogates_upstream();
         for (const bess::OGate *o : up_ogates) {
             Module *m = o->module();
             --(m->children_overload_);
             if (m->propagate_workers_ && m->children_overload_ == 0) {
+		to_be_freed = false;
 		tx_resume_frame_++;
-                m->SignalUnderloadBP();
+                m->SignalUnderloadBP(pkt);
             }
         }
     }
+
+    if (to_be_freed)
+      bess::Packet::Free(pkt);
+
     overload_ = false;
   }
 
