@@ -206,9 +206,9 @@ class alignas(64) Module {
         max_allowed_workers_(1),
         propagate_workers_(true),
         rx_pause_frame_(0),
-	tx_pause_frame_(0),
+    tx_pause_frame_(0),
         rx_resume_frame_(0),
-	tx_resume_frame_(0) {}
+    tx_resume_frame_(0) {}
   virtual ~Module() {}
 
   CommandResponse Init(const bess::pb::EmptyArg &arg);
@@ -439,7 +439,6 @@ class alignas(64) Module {
 		to_be_freed = false;
 		tx_pause_frame_++; // Now we are sending pause frames to others too.
                 m->SignalOverloadBP(pkt); 
-		
 		// LOG(INFO) << "propagate overlaod from: "
                 //     << name_ << " to " << m->name_ << std::endl;
             }
