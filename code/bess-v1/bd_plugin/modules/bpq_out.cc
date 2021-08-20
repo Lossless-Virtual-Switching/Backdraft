@@ -15,22 +15,26 @@ static void FillBkdrftHeader(bess::Packet *src, bool over) {
   Ethernet *eth = src->head_data<Ethernet *>();
   Ipv4 *ip = reinterpret_cast<Ipv4 *>(eth + 1);
   Ethernet::Address tmp;
+  bess::utils::be32_t tmp_ip_addr;
 
   tmp = eth->dst_addr;
   eth->dst_addr = eth->src_addr;
   eth->src_addr = tmp;
 
-  ip->header_length = 6; // bess::utils::be16_t(6);
-  bess::utils::be32_t * temp = reinterpret_cast<bess::utils::be32_t *>(ip + 1); 
+  ip->header_length = 6; // Extending the header length for bkdrft options
 
-  // We should set a proper source and dst
+  // Swaping source and dest ip for the overlay message
+  tmp_ip_addr = ip->dst;
+  ip->dst = ip->src;
+  ip->src = tmp_ip_addr;
 
+  bess::utils::be32_t * options = reinterpret_cast<bess::utils::be32_t *>(ip + 1);
   if (over)
     // Overload
-    *temp = bess::utils::be32_t(765);
+    *options = bess::utils::be32_t(765);
   else
     // Underload
-    *temp = bess::utils::be32_t(764);
+    *options = bess::utils::be32_t(764);
 
 }
 
@@ -44,8 +48,6 @@ static bess::Packet *PreparePacket(bess::Packet *src) {
   }
 
   int pkt_size = 64;
-  // bess::utils::CopyInlined(dst->append(src->total_len()),
-  //         src->head_data(), src->total_len(), true); // Copying only Eth + IP
   bess::utils::CopyInlined(dst->append(pkt_size),
           src->head_data(), 34, true); // Copying only Eth + IP
   dst->set_data_len(pkt_size);

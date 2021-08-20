@@ -27,35 +27,47 @@ class BPQInc final : public Module {
   CommandResponse CommandSetOverlayPort(const bkdrft::pb::CommandSetOverlayPortArg &arg);
 
   void SignalOverloadBP(bess::Packet *pkt) override {
+    int tx = 0;
     rx_pause_frame_++; // We have just received a pause frame message
     if (overload_) {
       return;
     }
+
     overload_ = true;
-    int tx = overlay_port_->SendPackets(overlay_qid_, &pkt, 1);
+
+    if (pkt == nullptr) {
+      LOG(INFO) << "Send Over Packet: qid: " << (int)overlay_qid_ << " (" << tx << ")\n";
+      return;
+    }
+
+    tx = overlay_port_->SendPackets(overlay_qid_, &pkt, 1);
     if (tx != 1) {
         bess::Packet::Free(pkt);
     }
+
     LOG(INFO) << "Send Over Packet: qid: " << (int)overlay_qid_ << " (" << tx << ")\n";
-    // overload_pkt_sample = pkt;
-    // may_signal_overlay = true;
-    // may_signal_underload = false;
   }
 
   void SignalUnderloadBP(bess::Packet *pkt) override {
+    int tx = 0;
     rx_resume_frame_++; // We have just received a pause frame message
     if (!overload_) {
       return;
     }
+
     overload_ = false;
-    LOG(INFO) << "Send Under Packet\n";
-    int tx = overlay_port_->SendPackets(overlay_qid_, &pkt, 1);
+
+    if (pkt == nullptr) {
+      LOG(INFO) << "Send Under Packet: qid: " << (int)overlay_qid_ << " (" << tx << ")\n";
+      return;
+    }
+
+    tx = overlay_port_->SendPackets(overlay_qid_, &pkt, 1);
     if (tx != 1) {
         bess::Packet::Free(pkt);
     }
-    // underload_pkt_sample = pkt;
-    // may_signal_underload = true;
-    // may_signal_overlay = false;
+
+    LOG(INFO) << "Send Under Packet: qid: " << (int)overlay_qid_ << " (" << tx << ")\n";
   }
 
  private:

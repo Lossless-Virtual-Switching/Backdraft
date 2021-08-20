@@ -57,11 +57,11 @@ else:
         print(len(vhost_ports), count_vhost_ports)
         for index,i in enumerate(vhost_ports):
           qin1 = BPQInc(port=i, qid=0)
-          qin1:PAUSE_MAGIC_GATE -> Sink()
           qin1.attach_task(wid=0)
-          qin1:0 -> merger
+          qin1 -> merger
 
         pci_port_qout = BPQOut(port=pci_port, qid=0)
+        pci_port_qout.attach_task(wid=0)
         merger -> pci_port_qout
 
         # Ingress
@@ -71,45 +71,50 @@ else:
         # pci_port_qinc.attach_task(wid=1)
         for i in range(count_vhost_ports):
             qout1 = BPQOut(port=vhost_ports[i], qid=0)
+            qout1.attach_task(wid=1)
             pci_port_qinc = BPQInc(port=pci_port, qid=i)
-            pci_port_qinc:0 -> qout1
+            pci_port_qinc -> qout1
             pci_port_qinc.attach_task(wid=1)
-            # pause frame management
-            pci_port_qinc:PAUSE_MAGIC_GATE -> Sink()
-            # pci_port_qinc:99 -> pause_generator -> BPQOut(port=pci_port, qid=99) 
-            # hs:i -> qout1
-
-        # BPQInc(port=vhost_ports[0], qid=0) -> BPQOut(port=pci_port, qid=0)
-        # BPQInc(port=pci_port, qid=0) -> BPQOut(port=vhost_ports[0], qid=0)
     else: 
         # client
         # Egress
+  
+        a = oinspect()
+        exit()
 
+        egress_out_collection = [] # overlay
         assert(count_queue == count_vhost_ports)
         print(len(vhost_ports), count_vhost_ports)
         for index, i in enumerate(vhost_ports):
           qin1 = BPQInc(port=i, qid=0)
           pci_port_qout = BPQOut(port=pci_port, qid=index)
+          egress_out_collection.append(pci_port_qout) # overlay
           qin1 -> pci_port_qout
           qin1.attach_task(wid=0)
           pci_port_qout.attach_task(wid=0)
 
         # Ingress
         iplookup = IPLookup()
+        broker = OBroker() # overlay
 
         for i in range(count_vhost_ports):
+            inspector = OInspect()
+            inspector.set_overlay_broker(overlay_broker_mod=broker)
             qin1 = BPQInc(port=pci_port, qid=i)
             qin1 -> iplookup
+            qin1 -> inspector -> iplookup # overlay
             qin1.attach_task(wid=1)
 
         for i in range(count_vhost_ports):
             ip = "192.168.1.{}".format(i + 2)
             print("pipline ip in IP Look UP: ", ip)
             iplookup.add(prefix=ip, prefix_len=32, gate=i)
+            broker.add(prefix=ip, prefix_len=32, gate=i) # overlay
             qout1 = BPQOut(port=vhost_ports[i], qid=0)
             qout1.attach_task(wid=1)
             iplookup:i -> qout1
-        
+            broker:i -> egress_out_collection[i] # overlay
+
         iplookup.add(prefix="0.0.0.0", prefix_len=0, gate=count_vhost_ports) 
         iplookup:count_vhost_ports -> Sink()
 
