@@ -32,7 +32,11 @@ class BPQInc final : public Module {
       return;
     }
     overload_ = true;
-    overlay_port_->SendPackets(overlay_qid_, &pkt, 1);
+    int tx = overlay_port_->SendPackets(overlay_qid_, &pkt, 1);
+    if (tx != 1) {
+        bess::Packet::Free(pkt);
+    }
+    LOG(INFO) << "Send Over Packet: qid: " << (int)overlay_qid_ << " (" << tx << ")\n";
     // overload_pkt_sample = pkt;
     // may_signal_overlay = true;
     // may_signal_underload = false;
@@ -44,7 +48,11 @@ class BPQInc final : public Module {
       return;
     }
     overload_ = false;
-    overlay_port_->SendPackets(overlay_qid_, &pkt, 1);
+    LOG(INFO) << "Send Under Packet\n";
+    int tx = overlay_port_->SendPackets(overlay_qid_, &pkt, 1);
+    if (tx != 1) {
+        bess::Packet::Free(pkt);
+    }
     // underload_pkt_sample = pkt;
     // may_signal_underload = true;
     // may_signal_overlay = false;

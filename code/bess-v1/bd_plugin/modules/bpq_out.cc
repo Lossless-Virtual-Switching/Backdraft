@@ -43,7 +43,12 @@ static bess::Packet *PreparePacket(bess::Packet *src) {
     return nullptr;  // FAIL.
   }
 
-  bess::utils::CopyInlined(dst->append(64), src->head_data(), 34, true); // Copying only Eth + IP
+  int pkt_size = 64;
+  // bess::utils::CopyInlined(dst->append(src->total_len()),
+  //         src->head_data(), src->total_len(), true); // Copying only Eth + IP
+  bess::utils::CopyInlined(dst->append(pkt_size),
+          src->head_data(), 34, true); // Copying only Eth + IP
+  dst->set_data_len(pkt_size);
 
   return dst;
 }
