@@ -11,7 +11,7 @@
 
 #define VECTOR_OPTIMIZATION 1
 
-// std::map<std::string, OBroker *> OBroker::all_brokers_;
+std::map<std::string, OBroker *> OBroker::all_brokers_;
 
 static inline int is_valid_gate(gate_idx_t gate) {
   return (gate < MAX_GATES || gate == DROP_GATE);

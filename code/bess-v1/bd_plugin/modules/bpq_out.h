@@ -45,7 +45,7 @@ private:
 
 private:
     const double kHighWaterRatio = 0.25;
-    const double kLowWaterRatio = 0.25;
+    const double kLowWaterRatio = 0.24;
 
     Port *port_;
     queue_t qid_;

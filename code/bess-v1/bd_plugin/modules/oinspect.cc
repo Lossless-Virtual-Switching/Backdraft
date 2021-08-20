@@ -26,16 +26,14 @@ void OInspect::ProcessBatch(Context *ctx, bess::PacketBatch *batch) {
     if (ip->header_length == 6) {
       // probably backdraft
       bess::utils::be32_t * options = reinterpret_cast<bess::utils::be32_t *>(ip + 1);
-      if (options->value() == 756) {
+      if (options->value() == 765) {
         LOG(INFO) << "over\n";
-        
         // overload use ip lookup special HEY IP X has issue we should use dst ip
       }
-      else if (options->value() == 755) {
+      else if (options->value() == 764) {
         LOG(INFO) << "under\n";
         // underload use ip lookup special HEY IP X has issue we should use dst ip
       }
-      
       bess::Packet::Free(pkt);
       continue;
     } 

@@ -8,9 +8,8 @@
 class BPQInc final : public Module {
  public:
   static const Commands cmds;
-  static const gate_idx_t kNumIGates = 1;
-  static const gate_idx_t kNumOGates = 5;
-  static const int kPauseGeneratorGate = 1;
+  static const gate_idx_t kNumIGates = 0;
+  // static const gate_idx_t kNumOGates = 5;
 
   BPQInc() : Module(), port_(), qid_(), prefetch_(), burst_() {}
 

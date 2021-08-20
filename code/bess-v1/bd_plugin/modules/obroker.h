@@ -1,5 +1,5 @@
-#ifndef BESS_MODULES_OBROKER_H_
-#define BESS_MODULES_OBROKER_H_
+#ifndef BKDRFT_MODULES_OBROKER_H_
+#define BKDRFT_MODULES_OBROKER_H_
 
 #include "module.h"
 #include "pb/bkdrft_module_msg.pb.h"
@@ -39,4 +39,4 @@ class OBroker final : public Module {
   ParsedPrefix ParseIpv4Prefix(const std::string &prefix, uint64_t prefix_len);
 };
 
-#endif  // BESS_MODULES_OBROKER_H_
+#endif  // BDRFT_MODULES_OBROKER_H_
