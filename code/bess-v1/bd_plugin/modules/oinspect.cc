@@ -12,8 +12,8 @@ void OInspect::ProcessBatch(Context *ctx, bess::PacketBatch *batch) {
   using bess::utils::Ethernet;
   using bess::utils::Ipv4;
 
-  bess::PacketBatch alternateBatch;
-  // alternateBatch = ctx->task->AllocPacketBatch();
+  bess::PacketBatch* alternateBatch;
+  alternateBatch = ctx->task->AllocPacketBatch();
 
   int cnt = batch->cnt();
 
@@ -25,6 +25,7 @@ void OInspect::ProcessBatch(Context *ctx, bess::PacketBatch *batch) {
 
     if (ip->header_length == 6) {
       // probably backdraft
+      LOG(INFO) << "HERERERER\n";
       bess::utils::be32_t * options = reinterpret_cast<bess::utils::be32_t *>(ip + 1);
       if (options->value() == 765) {
         LOG(INFO) << "over\n";
@@ -36,15 +37,15 @@ void OInspect::ProcessBatch(Context *ctx, bess::PacketBatch *batch) {
       }
       bess::Packet::Free(pkt);
       continue;
-    } 
+    }
 
-    alternateBatch.add(pkt);
+    alternateBatch->add(pkt);
   }
 
   batch->clear();
-  batch->add(&alternateBatch);
+  // batch->add(&alternateBatch);
 
-  RunNextModule(ctx, batch);
+  RunNextModule(ctx, alternateBatch);
 }
 
 CommandResponse OInspect::CommandSetOverlayBroker(const bkdrft::pb::CommandSetOverlayBrokerArg &arg) {

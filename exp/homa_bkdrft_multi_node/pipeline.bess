@@ -2,8 +2,7 @@ import os
 import json
 import subprocess
 
-config = json.load(open('/tmp/.pipeline_config.json'))
-
+config = json.load(open('/tmp/.pipeline_config.json')) 
 count_cores = config['count_core']
 count_queue = config['count_queue']
 pci = config['pci_address']
@@ -79,8 +78,6 @@ else:
         # client
         # Egress
   
-        a = oinspect()
-        exit()
 
         egress_out_collection = [] # overlay
         assert(count_queue == count_vhost_ports)
@@ -99,9 +96,9 @@ else:
 
         for i in range(count_vhost_ports):
             inspector = OInspect()
-            inspector.set_overlay_broker(overlay_broker_mod=broker)
+            inspector.set_overlay_broker(overlay_broker_mod=broker.name)
             qin1 = BPQInc(port=pci_port, qid=i)
-            qin1 -> iplookup
+            # qin1 -> iplookup
             qin1 -> inspector -> iplookup # overlay
             qin1.attach_task(wid=1)
 

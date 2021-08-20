@@ -38,7 +38,7 @@ static void FillBkdrftHeader(bess::Packet *src, bool over) {
 
 }
 
-static bess::Packet *PreparePacket(bess::Packet *src) {
+unused static bess::Packet *PreparePacket(bess::Packet *src) {
   DCHECK(src->is_linear());
 
   // bess::Packet *dst = reinterpret_cast<bess::Packet *>(rte_pktmbuf_alloc(src->pool_));
@@ -139,6 +139,7 @@ void BPQOut::Buffer(bess::Packet **pkts, int cnt)
   if (llring_count(queue_) > high_water_) {
     LOG(INFO) << "Signal overload bpq_out: " << std::endl;
     bess::Packet *pkt = PreparePacket(pkts[cnt - 1]);
+    // bess::Packet *pkt = bess::Packet::copy(pkts[cnt - 1]); // .PreparePacket(pkts[cnt - 1]);
     if (pkt) {
       FillBkdrftHeader(pkt, true);
       SignalOverloadBP(pkt);
@@ -260,6 +261,7 @@ struct task_result BPQOut::RunTask(Context *, bess::PacketBatch *, void *) {
 
     if (llring_count(queue_) < low_water_) {
       bess::Packet *pkt = PreparePacket(mbufs_[cnt - 1]);
+      // bess::Packet *pkt = bess::Packet::copy(mbufs_[cnt - 1]);
       if (pkt) {
         FillBkdrftHeader(pkt, true);
         SignalUnderloadBP(pkt);
