@@ -23,7 +23,7 @@ class OBroker final : public Module {
 
   CommandResponse Init(const bkdrft::pb::OBrokerArg &arg);
 
-  void broker(be32_t addr);
+  void broker(be32_t addr, bool over);
 
   void DeInit() override;
 

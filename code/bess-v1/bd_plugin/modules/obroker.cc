@@ -126,7 +126,7 @@ void OBroker::ProcessBatch(Context *ctx, bess::PacketBatch *batch) {
   }
 }
 
-void OBroker::broker(be32_t addr) {
+void OBroker::broker(be32_t addr, bool over) {
 
   uint32_t next_hop;
   int ret;
@@ -138,7 +138,14 @@ void OBroker::broker(be32_t addr) {
 
   if (ret == 0) {
     Module *m = output_gates[next_hop]->module();
-    m->SignalOverloadBP(nullptr);
+    if (over) {
+      // LOG(INFO) << "Overlay overload recv\n";
+      m->SignalOverloadBP(nullptr);
+      }
+    else {
+      // LOG(INFO) << "Overlay underload recv\n";
+      m->SignalUnderloadBP(nullptr);
+    }
   } else {
     LOG(INFO) << "Received unregistered overlay message " << addr.value() << std::endl;
   }

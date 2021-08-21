@@ -32,9 +32,11 @@ static void FillBkdrftHeader(bess::Packet *src, bool over) {
   if (over)
     // Overload
     *options = bess::utils::be32_t(765);
-  else
+  else {
     // Underload
     *options = bess::utils::be32_t(764);
+    // LOG(INFO) << "set 764\n";
+  }
 
 }
 
@@ -137,7 +139,7 @@ void BPQOut::Buffer(bess::Packet **pkts, int cnt)
   int queued = llring_mp_enqueue_burst(queue_, (void **)pkts, cnt);
 
   if (llring_count(queue_) > high_water_) {
-    LOG(INFO) << "Signal overload bpq_out: " << std::endl;
+    // LOG(INFO) << "Signal overload bpq_out: " << std::endl;
     bess::Packet *pkt = PreparePacket(pkts[cnt - 1]);
     // bess::Packet *pkt = bess::Packet::copy(pkts[cnt - 1]); // .PreparePacket(pkts[cnt - 1]);
     if (pkt) {
@@ -263,7 +265,7 @@ struct task_result BPQOut::RunTask(Context *, bess::PacketBatch *, void *) {
       bess::Packet *pkt = PreparePacket(mbufs_[cnt - 1]);
       // bess::Packet *pkt = bess::Packet::copy(mbufs_[cnt - 1]);
       if (pkt) {
-        FillBkdrftHeader(pkt, true);
+        FillBkdrftHeader(pkt, false);
         SignalUnderloadBP(pkt);
       }
     }

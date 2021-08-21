@@ -56,6 +56,9 @@ using bess::gate_idx_t;
 #define MAX_TASKS_PER_MODULE 32
 #define UNCONSTRAINED_SOCKET ((0x1ull << MAX_NUMA_NODE) - 1)
 
+#define Unused __attribute__((unused))¬
+
+
 struct Context {
   // Set by task scheduler, read by modules
   uint64_t current_tsc;
@@ -101,7 +104,7 @@ static inline module_init_func_t MODULE_INIT_FUNC(
   };
 }
 
-static int get_backpressure_state(bool &remote_overload, bool &local_overload, int action) {
+static int get_backpressure_state(__attribute__((unused)) bool &remote_overload,__attribute__((unused)) bool &local_overload, __attribute__((unused)) int action) {
   // action true -> we have a pkt meaning: that's a local decision
 
   /* Action map
@@ -110,50 +113,56 @@ static int get_backpressure_state(bool &remote_overload, bool &local_overload, i
     local over: 2
     local under: 3
   */
-  if (remote_overload && local_overload) {
-    if (action == 0) {
-      // 2 -> 1
-      local_overload = true;
-      remote_overload = false;
-      return 1;
-    } else {
-      return -1;
-    }
-  }
 
-  else if (local_overload && !remote_overload) {
-    if (action == 0) {
-      // 1 -> 2
-      local_overload = true;
-      remote_overload = false;
-      return 2;
-    }
-    else if (action == 3) {
-      // 1 -> 0
-      local_overload = false;
-      remote_overload = false;
-      return 0;
-    } 
-    else {
-      return -1;
-    }
-  }
+  // LOG(INFO) << "SALAM " << remote_overload << " " << local_overload << " " << action << std::endl;
 
-  else if (!local_overload && !remote_overload) {
-    if (action == 0) {
-      // 0 -> 2
-      local_overload = true;
-      remote_overload = true;
-      return 2;
-    } else if (action == 3) {
-      return -2;
-    } else {
-      return -1;
-    }
-  }
+  // LOG(INFO) << "salam \n";
+  return -1;
 
-  else 
-    return -1;
+  // if (remote_overload && local_overload) {
+  //   if (action == 0) {
+  //     // 2 -> 1
+  //     local_overload = true;
+  //     remote_overload = false;
+  //     return 1;
+  //   } else {
+  //     return -1;
+  //   }
+  // }
+  // else if (local_overload && !remote_overload) {
+  //   if (action == 0) {
+  //     // 1 -> 2
+  //     local_overload = true;
+  //     remote_overload = true;
+  //     return 2;
+  //   }
+  //   else if (action == 3) {
+  //     // 1 -> 0
+  //     local_overload = false;
+  //     remote_overload = false;
+  //     return 0;
+  //   } 
+  //   else {
+  //     return -1;
+  //   }
+  // }
+  // else if (!local_overload && !remote_overload) {
+  //   if (action == 0) {
+  //     // 0 -> 2
+  //     local_overload = true;
+  //     remote_overload = true;
+  //     return 2;
+  //   } else if (action == 2) {
+  //     // 0 -> 1
+  //     local_overload = true;
+  //     remote_overload = false;
+  //     return 1;
+  //   } else {
+  //     return -1;
+  //   }
+  // }
+  // else 
+  //   return -1;
 }
 
 class Module;
@@ -480,18 +489,11 @@ class alignas(64) Module {
 
     rx_pause_frame_++; // We have just received a pause frame message
 
-    if (state == -1 || state == -2) {
-      bess::Packet::Free(pkt);
+    if (state == -1) {
+      if (pkt != nullptr)
+        bess::Packet::Free(pkt);
       return;
-    } 
-
-    // if (overload_) {
-    //   bess::Packet::Free(pkt);
-    //   return;
-    // }
-
-    // if (pkt == nullptr)
-    //   overlay_overload = true;
+    }
 
     for (size_t i = 0; i < igates_.size(); i++) {
         if (!igates_[i]) {
@@ -515,7 +517,6 @@ class alignas(64) Module {
     if (pkt != nullptr && to_be_freed)
       bess::Packet::Free(pkt);
 
-    // overload_ = true;
   }
 
   virtual void SignalUnderloadBP(bess::Packet *pkt) {
@@ -525,8 +526,9 @@ class alignas(64) Module {
 
     rx_resume_frame_++;
 
-    if (state == -1 || state == -2) {
-      bess::Packet::Free(pkt);
+    if (state == -1) {
+      if (pkt != nullptr)
+        bess::Packet::Free(pkt);
       return;
     }
 

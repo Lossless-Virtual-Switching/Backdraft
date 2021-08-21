@@ -45,9 +45,9 @@ pci_port = PMDPort(pci=pci, num_inc_q=count_queue, num_out_q=count_queue + 1)
 print(drop_prob)
 if drop_prob > 0:
     drop = RandomSplit(drop_rate=drop_prob, gates=[0,])
-    BPQInc(port=vhost_ports[0], qid=0)-> drop
-    drop:0 -> BPQOut(port=pci_port, qid=0)
-    BPQInc(port=pci_port, qid=0) -> BPQOut(port=vhost_ports[0], qid=0)
+    QueueInc(port=vhost_ports[0], qid=0)-> drop
+    drop:0 -> QueueOut(port=pci_port, qid=0)
+    QueueInc(port=pci_port, qid=0) -> QueueOut(port=vhost_ports[0], qid=0)
 else:
     if server:
         # Egress
@@ -55,24 +55,24 @@ else:
         merger = Merge()
         print(len(vhost_ports), count_vhost_ports)
         for index,i in enumerate(vhost_ports):
-          qin1 = BPQInc(port=i, qid=0)
+          qin1 = QueueInc(port=i, qid=0)
           qin1.attach_task(wid=0)
           qin1 -> merger
 
-        pci_port_qout = BPQOut(port=pci_port, qid=0)
-        pci_port_qout.attach_task(wid=0)
+        pci_port_qout = QueueOut(port=pci_port, qid=0)
+        # pci_port_qout.attach_task(wid=0)
         merger -> pci_port_qout
 
         # Ingress
         # hs = HashLB(mode='l3', gates=range(count_vhost_ports))
-        # pci_port_qinc = BPQInc(port=pci_port, qid=0)
+        # pci_port_qinc = QueueInc(port=pci_port, qid=0)
         # pci_port_qinc -> MeasurePPS() -> hs 
         # pci_port_qinc.attach_task(wid=1)
         for i in range(count_vhost_ports):
-            qout1 = BPQOut(port=vhost_ports[i], qid=0)
-            qout1.attach_task(wid=1)
-            pci_port_qinc = BPQInc(port=pci_port, qid=i)
-            pci_port_qinc.set_overlay_port(port=pci_port.name, qid=count_queue)
+            qout1 = QueueOut(port=vhost_ports[i], qid=0)
+            # qout1.attach_task(wid=1)
+            pci_port_qinc = QueueInc(port=pci_port, qid=i)
+            # pci_port_qinc.set_overlay_port(port=pci_port.name, qid=count_queue) #overlay
             pci_port_qinc -> qout1
             pci_port_qinc.attach_task(wid=1)
     else: 
@@ -80,38 +80,38 @@ else:
         # Egress
   
 
-        egress_out_collection = [] # overlay
+        # egress_out_collection = [] # overlay
         assert(count_queue == count_vhost_ports)
         print(len(vhost_ports), count_vhost_ports)
         for index, i in enumerate(vhost_ports):
-          qin1 = BPQInc(port=i, qid=0)
-          pci_port_qout = BPQOut(port=pci_port, qid=index)
-          egress_out_collection.append(pci_port_qout) # overlay
+          qin1 = QueueInc(port=i, qid=0)
+          pci_port_qout = QueueOut(port=pci_port, qid=index)
+          # egress_out_collection.append(pci_port_qout) # overlay
           qin1 -> pci_port_qout
           qin1.attach_task(wid=0)
-          pci_port_qout.attach_task(wid=0)
+          # pci_port_qout.attach_task(wid=0)
 
         # Ingress
         iplookup = IPLookup()
-        broker = OBroker() # overlay
+        # broker = OBroker() # overlay
 
         for i in range(count_vhost_ports):
-            inspector = OInspect()
-            inspector.set_overlay_broker(overlay_broker_mod=broker.name)
-            qin1 = BPQInc(port=pci_port, qid=i)
-            # qin1 -> iplookup
-            qin1 -> inspector -> iplookup # overlay
+            # inspector = OInspect()
+            # inspector.set_overlay_broker(overlay_broker_mod=broker.name)
+            qin1 = QueueInc(port=pci_port, qid=i)
+            qin1 -> iplookup
+            # qin1 -> inspector -> iplookup # overlay
             qin1.attach_task(wid=1)
 
         for i in range(count_vhost_ports):
             ip = "192.168.1.{}".format(i + 2)
             print("pipline ip in IP Look UP: ", ip)
             iplookup.add(prefix=ip, prefix_len=32, gate=i)
-            broker.add(prefix=ip, prefix_len=32, gate=i) # overlay
-            qout1 = BPQOut(port=vhost_ports[i], qid=0)
-            qout1.attach_task(wid=1)
+            # broker.add(prefix=ip, prefix_len=32, gate=i) # overlay
+            qout1 = QueueOut(port=vhost_ports[i], qid=0)
+            # qout1.attach_task(wid=1)
             iplookup:i -> qout1
-            broker:i -> egress_out_collection[i] # overlay
+            # broker:i -> egress_out_collection[i] # overlay
 
         iplookup.add(prefix="0.0.0.0", prefix_len=0, gate=count_vhost_ports) 
         iplookup:count_vhost_ports -> Sink()

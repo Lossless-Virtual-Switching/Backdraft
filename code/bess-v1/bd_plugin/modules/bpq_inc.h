@@ -35,8 +35,13 @@ class BPQInc final : public Module {
     overload_ = true;
 
     if (pkt == nullptr) {
-      LOG(INFO) << "Send Over Packet: qid: " << (int)overlay_qid_ << " (" << tx << ")\n";
+      // LOG(INFO) << "Send Over Packet: qid: " << (int)overlay_qid_ << " (" << tx << ")\n";
       return;
+    }
+
+    if (overlay_port_ == nullptr) {
+        bess::Packet::Free(pkt);
+        return;
     }
 
     tx = overlay_port_->SendPackets(overlay_qid_, &pkt, 1);
@@ -44,7 +49,7 @@ class BPQInc final : public Module {
         bess::Packet::Free(pkt);
     }
 
-    LOG(INFO) << "Send Over Packet: qid: " << (int)overlay_qid_ << " (" << tx << ")\n";
+    // LOG(INFO) << "Send Over Packet: qid: " << (int)overlay_qid_ << " (" << tx << ")\n";
   }
 
   void SignalUnderloadBP(bess::Packet *pkt) override {
@@ -57,16 +62,22 @@ class BPQInc final : public Module {
     overload_ = false;
 
     if (pkt == nullptr) {
-      LOG(INFO) << "Send Under Packet: qid: " << (int)overlay_qid_ << " (" << tx << ")\n";
+      // LOG(INFO) << "Send Under Packet: qid: " << (int)overlay_qid_ << " (" << tx << ")\n";
       return;
     }
+
+    if (overlay_port_ == nullptr) {
+        bess::Packet::Free(pkt);
+        return;
+    }
+
 
     tx = overlay_port_->SendPackets(overlay_qid_, &pkt, 1);
     if (tx != 1) {
         bess::Packet::Free(pkt);
     }
+    // LOG(INFO) << "Send Under Packet: qid: " << (int)overlay_qid_ << " (" << tx << ")\n";
 
-    LOG(INFO) << "Send Under Packet: qid: " << (int)overlay_qid_ << " (" << tx << ")\n";
   }
 
  private:

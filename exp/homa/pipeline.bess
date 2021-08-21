@@ -14,10 +14,8 @@ server = config['server']
 
 drop_prob = 0
 if os.environ.get("DROP"):
-  drop_prob = float(os.environ.get("DROP"))
-  print("Drop Prob {}".format(drop_prob))
-
-
+  drop_prob = float(os.environ.get("DROP")) 
+print("Drop Prob {}".format(drop_prob)) 
 # generating vhost port:
 vhost_ports = []
 for i in range(count_vhost_ports):
@@ -67,7 +65,7 @@ else:
         for i in range(count_vhost_ports):
             qout1 = QueueOut(port=vhost_ports[i], qid=0)
             hs:i -> qout1
-            
+
         # One server setup
         # QueueInc(port=vhost_ports[0], qid=0) -> QueueOut(port=pci_port, qid=0)
         # QueueInc(port=pci_port, qid=0) -> QueueOut(port=vhost_ports[0], qid=0)
