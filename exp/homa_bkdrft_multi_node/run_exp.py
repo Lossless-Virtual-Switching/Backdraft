@@ -17,7 +17,7 @@ from bkdrft_common import *
 cur_script_dir = os.path.dirname(os.path.abspath(__file__))
 
 pipeline_config_file = os.path.join(cur_script_dir,
-    'pipeline.bess')
+    'pipeline_bd.bess')
 
 homa_base = os.path.join(cur_script_dir, '../../code/Homa')
 homa_app_bin = os.path.join(homa_base, 'build/test/dpdk_test') # udp_app

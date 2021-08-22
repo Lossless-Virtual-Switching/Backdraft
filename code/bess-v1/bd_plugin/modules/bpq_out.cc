@@ -177,6 +177,7 @@ void BPQOut::ProcessBatch(Context *, bess::PacketBatch *batch) {
     Buffer(batch->pkts(), batch->cnt());
     return;
   }
+
   sent_pkts = p->SendPackets(qid, batch->pkts(), cnt);
   if (!(p->GetFlags() & DRIVER_FLAG_SELF_OUT_STATS)) {
     const packet_dir_t dir = PACKET_DIR_OUT;
@@ -186,6 +187,7 @@ void BPQOut::ProcessBatch(Context *, bess::PacketBatch *batch) {
     p->queue_stats[dir][qid].packets += sent_pkts;
     p->queue_stats[dir][qid].bytes += sent_bytes;
   }
+
   if (sent_pkts < cnt) {
     // bess::Packet::Free(batch->pkts() + sent_pkts, batch->cnt() - sent_pkts);
     Buffer(batch->pkts() + sent_pkts,  cnt - sent_pkts);

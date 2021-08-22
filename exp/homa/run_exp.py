@@ -173,7 +173,8 @@ def main():
         # run_server(server_conf)
         for i in range(vhost_port_count):
             server_conf = {
-                    'cpuset': i*2 + 32,
+                    # 'cpuset': i*2 + 32,
+                    'cpuset': i + 32,
                     # 'prefix': 'server',
                     'path': '/tmp/vhost_{}.sock,queues={}'.format(i, 1),
                     # 'count_queue': count_queue,
@@ -192,7 +193,8 @@ def main():
         for i in range(vhost_port_count):
             # print('ip ' + "192.168.1.{}".format(i + 1))
             client_conf = {
-              'cpuset': i*2 + 32, # it is just random
+              # 'cpuset': i*2 + 32, # it is just random
+              'cpuset': i + 32, # it is just random
             # 'prefix': 'client',
               'path': '/tmp/vhost_{}.sock,queues={}'.format(i, 1),
               'slow_down': slow_down,

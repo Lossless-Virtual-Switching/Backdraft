@@ -117,52 +117,52 @@ static int get_backpressure_state(__attribute__((unused)) bool &remote_overload,
   // LOG(INFO) << "SALAM " << remote_overload << " " << local_overload << " " << action << std::endl;
 
   // LOG(INFO) << "salam \n";
-  return -1;
+  // return -1;
 
-  // if (remote_overload && local_overload) {
-  //   if (action == 0) {
-  //     // 2 -> 1
-  //     local_overload = true;
-  //     remote_overload = false;
-  //     return 1;
-  //   } else {
-  //     return -1;
-  //   }
-  // }
-  // else if (local_overload && !remote_overload) {
-  //   if (action == 0) {
-  //     // 1 -> 2
-  //     local_overload = true;
-  //     remote_overload = true;
-  //     return 2;
-  //   }
-  //   else if (action == 3) {
-  //     // 1 -> 0
-  //     local_overload = false;
-  //     remote_overload = false;
-  //     return 0;
-  //   } 
-  //   else {
-  //     return -1;
-  //   }
-  // }
-  // else if (!local_overload && !remote_overload) {
-  //   if (action == 0) {
-  //     // 0 -> 2
-  //     local_overload = true;
-  //     remote_overload = true;
-  //     return 2;
-  //   } else if (action == 2) {
-  //     // 0 -> 1
-  //     local_overload = true;
-  //     remote_overload = false;
-  //     return 1;
-  //   } else {
-  //     return -1;
-  //   }
-  // }
-  // else 
-  //   return -1;
+  if (remote_overload && local_overload) {
+    if (action == 0) {
+      // 2 -> 1
+      local_overload = true;
+      remote_overload = false;
+      return 1;
+    } else {
+      return -1;
+    }
+  }
+  else if (local_overload && !remote_overload) {
+    if (action == 0) {
+      // 1 -> 2
+      local_overload = true;
+      remote_overload = true;
+      return 2;
+    }
+    else if (action == 3) {
+      // 1 -> 0
+      local_overload = false;
+      remote_overload = false;
+      return 0;
+    } 
+    else {
+      return -1;
+    }
+  }
+  else if (!local_overload && !remote_overload) {
+    if (action == 0) {
+      // 0 -> 2
+      local_overload = true;
+      remote_overload = true;
+      return 2;
+    } else if (action == 2) {
+      // 0 -> 1
+      local_overload = true;
+      remote_overload = false;
+      return 1;
+    } else {
+      return -1;
+    }
+  }
+  else 
+    return -1;
 }
 
 class Module;
