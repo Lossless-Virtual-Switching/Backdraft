@@ -33,8 +33,16 @@ for i in range(count_vhost_ports):
   port = PMDPort(name=name, vdev=vdev, num_inc_q=1, num_out_q=1)
   vhost_ports.append(port)
 
-bess.add_worker(0, 0)
-bess.add_worker(1, 1)
+worker_divisor = 25 
+core_id = -1
+
+for i in range(25):
+  bess.add_worker(i, i)
+
+def get_next_core():
+  global core_id
+  core_id = core_id + 1
+  return core_id%worker_divisor
 
 
 # PCI port
@@ -54,63 +62,81 @@ else:
         assert(count_queue == count_vhost_ports)
         merger = Merge()
         print(len(vhost_ports), count_vhost_ports)
+        # worker_id = 0 
         for index,i in enumerate(vhost_ports):
           qin1 = QueueInc(port=i, qid=0)
-          qin1.attach_task(wid=0)
-          qin1 -> merger
+          # if index%worker_divisor == 0:
+          worker_id = get_next_core()
+          qin1.attach_task(wid=worker_id)
+          # qin1 -> merger # why merge?
+          pci_port_qout = QueueOut(port=pci_port, qid=index) # why 0?
+          qin1 -> pci_port_qout
 
-        pci_port_qout = QueueOut(port=pci_port, qid=0)
         # pci_port_qout.attach_task(wid=0)
-        merger -> pci_port_qout
+        # merger -> pci_port_qout
 
         # Ingress
         # hs = HashLB(mode='l3', gates=range(count_vhost_ports))
         # pci_port_qinc = QueueInc(port=pci_port, qid=0)
         # pci_port_qinc -> MeasurePPS() -> hs 
         # pci_port_qinc.attach_task(wid=1)
+        # worker_id = 0
         for i in range(count_vhost_ports):
             qout1 = QueueOut(port=vhost_ports[i], qid=0)
             # qout1.attach_task(wid=1)
             pci_port_qinc = QueueInc(port=pci_port, qid=i)
             # pci_port_qinc.set_overlay_port(port=pci_port.name, qid=count_queue) #overlay
             pci_port_qinc -> qout1
-            pci_port_qinc.attach_task(wid=1)
+            # if index%worker_divisor == 0:
+            worker_id = get_next_core()
+            pci_port_qinc.attach_task(wid=worker_id)
     else: 
         # client
         # Egress
-  
 
         # egress_out_collection = [] # overlay
         assert(count_queue == count_vhost_ports)
         print(len(vhost_ports), count_vhost_ports)
+        worker_id = 0
         for index, i in enumerate(vhost_ports):
           qin1 = QueueInc(port=i, qid=0)
           pci_port_qout = QueueOut(port=pci_port, qid=index)
           # egress_out_collection.append(pci_port_qout) # overlay
+          # if index%worker_divisor == 0:
+          worker_id = get_next_core()
           qin1 -> pci_port_qout
-          qin1.attach_task(wid=0)
+          qin1.attach_task(wid=worker_id)
           # pci_port_qout.attach_task(wid=0)
 
         # Ingress
         iplookup = IPLookup()
         # broker = OBroker() # overlay
 
+        worker_id = 0
+        # worker_id = get_next_core()
         for i in range(count_vhost_ports):
             # inspector = OInspect()
             # inspector.set_overlay_broker(overlay_broker_mod=broker.name)
             qin1 = QueueInc(port=pci_port, qid=i)
             qin1 -> iplookup
             # qin1 -> inspector -> iplookup # overlay
-            qin1.attach_task(wid=1)
+            # if i%worker_divisor == 0:
+            worker_id = get_next_core()
+            qin1.attach_task(wid=worker_id)
 
+        worker_id = 0
         for i in range(count_vhost_ports):
             ip = "192.168.1.{}".format(i + 2)
             print("pipline ip in IP Look UP: ", ip)
             iplookup.add(prefix=ip, prefix_len=32, gate=i)
             # broker.add(prefix=ip, prefix_len=32, gate=i) # overlay
             qout1 = QueueOut(port=vhost_ports[i], qid=0)
+            lock_less_q = Queue()
             # qout1.attach_task(wid=1)
-            iplookup:i -> qout1
+            iplookup:i -> lock_less_q -> qout1
+            # if i%worker_divisor == 0:
+            worker_id = get_next_core()
+            lock_less_q.attach_task(wid=worker_id)
             # broker:i -> egress_out_collection[i] # overlay
 
         iplookup.add(prefix="0.0.0.0", prefix_len=0, gate=count_vhost_ports) 

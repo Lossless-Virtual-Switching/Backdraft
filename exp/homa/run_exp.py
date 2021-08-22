@@ -155,35 +155,6 @@ def main():
     if override_vswitch_path:
         override_bess_path("/proj/uic-dcs-PG0/alireza/homa-bess/bess")
 
-    # server_conf = {
-    #         'cpuset': 7,
-    #         # 'prefix': 'server',
-    #         'vdev': 'path=/tmp/vhost_0.sock,queues={}'.format(count_queue),
-    #         # 'count_queue': count_queue,
-    #         # 'type': app_mode,
-    #         'mac': '1c:34:da:41:c8:04',
-    #         'ip': '192.168.1.1',
-    #         'slow_down': slow_down,
-    #         'tx_pkt_length': tx_size
-    #         }
-
-    # client_conf = {
-    #          'cpuset': cpuset,
-    #         'prefix': 'client',
-    #         'vdev': 'virtio_user0,path=/tmp/vhost_0.sock,queues={}'.format(count_queue),
-    #         'count_queue': count_queue,
-    #         'type': app_mode,
-    #         'source_ip': '10.0.0.2', 
-    #         'count_dst': 1,
-    #         'ips': '10.0.0.1',
-    #         'count_flow': 1,
-
-    #         'vhost_port_count': vhost_port_count,
-    #         'slow_down': slow_down,
-    #         'tx_pkt_length': tx_size
-    #          }
-
-
     # Setup BESS config
     file_path = pipeline_config_file
     ret = bessctl_do('daemon start -- run file {}'.format(file_path))
@@ -221,7 +192,7 @@ def main():
         for i in range(vhost_port_count):
             # print('ip ' + "192.168.1.{}".format(i + 1))
             client_conf = {
-              'cpuset': i+7, # it is just random
+              'cpuset': i*2 + 32, # it is just random
             # 'prefix': 'client',
               'path': '/tmp/vhost_{}.sock,queues={}'.format(i, 1),
               'slow_down': slow_down,
