@@ -8,6 +8,12 @@
 #define DEFAULT_QUEUE_SIZE 1024
 #define unused __attribute__((unused))
 
+/* Add backdraft overlay code (either overloaded or underloaded)
+ * in the options section of IP header.
+ * Also swaps source & dest IP address and MAC address.
+ * Assuming the packet does not have any payload.
+ * (Packet is allocated and only header up to IP is set)
+ * */
 static void FillBkdrftHeader(bess::Packet *src, bool over) { 
   using bess::utils::Ethernet;
   using bess::utils::Ipv4;
@@ -35,26 +41,28 @@ static void FillBkdrftHeader(bess::Packet *src, bool over) {
   else {
     // Underload
     *options = bess::utils::be32_t(764);
-    // LOG(INFO) << "set 764\n";
   }
-
 }
 
-unused static bess::Packet *PreparePacket(bess::Packet *src) {
+/* Allocate a new packet and copy the header section of `src` to that.
+ * */
+static bess::Packet *PreparePacket(bess::Packet *src) {
   DCHECK(src->is_linear());
 
-  // bess::Packet *dst = reinterpret_cast<bess::Packet *>(rte_pktmbuf_alloc(src->pool_));
   bess::Packet *dst = current_worker.packet_pool()->Alloc();
   if (!dst) {
     return nullptr;  // FAIL.
   }
 
-  int pkt_size = src->total_len();
+  // int pkt_size = src->total_len();
+  int pkt_size = 64;
+  int header_len = sizeof(bess::utils::Ethernet) + sizeof(bess::utils::Ipv4);
   bess::utils::CopyInlined(dst->append(pkt_size),
-          src->head_data(), pkt_size, true); // Copying only Eth + IP
-  dst->set_data_len(src->data_len());
+          src->head_data(), header_len, true); // Copying only Eth + IP
+  dst->set_data_len(pkt_size);
   dst->set_total_len(pkt_size);
-
+  // dst->set_data_len(src->data_len());
+  // dst->set_total_len(pkt_size);
   return dst;
 }
 
@@ -91,13 +99,8 @@ CommandResponse BPQOut::Init(const bkdrft::pb::BPQOutArg &arg) {
   if (tid == INVALID_TASK_ID) {
     return CommandFailure(ENOMEM, "Task creation failed");
   }
-
-  // Init SpinLock
-  // lock_ = new SpinLock();
-
   // Init Buffer
   cnt_mbufs_ = 0;
-
   // Init queue_
   llring *new_queue;
   int slots = DEFAULT_QUEUE_SIZE;
@@ -125,8 +128,7 @@ void BPQOut::DeInit() {
     port_->ReleaseQueues(reinterpret_cast<const module *>(this), PACKET_DIR_OUT,
         &qid_, 1);
   }
-
-  // delete lock_;
+  delete queue_;
 }
 
 std::string BPQOut::GetDesc() const {
@@ -134,20 +136,24 @@ std::string BPQOut::GetDesc() const {
       port_->port_builder()->class_name().c_str(), overload_);
 }
 
+/* Place given packets in LLRing
+ * */
 void BPQOut::Buffer(bess::Packet **pkts, int cnt)
 {
+  // insert packets to llring
   int queued = llring_mp_enqueue_burst(queue_, (void **)pkts, cnt);
 
+  // If ring size exceeds high water then signal overload (backpressure)
   if (llring_count(queue_) > high_water_) {
     // LOG(INFO) << "Signal overload bpq_out: " << std::endl;
     bess::Packet *pkt = PreparePacket(pkts[cnt - 1]);
-    // bess::Packet *pkt = bess::Packet::copy(pkts[cnt - 1]); // .PreparePacket(pkts[cnt - 1]);
     if (pkt) {
       FillBkdrftHeader(pkt, true);
       SignalOverloadBP(pkt);
     }
   }
 
+  // if some packets did not fit in the queue then drop them.
   if (queued < cnt) {
     // Drop packets!
     bess::Packet::Free(pkts + queued, cnt - queued);
@@ -156,42 +162,40 @@ void BPQOut::Buffer(bess::Packet **pkts, int cnt)
       p->queue_stats[PACKET_DIR_OUT][qid_].dropped += (cnt - queued);
     }
   }
-
-  // size_t qlen = llring_count(queue_);
-  // if (qlen > DEFAULT_QUEUE_SIZE) {
-  //     LOG(ERROR) << "queue_ size is : " << qlen << std::endl;
-  // }
 }
 
 void BPQOut::ProcessBatch(Context *, bess::PacketBatch *batch) {
-  Port *p = port_;
-  const queue_t qid = qid_;
-  uint64_t sent_bytes = 0;
-  int sent_pkts = 0;
-  int cnt = batch->cnt();
-  if (!p->conf().admin_up) {
-    return;
-  }
-  if (llring_count(queue_) > 0) {
-    // There are some packets already in the llring
-    Buffer(batch->pkts(), batch->cnt());
-    return;
-  }
+  // Buffer all incoming packet in LLRing. They would be sent in run task.
+  Buffer(batch->pkts(), batch->cnt());
+  return;
+  // Port *p = port_;
+  // const queue_t qid = qid_;
+  // uint64_t sent_bytes = 0;
+  // int sent_pkts = 0;
+  // int cnt = batch->cnt();
+  // if (!p->conf().admin_up) {
+  //   return;
+  // }
+  // if (llring_count(queue_) > 0) {
+  //   // There are some packets already in the llring
+  //   Buffer(batch->pkts(), batch->cnt());
+  //   return;
+  // }
 
-  sent_pkts = p->SendPackets(qid, batch->pkts(), cnt);
-  if (!(p->GetFlags() & DRIVER_FLAG_SELF_OUT_STATS)) {
-    const packet_dir_t dir = PACKET_DIR_OUT;
-    for (int i = 0; i < sent_pkts; i++) {
-      sent_bytes += batch->pkts()[i]->total_len();
-    }
-    p->queue_stats[dir][qid].packets += sent_pkts;
-    p->queue_stats[dir][qid].bytes += sent_bytes;
-  }
+  // sent_pkts = p->SendPackets(qid, batch->pkts(), cnt);
+  // if (!(p->GetFlags() & DRIVER_FLAG_SELF_OUT_STATS)) {
+  //   const packet_dir_t dir = PACKET_DIR_OUT;
+  //   for (int i = 0; i < sent_pkts; i++) {
+  //     sent_bytes += batch->pkts()[i]->total_len();
+  //   }
+  //   p->queue_stats[dir][qid].packets += sent_pkts;
+  //   p->queue_stats[dir][qid].bytes += sent_bytes;
+  // }
 
-  if (sent_pkts < cnt) {
-    // bess::Packet::Free(batch->pkts() + sent_pkts, batch->cnt() - sent_pkts);
-    Buffer(batch->pkts() + sent_pkts,  cnt - sent_pkts);
-  }
+  // if (sent_pkts < cnt) {
+  //   // bess::Packet::Free(batch->pkts() + sent_pkts, batch->cnt() - sent_pkts);
+  //   Buffer(batch->pkts() + sent_pkts,  cnt - sent_pkts);
+  // }
 }
 
 #define shift_array_left(arr, cnt, size) { \
@@ -200,13 +204,10 @@ void BPQOut::ProcessBatch(Context *, bess::PacketBatch *batch) {
   }                                      \
 }
 
+/* Try to send packets to the port as long as either there are packets in LLRing or 
+ * the port descriptors run out.
+ * */
 struct task_result BPQOut::RunTask(Context *, bess::PacketBatch *, void *) {
-  // static SpinLock lock;
-  // static bess::Packet *mbufs[bess::PacketBatch::kMaxBurst] = {};
-  // static int cnt_mbufs = 0;
-
-  // lock_->lock();
-
   Port *p = port_;
   const queue_t qid = qid_;
 
@@ -226,8 +227,7 @@ struct task_result BPQOut::RunTask(Context *, bess::PacketBatch *, void *) {
       total_sent_packets += sent_pkts;
 
       if (sent_pkts < cnt_mbufs_) {
-        // EXIT
-        // shift_array_left(mbufs_, sent_pkts, cnt_mbufs_);
+        // EXIT: Port descriptors ran out
         for(int i = sent_pkts; i < cnt_mbufs_; i++) {
           mbufs_[i - sent_pkts] = mbufs_[i];
         }
@@ -238,7 +238,6 @@ struct task_result BPQOut::RunTask(Context *, bess::PacketBatch *, void *) {
           p->queue_stats[dir][qid].packets += total_sent_packets;
           p->queue_stats[dir][qid].bytes += total_sent_bytes;
         }
-        // lock_->unlock();
         return {.block = false,
           .packets = total_sent_packets,
           .bits = (total_sent_bytes + total_sent_packets * pkt_overhead) * 8};
@@ -251,8 +250,7 @@ struct task_result BPQOut::RunTask(Context *, bess::PacketBatch *, void *) {
     uint32_t cnt = llring_sc_dequeue_burst(queue_, (void **)mbufs_, burst_);
 
     if (cnt == 0) {
-      // EXIT
-      // There are no packets left in the queue_
+      // EXIT: There are no packets left in the queue_
       if (!(p->GetFlags() & DRIVER_FLAG_SELF_OUT_STATS)) {
         const packet_dir_t dir = PACKET_DIR_OUT;
         p->queue_stats[dir][qid].packets += total_sent_packets;
@@ -279,12 +277,10 @@ struct task_result BPQOut::RunTask(Context *, bess::PacketBatch *, void *) {
 
 CommandResponse BPQOut::CommandGetSummary(const bess::pb::EmptyArg &) {
   bkdrft::pb::BPQOutCommandGetSummaryResponse r;
-
   r.set_rx_pause_frame(rx_pause_frame_);
   r.set_tx_pause_frame(tx_pause_frame_);
   r.set_rx_resume_frame(rx_resume_frame_);
   r.set_tx_resume_frame(tx_resume_frame_);
-
   return CommandSuccess(r);
 }
 
@@ -294,4 +290,4 @@ CommandResponse BPQOut::CommandClear(const bess::pb::EmptyArg &) {
 
 
 ADD_MODULE(BPQOut, "bpq_out",
-    "sends packets to a port via a specific queue")
+    "sends packets to a port via a specific queue + backpressure/overlay logic")

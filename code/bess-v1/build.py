@@ -101,8 +101,8 @@ DPDK_CONFIG = '%s/build/.config' % DPDK_DIR
 extra_libs = set()
 cxx_flags = []
 ld_flags = []
-# plugins = [os.path.join(BESS_DIR, 'bd_plugin')]
-plugins = []
+plugins = [os.path.join(BESS_DIR, 'bd_plugin')]
+# plugins = []
 
 
 def cmd_success(cmd):
@@ -415,7 +415,7 @@ def build_bess():
     sys.stdout.flush()
     cmd('bin/bessctl daemon stop 2> /dev/null || true', shell=True)
     cmd('rm -f core/bessd')  # force relink as DPDK might have been rebuilt
-    cmd('make -C core bessd modules all_test %s' % makeflags())
+    cmd('make -C core bessd modules %s' % makeflags()) # all_test
 
 
 def build_kmod():

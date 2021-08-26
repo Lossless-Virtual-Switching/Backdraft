@@ -6,7 +6,7 @@ count_queue = int(os.environ.get('queues', 1))
 print('pipeline with', count_core, 'number of cores')
 count_vhost = 1
 q_size = 1024
-pci = os.environ.get('PCI', '41:00.0')
+pci = os.environ.get('PCI', '03:00.1')
 drop_prob = float(os.environ.get('DROP', '0'))
 msg='Check if this values are correct:\npci addr: {}\ndrop probability: {}'
 msg = msg.format(pci, drop_prob)
