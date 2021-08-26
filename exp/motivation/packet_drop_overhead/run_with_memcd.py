@@ -61,14 +61,15 @@ def main():
     sleep(1)
 
     server_ip = args.server_ip
-    server_port = 8080
+    server_port = 11211
     log_file = './tmp/client_log.txt'
 
-    msgsz = 1500
-    pending = 128
+    msgsz = 1460
+    valuesz = 1
+    pending = 1
     pps = -1  # Not working well
     client_threads = 16
-    client_conns = 16 
+    client_conns = 8 
 
     current_ip = args.client_ip if args.client else server_ip
     tas_params = {
@@ -85,7 +86,7 @@ def main():
         tas_params['cc'] = 'const-rate'
     cpuset = ','.join([str(bess_cores * 2 + i * 2) for i in range(tas_cores + 1)])
     tas_proc = setup_tas_engine(tas_params, cpuset=cpuset)
-    sleep(3)
+    sleep(1)
     if tas_proc.returncode is not None:
         print ('Failed to setup TAS')
         return 1
@@ -93,25 +94,22 @@ def main():
 
     libinterpose = os.path.abspath(
             '../../../code/tas/lib/libtas_interpose.so')
-    tas_app_dir = os.path.abspath(
-            '../../../code/tas-benchmark/micro_rpc_modified/')
+    mutilate_dir = os.path.abspath('/users/fshahi5/mutilate/')
     cores = args.cores
     if args.client:
         cores = client_threads
         print('client')
-        binname = 'testclient_linux'
-        binary = os.path.join(tas_app_dir, binname)
-        app_args = '1 {}:{} {} foo {} {} {} {} 0 {}'.format(server_ip,
-                server_port, cores, log_file, msgsz, pending,
-                client_conns, pps)
+        binname = 'mutilate'
+        binary = os.path.join(mutilate_dir, binname)
+        app_args = f'-T {cores} -c {client_conns} -s {server_ip} --keysize={msgsz} --valuesize={valuesz} -d {pending} --time={args.duration}'
     else:
         print('server')
-        binname = 'echoserver_linux'
-        binary = os.path.join(tas_app_dir, binname)
-        app_args = '{} {} foo 1024 {}'.format(server_port, cores, msgsz)
+        binary = 'memcached'
+        app_args = f'-l {server_ip} -m 50000 -c 2000 -t {cores} --port={server_port} -u root'
     app_cmd = '{} {}'.format(binary, app_args)
     app_cpuset = ','.join([str(bess_cores * 2 + tas_cores * 2 + i * 2) for i in range(cores)])
     cmd = 'LD_PRELOAD={} taskset -c {} {}'.format(libinterpose, app_cpuset, app_cmd)
+    print(cmd)
     try:
         # print ('app cmd:', cmd)
         sh_proc = subprocess.Popen(cmd, shell=True)
@@ -121,14 +119,7 @@ def main():
             print('cpulimit:', percent)
             cmd = 'cpulimit -p {} -l {}'.format(pid, percent)
             cpulimit_proc = subprocess.Popen(cmd, shell=True)
-        if args.duration > 0:
-            try:
-                sh_proc.wait(args.duration)
-            except:
-                # os.kill(pid, subprocess.signal.SIGINT)
-                subprocess.run('pkill testclient_linu', shell=True)
-        else:
-            sh_proc.wait()
+        sh_proc.wait()
     except KeyboardInterrupt as e:
         pass
     except Exception as e:

@@ -12,6 +12,11 @@ message BPQOutArg {
   uint64 qid = 2; /// The queue on that port to write out to.
 }
 
+message ECNQOutArg {
+  string port = 1; /// The portname to connect to.
+  uint64 qid = 2; /// The queue on that port to write out to.
+}
+
 /**
  * The BPQOut module function `get_summary()` retunrs the following values.
  */
