@@ -8,6 +8,9 @@ const Commands BPQInc::cmds = {
      MODULE_CMD_FUNC(&BPQInc::CommandGetSummary), Command::THREAD_SAFE},
     {"clear", "EmptyArg", MODULE_CMD_FUNC(&BPQInc::CommandClear),
      Command::THREAD_SAFE},
+    {"set_overlay_port", "CommandSetOverlayPortArg",
+        MODULE_CMD_FUNC(&BPQInc::CommandSetOverlayPort), Command::THREAD_UNSAFE},
+
 };
 
 CommandResponse BPQInc::Init(const bkdrft::pb::BPQIncArg &arg) {
@@ -60,8 +63,26 @@ std::string BPQInc::GetDesc() const {
 struct task_result BPQInc::RunTask(Context *ctx, bess::PacketBatch *batch,
         void *arg) {
     if (children_overload_ > 0) {
+        /* if (may_signal_overlay) { */
+        /*     may_signal_overlay = false; */
+        /*     LOG(INFO) << "EmitPacket for Overlay Generation OVER " << GetDesc()  << std::endl; */
+        /*     // bess::Packet::Free(overload_pkt_sample); */
+        /*     EmitPacket(ctx, overload_pkt_sample, kPauseGeneratorGate); */
+        /*     // RunChooseModule(ctx, kPauseGeneratorGate, (bess::PacketBatch *)&overload_pkt_sample); */
+        /*     overload_pkt_sample = nullptr; */
+        /*     return {.block = false, .packets = 1, .bits = 512}; */
+        /* } */
         return {.block = true, .packets = 0, .bits = 0};
+    } else {
+        /* if (may_signal_underload) { */
+        /*     may_signal_underload = false; */
+        /*     LOG(INFO) << "EmitPacket for Overlay Generation UNDER " << GetDesc() << std::endl; */
+        /*     bess::Packet::Free(underload_pkt_sample); */
+        /*     // EmitPacket(ctx, underload_pkt_sample, kPauseGeneratorGate); */
+        /*     underload_pkt_sample = nullptr; */
+        /* } */
     }
+
     Port *p = port_;
     if (!p->conf().admin_up) {
         return {.block = true, .packets = 0, .bits = 0};
@@ -119,6 +140,20 @@ CommandResponse BPQInc::CommandGetSummary(const bess::pb::EmptyArg &) {
 
 CommandResponse BPQInc::CommandClear(const bess::pb::EmptyArg &) {
   return CommandResponse();
+}
+
+
+CommandResponse BPQInc::CommandSetOverlayPort(
+        const bkdrft::pb::CommandSetOverlayPortArg &arg) {
+  const char *port_name;
+  overlay_qid_ = arg.qid();
+  port_name = arg.port().c_str();
+  const auto &it = PortBuilder::all_ports().find(port_name);
+  if (it == PortBuilder::all_ports().end()) {
+      return CommandFailure(ENODEV, "Port %s not found", port_name);
+  }
+  overlay_port_ = it->second;
+  return CommandSuccess();
 }
 
 ADD_MODULE(BPQInc, "bpq_inc",

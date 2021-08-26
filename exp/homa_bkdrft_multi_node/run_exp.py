@@ -17,8 +17,7 @@ from bkdrft_common import *
 cur_script_dir = os.path.dirname(os.path.abspath(__file__))
 
 pipeline_config_file = os.path.join(cur_script_dir,
-    # 'pipeline.bess')
-    'pipeline_pfq.bess')
+    'pipeline_bd.bess')
 
 homa_base = os.path.join(cur_script_dir, '../../code/Homa')
 homa_app_bin = os.path.join(homa_base, 'build/test/dpdk_test') # udp_app
@@ -35,31 +34,6 @@ def _stop_everything():
     subprocess.run('sudo pkill dpdk_client_sys', shell=True)
     subprocess.run('sudo pkill dpdk_server_sys --signal 2', shell=True)
 
-
-def run_client(conf):
-    cmd = "sudo ./build/test/dpdk_test --vhost-port \
-    --iface='--vdev=virtio_user0,path=/tmp/vhost_0.sock,queues=1'  192.168.1.9 \
-    --dpdk-extra=--no-pci --dpdk-extra='-l 7' --slow-down={} --tx-pkt-length={}".format(conf["slow_down"], conf["tx_pkt_length"])
-
-    cmd = "sudo ./build/test/dpdk_test --vhost-port \
-    --iface='--vdev=virtio_user0,path={},queues=1' 192.168.1.9 \
-    --dpdk-extra=--no-pci --dpdk-extra='-l {}' --dpdk-extra='--file-prefix=mp_{}' --vhost-port-ip={} --vhost-port-mac={} --slow-down={} --tx-pkt-length={}".format(conf['path'], 
-            conf['cpuset'], 
-            conf['file_prefix'],
-            conf['ip'],
-            conf['mac'],
-            conf["slow_down"], 
-            conf["tx_pkt_length"])
-    return subprocess.Popen(cmd, shell=True, cwd=homa_base)
-
-def run_server(conf):
-    # cmd = ('sudo ./udp_app -l {cpuset} --no-pci --file-prefix={prefix} --vdev="{vdev}" -- '
-    #         '{source_ip} {count_queue} {type} server {delay}').format(**conf)
-    cmd = "sudo ./build/test/dpdk_test --vhost-port \
-    --iface='--vdev=virtio_user0,path=/tmp/vhost_0.sock,queues=1'  --server \
-    --dpdk-extra=--no-pci --dpdk-extra='-l 6' --slow-down={} --tx-pkt-length={} --vhost-port-ip={} --vhost-port-mac={}".format(conf["slow_down"], conf["tx_pkt_length"],
-            conf["ip"], conf["mac"])
-    return subprocess.Popen(cmd, shell=True, cwd=homa_base)
 
 def run_system_perf_client(conf):
     # cmd = "sudo ./build/test/dpdk_test --vhost-port \
@@ -153,7 +127,38 @@ def main():
     #     app_mode = 'bess'
 
     if override_vswitch_path:
-        override_bess_path("/proj/uic-dcs-PG0/alireza/homa-bess/bess")
+        # override_bess_path("/proj/uic-dcs-PG0/alireza/homa-bess/bess")
+        # override_bess_path("/proj/uic-dcs-PG0/fshahi5/new/post-loom/code/bess-v1")
+        override_bess_path("/proj/uic-dcs-PG0/alireza/post-loom/code/bess-v1")
+
+    # server_conf = {
+    #         'cpuset': 7,
+    #         # 'prefix': 'server',
+    #         'vdev': 'path=/tmp/vhost_0.sock,queues={}'.format(count_queue),
+    #         # 'count_queue': count_queue,
+    #         # 'type': app_mode,
+    #         'mac': '1c:34:da:41:c8:04',
+    #         'ip': '192.168.1.1',
+    #         'slow_down': slow_down,
+    #         'tx_pkt_length': tx_size
+    #         }
+
+    # client_conf = {
+    #          'cpuset': cpuset,
+    #         'prefix': 'client',
+    #         'vdev': 'virtio_user0,path=/tmp/vhost_0.sock,queues={}'.format(count_queue),
+    #         'count_queue': count_queue,
+    #         'type': app_mode,
+    #         'source_ip': '10.0.0.2', 
+    #         'count_dst': 1,
+    #         'ips': '10.0.0.1',
+    #         'count_flow': 1,
+
+    #         'vhost_port_count': vhost_port_count,
+    #         'slow_down': slow_down,
+    #         'tx_pkt_length': tx_size
+    #          }
+
 
     # Setup BESS config
     file_path = pipeline_config_file
@@ -173,9 +178,9 @@ def main():
         # run_server(server_conf)
         for i in range(vhost_port_count):
             server_conf = {
-                    # 'cpuset': i*2 + 32,
-                    'cpuset': i + 32,
+                    'cpuset': i*2 + 32,
                     # 'prefix': 'server',
+                    # 'path': '/tmp/vhost_{}.sock,queues={}'.format(i, count_queue),
                     'path': '/tmp/vhost_{}.sock,queues={}'.format(i, 1),
                     # 'count_queue': count_queue,
                     # 'type': app_mode,
@@ -193,9 +198,9 @@ def main():
         for i in range(vhost_port_count):
             # print('ip ' + "192.168.1.{}".format(i + 1))
             client_conf = {
-              # 'cpuset': i*2 + 32, # it is just random
-              'cpuset': i + 32, # it is just random
+              'cpuset': i+7, # it is just random
             # 'prefix': 'client',
+              # 'path': '/tmp/vhost_{}.sock,queues={}'.format(i, count_queue),
               'path': '/tmp/vhost_{}.sock,queues={}'.format(i, 1),
               'slow_down': slow_down,
               'tx_pkt_length': tx_size,

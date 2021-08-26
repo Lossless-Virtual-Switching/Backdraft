@@ -101,6 +101,7 @@ DPDK_CONFIG = '%s/build/.config' % DPDK_DIR
 extra_libs = set()
 cxx_flags = []
 ld_flags = []
+# plugins = [os.path.join(BESS_DIR, 'bd_plugin')]
 plugins = []
 
 
