@@ -33,7 +33,7 @@ for i in range(count_vhost_ports):
   port = PMDPort(name=name, vdev=vdev, num_inc_q=1, num_out_q=1)
   vhost_ports.append(port)
 
-worker_divisor = 32
+worker_divisor = 5 
 core_id = -1
 
 for i in range(worker_divisor):
@@ -68,7 +68,7 @@ else:
           qin1.attach_task(wid=worker_id)
           # qin1 -> merger
           pci_port_qout = BPQOut(port=pci_port, qid=index)
-          # worker_id = get_next_core()
+          worker_id = get_next_core() ###########
           pci_port_qout.attach_task(wid=worker_id)
           qin1 -> pci_port_qout
 
@@ -83,7 +83,7 @@ else:
             pci_port_qinc = BPQInc(port=pci_port, qid=i)
             pci_port_qinc.set_overlay_port(port=pci_port.name, qid=count_queue)
             pci_port_qinc -> qout1
-            # worker_id = get_next_core()
+            worker_id = get_next_core() #########
             pci_port_qinc.attach_task(wid=worker_id)
     else: 
         # client
@@ -100,7 +100,7 @@ else:
           qin1 -> pci_port_qout
           worker_id = get_next_core()
           qin1.attach_task(wid=worker_id)
-          # worker_id = get_next_core()
+          # worker_id = get_next_core() ########
           pci_port_qout.attach_task(wid=worker_id)
 
         # Ingress

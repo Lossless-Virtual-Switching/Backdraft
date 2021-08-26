@@ -116,11 +116,11 @@ serverMain(Node* server, std::vector<Homa::IpAddress> addresses)
                           << " (opId: " << header.id << ")" << std::endl;
             }
 
- 	    // uint64_t t, now;
-	    // t = now  = PerfUtils::Cycles::rdtsc();
-	    // while (now - t < 5000) {
-	    //     now = PerfUtils::Cycles::rdtsc();
-	    // }
+	          uint64_t t, now;
+	          t = now  = PerfUtils::Cycles::rdtsc();
+	          while (now - t < 10000 && header.id >= 100000 && header.id <= 200000) {
+	              now = PerfUtils::Cycles::rdtsc();
+	          }
 
             message->acknowledge();
         }

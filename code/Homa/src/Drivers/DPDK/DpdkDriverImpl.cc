@@ -665,13 +665,13 @@ DpdkDriver::Impl::_init_vhost()
     // I have to think a little bit more to come up with a nice design of getting mac addresses
     // throughout ARP messages
     // Server
-    arpTable.emplace(IpAddress::fromString("192.168.1.1"), "1c:34:da:41:c6:fc");
+    arpTable.emplace(IpAddress::fromString("192.168.1.1"), "9c:dc:71:5b:22:a1");
 
     // This is all for clients
     for (int i=2; i < 100; i++)
     {
 	std::string ip = StringUtil::format("192.168.1.%d", i);
-    	arpTable.emplace(IpAddress::fromString(ip.c_str()), "1c:34:da:41:d0:0c");
+    	arpTable.emplace(IpAddress::fromString(ip.c_str()), "9c:dc:71:5e:0f:e1");
     }
 
     // Iterate over ethernet devices to locate the port identifier.
