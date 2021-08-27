@@ -69,6 +69,7 @@ target_link_libraries(dpdk_client_system_test
         Homa::DpdkDriver
         docopt
         PerfUtils
+        rt
 )
 
 ## dpdk_server_system_test #########################################################

@@ -17,7 +17,9 @@ from bkdrft_common import *
 cur_script_dir = os.path.dirname(os.path.abspath(__file__))
 
 pipeline_config_file = os.path.join(cur_script_dir,
-    'pipeline_bd.bess')
+    # '../homa/pipeline_pfq.bess')
+    # '../homa/pipeline.bess')
+     'pipeline_bd.bess')
 
 homa_base = os.path.join(cur_script_dir, '../../code/Homa')
 homa_app_bin = os.path.join(homa_base, 'build/test/dpdk_test') # udp_app
@@ -41,9 +43,9 @@ def run_system_perf_client(conf):
     # --dpdk-extra=--no-pci --dpdk-extra='-l 6' --slow-down={} --tx-pkt-length={} --vhost-port-ip={} --vhost-port-mac={}".format(conf["slow_down"], conf["tx_pkt_length"],
     #         conf["ip"], conf["mac"])
 
-    cmd = "sudo ./build/test/dpdk_client_system_test 100000 -v --vhost-port \
+    cmd = "sudo ./build/test/dpdk_client_system_test 100000 -v --id={} --barriers={} --vhost-port \
     --iface='--vdev=virtio_user0,path={}' --dpdk-extra=--no-pci \
-    --size=1400 --dpdk-extra='--file-prefix=mg-{}' --dpdk-extra='-l'  --dpdk-extra='{}' --vhost-port-ip={} --vhost-port-mac={}".format(conf["path"], conf["ip"], conf["cpuset"], conf["ip"], conf["mac"])
+    --size=1400 --dpdk-extra='--file-prefix=mg-{}' --dpdk-extra='-l'  --dpdk-extra='{}' --vhost-port-ip={} --vhost-port-mac={}".format(conf["id"], conf["barriers"], conf["path"], conf["ip"], conf["cpuset"], conf["ip"], conf["mac"])
 
     print("client {}".format(cmd))
 
@@ -178,13 +180,13 @@ def main():
         # run_server(server_conf)
         for i in range(vhost_port_count):
             server_conf = {
-                    'cpuset': i*2 + 32,
+                    'cpuset': i + 10,
                     # 'prefix': 'server',
                     # 'path': '/tmp/vhost_{}.sock,queues={}'.format(i, count_queue),
                     'path': '/tmp/vhost_{}.sock,queues={}'.format(i, 1),
                     # 'count_queue': count_queue,
                     # 'type': app_mode,
-                    'mac': '1c:34:da:41:c6:fc',
+                    'mac': '9c:dc:71:5b:22:a1',
                     'ip': '192.168.1.1',
                     'slow_down': slow_down,
                     'tx_pkt_length': tx_size
@@ -198,7 +200,7 @@ def main():
         for i in range(vhost_port_count):
             # print('ip ' + "192.168.1.{}".format(i + 1))
             client_conf = {
-              'cpuset': i+7, # it is just random
+              'cpuset': i+10, # it is just random
             # 'prefix': 'client',
               # 'path': '/tmp/vhost_{}.sock,queues={}'.format(i, count_queue),
               'path': '/tmp/vhost_{}.sock,queues={}'.format(i, 1),
@@ -206,11 +208,14 @@ def main():
               'tx_pkt_length': tx_size,
               'file_prefix': i,
               'ip': "192.168.1.{}".format(i + 2),
-              'mac': "1c:34:da:41:d0:0c"
+              'mac': "9c:dc:71:5e:0f:e1",
+              'barriers': vhost_port_count,
+              'id': i 
             }
 
             # run_client(client_conf)
             cp = run_system_perf_client(client_conf)
+            sleep(0.5)
             client_process.append(cp)
 
         for i in range(vhost_port_count):

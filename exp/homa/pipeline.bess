@@ -78,10 +78,10 @@ else:
           qin1 = QueueInc(port=i, qid=0)
           qin1.attach_task(wid=0)
           qin1 -> merger
-        
+
         pci_port_qout = QueueOut(port=pci_port, qid=0)
         merger -> pci_port_qout
-    
+
         # Ingress
         iplookup = IPLookup()
         qin1 = QueueInc(port=pci_port, qid=0)
@@ -94,7 +94,7 @@ else:
           iplookup.add(prefix=ip, prefix_len=32, gate=i)
           qout1 = QueueOut(port=vhost_ports[i], qid=0)
           iplookup:i -> qout1
-        
+
         iplookup.add(prefix="0.0.0.0", prefix_len=0, gate=count_vhost_ports) 
         iplookup:count_vhost_ports -> Sink()
 

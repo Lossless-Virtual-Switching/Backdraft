@@ -12,6 +12,7 @@ class BPQOut final : public Module {
 public:
     static const Commands cmds;
     static const gate_idx_t kNumOGates = 0;
+    // static const gate_idx_t kNumIGates = 32;
 
     BPQOut() :
         Module(),
@@ -24,6 +25,7 @@ public:
         burst_()
     {
         is_task_ = true;
+        max_allowed_workers_ = Worker::kMaxWorkers;
         // propagate_workers_ = false;
     }
 
