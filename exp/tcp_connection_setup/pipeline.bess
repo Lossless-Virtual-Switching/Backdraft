@@ -1,0 +1,33 @@
+"""
+Pipeline for measuring TCP connection setup time in Backdraft
+"""
+import os
+import subprocess
+
+size_q = 512
+queue_count = int(os.environ.get('queues', '1'))
+count_vhost = 3
+# Vhost Port
+sockets = [os.path.join('/tmp/', 'tmp_vhost{}.sock'.format(i)) for i in range(count_vhost)]
+ports = []
+
+subprocess.run('sudo rm /tmp/*.sock', shell=True, stderr=subprocess.PIPE)
+
+for i, socket in enumerate(sockets):
+    vdev = "eth_vhost{},iface={},queues={}".format(i, socket, queue_count)
+    # print (vdev)
+    port = PMDPort(name="tmp_vhost{}".format(i),
+            vdev=vdev,
+            num_inc_q = queue_count,
+            num_out_q = queue_count,
+            size_inc_q= size_q,
+            size_out_q= size_q)
+    ports.append(port)
+
+# nic = PMDPort(pci=pci, num_inc_q=queue_count, num_out_q=queue_count)
+
+qin = QueueInc(port=ports[0].name, qid=0)
+qin:0 -> QueueOut(port=ports[1].name, qid=0)
+
+qin = QueueInc(port=ports[1].name, qid=0)
+qin:0 -> QueueOut(port=ports[0].name, qid=0)

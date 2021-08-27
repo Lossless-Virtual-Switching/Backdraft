@@ -1,10 +1,11 @@
 import os
 import subprocess
+from pprint import pprint
 
 
 def _log_cmd(cmd):
     print('=' * 40)
-    print(cmd)
+    pprint(cmd)
     print('=' * 40)
 
 
@@ -41,7 +42,9 @@ def spin_up_tas(conf):
     here = os.path.dirname(__file__)
     tas_spinup_script = os.path.abspath(os.path.join(here,
         '../code/apps/tas_container/spin_up_tas_container.sh'))
-    # image_name = 'tas_container'
+    default_image_name = 'tas_container'
+    if 'image' not in conf:
+        conf['image'] = default_image_name
 
     temp = []
     for x in conf['ips']:
