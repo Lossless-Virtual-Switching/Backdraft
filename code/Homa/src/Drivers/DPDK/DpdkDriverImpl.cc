@@ -106,7 +106,8 @@ DpdkDriver::Impl::Impl(const char* ifname, const char* mac, const char* ip, int 
     , hasHardwareFilter(true)  // Cleared later if not applicable
     , corked(0)
     // , bandwidthMbps(100000)  // Default bandwidth = 10 gbs
-    , bandwidthMbps(40000)  // Default bandwidth = 40 gbs
+    // , bandwidthMbps(40000)  // Default bandwidth = 40 gbs
+    , bandwidthMbps(25000)  // Default bandwidth = 40 gbs
 {
     int s;
     cpu_set_t cpuset;
