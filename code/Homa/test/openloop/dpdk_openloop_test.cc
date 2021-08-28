@@ -104,6 +104,7 @@ int clientPollWorker(void *_arg)
   while (client->run) {
     client->transport->poll();
   }
+  std::cout << "Poll worker done" << std::endl;
   return 0;
 }
 
@@ -125,6 +126,11 @@ int clientRxWorker(void *_arg)
 
   while (numFailed + numComplete < pkt_to_finish) {
     done = client->transport->getDonePackets((Homa::OutMessage **)messages, size);
+    // if (done > 0) {
+    //   // std::cout << "Some done: " << done << std::endl;
+    //   std::cout << "Some done: " << done << " total: " << numFailed +
+    //       numComplete << std::endl;
+    // }
     for(int i = 0; i < done; i++) {
       message = messages[i];
       status = message->getStatus();
@@ -132,6 +138,8 @@ int clientRxWorker(void *_arg)
         stop = PerfUtils::Cycles::rdtsc();
         numComplete++;
         uint32_t id = message->getTag();
+        // Homa::OutMessage::Deleter(message); // Hope this frees the Message
+        client->transport->unsafe_free_message(message); // Hope this frees the Message
         auto it = timebook.find(id);
         if (it == timebook.end()) {
           continue;
@@ -139,6 +147,7 @@ int clientRxWorker(void *_arg)
         start =  it->second;
         times.emplace_back(PerfUtils::Cycles::toSeconds(stop - start));
       } else if (status == Homa::OutMessage::Status::FAILED) {
+          client->transport->unsafe_free_message(message); // Hope this frees the Message
         numFailed++;
       } else {
         std::cout << "Unknown packet" << std::endl;
@@ -146,6 +155,7 @@ int clientRxWorker(void *_arg)
     }
   }
 
+  std::cout << "Rx worker done" << std::endl;
   num_failed_pkt = numFailed;
   client->run = false;
 
@@ -241,6 +251,7 @@ int clientMain(int count, int size, std::vector<Homa::IpAddress> addresses,
   int count_lcore = rte_lcore_count();
   if  (count_lcore < 3) {
     std::cout << "Need 3 lcores for running client" << std::endl;
+    return 1;
   }
   int poll_lcore_id = rte_get_next_lcore(-1, 1, 0);
   ret = rte_eal_remote_launch(clientPollWorker, &client, poll_lcore_id);
@@ -268,10 +279,12 @@ int clientMain(int count, int size, std::vector<Homa::IpAddress> addresses,
     payload[i] = randData(gen);
   }
 
+  Homa::OutMessage *message;
   for (int i = 0; i < count; i++) {
     // sending on port zero!
     uint64_t id = nextId++;
-    Homa::unique_ptr<Homa::OutMessage> message = client.transport->alloc(0);
+    // Homa::unique_ptr<Homa::OutMessage> message = client.transport->unsafe_alloc(0);
+    message = client.transport->unsafe_alloc(0);
     MessageHeader header;
     header.id = id;
     header.length = size;
@@ -288,6 +301,8 @@ int clientMain(int count, int size, std::vector<Homa::IpAddress> addresses,
     // send the message
     message->send(Homa::SocketAddress{destAddress, 60001});
   }
+
+  std::cout << "Tx worker done" << std::endl;
 
   // Wait until other threads are done
   rte_eal_wait_lcore(poll_lcore_id);

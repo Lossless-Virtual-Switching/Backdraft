@@ -293,6 +293,8 @@ class Transport {
      *      A pointer to the allocated message.
      */
     virtual Homa::unique_ptr<Homa::OutMessage> alloc(uint16_t sourcePort) = 0;
+    virtual Homa::OutMessage *unsafe_alloc(uint16_t sourcePort) = 0;
+    virtual void unsafe_free_message(Homa::OutMessage *m) = 0;
 
     /**
      * Check for and return a Message sent to this Transport if available.

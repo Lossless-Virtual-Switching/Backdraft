@@ -53,6 +53,17 @@ class TransportImpl : public Transport {
         return Homa::unique_ptr<Homa::OutMessage>(outMessage);
     }
 
+    virtual Homa::OutMessage *unsafe_alloc(uint16_t sourcePort)
+    {
+        Homa::OutMessage* outMessage = sender->allocMessage(sourcePort);
+        return outMessage;
+    }
+     
+    virtual void unsafe_free_message(Homa::OutMessage *m)
+    {
+        static_cast<Sender::Message *>(m)->release();
+    }
+
     /// See Homa::Transport::receive()
     virtual Homa::unique_ptr<Homa::InMessage> receive()
     {

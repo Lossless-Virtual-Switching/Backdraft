@@ -58,7 +58,6 @@ class Sender {
     virtual void checkTimeouts();
     virtual int getDonePackets(Homa::OutMessage **msgbuf, int count);
 
-  private:
     /// Forward declarations
     class Message;
 
@@ -159,6 +158,7 @@ class Sender {
         {}
 
         virtual ~Message();
+
         virtual void append(const void* source, size_t count);
         virtual void cancel();
         virtual Status getStatus() const;
@@ -251,6 +251,7 @@ class Sender {
         friend class Sender;
     };
 
+  private:
     /**
      * A collection of outgoing Message objects and their associated timeouts.
      *
@@ -457,6 +458,8 @@ class Sender {
         ObjectPool<Message> pool;
     } messageAllocator;
     std::list<Homa::OutMessage *> doneMessages;    
+    SpinLock done_msg_mutex;
+
 };
 
 }  // namespace Core

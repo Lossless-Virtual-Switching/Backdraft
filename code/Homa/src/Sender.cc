@@ -13,6 +13,7 @@
  * OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
  */
 
+#include <iostream>
 #include "Sender.h"
 
 #include <Cycles.h>
@@ -57,6 +58,7 @@ Sender::Sender(uint64_t transportId, Driver* driver,
     , sendReady(false)
     , nextBucketIndex(0)
     , messageAllocator()
+    , done_msg_mutex()
 {}
 
 /**
@@ -71,6 +73,7 @@ Sender::~Sender() {}
  */
 int Sender::getDonePackets(Homa::OutMessage **msgbuf, int count)
 {
+  done_msg_mutex.lock();
   int end = doneMessages.size();
   if (count < end)
     end = count;
@@ -78,6 +81,7 @@ int Sender::getDonePackets(Homa::OutMessage **msgbuf, int count)
     msgbuf[i] = doneMessages.front();
     doneMessages.pop_front();
   }
+  done_msg_mutex.unlock();
   return end;
 }
 
@@ -108,6 +112,7 @@ Sender::handleDonePacket(Driver::Packet* packet)
     MessageBucket* bucket = messageBuckets.getBucket(msgId);
     SpinLock::Lock lock(bucket->mutex);
     Message* message = bucket->findMessage(msgId, lock);
+    // printf("hello: %ld %p %p\n", msgId.sequence, message, bucket);
 
     if (message == nullptr) {
         // No message for this DONE packet; must be old. Just drop it.
@@ -117,13 +122,17 @@ Sender::handleDonePacket(Driver::Packet* packet)
 
     // Process DONE packet
     OutMessage::Status status = message->getStatus();
+    // printf("Message (%lu, %lu): status: %d\n",
+    //     msgId.transportId, msgId.sequence, (int)status);
     switch (status) {
         case OutMessage::Status::SENT:
             // Expected behavior
             bucket->messageTimeouts.cancelTimeout(&message->messageTimeout);
             bucket->pingTimeouts.cancelTimeout(&message->pingTimeout);
             message->state.store(OutMessage::Status::COMPLETED);
+            done_msg_mutex.lock();
             doneMessages.push_back(message);
+            done_msg_mutex.unlock();
             break;
         case OutMessage::Status::CANCELED:
             // Canceled by the the application; just ignore the DONE.
@@ -485,7 +494,9 @@ Sender::handleErrorPacket(Driver::Packet* packet)
             bucket->messageTimeouts.cancelTimeout(&message->messageTimeout);
             bucket->pingTimeouts.cancelTimeout(&message->pingTimeout);
             message->state.store(OutMessage::Status::FAILED);
+            done_msg_mutex.lock();
             doneMessages.push_back(message);
+            done_msg_mutex.unlock();
             break;
         case OutMessage::Status::CANCELED:
             // Canceled by the the application; just ignore the ERROR.
@@ -664,6 +675,7 @@ Sender::Message::prepend(const void* source, size_t count)
 void
 Sender::Message::release()
 {
+    // printf("realse pkt: %ld\n", this->id.sequence);
     sender->dropMessage(this);
 }
 
@@ -823,6 +835,7 @@ Sender::sendMessage(Sender::Message* message, SocketAddress destination,
     bucket->messages.push_back(&message->bucketNode);
     bucket->messageTimeouts.setTimeout(&message->messageTimeout);
     bucket->pingTimeouts.setTimeout(&message->pingTimeout);
+    // printf("add to bucket: %ld %p %p\n", message->id.sequence, message, bucket);
 
     assert(message->numPackets > 0);
     if (message->numPackets == 1) {
@@ -913,6 +926,7 @@ Sender::dropMessage(Sender::Message* message)
         bucket->messageTimeouts.cancelTimeout(&message->messageTimeout);
         bucket->pingTimeouts.cancelTimeout(&message->pingTimeout);
         bucket->messages.remove(&message->bucketNode);
+        // printf("drop message: %ld %p\n", message->id.sequence, bucket);
         SpinLock::Lock lock_allocator(messageAllocator.mutex);
         messageAllocator.pool.destroy(message);
         Perf::counters.destroyed_tx_messages.add(1);
@@ -963,7 +977,9 @@ Sender::checkMessageTimeouts(uint64_t now, MessageBucket* bucket)
                 }
             }
             message->state.store(OutMessage::Status::FAILED);
+            done_msg_mutex.lock();
             doneMessages.push_back(message);
+            done_msg_mutex.unlock();
         }
         bucket->messageTimeouts.cancelTimeout(&message->messageTimeout);
         bucket->pingTimeouts.cancelTimeout(&message->pingTimeout);
@@ -1131,6 +1147,7 @@ Sender::trySend()
             bucket->messageTimeouts.cancelTimeout(&message->messageTimeout);
             bucket->pingTimeouts.cancelTimeout(&message->pingTimeout);
             bucket->messages.remove(&message->bucketNode);
+            // printf("trySend: %ld %p\n", message->id.sequence, bucket);
             SpinLock::Lock lock_allocator(messageAllocator.mutex);
             messageAllocator.pool.destroy(message);
             Perf::counters.destroyed_tx_messages.add(1);
