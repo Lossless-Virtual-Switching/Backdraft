@@ -72,6 +72,11 @@ class TransportImpl : public Transport {
     {
         return transportId;
     }
+     
+    virtual int getDonePackets(Homa::OutMessage **msgbuf, int count)
+    {
+      return sender->getDonePackets(msgbuf, count);
+    }
 
   private:
     void processPackets();

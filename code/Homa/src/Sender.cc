@@ -65,6 +65,23 @@ Sender::Sender(uint64_t transportId, Driver* driver,
 Sender::~Sender() {}
 
 /**
+ * msgbuf: an array of pointers to Message
+ * count: size of the array
+ * Returns: number of done packets set in msgbuf
+ */
+int Sender::getDonePackets(Homa::OutMessage **msgbuf, int count)
+{
+  int end = doneMessages.size();
+  if (count < end)
+    end = count;
+  for (int i = 0; i < end; i++) {
+    msgbuf[i] = doneMessages.front();
+    doneMessages.pop_front();
+  }
+  return end;
+}
+
+/**
  * Allocate an OutMessage that can be sent with this Sender.
  */
 Homa::OutMessage*
@@ -106,6 +123,7 @@ Sender::handleDonePacket(Driver::Packet* packet)
             bucket->messageTimeouts.cancelTimeout(&message->messageTimeout);
             bucket->pingTimeouts.cancelTimeout(&message->pingTimeout);
             message->state.store(OutMessage::Status::COMPLETED);
+            doneMessages.push_back(message);
             break;
         case OutMessage::Status::CANCELED:
             // Canceled by the the application; just ignore the DONE.
@@ -467,6 +485,7 @@ Sender::handleErrorPacket(Driver::Packet* packet)
             bucket->messageTimeouts.cancelTimeout(&message->messageTimeout);
             bucket->pingTimeouts.cancelTimeout(&message->pingTimeout);
             message->state.store(OutMessage::Status::FAILED);
+            doneMessages.push_back(message);
             break;
         case OutMessage::Status::CANCELED:
             // Canceled by the the application; just ignore the ERROR.
@@ -944,6 +963,7 @@ Sender::checkMessageTimeouts(uint64_t now, MessageBucket* bucket)
                 }
             }
             message->state.store(OutMessage::Status::FAILED);
+            doneMessages.push_back(message);
         }
         bucket->messageTimeouts.cancelTimeout(&message->messageTimeout);
         bucket->pingTimeouts.cancelTimeout(&message->pingTimeout);

@@ -4,6 +4,8 @@
 
 # Thread library
 find_package(Threads)
+# DPDK library
+find_package(Dpdk REQUIRED)
 
 include(FetchContent)
 FetchContent_Declare(
@@ -59,10 +61,10 @@ target_link_libraries(dpdk_test_client
         PerfUtils
 )
 
-## dpdk_client_system_test #########################################################
+## dpdk_client_system_test #####################################################
 
 add_executable(dpdk_client_system_test
-    dpdk_client_system_test.cc 
+    dpdk_client_system_test.cc
 )
 target_link_libraries(dpdk_client_system_test
     PRIVATE
@@ -72,16 +74,29 @@ target_link_libraries(dpdk_client_system_test
         rt
 )
 
-## dpdk_server_system_test #########################################################
+## dpdk_server_system_test #####################################################
 
 add_executable(dpdk_server_system_test
-    dpdk_server_system_test.cc 
+    dpdk_server_system_test.cc
 )
 target_link_libraries(dpdk_server_system_test
     PRIVATE
         Homa::DpdkDriver
         docopt
         PerfUtils
+)
+
+## dpdk_openloop_test #########################################################
+add_executable(dpdk_openloop_test
+    ./openloop/dpdk_openloop_test.cc
+)
+target_link_libraries(dpdk_openloop_test
+    PRIVATE
+        Dpdk::Dpdk
+        Homa::DpdkDriver
+        docopt
+        PerfUtils
+        rt
 )
 
 ## Perf ########################################################################

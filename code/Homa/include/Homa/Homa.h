@@ -240,12 +240,21 @@ class OutMessage {
     virtual void send(SocketAddress destination,
                       Options options = Options::NONE) = 0;
 
+    void setTag(uint32_t t) {
+      tag = t;
+    }
+
+    uint32_t getTag() {
+      return tag;
+    }
+
   protected:
     /**
      * Signal that this message is no longer needed.  The caller should not
      * access this message following this call.
      */
     virtual void release() = 0;
+    uint32_t tag;
 };
 
 /**
@@ -311,6 +320,9 @@ class Transport {
      * Return this transport's unique identifier.
      */
     virtual uint64_t getId() = 0;
+
+    virtual int getDonePackets(Homa::OutMessage **msgbuf, int count) = 0;
+
 };
 
 /**

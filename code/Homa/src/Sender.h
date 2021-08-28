@@ -20,6 +20,7 @@
 #include <Homa/Homa.h>
 #include <Homa/Util.h>
 
+#include <list>
 #include <array>
 #include <atomic>
 #include <unordered_map>
@@ -55,6 +56,7 @@ class Sender {
     virtual void handleErrorPacket(Driver::Packet* packet);
     virtual void poll();
     virtual void checkTimeouts();
+    virtual int getDonePackets(Homa::OutMessage **msgbuf, int count);
 
   private:
     /// Forward declarations
@@ -454,6 +456,7 @@ class Sender {
         /// Pool allocator for Message objects.
         ObjectPool<Message> pool;
     } messageAllocator;
+    std::list<Homa::OutMessage *> doneMessages;    
 };
 
 }  // namespace Core
