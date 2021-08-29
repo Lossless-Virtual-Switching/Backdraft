@@ -98,6 +98,15 @@ struct Node {
   volatile std::atomic<bool> run;
 };
 
+void wait(int ns) {
+    uint64_t start , now;
+    start = PerfUtils::Cycles::rdtsc();
+    now = start;
+    while (PerfUtils::Cycles::toNanoseconds(now - start) < ns) {
+      now = PerfUtils::Cycles::rdtsc();
+    }
+}
+
 int clientPollWorker(void *_arg)
 {
   Node *client = (Node *)_arg;
@@ -308,6 +317,7 @@ int clientMain(int count, int size, std::vector<Homa::IpAddress> addresses,
     timebook[id] = start;
     // send the message
     message->send(Homa::SocketAddress{destAddress, 60001});
+    wait(5000);
   }
 
   std::cout << "Tx worker done" << std::endl;

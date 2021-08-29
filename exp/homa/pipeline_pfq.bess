@@ -70,7 +70,7 @@ else:
           qin1.attach_task(wid=worker_id)
           # qin1 -> merger # why merge?
           pci_port_qout = QueueOut(port=pci_port, qid=index) # why 0?
-          qin1 -> pci_port_qout
+          qin1 -> VLANPop() -> pci_port_qout
 
         # pci_port_qout.attach_task(wid=0)
         # merger -> pci_port_qout
@@ -104,7 +104,7 @@ else:
           # egress_out_collection.append(pci_port_qout) # overlay
           # if index%worker_divisor == 0:
           worker_id = get_next_core()
-          qin1 -> pci_port_qout
+          qin1 -> VLANPop() -> pci_port_qout
           qin1.attach_task(wid=worker_id)
           # pci_port_qout.attach_task(wid=0)
 

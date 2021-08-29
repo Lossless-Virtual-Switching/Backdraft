@@ -70,7 +70,7 @@ else:
           pci_port_qout = BPQOut(port=pci_port, qid=index)
           worker_id = get_next_core() ###########
           pci_port_qout.attach_task(wid=worker_id)
-          qin1 -> pci_port_qout
+          qin1 -> VLANPop() -> pci_port_qout
 
         # pci_port_qout.attach_task(wid=0)
         # merger -> pci_port_qout
@@ -97,7 +97,7 @@ else:
           qin1 = BPQInc(port=i, qid=0)
           pci_port_qout = BPQOut(port=pci_port, qid=index)
           egress_out_collection.append(pci_port_qout) # overlay
-          qin1 -> pci_port_qout
+          qin1 -> VLANPop() -> pci_port_qout
           worker_id = get_next_core()
           qin1.attach_task(wid=worker_id)
           # worker_id = get_next_core() ########

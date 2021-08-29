@@ -18,8 +18,8 @@ cur_script_dir = os.path.dirname(os.path.abspath(__file__))
 
 pipeline_config_file = os.path.join(cur_script_dir,
     # '../homa/pipeline_pfq.bess')
-    '../homa/pipeline.bess')
-    # 'pipeline_bd.bess')
+    # '../homa/pipeline.bess')
+    'pipeline_bd.bess')
 
 homa_base = os.path.join(cur_script_dir, '../../code/Homa')
 homa_app_bin = os.path.join(homa_base, 'build/test/dpdk_test') # udp_app
@@ -43,9 +43,9 @@ def run_system_perf_client(conf):
     # --dpdk-extra=--no-pci --dpdk-extra='-l 6' --slow-down={} --tx-pkt-length={} --vhost-port-ip={} --vhost-port-mac={}".format(conf["slow_down"], conf["tx_pkt_length"],
     #         conf["ip"], conf["mac"])
 
-    cmd = "sudo ./build/test/dpdk_client_system_test 1000 -v --id={} --barriers={} --vhost-port \
+    cmd = "sudo ./build/test/dpdk_openloop_test 1000000 -v --id={} --barriers={} --vhost-port \
     --iface='--vdev=virtio_user0,path={}' --dpdk-extra=--no-pci \
-    --size=1700 --dpdk-extra='--file-prefix=mg-{}' --dpdk-extra='-l'  --dpdk-extra='{}' --vhost-port-ip={} --vhost-port-mac={}".format(conf["id"], conf["barriers"], conf["path"], conf["ip"], conf["cpuset"], conf["ip"], conf["mac"])
+    --size=1400 --dpdk-extra='--file-prefix=mg-{}' --dpdk-extra='-l'  --dpdk-extra='{}' --vhost-port-ip={} --vhost-port-mac={}".format(conf["id"], conf["barriers"], conf["path"], conf["ip"], conf["cpuset"], conf["ip"], conf["mac"])
 
     print("client {}".format(cmd))
 
@@ -164,8 +164,11 @@ def main():
 
     # Setup BESS config
     file_path = pipeline_config_file
+    # tmp = subprocess.run('pidof bessd', shell=True)
+    # tmp = tmp.returncode
+    # print('pidof result:', tmp)
+    # if tmp == 1: 
     ret = bessctl_do('daemon start -- run file {}'.format(file_path))
-
     print(ret.returncode)
     if ret.returncode != 0:
       print("bess has issues")
@@ -200,7 +203,7 @@ def main():
         for i in range(vhost_port_count):
             # print('ip ' + "192.168.1.{}".format(i + 1))
             client_conf = {
-              'cpuset': i+10, # it is just random
+              'cpuset': f'{i*3+10}-{i*3+12}', # it is just random
             # 'prefix': 'client',
               # 'path': '/tmp/vhost_{}.sock,queues={}'.format(i, count_queue),
               'path': '/tmp/vhost_{}.sock,queues={}'.format(i, 1),
@@ -258,6 +261,9 @@ def main():
     sum_pkts = 0
     sum_bytes = 0
 
+    ret = bessctl_do('show port', subprocess.PIPE)
+    print(ret.stdout.decode())
+
     # ret = bessctl_do('show port', subprocess.PIPE)
     # log = ret.stdout.decode()
     # log = log.strip()
@@ -277,7 +283,7 @@ def main():
       #   continue
       log = ret.stdout.decode()
       log = log.strip()
-      print(log)
+      # print(log)
       lines = log.split('\n')
 
       line = lines[2].strip()
