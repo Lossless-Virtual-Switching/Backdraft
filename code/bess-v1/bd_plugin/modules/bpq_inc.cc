@@ -130,10 +130,10 @@ struct task_result BPQInc::RunTask(Context *ctx, bess::PacketBatch *batch,
 
 CommandResponse BPQInc::CommandGetSummary(const bess::pb::EmptyArg &) {
   bkdrft::pb::BPQIncCommandGetSummaryResponse r;
-  r.set_rx_pause_frame(rx_pause_frame_);
-  r.set_tx_pause_frame(tx_pause_frame_);
-  r.set_rx_resume_frame(rx_resume_frame_);
-  r.set_tx_resume_frame(tx_resume_frame_);
+  r.set_rx_pause_frame(rx_pause_);
+  r.set_tx_pause_frame(tx_pause_);
+  r.set_rx_resume_frame(rx_resume_);
+  r.set_tx_resume_frame(tx_resume_);
 
   return CommandSuccess(r);
 }

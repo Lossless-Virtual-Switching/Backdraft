@@ -4,6 +4,7 @@
 #include "module.h"
 #include "pb/bkdrft_module_msg.pb.h"
 #include "utils/endian.h"
+#include "bpq_out.h"
 
 using bess::utils::be32_t;
 using ParsedPrefix = std::tuple<int, std::string, be32_t>;
@@ -17,6 +18,7 @@ class OBroker final : public Module {
   static std::map<std::string, OBroker*> all_brokers_;
 
   OBroker() : Module(), lpm_(), default_gate_() {
+    min_allowed_workers_ = 0;
     max_allowed_workers_ = Worker::kMaxWorkers;
     propagate_workers_ = false;
   }

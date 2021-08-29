@@ -317,7 +317,7 @@ int clientMain(int count, int size, std::vector<Homa::IpAddress> addresses,
     timebook[id] = start;
     // send the message
     message->send(Homa::SocketAddress{destAddress, 60001});
-    wait(5000);
+    wait(2000);
   }
 
   std::cout << "Tx worker done" << std::endl;

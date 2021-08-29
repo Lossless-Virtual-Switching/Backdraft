@@ -11,7 +11,8 @@ class BPQInc final : public Module {
   static const gate_idx_t kNumIGates = 0;
   // static const gate_idx_t kNumOGates = 5;
 
-  BPQInc() : Module(), port_(), qid_(), prefetch_(), burst_() {}
+  BPQInc() : Module(), port_(), qid_(), prefetch_(), burst_(),
+	rx_pause_(0), tx_pause_(0), rx_resume_(0), tx_resume_(0) {}
 
   CommandResponse Init(const bkdrft::pb::BPQIncArg &arg);
   void DeInit() override;
@@ -28,6 +29,7 @@ class BPQInc final : public Module {
   void SignalOverloadBP(bess::Packet *pkt) override {
     int tx = 0;
     rx_pause_frame_++; // We have just received a pause frame message
+    rx_pause_++;
     if (overload_) {
       return;
     }
@@ -47,6 +49,9 @@ class BPQInc final : public Module {
     tx = overlay_port_->SendPackets(overlay_qid_, &pkt, 1);
     if (tx != 1) {
         bess::Packet::Free(pkt);
+    } else {
+      tx_pause_frame_++;
+      tx_pause_++;
     }
 
     // LOG(INFO) << "Send Over Packet: qid: " << (int)overlay_qid_ << " (" << tx << ")\n";
@@ -55,6 +60,7 @@ class BPQInc final : public Module {
   void SignalUnderloadBP(bess::Packet *pkt) override {
     int tx = 0;
     rx_resume_frame_++; // We have just received a pause frame message
+    rx_resume_++;
     if (!overload_) {
       return;
     }
@@ -75,6 +81,9 @@ class BPQInc final : public Module {
     tx = overlay_port_->SendPackets(overlay_qid_, &pkt, 1);
     if (tx != 1) {
         bess::Packet::Free(pkt);
+    } else {
+      tx_resume_frame_++;
+      tx_resume_++;
     }
     // LOG(INFO) << "Send Under Packet: qid: " << (int)overlay_qid_ << " (" << tx << ")\n";
 
@@ -92,6 +101,12 @@ class BPQInc final : public Module {
   // bool may_signal_underload;
   Port *overlay_port_;
   queue_t overlay_qid_;
+
+    //-------
+uint64_t rx_pause_;
+uint64_t tx_pause_;
+uint64_t rx_resume_;
+uint64_t tx_resume_;
 };
 
 #endif

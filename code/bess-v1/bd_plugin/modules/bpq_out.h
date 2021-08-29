@@ -22,7 +22,11 @@ public:
         high_water_(),
         queue_(),
         size_(),
-        burst_()
+        burst_(),
+	rx_pause_(0),
+	tx_pause_(0),
+	rx_resume_(0),
+	tx_resume_(0)
     {
         is_task_ = true;
         max_allowed_workers_ = Worker::kMaxWorkers;
@@ -46,8 +50,8 @@ private:
     void Buffer(bess::Packet **pkts, int cnt);
 
 private:
-    const double kHighWaterRatio = 0.70;
-    const double kLowWaterRatio = 0.50;
+    const double kHighWaterRatio = 0.90;
+    const double kLowWaterRatio = 0.33;
 
     Port *port_;
     queue_t qid_;
@@ -61,6 +65,13 @@ private:
     // Spinglock is not necessary now
     // SpinLock *lock_;
     bess::Packet *mbufs_[bess::PacketBatch::kMaxBurst];
+
+public:
+//-------
+uint64_t rx_pause_;
+uint64_t tx_pause_;
+uint64_t rx_resume_;
+uint64_t tx_resume_;
 
 };
 

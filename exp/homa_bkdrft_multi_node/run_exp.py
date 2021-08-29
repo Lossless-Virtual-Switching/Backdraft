@@ -17,9 +17,9 @@ from bkdrft_common import *
 cur_script_dir = os.path.dirname(os.path.abspath(__file__))
 
 pipeline_config_file = os.path.join(cur_script_dir,
-    # '../homa/pipeline_pfq.bess')
+    '../homa/pipeline_pfq.bess')
     # '../homa/pipeline.bess')
-    'pipeline_bd.bess')
+    # 'pipeline_bd.bess')
 
 homa_base = os.path.join(cur_script_dir, '../../code/Homa')
 homa_app_bin = os.path.join(homa_base, 'build/test/dpdk_test') # udp_app
@@ -128,10 +128,10 @@ def main():
     # else:
     #     app_mode = 'bess'
 
-    if override_vswitch_path:
-        # override_bess_path("/proj/uic-dcs-PG0/alireza/homa-bess/bess")
-        # override_bess_path("/proj/uic-dcs-PG0/fshahi5/new/post-loom/code/bess-v1")
-        override_bess_path("/proj/uic-dcs-PG0/alireza/post-loom/code/bess-v1")
+    # if override_vswitch_path:
+    #     # override_bess_path("/proj/uic-dcs-PG0/alireza/homa-bess/bess")
+    #     # override_bess_path("/proj/uic-dcs-PG0/fshahi5/new/post-loom/code/bess-v1")
+    #     override_bess_path("/proj/uic-dcs-PG0/alireza/post-loom/code/bess-v1")
 
     # server_conf = {
     #         'cpuset': 7,
@@ -261,6 +261,8 @@ def main():
     sum_pkts = 0
     sum_bytes = 0
 
+    ret = bessctl_do('show pipeline', subprocess.PIPE)
+    print(ret.stdout.decode())
     ret = bessctl_do('show port', subprocess.PIPE)
     print(ret.stdout.decode())
 
@@ -300,13 +302,16 @@ def main():
       sum_pkts += pkts
       sum_bytes += byte
 
+
+    for i in range(vhost_port_count * 2):
       # pause frame
       name = 'bpq_inc{}'.format(i)
+      print(name)
       ret = bessctl_do('command module {} get_summary EmptyArg {{}}'.format(name), subprocess.PIPE)
       log = ret.stdout.decode()
       print(log)
-
       name = 'bpq_out{}'.format(i)
+      print(name)
       ret = bessctl_do('command module {} get_summary EmptyArg {{}}'.format(name), subprocess.PIPE)
       log = ret.stdout.decode()
       print(log)
@@ -319,6 +324,7 @@ def main():
             stdout = proc.communicate()[0]
             print('STDOUT:{}'.format(stdout))
 
+    sleep(1)
     _stop_everything()
 
     if server_process:

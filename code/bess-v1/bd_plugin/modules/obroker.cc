@@ -137,13 +137,15 @@ void OBroker::broker(be32_t addr, bool over) {
   ret = rte_lpm_lookup(lpm_, addr.value(), &next_hop);
 
   if (ret == 0) {
-    Module *m = output_gates[next_hop]->module();
+    Module *m = output_gates[next_hop]->next();
     if (over) {
-      // LOG(INFO) << "Overlay overload recv\n";
+      // LOG(INFO) << "Overlay overload recv, calling module: " << m->name() << "\n";
+      (static_cast<BPQOut *>(m))->rx_pause_++;
       m->SignalOverloadBP(nullptr);
       }
     else {
       // LOG(INFO) << "Overlay underload recv\n";
+      (static_cast<BPQOut *>(m))->rx_resume_++;
       m->SignalUnderloadBP(nullptr);
     }
   } else {

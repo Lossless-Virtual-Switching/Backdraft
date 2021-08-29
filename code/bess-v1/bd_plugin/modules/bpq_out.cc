@@ -54,15 +54,15 @@ static bess::Packet *PreparePacket(bess::Packet *src) {
     return nullptr;  // FAIL.
   }
 
-  // int pkt_size = src->total_len();
-  int pkt_size = 64;
+  int pkt_size = src->total_len();
+  // int pkt_size = 64;
   int header_len = sizeof(bess::utils::Ethernet) + sizeof(bess::utils::Ipv4);
   bess::utils::CopyInlined(dst->append(pkt_size),
           src->head_data(), header_len, true); // Copying only Eth + IP
-  dst->set_data_len(pkt_size);
-  dst->set_total_len(pkt_size);
-  // dst->set_data_len(src->data_len());
+  // dst->set_data_len(pkt_size);
   // dst->set_total_len(pkt_size);
+  dst->set_data_len(src->data_len());
+  dst->set_total_len(pkt_size);
   return dst;
 }
 
@@ -145,11 +145,14 @@ void BPQOut::Buffer(bess::Packet **pkts, int cnt)
 
   // If ring size exceeds high water then signal overload (backpressure)
   if (llring_count(queue_) > high_water_) {
-    // LOG(INFO) << "Signal overload bpq_out: " << std::endl;
     bess::Packet *pkt = PreparePacket(pkts[cnt - 1]);
     if (pkt) {
       FillBkdrftHeader(pkt, true);
+      // LOG(INFO) << "Signal overload bpq_out: " << std::endl;
+      tx_pause_++;
       SignalOverloadBP(pkt);
+    } else {
+	    LOG(INFO) << "Something wrong with packet allocation" << std::endl;
     }
   }
 
@@ -261,12 +264,15 @@ struct task_result BPQOut::RunTask(Context *, bess::PacketBatch *, void *) {
         .bits = (total_sent_bytes + total_sent_packets * pkt_overhead) * 8};
     }
 
-    if (llring_count(queue_) < low_water_) {
+    if (llring_count(queue_) < low_water_ && overload_) {
       bess::Packet *pkt = PreparePacket(mbufs_[cnt - 1]);
       // bess::Packet *pkt = bess::Packet::copy(mbufs_[cnt - 1]);
       if (pkt) {
         FillBkdrftHeader(pkt, false);
+	tx_resume_++;
         SignalUnderloadBP(pkt);
+      } else {
+	      LOG(INFO) << "Someting wrong with memory allocation (underload)" << std::endl;
       }
     }
 
@@ -276,11 +282,16 @@ struct task_result BPQOut::RunTask(Context *, bess::PacketBatch *, void *) {
 }
 
 CommandResponse BPQOut::CommandGetSummary(const bess::pb::EmptyArg &) {
+	// LOG(INFO) << "rx_pause_frame: " << rx_pause_frame_ << std::endl;
   bkdrft::pb::BPQOutCommandGetSummaryResponse r;
-  r.set_rx_pause_frame(rx_pause_frame_);
-  r.set_tx_pause_frame(tx_pause_frame_);
-  r.set_rx_resume_frame(rx_resume_frame_);
-  r.set_tx_resume_frame(tx_resume_frame_);
+  // r.set_rx_pause_frame(rx_pause_frame_);
+  // r.set_tx_pause_frame(tx_pause_frame_);
+  // r.set_rx_resume_frame(rx_resume_frame_);
+  // r.set_tx_resume_frame(tx_resume_frame_);
+  r.set_rx_pause_frame(rx_pause_);
+  r.set_tx_pause_frame(tx_pause_);
+  r.set_rx_resume_frame(rx_resume_);
+  r.set_tx_resume_frame(tx_resume_);
   return CommandSuccess(r);
 }
 

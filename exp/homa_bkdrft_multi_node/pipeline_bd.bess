@@ -124,11 +124,12 @@ else:
             qout1 = BPQOut(port=vhost_ports[i], qid=0)
             worker_id = get_next_core()
             qout1.attach_task(wid=worker_id)
-            lock_less_q = Queue()
-            iplookup:i -> lock_less_q -> qout1
+            # lock_less_q = Queue()
+            # iplookup:i -> lock_less_q -> qout1
+            iplookup:i -> qout1
             broker:i -> egress_out_collection[i] # overlay
             # worker_id = get_next_core()
-            lock_less_q.attach_task(wid=worker_id)
+            # lock_less_q.attach_task(wid=worker_id)
             
 
         iplookup.add(prefix="0.0.0.0", prefix_len=0, gate=count_vhost_ports) 
