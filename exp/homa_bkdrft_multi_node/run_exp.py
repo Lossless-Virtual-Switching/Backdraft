@@ -18,8 +18,8 @@ cur_script_dir = os.path.dirname(os.path.abspath(__file__))
 
 pipeline_config_file = os.path.join(cur_script_dir,
     # '../homa/pipeline_pfq.bess')
-    # '../homa/pipeline.bess')
-     'pipeline_bd.bess')
+    '../homa/pipeline.bess')
+    # 'pipeline_bd.bess')
 
 homa_base = os.path.join(cur_script_dir, '../../code/Homa')
 homa_app_bin = os.path.join(homa_base, 'build/test/dpdk_test') # udp_app
@@ -43,9 +43,9 @@ def run_system_perf_client(conf):
     # --dpdk-extra=--no-pci --dpdk-extra='-l 6' --slow-down={} --tx-pkt-length={} --vhost-port-ip={} --vhost-port-mac={}".format(conf["slow_down"], conf["tx_pkt_length"],
     #         conf["ip"], conf["mac"])
 
-    cmd = "sudo ./build/test/dpdk_client_system_test 100000 -v --id={} --barriers={} --vhost-port \
+    cmd = "sudo ./build/test/dpdk_client_system_test 1000 -v --id={} --barriers={} --vhost-port \
     --iface='--vdev=virtio_user0,path={}' --dpdk-extra=--no-pci \
-    --size=1400 --dpdk-extra='--file-prefix=mg-{}' --dpdk-extra='-l'  --dpdk-extra='{}' --vhost-port-ip={} --vhost-port-mac={}".format(conf["id"], conf["barriers"], conf["path"], conf["ip"], conf["cpuset"], conf["ip"], conf["mac"])
+    --size=1700 --dpdk-extra='--file-prefix=mg-{}' --dpdk-extra='-l'  --dpdk-extra='{}' --vhost-port-ip={} --vhost-port-mac={}".format(conf["id"], conf["barriers"], conf["path"], conf["ip"], conf["cpuset"], conf["ip"], conf["mac"])
 
     print("client {}".format(cmd))
 
@@ -293,6 +293,17 @@ def main():
       byte = float(raw[4].replace(',', ''))
       sum_pkts += pkts
       sum_bytes += byte
+
+      # pause frame
+      name = 'bpq_inc{}'.format(i)
+      ret = bessctl_do('command module {} get_summary EmptyArg {{}}'.format(name), subprocess.PIPE)
+      log = ret.stdout.decode()
+      print(log)
+
+      name = 'bpq_out{}'.format(i)
+      ret = bessctl_do('command module {} get_summary EmptyArg {{}}'.format(name), subprocess.PIPE)
+      log = ret.stdout.decode()
+      print(log)
 
     # I don't have the time of experiment.
     print ('throughput: {:2f} (Mpps) {:2f} (Gbps)'.format(sum_pkts / 40 / 1e6, sum_bytes * 8 / 40 / 1e9))
