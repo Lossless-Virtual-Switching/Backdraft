@@ -284,7 +284,6 @@ void
 DpdkDriver::Impl::sendPacket(Driver::Packet* packet, IpAddress destination,
                              int priority)
 {
-    ;
     DpdkDriver::Impl::Packet* pkt =
         container_of(packet, DpdkDriver::Impl::Packet, base);
     struct rte_mbuf* mbuf = nullptr;
@@ -318,10 +317,11 @@ DpdkDriver::Impl::sendPacket(Driver::Packet* packet, IpAddress destination,
         // If the mbuf is still transmitting from a previous call to send,
         // we don't want to modify the buffer when the send is occuring.
         // Thus if the mbuf is in use and drop this send request.
-        // if (unlikely(rte_mbuf_refcnt_read(mbuf) > 1)) {
-        //     NOTICE("Packet still sending; dropping resend request");
-        //     return;
-        // }
+        // TODO (Farbod): maybe we want to comment this out
+        if (unlikely(rte_mbuf_refcnt_read(mbuf) > 1)) {
+            NOTICE("Packet still sending; dropping resend request");
+            return;
+        }
     }
 
     // Fill out the destination and source MAC addresses plus the Ethernet
@@ -415,9 +415,9 @@ DpdkDriver::Impl::sendPacket(Driver::Packet* packet, IpAddress destination,
     rte_eth_tx_buffer(port, 0, tx.buffer, mbuf);
 
     // Flush packets now if the driver is not corked.
-    // if (corked.load() < 1) {
-    rte_eth_tx_buffer_flush(port, 0, tx.buffer);
-    // }
+    if (corked.load() < 1) {
+      rte_eth_tx_buffer_flush(port, 0, tx.buffer);
+    }
 }
 
 // See Driver::cork()
@@ -543,8 +543,10 @@ DpdkDriver::Impl::receivePackets(uint32_t maxPackets,
                 packet = packetPool.construct(m, payload);
                 mbufsOutstanding++;
             } else {
+                NOTICE("HERE WE ARE in receivePacket, using overflowbuffer");
                 OverflowBuffer* buf = overflowBufferPool.construct();
-                rte_memcpy(payload, buf->data, length);
+                // rte_memcpy(payload, buf->data, length);
+                rte_memcpy(buf->data, payload, length);
                 packet = packetPool.construct(buf);
             }
         }

@@ -111,6 +111,7 @@ int clientPollWorker(void *_arg)
 static int pkt_to_finish;
 static int num_failed_pkt;
 static std::map<uint32_t, uint64_t> timebook;
+static uint64_t finish = 0;
 int clientRxWorker(void *_arg)
 {
   Node *client = (Node *)_arg;
@@ -124,7 +125,10 @@ int clientRxWorker(void *_arg)
   int numFailed = 0;
   int numComplete = 0;
 
-  while (numFailed + numComplete < pkt_to_finish) {
+  uint64_t now = 0;
+
+  while (numFailed + numComplete < pkt_to_finish ||PerfUtils::Cycles::toSeconds( now - finish) < 1) {
+    now = PerfUtils::Cycles::rdtsc();
     done = client->transport->getDonePackets((Homa::OutMessage **)messages, size);
     // if (done > 0) {
     //   // std::cout << "Some done: " << done << std::endl;
@@ -146,14 +150,18 @@ int clientRxWorker(void *_arg)
         }
         start =  it->second;
         times.emplace_back(PerfUtils::Cycles::toSeconds(stop - start));
+        continue;
       } else if (status == Homa::OutMessage::Status::FAILED) {
-          client->transport->unsafe_free_message(message); // Hope this frees the Message
         numFailed++;
       } else {
         std::cout << "Unknown packet" << std::endl;
       }
+      client->transport->unsafe_free_message(message); // Hope this frees the Message
     }
   }
+
+  std::cout << "Failed: " << numFailed << " Completed: " << numComplete <<
+    std::endl;
 
   std::cout << "Rx worker done" << std::endl;
   num_failed_pkt = numFailed;
@@ -303,6 +311,7 @@ int clientMain(int count, int size, std::vector<Homa::IpAddress> addresses,
   }
 
   std::cout << "Tx worker done" << std::endl;
+  finish = PerfUtils::Cycles::rdtsc();
 
   // Wait until other threads are done
   rte_eal_wait_lcore(poll_lcore_id);

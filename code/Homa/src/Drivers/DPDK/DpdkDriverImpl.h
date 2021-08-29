@@ -46,7 +46,7 @@ const int NDESC = 256;
 // Maximum number of packet buffers that the memory pool can hold. The
 // documentation of `rte_mempool_create` suggests that the optimum value
 // (in terms of memory usage) of this number is a power of two minus one.
-const int NB_MBUF = 16383;
+const int NB_MBUF = 32767; // 16383;
 
 // If cache_size is non-zero, the rte_mempool library will try to limit the
 // accesses to the common lockless pool, by maintaining a per-lcore object
@@ -58,7 +58,7 @@ const int MEMPOOL_CACHE_SIZE = 32;
 // The number of mbufs the driver should try to reserve for receiving packets.
 // Prevents applications from claiming more mbufs once the number of available
 // mbufs reaches this level.
-const uint32_t NB_MBUF_RESERVED = 4096;
+const uint32_t NB_MBUF_RESERVED = 8192;
 
 // The number of packets that can be held in loopback before they get dropped
 const uint32_t NB_LOOPBACK_SLOTS = 4096;
