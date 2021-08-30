@@ -68,7 +68,8 @@ static const char USAGE[] = R"(Homa System Test.
         --vhost-port-ip=IP    Vhost port ip, this is highly useful for vhost port.
         --vhost-port-mac=MAC  Vhost port mac address, this is highly useful for vhost port.
         --iface=IFACE         Interface for the vhost port mostly
-	--delay=DELAY	      Number of nanoseconds a client should wait before sending next RPC 
+        --delay=DELAY         Number of nanoseconds a client should wait before sending next RPC
+        --victim              This client should send victim flow
 )";
 
 bool _PRINT_CLIENT_ = false;
@@ -122,6 +123,7 @@ static int pkt_to_finish;
 static int num_failed_pkt;
 static std::map<uint32_t, uint64_t> timebook;
 static uint64_t finish = 0;
+static bool isVictim = false;
 int clientRxWorker(void *_arg)
 {
   Node *client = (Node *)_arg;
@@ -289,7 +291,7 @@ int clientMain(int count, int size, std::vector<Homa::IpAddress> addresses,
   std::cout << "STAAAAAAAAAAAARRRRRRRRTTTTTTTTTTTTTTTTTT" << std::endl;
 
   // NOTE: Currently therse is only one server IP
-  Homa::IpAddress destAddress = addresses[0];
+  Homa::IpAddress destAddress;
 
   // A fix payload is used for all packets
   char payload[size];
@@ -299,6 +301,7 @@ int clientMain(int count, int size, std::vector<Homa::IpAddress> addresses,
 
   Homa::OutMessage *message;
   for (int i = 0; i < count; i++) {
+    destAddress = addresses[randAddr(gen)];
     // sending on port zero!
     uint64_t id = nextId++;
     // Homa::unique_ptr<Homa::OutMessage> message = client.transport->unsafe_alloc(0);
@@ -352,6 +355,7 @@ int main(int argc, char* argv[])
   int barrier_count = args["--barriers"].asLong();
   int param_id = args["--id"].asLong();
   int delay = args["--delay"].asLong();
+  isVictim = args["--verbose"].asBool();
 
   // level of verboseness
   bool printSummary = false;
@@ -417,6 +421,9 @@ int main(int argc, char* argv[])
   // Parameter parsing is done
   std::vector<Homa::IpAddress> addresses;
   addresses.emplace_back(Homa::IpAddress::fromString("192.168.1.1"));
+  if (isVictim) {
+    addresses.emplace_back(Homa::IpAddress::fromString("192.168.1.2"));
+  }
 
   uint64_t start = PerfUtils::Cycles::rdtsc();
   int numFails = clientMain(numTests, numBytes, addresses, vhost_ip,

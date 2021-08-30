@@ -1,6 +1,6 @@
 #!/usr/bin/python3
 """
-Backdraft Overlay Experiment Script
+Backdraft Homa Experiment Script
 """
 import os
 import sys
@@ -19,10 +19,11 @@ cur_script_dir = os.path.dirname(os.path.abspath(__file__))
 pipeline_config_file = os.path.join(cur_script_dir,
     # '../homa/pipeline_pfq.bess')
     # '../homa/pipeline.bess')
-    'pipeline_bd.bess')
+    # 'pipeline_bd.bess')
+    'pipeline_incast_bd.bess')
 
 homa_base = os.path.join(cur_script_dir, '../../code/Homa')
-homa_app_bin = os.path.join(homa_base, 'build/test/dpdk_test') # udp_app
+homa_app_bin = os.path.join(homa_base, 'build/test/dpdk_test')
 
 
 def _stop_everything():
@@ -38,41 +39,36 @@ def _stop_everything():
 
 
 def run_system_perf_client(conf):
-    # cmd = "sudo ./build/test/dpdk_test --vhost-port \
-    # --iface='--vdev=virtio_user0,path=/tmp/vhost_0.sock,queues=1'  --server \
-    # --dpdk-extra=--no-pci --dpdk-extra='-l 6' --slow-down={} --tx-pkt-length={} --vhost-port-ip={} --vhost-port-mac={}".format(conf["slow_down"], conf["tx_pkt_length"],
-    #         conf["ip"], conf["mac"])
-
-    cmd = "sudo ./build/test/dpdk_openloop_test 1000000 -v --delay={}\
-    --id={} --barriers={} --vhost-port \
-    --iface='--vdev=virtio_user0,path={}' --dpdk-extra=--no-pci \
-    --size=1400 --dpdk-extra='--file-prefix=mg-{}' --dpdk-extra='-l'\
-    --dpdk-extra='{}' --vhost-port-ip={} --vhost-port-mac={}".format(\
-    conf["delay"], conf["id"], conf["barriers"], conf["path"], conf["ip"], conf["cpuset"], conf["ip"], conf["mac"])
+    client_bin = './build/test/dpdk_openloop_test'
+    cmd = ("sudo {} 1000000 -v --delay={} --id={} "
+    "--barriers={} --vhost-port --iface='--vdev=virtio_user0,path={}' "
+    "--dpdk-extra=--no-pci --size=1400 --dpdk-extra='--file-prefix=mg-{}' "
+    "--dpdk-extra='-l' --dpdk-extra='{}' --vhost-port-ip={} "
+    "--vhost-port-mac={} ").format(client_bin, conf["delay"], conf["id"],
+            conf["barriers"], conf["path"], conf["ip"], conf["cpuset"],
+            conf["ip"], conf["mac"])
 
     print("client {}".format(cmd))
 
     return subprocess.Popen(cmd, shell=True, cwd=homa_base,
             stdout=subprocess.PIPE, stderr=subprocess.PIPE, encoding='utf8')
 
-def run_system_perf_server(conf):
-    # cmd = "sudo ./build/test/dpdk_test --vhost-port \
-    # --iface='--vdev=virtio_user0,path=/tmp/vhost_0.sock,queues=1'  --server \
-    # --dpdk-extra=--no-pci --dpdk-extra='-l 6' --slow-down={} --tx-pkt-length={} --vhost-port-ip={} --vhost-port-mac={}".format(conf["slow_down"], conf["tx_pkt_length"],
-    #         conf["ip"], conf["mac"])
 
-    cmd = "sudo ./build/test/dpdk_server_system_test 100 --server=1 -v \
-    --vhost-port --iface='--vdev=virtio_user0,path={}' --dpdk-extra=--no-pci \
-    --dpdk-extra='-l' --dpdk-extra='{}' --dpdk-extra='--file-prefix=mg-{}' --vhost-port-ip={} \
-    --vhost-port-mac={}".format(conf['path'], conf['cpuset'], conf['cpuset'],
-            conf["ip"], conf["mac"])
+def run_system_perf_server(conf):
+    server_bin = './build/test/dpdk_server_system_test'
+    cmd = ("sudo {} 100 --server=1 -v "
+            "--vhost-port --iface='--vdev=virtio_user0,path={}' "
+            "--dpdk-extra=--no-pci --dpdk-extra='-l' --dpdk-extra='{}' "
+            "--dpdk-extra='--file-prefix=mg-{}' --vhost-port-ip={} "
+            "--vhost-port-mac={}").format(server_bin, conf['path'],
+                    conf['cpuset'], conf['cpuset'], conf["ip"], conf["mac"])
 
     if conf["slow_down"]:
-        cmd = "sudo cpulimit -l {} -- ./build/test/dpdk_server_system_test 100 \
+        cmd = "sudo cpulimit -l {} -- {} 100 \
         --server=1 -v --vhost-port --iface='--vdev=virtio_user0,path={}' \
         --dpdk-extra=--no-pci --dpdk-extra='-l' --dpdk-extra='{}' \
         --dpdk-extra='--file-prefix=mg-{}' --vhost-port-ip={} \
-        --vhost-port-mac={}".format(conf["slow_down"], conf['path'],
+        --vhost-port-mac={}".format(conf["slow_down"], server_bin, conf['path'],
                 conf['cpuset'], conf['cpuset'], conf["ip"], conf["mac"])
 
     print("server {}".format(cmd))
@@ -80,8 +76,10 @@ def run_system_perf_server(conf):
     return subprocess.Popen(cmd, shell=True, cwd=homa_base,
             stdout=subprocess.PIPE, stderr=subprocess.PIPE, encoding='utf8')
 
+
 def get_pfc_results():
-    log = subprocess.check_output('ethtool -S eno50 | grep prio3_pause', shell=True)
+    log = subprocess.check_output('ethtool -S eno50 | grep prio3_pause',
+            shell=True)
     log = log.decode()
     log = log.strip()
     lines = log.split('\n')
@@ -118,84 +116,34 @@ def main():
       pipeline_conf['vhost_port_count'] = vhost_port_count
       pipeline_conf['server'] = True if mode == 'server' else False
       pipeline_conf['drop_prob'] = drop_probability
-      # pipeline_conf['cdq'] = cdq
-      # pipeline_conf['pfq'] = pfq
-      # pipeline_conf['bp'] = bp
-      # pipeline_conf['buffering'] = buffering
-      # pipeline_conf['overlay'] = overlay
       txt = json.dumps(pipeline_conf)
       f.write(txt)
 
-    # if cdq:
-    #     app_mode = 'bkdrft'
-    # else:
-    #     app_mode = 'bess'
-
-    # if override_vswitch_path:
-    #     # override_bess_path("/proj/uic-dcs-PG0/alireza/homa-bess/bess")
-    #     # override_bess_path("/proj/uic-dcs-PG0/fshahi5/new/post-loom/code/bess-v1")
-    #     override_bess_path("/proj/uic-dcs-PG0/alireza/post-loom/code/bess-v1")
-
-    # server_conf = {
-    #         'cpuset': 7,
-    #         # 'prefix': 'server',
-    #         'vdev': 'path=/tmp/vhost_0.sock,queues={}'.format(count_queue),
-    #         # 'count_queue': count_queue,
-    #         # 'type': app_mode,
-    #         'mac': '1c:34:da:41:c8:04',
-    #         'ip': '192.168.1.1',
-    #         'slow_down': slow_down,
-    #         'tx_pkt_length': tx_size
-    #         }
-
-    # client_conf = {
-    #          'cpuset': cpuset,
-    #         'prefix': 'client',
-    #         'vdev': 'virtio_user0,path=/tmp/vhost_0.sock,queues={}'.format(count_queue),
-    #         'count_queue': count_queue,
-    #         'type': app_mode,
-    #         'source_ip': '10.0.0.2', 
-    #         'count_dst': 1,
-    #         'ips': '10.0.0.1',
-    #         'count_flow': 1,
-
-    #         'vhost_port_count': vhost_port_count,
-    #         'slow_down': slow_down,
-    #         'tx_pkt_length': tx_size
-    #          }
-
-
     # Setup BESS config
     file_path = pipeline_config_file
-    # tmp = subprocess.run('pidof bessd', shell=True)
-    # tmp = tmp.returncode
-    # print('pidof result:', tmp)
-    # if tmp == 1: 
     ret = bessctl_do('daemon start -- run file {}'.format(file_path))
     print(ret.returncode)
     if ret.returncode != 0:
       print("bess has issues")
       return 1
 
-
     server_process = []
     client_process = []
-
 
     if mode == "server": 
         # run_server(server_conf)
         for i in range(vhost_port_count):
             server_conf = {
-                    'cpuset': i + 10,
-                    # 'prefix': 'server',
-                    # 'path': '/tmp/vhost_{}.sock,queues={}'.format(i, count_queue),
-                    'path': '/tmp/vhost_{}.sock,queues={}'.format(i, 1),
-                    # 'count_queue': count_queue,
-                    # 'type': app_mode,
-                    'mac': '9c:dc:71:5b:22:a1',
-                    'ip': '192.168.1.1',
-                    'slow_down': slow_down,
-                    'tx_pkt_length': tx_size
+                'cpuset': i + 10,
+                # 'prefix': 'server',
+                # 'path': '/tmp/vhost_{}.sock,queues={}'.format(i, count_queue),
+                'path': '/tmp/vhost_{}.sock,queues={}'.format(i, 1),
+                # 'count_queue': count_queue,
+                # 'type': app_mode,
+                'mac': '9c:dc:71:5b:22:a1',
+                'ip': '192.168.1.1',
+                'slow_down': slow_down,
+                'tx_pkt_length': tx_size
             }
             sp = run_system_perf_server(server_conf)
             server_process.append(sp)
@@ -207,7 +155,7 @@ def main():
             # print('ip ' + "192.168.1.{}".format(i + 1))
             client_conf = {
               'cpuset': f'{i*3+10}-{i*3+12}', # it is just random
-            # 'prefix': 'client',
+              # 'prefix': 'client',
               # 'path': '/tmp/vhost_{}.sock,queues={}'.format(i, count_queue),
               'path': '/tmp/vhost_{}.sock,queues={}'.format(i, 1),
               'slow_down': slow_down,
@@ -217,7 +165,8 @@ def main():
               'mac': "9c:dc:71:5e:0f:e1",
               'barriers': vhost_port_count,
               'id': i,
-              'delay': 100 if i%2==1 else delay 
+              # 'delay': 100 if i%2==1 else delay 
+              'delay': delay
             }
 
             # run_client(client_conf)
@@ -228,53 +177,16 @@ def main():
         for i in range(vhost_port_count):
             client_process[i].wait()
 
-
-    # pfc_stats_before = get_pfc_results()
-
-    # clients = []
-    # server_dict = {}
-    # last_core_id = count_core
-    # for i in range(0, 2 * count_core, 2):
-    #     vdev = 'virtio_user{0},path=/tmp/vhost_{0}.sock,queues={1}'.format(i, count_queue)
-    #     server_conf['vdev'] = vdev
-    #     server_conf['cpuset'] = last_core_id
-    #     server_conf['prefix'] = 'server_{}'.format(i)
-    #     # last_core_id += 1
-    #     # server = run_server(server_conf)
-
-    #     j = i + 1
-    #     vdev = 'virtio_user{0},path=/tmp/vhost_{0}.sock,queues={1}'.format(j, count_queue)
-    #     client_conf['vdev'] = vdev
-    #     client_conf['cpuset'] = last_core_id
-    #     client_conf['prefix'] = 'client_{}'.format(i)
-    #     last_core_id += 1
-    #     client = run_client(client_conf)
-
-    #     # server_dict[i] = server
-    #     clients.append(client)
-
-    # for i, client in enumerate(clients):
-    #     client.wait()
-    #     # server_dict[i * 2].kill()
-
-    # # experiment finished
-    # # ret = bessctl_do('show port', subprocess.PIPE)
-    # # log = ret.stdout.decode()
-    # # print(log)
-
     sum_pkts = 0
     sum_bytes = 0
 
-    ret = bessctl_do('show pipeline', subprocess.PIPE)
-    print(ret.stdout.decode())
+    # ret = bessctl_do('show pipeline', subprocess.PIPE)
+    # print(ret.stdout.decode())
     ret = bessctl_do('show port', subprocess.PIPE)
-    print(ret.stdout.decode())
+    print(ret.stdout.decode().strip())
 
-    # ret = bessctl_do('show port', subprocess.PIPE)
-    # log = ret.stdout.decode()
-    # log = log.strip()
-    # print(log)
-    ret = bessctl_do('command module measure_pps0 get_summary EmptyArg', subprocess.PIPE)
+    ret = bessctl_do('command module measure_pps0 get_summary EmptyArg',
+            subprocess.PIPE, subprocess.PIPE)
     if ret.returncode != 0:
         print("command measure pps failed")
     else:
@@ -374,7 +286,8 @@ if __name__ == '__main__':
     parser.add_argument('--time', type=int, help="Time of the experimnet", default=30)
     parser.add_argument('--tx_size', type=int, help="Server tx packet size", default=64)
     parser.add_argument('--drop', type=float, help="probability of drop in BESS", default=0.0)
-    parser.add_argument('--delay', type=int, help="number of nanoseconds a client should wait before sending the packets", default=2000)
+    parser.add_argument('--delay', type=int,
+            help="number of nanoseconds a client should wait before sending the packets", default=2000)
 
     args = parser.parse_args()
 
