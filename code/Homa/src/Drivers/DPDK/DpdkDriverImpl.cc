@@ -669,12 +669,13 @@ DpdkDriver::Impl::_init_vhost()
     // throughout ARP messages
     // Server
     arpTable.emplace(IpAddress::fromString("192.168.1.1"), "9c:dc:71:5b:22:a1");
+    arpTable.emplace(IpAddress::fromString("192.168.1.2"), "9c:dc:71:5b:22:a1");
 
     // This is all for clients
-    for (int i=2; i < 100; i++)
+    for (int i=3; i < 100; i++)
     {
-	std::string ip = StringUtil::format("192.168.1.%d", i);
-    	arpTable.emplace(IpAddress::fromString(ip.c_str()), "9c:dc:71:5e:0f:e1");
+      std::string ip = StringUtil::format("192.168.1.%d", i);
+      arpTable.emplace(IpAddress::fromString(ip.c_str()), "9c:dc:71:5e:0f:e1");
     }
 
     // Iterate over ethernet devices to locate the port identifier.
@@ -684,7 +685,7 @@ DpdkDriver::Impl::_init_vhost()
     {
         struct rte_ether_addr mac;
         rte_eth_macaddr_get(p, &mac);
-	// memcpy(localMac.address, &mac, 6);
+        // memcpy(localMac.address, &mac, 6);
         port = p;
     }
 

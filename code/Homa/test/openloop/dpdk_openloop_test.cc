@@ -119,11 +119,14 @@ int clientPollWorker(void *_arg)
   return 0;
 }
 
+static std::vector<Homa::IpAddress> addresses;
 static int pkt_to_finish;
 static int num_failed_pkt;
 static std::map<uint32_t, uint64_t> timebook;
+static std::map<uint32_t, uint32_t> tag_type;
 static uint64_t finish = 0;
 static bool isVictim = false;
+
 int clientRxWorker(void *_arg)
 {
   Node *client = (Node *)_arg;
@@ -132,21 +135,18 @@ int clientRxWorker(void *_arg)
   const int size = 32;
   Homa::OutMessage *messages[size];
   Homa::OutMessage *message;
-  std::vector<Output::Latency> times;
+  std::vector<Output::Latency> times[addresses.size()];
   uint64_t start, stop;
+  size_t time_list_index;
   int numFailed = 0;
   int numComplete = 0;
 
   uint64_t now = 0;
 
-  while (numFailed + numComplete < pkt_to_finish ||PerfUtils::Cycles::toSeconds( now - finish) < 1) {
+  while (numFailed + numComplete < pkt_to_finish ||
+      PerfUtils::Cycles::toSeconds( now - finish) < 1) {
     now = PerfUtils::Cycles::rdtsc();
     done = client->transport->getDonePackets((Homa::OutMessage **)messages, size);
-    // if (done > 0) {
-    //   // std::cout << "Some done: " << done << std::endl;
-    //   std::cout << "Some done: " << done << " total: " << numFailed +
-    //       numComplete << std::endl;
-    // }
     for(int i = 0; i < done; i++) {
       message = messages[i];
       status = message->getStatus();
@@ -156,12 +156,22 @@ int clientRxWorker(void *_arg)
         uint32_t id = message->getTag();
         // Homa::OutMessage::Deleter(message); // Hope this frees the Message
         client->transport->unsafe_free_message(message); // Hope this frees the Message
-        auto it = timebook.find(id);
-        if (it == timebook.end()) {
-          continue;
+        {
+          auto it = timebook.find(id);
+          if (it == timebook.end()) {
+            continue;
+          }
+          start = it->second;
         }
-        start =  it->second;
-        times.emplace_back(PerfUtils::Cycles::toSeconds(stop - start));
+        {
+          auto it = tag_type.find(id);
+          if (it == tag_type.end()) {
+            continue;
+          }
+          time_list_index = it->second;
+        }
+        times[time_list_index].emplace_back(
+            PerfUtils::Cycles::toSeconds(stop - start));
         continue;
       } else if (status == Homa::OutMessage::Status::FAILED) {
         numFailed++;
@@ -179,8 +189,16 @@ int clientRxWorker(void *_arg)
   num_failed_pkt = numFailed;
   client->run = false;
 
-  std::cout << Output::basicHeader() << std::endl;
-  std::cout << Output::basic(times, "Homa Transport Testing") << std::endl;
+  for (int i = 0; i < addresses.size(); i++) {
+    std::cout << "Result for IP: " << (uint32_t)addresses[i] << std::endl;
+    if (times[i].size() > 0) {
+      std::cout << Output::basicHeader() << std::endl;
+      std::cout << Output::basic(times[i], "Homa Transport Testing") << std::endl;
+    } else {
+      std::cout << "No latency record found!" << std::endl;
+    }
+    std::cout << "=================================================" << std::endl;
+  }
   return 0;
 }
 
@@ -299,9 +317,12 @@ int clientMain(int count, int size, std::vector<Homa::IpAddress> addresses,
     payload[i] = randData(gen);
   }
 
+  int addrIndex;
+  uint32_t tag;
   Homa::OutMessage *message;
   for (int i = 0; i < count; i++) {
-    destAddress = addresses[randAddr(gen)];
+    addrIndex = randAddr(gen);
+    destAddress = addresses[addrIndex];
     // sending on port zero!
     uint64_t id = nextId++;
     // Homa::unique_ptr<Homa::OutMessage> message = client.transport->unsafe_alloc(0);
@@ -319,6 +340,7 @@ int clientMain(int count, int size, std::vector<Homa::IpAddress> addresses,
     // set time stamp
     start = PerfUtils::Cycles::rdtsc();
     timebook[id] = start;
+    tag_type[id] = addrIndex;
     // send the message
     message->send(Homa::SocketAddress{destAddress, 60001});
     wait(wait_time);
@@ -355,7 +377,10 @@ int main(int argc, char* argv[])
   int barrier_count = args["--barriers"].asLong();
   int param_id = args["--id"].asLong();
   int delay = args["--delay"].asLong();
-  isVictim = args["--verbose"].asBool();
+  isVictim = args["--victim"].asBool();
+  if (isVictim) {
+    std::cout << "victim flow is enabled" << std::endl;
+  }
 
   // level of verboseness
   bool printSummary = false;
@@ -419,7 +444,6 @@ int main(int argc, char* argv[])
     dpdk_extra_params[dpdk_extra_count] = NULL;
   }
   // Parameter parsing is done
-  std::vector<Homa::IpAddress> addresses;
   addresses.emplace_back(Homa::IpAddress::fromString("192.168.1.1"));
   if (isVictim) {
     addresses.emplace_back(Homa::IpAddress::fromString("192.168.1.2"));
@@ -427,7 +451,8 @@ int main(int argc, char* argv[])
 
   uint64_t start = PerfUtils::Cycles::rdtsc();
   int numFails = clientMain(numTests, numBytes, addresses, vhost_ip,
-      vhost_mac, dpdk_extra_count, dpdk_extra_params, barrier_count, param_id, delay);
+      vhost_mac, dpdk_extra_count, dpdk_extra_params, barrier_count, param_id,
+      delay);
   uint64_t end = PerfUtils::Cycles::rdtsc();
   uint64_t duration = PerfUtils::Cycles::toNanoseconds(end - start);
   double duration_s = PerfUtils::Cycles::toSeconds(end - start);

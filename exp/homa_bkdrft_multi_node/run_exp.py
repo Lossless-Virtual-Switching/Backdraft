@@ -40,13 +40,16 @@ def _stop_everything():
 
 def run_system_perf_client(conf):
     client_bin = './build/test/dpdk_openloop_test'
+    victim = ''
+    if 'victim' in conf and conf['victim']:
+        victim = '--victim'
     cmd = ("sudo {} 1000000 -v --delay={} --id={} "
     "--barriers={} --vhost-port --iface='--vdev=virtio_user0,path={}' "
     "--dpdk-extra=--no-pci --size=1400 --dpdk-extra='--file-prefix=mg-{}' "
     "--dpdk-extra='-l' --dpdk-extra='{}' --vhost-port-ip={} "
-    "--vhost-port-mac={} ").format(client_bin, conf["delay"], conf["id"],
+    "--vhost-port-mac={} {} ").format(client_bin, conf["delay"], conf["id"],
             conf["barriers"], conf["path"], conf["ip"], conf["cpuset"],
-            conf["ip"], conf["mac"])
+            conf["ip"], conf["mac"], victim)
 
     print("client {}".format(cmd))
 
@@ -161,15 +164,15 @@ def main():
               'slow_down': slow_down,
               'tx_pkt_length': tx_size,
               'file_prefix': i,
-              'ip': "192.168.1.{}".format(i + 2),
+              'ip': "192.168.1.{}".format(i + 3),
               'mac': "9c:dc:71:5e:0f:e1",
               'barriers': vhost_port_count,
               'id': i,
               # 'delay': 100 if i%2==1 else delay 
-              'delay': delay
+              'delay': delay,
+              'victim': i == 0,
             }
 
-            # run_client(client_conf)
             cp = run_system_perf_client(client_conf)
             sleep(0.5)
             client_process.append(cp)
@@ -218,9 +221,9 @@ def main():
       sum_pkts += pkts
       sum_bytes += byte
 
-    ret = bessctl_do('show tc', subprocess.PIPE)
-    log = ret.stdout.decode()
-    print(log)
+    # ret = bessctl_do('show tc', subprocess.PIPE)
+    # log = ret.stdout.decode()
+    # print(log)
 
     for i in range(vhost_port_count * 2):
       # pause frame
