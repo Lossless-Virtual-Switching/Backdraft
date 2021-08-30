@@ -99,7 +99,7 @@ clientMainBatch(int count, int size, std::vector<Homa::IpAddress> addresses,
     dpdk_param_size, char **dpdk_params, int barrier_count, int param_id)
 {
   size_t umem_size = sizeof(pthread_barrier_t) + 100;
-  char * SHM_PATH = "/dpdk_test6";
+  char SHM_PATH[20] = "/dpdk_test6";
   int ret;
   // void * bufs;
   pthread_barrier_t * bufs;

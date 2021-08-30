@@ -68,6 +68,7 @@ static const char USAGE[] = R"(Homa System Test.
         --vhost-port-ip=IP    Vhost port ip, this is highly useful for vhost port.
         --vhost-port-mac=MAC  Vhost port mac address, this is highly useful for vhost port.
         --iface=IFACE         Interface for the vhost port mostly
+	--delay=DELAY	      Number of nanoseconds a client should wait before sending next RPC 
 )";
 
 bool _PRINT_CLIENT_ = false;
@@ -187,10 +188,10 @@ int clientRxWorker(void *_arg)
  */
 int clientMain(int count, int size, std::vector<Homa::IpAddress> addresses,
     std::string ip, std::string mac, int
-    dpdk_param_size, char **dpdk_params, int barrier_count, int param_id)
+    dpdk_param_size, char **dpdk_params, int barrier_count, int param_id, int wait_time)
 {
   size_t umem_size = sizeof(pthread_barrier_t) + 100;
-  char * SHM_PATH = "/homa_openloop_dpdk_test";
+  char SHM_PATH[60] = "/homa_openloop_dpdk_test";
   int ret;
   pthread_barrier_t * bufs;
 
@@ -317,7 +318,7 @@ int clientMain(int count, int size, std::vector<Homa::IpAddress> addresses,
     timebook[id] = start;
     // send the message
     message->send(Homa::SocketAddress{destAddress, 60001});
-    wait(2000);
+    wait(wait_time);
   }
 
   std::cout << "Tx worker done" << std::endl;
@@ -350,6 +351,7 @@ int main(int argc, char* argv[])
   double packetLossRate = atof(args["--lossRate"].asString().c_str());
   int barrier_count = args["--barriers"].asLong();
   int param_id = args["--id"].asLong();
+  int delay = args["--delay"].asLong();
 
   // level of verboseness
   bool printSummary = false;
@@ -418,7 +420,7 @@ int main(int argc, char* argv[])
 
   uint64_t start = PerfUtils::Cycles::rdtsc();
   int numFails = clientMain(numTests, numBytes, addresses, vhost_ip,
-      vhost_mac, dpdk_extra_count, dpdk_extra_params, barrier_count, param_id);
+      vhost_mac, dpdk_extra_count, dpdk_extra_params, barrier_count, param_id, delay);
   uint64_t end = PerfUtils::Cycles::rdtsc();
   uint64_t duration = PerfUtils::Cycles::toNanoseconds(end - start);
   double duration_s = PerfUtils::Cycles::toSeconds(end - start);

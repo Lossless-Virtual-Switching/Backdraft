@@ -17,9 +17,9 @@ from bkdrft_common import *
 cur_script_dir = os.path.dirname(os.path.abspath(__file__))
 
 pipeline_config_file = os.path.join(cur_script_dir,
-    '../homa/pipeline_pfq.bess')
+    # '../homa/pipeline_pfq.bess')
     # '../homa/pipeline.bess')
-    # 'pipeline_bd.bess')
+    'pipeline_bd.bess')
 
 homa_base = os.path.join(cur_script_dir, '../../code/Homa')
 homa_app_bin = os.path.join(homa_base, 'build/test/dpdk_test') # udp_app
@@ -43,9 +43,12 @@ def run_system_perf_client(conf):
     # --dpdk-extra=--no-pci --dpdk-extra='-l 6' --slow-down={} --tx-pkt-length={} --vhost-port-ip={} --vhost-port-mac={}".format(conf["slow_down"], conf["tx_pkt_length"],
     #         conf["ip"], conf["mac"])
 
-    cmd = "sudo ./build/test/dpdk_openloop_test 1000000 -v --id={} --barriers={} --vhost-port \
+    cmd = "sudo ./build/test/dpdk_openloop_test 1000000 -v --delay={}\
+    --id={} --barriers={} --vhost-port \
     --iface='--vdev=virtio_user0,path={}' --dpdk-extra=--no-pci \
-    --size=1400 --dpdk-extra='--file-prefix=mg-{}' --dpdk-extra='-l'  --dpdk-extra='{}' --vhost-port-ip={} --vhost-port-mac={}".format(conf["id"], conf["barriers"], conf["path"], conf["ip"], conf["cpuset"], conf["ip"], conf["mac"])
+    --size=1400 --dpdk-extra='--file-prefix=mg-{}' --dpdk-extra='-l'\
+    --dpdk-extra='{}' --vhost-port-ip={} --vhost-port-mac={}".format(\
+    conf["delay"], conf["id"], conf["barriers"], conf["path"], conf["ip"], conf["cpuset"], conf["ip"], conf["mac"])
 
     print("client {}".format(cmd))
 
@@ -213,7 +216,8 @@ def main():
               'ip': "192.168.1.{}".format(i + 2),
               'mac': "9c:dc:71:5e:0f:e1",
               'barriers': vhost_port_count,
-              'id': i 
+              'id': i,
+              'delay': 100 if i%2==1 else delay 
             }
 
             # run_client(client_conf)
@@ -302,6 +306,9 @@ def main():
       sum_pkts += pkts
       sum_bytes += byte
 
+    ret = bessctl_do('show tc', subprocess.PIPE)
+    log = ret.stdout.decode()
+    print(log)
 
     for i in range(vhost_port_count * 2):
       # pause frame
@@ -367,6 +374,7 @@ if __name__ == '__main__':
     parser.add_argument('--time', type=int, help="Time of the experimnet", default=30)
     parser.add_argument('--tx_size', type=int, help="Server tx packet size", default=64)
     parser.add_argument('--drop', type=float, help="probability of drop in BESS", default=0.0)
+    parser.add_argument('--delay', type=int, help="number of nanoseconds a client should wait before sending the packets", default=2000)
 
     args = parser.parse_args()
 
@@ -383,5 +391,6 @@ if __name__ == '__main__':
     tx_size = args.tx_size
     mode = args.mode.strip()
     drop_probability = args.drop
+    delay = args.delay
     main()
 
