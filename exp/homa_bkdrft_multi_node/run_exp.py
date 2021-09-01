@@ -20,8 +20,8 @@ pipeline_config_file = os.path.join(cur_script_dir,
     # '../homa/pipeline_pfq.bess')
     # '../homa/pipeline.bess')
     # 'pipeline_bd.bess')
-    'pipeline_incast_bd.bess')
-    # 'pipeline_incast_pfq.bess')
+    # 'pipeline_incast_bd.bess')
+    'pipeline_incast_pfq.bess')
 
 homa_base = os.path.join(cur_script_dir, '../../code/Homa')
 homa_app_bin = os.path.join(homa_base, 'build/test/dpdk_test')
@@ -231,7 +231,7 @@ def main():
     log = ret.stdout.decode()
     print(log)
 
-    for i in range(vhost_port_count * 2):
+    for i in range(10):
       # pause frame
       name = 'bpq_inc{}'.format(i)
       print(name)
