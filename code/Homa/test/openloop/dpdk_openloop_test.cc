@@ -44,6 +44,8 @@
 #include <rte_launch.h>
 #include <rte_lcore.h>
 
+#include  "Generator.h"
+
 
 static const char USAGE[] = R"(Homa System Test.
 
@@ -317,6 +319,7 @@ int clientMain(int count, int size, std::vector<Homa::IpAddress> addresses,
     payload[i] = randData(gen);
   }
 
+  Generator *iagen = createFacebookIA();
   int addrIndex;
   uint32_t tag;
   Homa::OutMessage *message;
@@ -343,7 +346,8 @@ int clientMain(int count, int size, std::vector<Homa::IpAddress> addresses,
     tag_type[id] = addrIndex;
     // send the message
     message->send(Homa::SocketAddress{destAddress, 60001});
-    wait(wait_time);
+    // wait(wait_time);
+    wait(iagen->generate());
   }
 
   std::cout << "Tx worker done" << std::endl;

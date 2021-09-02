@@ -89,6 +89,9 @@ target_link_libraries(dpdk_server_system_test
 ## dpdk_openloop_test #########################################################
 add_executable(dpdk_openloop_test
     ./openloop/dpdk_openloop_test.cc
+    ./openloop/Generator.cc
+    ./openloop/util.cc
+    ./openloop/log.cc
 )
 target_link_libraries(dpdk_openloop_test
     PRIVATE
