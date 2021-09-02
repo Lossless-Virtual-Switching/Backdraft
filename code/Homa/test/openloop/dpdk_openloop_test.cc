@@ -19,6 +19,7 @@
 #include <Cycles.h>
 
 #include <atomic>
+#include <cmath>
 #include <iostream>
 #include <memory>
 #include <random>
@@ -128,6 +129,7 @@ static std::map<uint32_t, uint64_t> timebook;
 static std::map<uint32_t, uint32_t> tag_type;
 static uint64_t finish = 0;
 static bool isVictim = false;
+static uint64_t success_counter[2] = {};
 
 int clientRxWorker(void *_arg)
 {
@@ -174,6 +176,7 @@ int clientRxWorker(void *_arg)
         }
         times[time_list_index].emplace_back(
             PerfUtils::Cycles::toSeconds(stop - start));
+        success_counter[time_list_index]++;
         continue;
       } else if (status == Homa::OutMessage::Status::FAILED) {
         numFailed++;
@@ -193,6 +196,7 @@ int clientRxWorker(void *_arg)
 
   for (int i = 0; i < addresses.size(); i++) {
     std::cout << "Result for IP: " << (uint32_t)addresses[i] << std::endl;
+    std::cout << "Goodput: " << success_counter[i] << std::endl;
     if (times[i].size() > 0) {
       std::cout << Output::basicHeader() << std::endl;
       std::cout << Output::basic(times[i], "Homa Transport Testing") << std::endl;
@@ -219,7 +223,8 @@ int clientMain(int count, int size, std::vector<Homa::IpAddress> addresses,
 
   std::random_device rd;
   std::mt19937 gen(rd());
-  std::uniform_int_distribution<> randAddr(0, addresses.size() - 1);
+  // std::uniform_int_distribution<> randAddr(0, addresses.size() - 1);
+  std::exponential_distribution<> randAddr(1);
   std::uniform_int_distribution<> randAddrID(0, barrier_count);
   std::uniform_int_distribution<char> randData(0);
 
@@ -322,9 +327,11 @@ int clientMain(int count, int size, std::vector<Homa::IpAddress> addresses,
   Generator *iagen = createFacebookIA();
   int addrIndex;
   uint32_t tag;
+  uint32_t counter = 0;
   Homa::OutMessage *message;
   for (int i = 0; i < count; i++) {
-    addrIndex = randAddr(gen);
+    addrIndex = counter%20 == 0 ? 1: 0;
+    counter++;
     destAddress = addresses[addrIndex];
     // sending on port zero!
     uint64_t id = nextId++;
