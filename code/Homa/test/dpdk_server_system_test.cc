@@ -94,9 +94,19 @@ struct Node {
     std::atomic<bool> run;
 };
 
+void wait(int ns) {
+    uint64_t start , now;
+    start = PerfUtils::Cycles::rdtsc();
+    now = start;
+    while (PerfUtils::Cycles::toNanoseconds(now - start) < ns) {
+      now = PerfUtils::Cycles::rdtsc();
+    }
+}
+
 void
 serverMain(Node* server, std::vector<Homa::IpAddress> addresses)
 {
+   int counter = 0;
     while (true) {
         if (server->run.load() == false) {
             break;
@@ -116,11 +126,17 @@ serverMain(Node* server, std::vector<Homa::IpAddress> addresses)
                           << " (opId: " << header.id << ")" << std::endl;
             }
 
-	          uint64_t t, now;
-	          t = now  = PerfUtils::Cycles::rdtsc();
-	          while (now - t < 10000 && header.id >= 100000 && header.id <= 200000) {
-	              now = PerfUtils::Cycles::rdtsc();
-	          }
+	    //       uint64_t t, now;
+	    //       t = now  = PerfUtils::Cycles::rdtsc();
+	    //       while (now - t < 10000 && header.id >= 100000 && header.id <= 200000) {
+	    //           now = PerfUtils::Cycles::rdtsc();
+	    //       }
+
+	    // if (header.id % 10000 == 0) { 
+	    // if (header.id > 100000 && header.id % 10000 > 0 && header.id % 10000 < 10 && counter <= 10) { 
+	    // 	wait(1000);
+            //     counter++;
+	    // }
 
             message->acknowledge();
         }

@@ -22,6 +22,7 @@ pipeline_config_file = os.path.join(cur_script_dir,
     # 'pipeline_bd.bess')
     # 'pipeline_incast_bd.bess')
     'pipeline_incast_pfq.bess')
+    # 'pipeline_default.bess')
 
 homa_base = os.path.join(cur_script_dir, '../../code/Homa')
 homa_app_bin = os.path.join(homa_base, 'build/test/dpdk_test')
@@ -44,12 +45,14 @@ def run_system_perf_client(conf):
     victim = ''
     if 'victim' in conf and conf['victim']:
         victim = '--victim'
+    # cmd = ("sudo perf stat -e task-clock,cycles,instructions,cache-references,cache-misses {} 1000000 -v --delay={} --id={} "
+    # cmd = ("sudo perf record -ag {} 1000000 -v --delay={} --id={} "
     cmd = ("sudo {} 1000000 -v --delay={} --id={} "
     "--barriers={} --vhost-port --iface='--vdev=virtio_user0,path={}' "
-    "--dpdk-extra=--no-pci --size=1400 --dpdk-extra='--file-prefix=mg-{}' "
+    "--dpdk-extra=--no-pci --size={} --dpdk-extra='--file-prefix=mg-{}' "
     "--dpdk-extra='-l' --dpdk-extra='{}' --vhost-port-ip={} "
     "--vhost-port-mac={} {} ").format(client_bin, conf["delay"], conf["id"],
-            conf["barriers"], conf["path"], conf["ip"], conf["cpuset"],
+            conf["barriers"], conf["path"], conf["tx_pkt_length"], conf["ip"], conf["cpuset"],
             conf["ip"], conf["mac"], victim)
 
     print("client {}".format(cmd))
@@ -163,7 +166,7 @@ def main():
         for i in range(vhost_port_count):
             # print('ip ' + "192.168.1.{}".format(i + 1))
             client_conf = {
-              'cpuset': f'{i*3+10}-{i*3+12}', # it is just random
+              'cpuset': f'{i*3+6}-{i*3+8}', # it is just random
               # 'prefix': 'client',
               # 'path': '/tmp/vhost_{}.sock,queues={}'.format(i, count_queue),
               'path': '/tmp/vhost_{}.sock,queues={}'.format(i, 1),
@@ -182,6 +185,11 @@ def main():
             cp = run_system_perf_client(client_conf)
             sleep(0.5)
             client_process.append(cp)
+
+
+        # client_bin = './build/test/dpdk_openloop_test'
+        # pid = client_process[0].pid
+        # os.execv('/usr/bin/gdb', ['--pid', str(pid), client_bin])
 
         for i in range(vhost_port_count):
             client_process[i].wait()
@@ -235,12 +243,12 @@ def main():
       # pause frame
       name = 'bpq_inc{}'.format(i)
       print(name)
-      ret = bessctl_do('command module {} get_summary EmptyArg {{}}'.format(name), subprocess.PIPE)
+      ret = bessctl_do('command module {} get_summary EmptyArg {{}}'.format(name), subprocess.PIPE, subprocess.PIPE)
       log = ret.stdout.decode()
       print(log)
       name = 'bpq_out{}'.format(i)
       print(name)
-      ret = bessctl_do('command module {} get_summary EmptyArg {{}}'.format(name), subprocess.PIPE)
+      ret = bessctl_do('command module {} get_summary EmptyArg {{}}'.format(name), subprocess.PIPE, subprocess.PIPE)
       log = ret.stdout.decode()
       print(log)
 

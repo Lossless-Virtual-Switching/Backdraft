@@ -630,12 +630,15 @@ Receiver::checkResendTimeouts(uint64_t now, MessageBucket* bucket)
         // packets in case DATA packets got lost.
         int index = 0;
         int num = 0;
-        int grantIndexLimit = message->numUnscheduledPackets;
+        int grantIndexLimit = std::min(message->numUnscheduledPackets, message->numExpectedPackets);
+        // int grantIndexLimit = message->numUnscheduledPackets; 
+
 
         if (message->scheduled) {
             SpinLock::Lock lock_scheduler(schedulerMutex);
             ScheduledMessageInfo* info = &message->scheduledMessageInfo;
             int receivedBytes = info->messageLength - info->bytesRemaining;
+
             if (receivedBytes >= info->bytesGranted) {
                 // Sender is blocked on this Receiver; all granted packets
                 // have already been received.  No need to check for resend.

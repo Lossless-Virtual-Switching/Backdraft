@@ -174,6 +174,7 @@ int clientRxWorker(void *_arg)
           }
           time_list_index = it->second;
         }
+        // time_list_index = 0;
         times[time_list_index].emplace_back(
             PerfUtils::Cycles::toSeconds(stop - start));
         success_counter[time_list_index]++;
@@ -185,6 +186,7 @@ int clientRxWorker(void *_arg)
       }
       client->transport->unsafe_free_message(message); // Hope this frees the Message
     }
+    wait(500);
   }
 
   std::cout << "Failed: " << numFailed << " Completed: " << numComplete <<
@@ -199,6 +201,8 @@ int clientRxWorker(void *_arg)
     std::cout << "Goodput: " << success_counter[i] << std::endl;
     if (times[i].size() > 0) {
       std::cout << Output::basicHeader() << std::endl;
+      // times[i].erase(times[i].begin(), times[i].begin() + 1000);
+      // times[i].erase(times[i].end() - 1000, times[i].end());
       std::cout << Output::basic(times[i], "Homa Transport Testing") << std::endl;
     } else {
       std::cout << "No latency record found!" << std::endl;
@@ -219,6 +223,7 @@ int clientMain(int count, int size, std::vector<Homa::IpAddress> addresses,
   size_t umem_size = sizeof(pthread_barrier_t) + 100;
   char SHM_PATH[60] = "/homa_openloop_dpdk_test";
   int ret;
+  double distribution_wait_time;
   pthread_barrier_t * bufs;
 
   std::random_device rd;
@@ -285,6 +290,7 @@ int clientMain(int count, int size, std::vector<Homa::IpAddress> addresses,
   uint64_t stop;
 
   uint64_t nextId = randAddrID(gen) * count;
+  // nextId = 0;
   int id = param_id; // randAddrID(gen);
   Node client(id, ip, mac, dpdk_param_size, dpdk_params);
   client.run = true;
@@ -330,9 +336,16 @@ int clientMain(int count, int size, std::vector<Homa::IpAddress> addresses,
   uint32_t counter = 0;
   Homa::OutMessage *message;
   for (int i = 0; i < count; i++) {
-    addrIndex = counter%20 == 0 ? 1: 0;
+    // addrIndex = 0;// counter%15 == 0 ? 1: 0;
+    
+    if (isVictim)
+        addrIndex = counter%20 == 0 ? 1: 0;
+    else 
+        addrIndex = 0;
     counter++;
     destAddress = addresses[addrIndex];
+    if ((uint32_t)destAddress == 0)
+      std::cout << "OOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOH " << addrIndex << std::endl;
     // sending on port zero!
     uint64_t id = nextId++;
     // Homa::unique_ptr<Homa::OutMessage> message = client.transport->unsafe_alloc(0);
@@ -353,8 +366,9 @@ int clientMain(int count, int size, std::vector<Homa::IpAddress> addresses,
     tag_type[id] = addrIndex;
     // send the message
     message->send(Homa::SocketAddress{destAddress, 60001});
-    // wait(wait_time);
-    wait(iagen->generate());
+    wait(wait_time);
+    // distribution_wait_time = iagen->generate() * 500;
+    // wait((int) distribution_wait_time);
   }
 
   std::cout << "Tx worker done" << std::endl;

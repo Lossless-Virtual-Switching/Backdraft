@@ -136,6 +136,12 @@ else:
         qin2.attach_task(wid=get_next_core())
         qin2 -> VLANPop() -> qout2
 
+        # qin3 = QueueInc(port=vhost_ports[2], qid=0)
+        # qout3 = QueueOut(port=pci_port, qid=3)
+
+        # qin3.attach_task(wid=get_next_core())
+        # qin3 -> VLANPop() -> qout3
+
         # Ingress
         iplookup = IPLookup()
         middle_q = Queue() # to prevent everybody to write to ip_lookup
