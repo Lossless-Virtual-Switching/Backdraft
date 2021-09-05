@@ -47,6 +47,8 @@
 
 #include  "Generator.h"
 
+#define VICTIM_INCAST_RATIO 1.0
+
 
 static const char USAGE[] = R"(Homa System Test.
 
@@ -77,7 +79,6 @@ static const char USAGE[] = R"(Homa System Test.
 
 bool _PRINT_CLIENT_ = false;
 bool _PRINT_SERVER_ = false;
-
 
 struct MessageHeader {
   uint64_t id;
@@ -212,13 +213,17 @@ int clientRxWorker(void *_arg)
   return 0;
 }
 
+typedef double (*gen_fn_t)(Generator *);
 typedef struct tx_worker_args {
   Node *client;
   Homa::IpAddress destAddress;
   Generator *size_dist;
   Generator *ia_dist;
+  // std::function<double()> *ia_dist_fn;
+  gen_fn_t ia_dist_fn;
   size_t count_message;
   size_t base_id;
+  size_t addr_index;
 } tx_worker_args_t;
 
 int clientTxWorker(void *_arg)
@@ -246,7 +251,7 @@ int clientTxWorker(void *_arg)
 
   Generator *fbvalue = args->size_dist;
   Generator *ourgen = args->ia_dist;
-  int addrIndex;
+  int addrIndex = args->addr_index;
   uint64_t nextId = args->base_id;
   uint32_t tag;
   uint32_t counter = 0;
@@ -268,7 +273,8 @@ int clientTxWorker(void *_arg)
     // }
 
     // Inter arrival
-    wait_time = ourgen->generate() * 1000;
+    // wait_time = ourgen->generate() * 1000;
+    wait_time = args->ia_dist_fn(ourgen);
     wait(wait_time);
 
     // set time stamp
@@ -298,7 +304,8 @@ int clientMain(int count, int size, std::vector<Homa::IpAddress> addresses,
   double distribution_wait_time;
   pthread_barrier_t * bufs;
 
-  pkt_to_finish = count;
+  pkt_to_finish = 0;
+
   // Setup shared memory it is a C code.
   // a pthread_barrier_t is shared between clients
   pthread_barrierattr_t attr;
@@ -374,6 +381,10 @@ int clientMain(int count, int size, std::vector<Homa::IpAddress> addresses,
     std::cout << "Failed to start Poll worker!" << std::endl;
     return -1;
   }
+
+  // Setting packet to finish condition before we start the RX thread
+  pkt_to_finish += isVictim ? count + VICTIM_INCAST_RATIO*count : count;
+
   int rx_lcore_id = rte_get_next_lcore(poll_lcore_id, 1, 0);
   ret = rte_eal_remote_launch(clientRxWorker, &client, rx_lcore_id);
   if (ret != 0) {
@@ -387,15 +398,20 @@ int clientMain(int count, int size, std::vector<Homa::IpAddress> addresses,
 
   int victim_tx_lcore_id = -1;
   tx_worker_args_t victim_arg;
+  // Generator *victim_ia_gen = new Exponential(0.1);
+  // Generator *incast_ia_gen = new Exponential(0.1);
   if (isVictim) {
     victim_arg = (tx_worker_args_t) {
           client: &client,
           destAddress: addresses[1],
-          size_dist: new Fixed(3000),
-          ia_dist: new Exponential(1),
-          count_message: (size_t)(count * 1.0),
-          base_id: id,
+          size_dist: createFacebookValue(),
+          ia_dist: new Exponential(0.00001),
+          ia_dist_fn: [](Generator *g) -> double {return (g->generate());},
+          count_message: (size_t)(count * VICTIM_INCAST_RATIO),
+          base_id: id + count,
+          addr_index: 1,
     };
+
     victim_tx_lcore_id = rte_get_next_lcore(rx_lcore_id, 1, 0);
     ret = rte_eal_remote_launch(clientTxWorker, &victim_arg, victim_tx_lcore_id);
     if (ret != 0) {
@@ -404,17 +420,23 @@ int clientMain(int count, int size, std::vector<Homa::IpAddress> addresses,
     }
   }
 
-  tx_worker_args_t arg = {
+  tx_worker_args_t incast_arg = {
     client: &client,
     destAddress: addresses[0],
-    size_dist: new Fixed(3000),
-    ia_dist: new Exponential(1),
+    size_dist: new Fixed(5000),
+    ia_dist: new Exponential(0.000055),
+    ia_dist_fn: [](Generator *g) -> double {return (g->generate());},
+    // ia_dist: new Fixed(1),
     count_message: (size_t)(count * 1.0),
     base_id: id,
+    addr_index: 0,
   };
-  clientTxWorker(&arg);
 
-  rte_eal_wait_lcore(victim_tx_lcore_id);
+  clientTxWorker(&incast_arg);
+
+  if (isVictim)
+        rte_eal_wait_lcore(victim_tx_lcore_id);
+
   finish = PerfUtils::Cycles::rdtsc();
   // Wait until other threads are done
   rte_eal_wait_lcore(poll_lcore_id);

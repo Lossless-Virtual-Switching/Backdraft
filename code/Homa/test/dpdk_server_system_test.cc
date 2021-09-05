@@ -108,7 +108,8 @@ void wait(int ns) {
 void
 serverMain(Node* server, std::vector<Homa::IpAddress> addresses)
 {
-   Generator *gn = new Exponential(0.1);
+   // Generator *gn = new Exponential(0.1);
+   Generator *gn = new Exponential(0.0002);
    int counter = 0;
     while (true) {
         if (server->run.load() == false) {
@@ -129,7 +130,8 @@ serverMain(Node* server, std::vector<Homa::IpAddress> addresses)
                           << " (opId: " << header.id << ")" << std::endl;
             }
 
-            wait(gn->generate()*1000);
+            // wait(gn->generate()*1000);
+            wait(gn->generate());
 	    //       uint64_t t, now;
 	    //       t = now  = PerfUtils::Cycles::rdtsc();
 	    //       while (now - t < 10000 && header.id >= 100000 && header.id <= 200000) {

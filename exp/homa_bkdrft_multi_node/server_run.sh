@@ -10,9 +10,9 @@ then
         exit
 fi
 
- ./run_exp.py 1 2 server --drop "0.0" --vswitch_path ../../../homa-bess/bess/ \
-         --pci 03:00.1 --slow-down $1 --count_queue 3 --queue_size 256 \
-         --time 30 --tx_size 1000  # --slow-down 100000 
+./run_exp.py 1 2 server --drop "0.0" --vswitch_path ../../../homa-bess/bess/ \
+        --pci 03:00.1 --slow-down $1 --count_queue 3 --queue_size 256 \
+        --time 200 --tx_size 1000  # --slow-down 100000 
 
 # ./run_exp.py 1 2 server --drop "0.0" --vswitch_path ../../../homa-bess/bess/ \
 #         --pci 03:00.1 --slow-down $1 --count_queue 1 --queue_size 256 \

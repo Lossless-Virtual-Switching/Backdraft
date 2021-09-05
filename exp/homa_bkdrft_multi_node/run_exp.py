@@ -20,8 +20,8 @@ pipeline_config_file = os.path.join(cur_script_dir,
     # '../homa/pipeline_pfq.bess')
     # '../homa/pipeline.bess')
     # 'pipeline_bd.bess')
-    # 'pipeline_incast_bd.bess')
-    'pipeline_incast_pfq.bess')
+    'pipeline_incast_bd.bess')
+    # 'pipeline_incast_pfq.bess')
     # 'pipeline_default.bess')
     # 'pipeline_incast_bess_bp.bess')
 
@@ -44,15 +44,17 @@ def _stop_everything():
 def run_system_perf_client(conf):
     client_bin = './build/test/dpdk_openloop_test'
     victim = ''
+    req_count = 2000000
     if 'victim' in conf and conf['victim']:
         victim = '--victim'
+        req_count = 1000000
     # cmd = ("sudo perf stat -e task-clock,cycles,instructions,cache-references,cache-misses {} 1000000 -v --delay={} --id={} "
     # cmd = ("sudo perf record -ag {} 1000000 -v --delay={} --id={} "
-    cmd = ("sudo {} 1000000 -vvv --delay={} --id={} "
+    cmd = ("sudo {} {} -v --delay={} --id={} "
     "--barriers={} --vhost-port --iface='--vdev=virtio_user0,path={}' "
     "--dpdk-extra=--no-pci --size={} --dpdk-extra='--file-prefix=mg-{}' "
     "--dpdk-extra='-l' --dpdk-extra='{}' --vhost-port-ip={} "
-    "--vhost-port-mac={} {} ").format(client_bin, conf["delay"], conf["id"],
+    "--vhost-port-mac={} {} ").format(client_bin, req_count, conf["delay"], conf["id"],
             conf["barriers"], conf["path"], conf["tx_pkt_length"], conf["ip"], conf["cpuset"],
             conf["ip"], conf["mac"], victim)
 
@@ -167,7 +169,7 @@ def main():
         for i in range(vhost_port_count):
             # print('ip ' + "192.168.1.{}".format(i + 1))
             client_conf = {
-              'cpuset': f'{i*3+6}-{i*3+8}', # it is just random
+              'cpuset': f'{i*4+6}-{i*4+9}', # it is just random
               # 'prefix': 'client',
               # 'path': '/tmp/vhost_{}.sock,queues={}'.format(i, count_queue),
               'path': '/tmp/vhost_{}.sock,queues={}'.format(i, 1),
