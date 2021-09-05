@@ -600,6 +600,13 @@ DpdkDriver::Impl::getBandwidth()
     return bandwidthMbps;
 }
 
+// See Driver::setBandwidth()
+void
+DpdkDriver::Impl::setBandwidth(uint32_t bw)
+{
+    bandwidthMbps = bw;
+}
+
 // See Driver::getLocalAddress()
 IpAddress
 DpdkDriver::Impl::getLocalAddress()
@@ -1045,6 +1052,8 @@ DpdkDriver::Impl::_init()
         // we may keep queueing packets faster than the NIC can consume,
         // and build up a queue in the TX queue.
         bandwidthMbps = (uint32_t)(link.link_speed * 0.98);
+        bandwidthMbps = 100000;
+        // setBandwidth(100000);
     } else {
         WARNING(
             "Can't retrieve network bandwidth from DPDK; "

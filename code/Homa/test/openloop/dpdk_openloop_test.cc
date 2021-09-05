@@ -186,7 +186,7 @@ int clientRxWorker(void *_arg)
       }
       client->transport->unsafe_free_message(message); // Hope this frees the Message
     }
-    wait(500);
+    // wait(500);
   }
 
   std::cout << "Failed: " << numFailed << " Completed: " << numComplete <<
@@ -201,8 +201,8 @@ int clientRxWorker(void *_arg)
     std::cout << "Goodput: " << success_counter[i] << std::endl;
     if (times[i].size() > 0) {
       std::cout << Output::basicHeader() << std::endl;
-      // times[i].erase(times[i].begin(), times[i].begin() + 1000);
-      // times[i].erase(times[i].end() - 1000, times[i].end());
+      times[i].erase(times[i].begin(), times[i].begin() + 1000);
+      times[i].erase(times[i].end() - 1000, times[i].end());
       std::cout << Output::basic(times[i], "Homa Transport Testing") << std::endl;
     } else {
       std::cout << "No latency record found!" << std::endl;
@@ -293,8 +293,13 @@ int clientMain(int count, int size, std::vector<Homa::IpAddress> addresses,
   // nextId = 0;
   int id = param_id; // randAddrID(gen);
   Node client(id, ip, mac, dpdk_param_size, dpdk_params);
+
+  // client.driver.setBandwidth(100000);
+  // std::cout << "set bandwidth " << 100000 << std::endl;
+
   client.run = true;
   std::cout << "ID: " << id << std::endl;
+
 
   // Check if there is two lcores available. One for polling and other for
   // sending.
@@ -325,19 +330,21 @@ int clientMain(int count, int size, std::vector<Homa::IpAddress> addresses,
   Homa::IpAddress destAddress;
 
   // A fix payload is used for all packets
+  size = 5000000;
   char payload[size];
   for (int i = 0; i < size; ++i) {
     payload[i] = randData(gen);
   }
 
   Generator *iagen = createFacebookIA();
+  Generator *fbvalue = createFacebookValue();
+  Generator *ourgen = Exponential(4);
   int addrIndex;
   uint32_t tag;
   uint32_t counter = 0;
   Homa::OutMessage *message;
   for (int i = 0; i < count; i++) {
     // addrIndex = 0;// counter%15 == 0 ? 1: 0;
-    
     if (isVictim)
         addrIndex = counter%20 == 0 ? 1: 0;
     else 
@@ -349,6 +356,14 @@ int clientMain(int count, int size, std::vector<Homa::IpAddress> addresses,
     // sending on port zero!
     uint64_t id = nextId++;
     // Homa::unique_ptr<Homa::OutMessage> message = client.transport->unsafe_alloc(0);
+    size = fbvalue->generate();
+    if (isVictim) {
+      if (addrIndex == 0) {
+        size = 3000;
+      }
+    } else {
+      size = 3000;
+    }
     message = client.transport->unsafe_alloc(0);
     MessageHeader header;
     header.id = id;
@@ -366,9 +381,15 @@ int clientMain(int count, int size, std::vector<Homa::IpAddress> addresses,
     tag_type[id] = addrIndex;
     // send the message
     message->send(Homa::SocketAddress{destAddress, 60001});
-    wait(wait_time);
-    // distribution_wait_time = iagen->generate() * 500;
-    // wait((int) distribution_wait_time);
+    if (isVictim)
+        if (addrIndex == 1) {
+        distribution_wait_time = ourgen->generate() * 1000;
+        wait((int) distribution_wait_time);
+        } else { 
+           wait(wait_time);
+        }
+    else
+        wait(wait_time);
   }
 
   std::cout << "Tx worker done" << std::endl;

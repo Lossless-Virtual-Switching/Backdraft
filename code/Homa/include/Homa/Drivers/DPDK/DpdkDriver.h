@@ -178,6 +178,9 @@ class DpdkDriver : public Driver {
     /// See Driver::getBandwidth()
     virtual uint32_t getBandwidth();
 
+    /// See Driver::setBandwidth()
+    virtual void setBandwidth(uint32_t bw);
+
     /// See Driver::getLocalAddress()
     virtual IpAddress getLocalAddress();
 

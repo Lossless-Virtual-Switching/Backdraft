@@ -27,7 +27,8 @@ namespace Homa {
 namespace Core {
 
 // Basic timeout unit.
-const uint64_t BASE_TIMEOUT_US = 2000;
+// const uint64_t BASE_TIMEOUT_US = 2000;
+const uint64_t BASE_TIMEOUT_US = 12000;
 /// Microseconds to wait before timeout out and failing a message.
 const uint64_t MESSAGE_TIMEOUT_US = 40 * BASE_TIMEOUT_US;
 /// Microseconds to wait before pinging to check on outbound messages.

@@ -58,13 +58,23 @@ else:
         merger -> VLANPop() -> pci_port_qout
 
         # Ingress
-        hs = HashLB(mode='l3', gates=range(count_vhost_ports))
+        # hs = HashLB(mode='l3', gates=range(count_vhost_ports))
+        ip = IPLookup()
+        ip.add(prefix='192.168.1.1', prefix_len=32, gate=1)
+        ip.add(prefix='192.168.1.2', prefix_len=32, gate=0)
         pci_port_qinc = QueueInc(port=pci_port, qid=0)
-        pci_port_qinc -> Dump(interval=0.0000001) ->  MeasurePPS() -> hs 
+        pci_port_qinc -> MeasurePPS() -> ip 
         pci_port_qinc.attach_task(wid=1)
-        for i in range(count_vhost_ports):
-            qout1 = QueueOut(port=vhost_ports[i], qid=0)
-            hs:i -> qout1
+
+        qout1 = QueueOut(port=vhost_ports[0], qid=0)
+        ip:0 -> qout1
+
+        qout1 = QueueOut(port=vhost_ports[1], qid=0)
+        ip:1 -> qout1
+
+        # for i in range(count_vhost_ports):
+        #     qout1 = QueueOut(port=vhost_ports[i], qid=0)
+        #     hs:i -> qout1
 
         # One server setup
         # QueueInc(port=vhost_ports[0], qid=0) -> QueueOut(port=pci_port, qid=0)

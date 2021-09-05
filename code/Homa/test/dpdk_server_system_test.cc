@@ -33,6 +33,8 @@
 #include "Output.h"
 #include "Perf.h"
 
+#include "./openloop/Generator.h"
+
 namespace
 {
     volatile std::sig_atomic_t gSignalStatus;
@@ -106,6 +108,7 @@ void wait(int ns) {
 void
 serverMain(Node* server, std::vector<Homa::IpAddress> addresses)
 {
+   Generator *gn = new Exponential(0.1);
    int counter = 0;
     while (true) {
         if (server->run.load() == false) {
@@ -126,6 +129,7 @@ serverMain(Node* server, std::vector<Homa::IpAddress> addresses)
                           << " (opId: " << header.id << ")" << std::endl;
             }
 
+            wait(gn->generate()*1000);
 	    //       uint64_t t, now;
 	    //       t = now  = PerfUtils::Cycles::rdtsc();
 	    //       while (now - t < 10000 && header.id >= 100000 && header.id <= 200000) {
@@ -138,76 +142,13 @@ serverMain(Node* server, std::vector<Homa::IpAddress> addresses)
             //     counter++;
 	    // }
 
+
             message->acknowledge();
         }
         server->transport->poll();
     }
 }
 
-/**
- * @return
- *      Number of Op that failed.
- */
-// int
-// clientMain(int count, int size, std::vector<Homa::IpAddress> addresses)
-// {
-//     std::random_device rd;
-//     std::mt19937 gen(rd());
-//     std::uniform_int_distribution<> randAddr(0, addresses.size() - 1);
-//     std::uniform_int_distribution<char> randData(0);
-// 
-//     std::vector<Output::Latency> times;
-//     uint64_t start;
-//     uint64_t stop; 
-// 
-//     uint64_t nextId = 0;
-//     int numFailed = 0;
-// 
-//     Node client(1);
-//     for (int i = 0; i < count; ++i) {
-//         uint64_t id = nextId++;
-//         char payload[size];
-//         for (int i = 0; i < size; ++i) {
-//             payload[i] = randData(gen);
-//         }
-// 
-//         Homa::IpAddress destAddress = addresses[randAddr(gen)];
-// 
-//         Homa::unique_ptr<Homa::OutMessage> message = client.transport->alloc(0);
-//         {
-//             MessageHeader header;
-//             header.id = id;
-//             header.length = size;
-//             message->append(&header, sizeof(MessageHeader));
-//             message->append(payload, size);
-//             if (_PRINT_CLIENT_) {
-//                 std::cout << "Client -> (opId: " << header.id << ")"
-//                           << std::endl;
-//             }
-//         }
-// 
-// 	start = PerfUtils::Cycles::rdtsc();
-//         message->send(Homa::SocketAddress{destAddress, 60001});
-// 
-//         while (1) {
-//             Homa::OutMessage::Status status = message->getStatus();
-//             if (status == Homa::OutMessage::Status::COMPLETED) {
-// 		stop = PerfUtils::Cycles::rdtsc();
-// 		times.emplace_back(PerfUtils::Cycles::toSeconds(stop - start));
-//                 break;
-//             } else if (status == Homa::OutMessage::Status::FAILED) {
-//                 numFailed++;
-//                 break;
-//             }
-//             client.transport->poll();
-//         }
-//     }
-// 
-//     std::cout << Output::basicHeader() << std::endl;
-//     std::cout << Output::basic(times, "Homa Transport Testing") << std::endl;
-// 
-//     return numFailed;
-// }
 
 int
 main(int argc, char* argv[])

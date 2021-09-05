@@ -108,8 +108,8 @@ else:
         # client
         # Egress
         egress_out_collection = [] # overlay
-        assert(count_queue == 4)
-        assert(count_vhost_ports == 3)
+        assert(count_queue == 3)
+        assert(count_vhost_ports == 2)
         # print(len(vhost_ports), count_vhost_ports)
         # For victim client
         # It is deliberate to use QueueInc instead of BPQInc
@@ -142,12 +142,12 @@ else:
         qout2.attach_task(wid=get_next_core())
 
 
-        qin3 = BPQInc(port=vhost_ports[2], qid=0)
-        qout3 = BPQOut(port=pci_port, qid=3)
-        egress_out_collection.append(qout3)
-        qin3 -> VLANPop() -> qout3
-        qin3.attach_task(wid=get_next_core())
-        qout3.attach_task(wid=get_next_core())
+        # qin3 = BPQInc(port=vhost_ports[2], qid=0)
+        # qout3 = BPQOut(port=pci_port, qid=3)
+        # egress_out_collection.append(qout3)
+        # qin3 -> VLANPop() -> qout3
+        # qin3.attach_task(wid=get_next_core())
+        # qout3.attach_task(wid=get_next_core())
 
 
         # Ingress

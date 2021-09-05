@@ -50,8 +50,8 @@ private:
     void Buffer(bess::Packet **pkts, int cnt);
 
 private:
-    const double kHighWaterRatio = 0.90;
-    const double kLowWaterRatio = 0.33;
+    const double kHighWaterRatio = 0.70;
+    const double kLowWaterRatio = 0.50;
 
     Port *port_;
     queue_t qid_;

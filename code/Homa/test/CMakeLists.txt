@@ -78,6 +78,9 @@ target_link_libraries(dpdk_client_system_test
 
 add_executable(dpdk_server_system_test
     dpdk_server_system_test.cc
+    ./openloop/Generator.cc
+    ./openloop/util.cc
+    ./openloop/log.cc
 )
 target_link_libraries(dpdk_server_system_test
     PRIVATE

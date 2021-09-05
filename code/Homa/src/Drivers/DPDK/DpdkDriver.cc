@@ -105,6 +105,13 @@ DpdkDriver::getBandwidth()
     return pImpl->getBandwidth();
 }
 
+/// See Driver::getBandwidth()
+void
+DpdkDriver::setBandwidth(uint32_t bw)
+{
+    return pImpl->setBandwidth(bw);
+}
+
 /// See Driver::getLocalAddress()
 IpAddress
 DpdkDriver::getLocalAddress()

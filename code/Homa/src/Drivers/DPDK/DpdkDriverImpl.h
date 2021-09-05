@@ -161,6 +161,7 @@ class DpdkDriver::Impl {
     int getHighestPacketPriority();
     uint32_t getMaxPayloadSize();
     uint32_t getBandwidth();
+    void setBandwidth(uint32_t bw);
     IpAddress getLocalAddress();
     uint32_t getQueuedBytes();
 

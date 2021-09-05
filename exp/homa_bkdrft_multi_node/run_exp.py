@@ -23,6 +23,7 @@ pipeline_config_file = os.path.join(cur_script_dir,
     # 'pipeline_incast_bd.bess')
     'pipeline_incast_pfq.bess')
     # 'pipeline_default.bess')
+    # 'pipeline_incast_bess_bp.bess')
 
 homa_base = os.path.join(cur_script_dir, '../../code/Homa')
 homa_app_bin = os.path.join(homa_base, 'build/test/dpdk_test')
@@ -47,7 +48,7 @@ def run_system_perf_client(conf):
         victim = '--victim'
     # cmd = ("sudo perf stat -e task-clock,cycles,instructions,cache-references,cache-misses {} 1000000 -v --delay={} --id={} "
     # cmd = ("sudo perf record -ag {} 1000000 -v --delay={} --id={} "
-    cmd = ("sudo {} 1000000 -v --delay={} --id={} "
+    cmd = ("sudo {} 1000000 -vvv --delay={} --id={} "
     "--barriers={} --vhost-port --iface='--vdev=virtio_user0,path={}' "
     "--dpdk-extra=--no-pci --size={} --dpdk-extra='--file-prefix=mg-{}' "
     "--dpdk-extra='-l' --dpdk-extra='{}' --vhost-port-ip={} "
@@ -57,8 +58,8 @@ def run_system_perf_client(conf):
 
     print("client {}".format(cmd))
 
-    return subprocess.Popen(cmd, shell=True, cwd=homa_base,
-            stdout=subprocess.PIPE, stderr=subprocess.PIPE, encoding='utf8')
+    return subprocess.Popen(cmd, shell=True, cwd=homa_base) # ,
+            # stdout=subprocess.PIPE, stderr=subprocess.PIPE, encoding='utf8')
 
 
 def run_system_perf_server(conf):
