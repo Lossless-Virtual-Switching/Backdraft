@@ -212,6 +212,78 @@ int clientRxWorker(void *_arg)
   return 0;
 }
 
+typedef struct tx_worker_args {
+  Node *client;
+  Homa::IpAddress destAddress;
+  Generator *size_dist;
+  Generator *ia_dist;
+  size_t count_message;
+  size_t base_id;
+} tx_worker_args_t;
+
+int clientTxWorker(void *_arg)
+{
+  tx_worker_args_t *args = static_cast<tx_worker_args_t *>(_arg);
+
+  std::random_device rd;
+  std::mt19937 gen(rd());
+  // std::uniform_int_distribution<> randAddr(0, addresses.size() - 1);
+  std::exponential_distribution<> randAddr(1);
+  std::uniform_int_distribution<char> randData(0);
+  size_t wait_time = 0;
+  uint64_t start;
+
+  // NOTE: Currently therse is only one server IP
+  Homa::IpAddress destAddress = args->destAddress;
+  size_t count = args->count_message;
+
+  // A fix payload is used for all packets
+  size_t size = 5000000;
+  char payload[size];
+  for (int i = 0; i < size; ++i) {
+    payload[i] = randData(gen);
+  }
+
+  Generator *fbvalue = args->size_dist;
+  Generator *ourgen = args->ia_dist;
+  int addrIndex;
+  uint64_t nextId = args->base_id;
+  uint32_t tag;
+  uint32_t counter = 0;
+  Homa::OutMessage *message;
+  for (int i = 0; i < count; i++) {
+    // sending on port zero!
+    uint64_t id = nextId++;
+    size = fbvalue->generate();
+    message = args->client->transport->unsafe_alloc(0);
+    MessageHeader header;
+    header.id = id;
+    header.length = size;
+    message->append(&header, sizeof(MessageHeader));
+    message->append(payload, size);
+    message->setTag(id);
+    // if (_PRINT_CLIENT_) {
+    //   std::cout << "Client -> (opId: " << header.id << ")"
+    //     << std::endl;
+    // }
+
+    // Inter arrival
+    wait_time = ourgen->generate() * 1000;
+    wait(wait_time);
+
+    // set time stamp
+    start = PerfUtils::Cycles::rdtsc();
+    timebook[id] = start;
+    tag_type[id] = addrIndex;
+    // send the message
+    message->send(Homa::SocketAddress{destAddress, 60001});
+  }
+
+  std::cout << "Tx worker done" << std::endl;
+
+  return 0;
+}
+
 /**
  * @return
  *      Number of Op that failed.
@@ -225,13 +297,6 @@ int clientMain(int count, int size, std::vector<Homa::IpAddress> addresses,
   int ret;
   double distribution_wait_time;
   pthread_barrier_t * bufs;
-
-  std::random_device rd;
-  std::mt19937 gen(rd());
-  // std::uniform_int_distribution<> randAddr(0, addresses.size() - 1);
-  std::exponential_distribution<> randAddr(1);
-  std::uniform_int_distribution<> randAddrID(0, barrier_count);
-  std::uniform_int_distribution<char> randData(0);
 
   pkt_to_finish = count;
   // Setup shared memory it is a C code.
@@ -283,15 +348,8 @@ int clientMain(int count, int size, std::vector<Homa::IpAddress> addresses,
     std::cout << "REUSED\n";
   }
 
-  int numFailed = 0;
-  int data_to_skip = 0;
-
-  uint64_t start;
-  uint64_t stop;
-
-  uint64_t nextId = randAddrID(gen) * count;
   // nextId = 0;
-  int id = param_id; // randAddrID(gen);
+  size_t id = param_id; // randAddrID(gen);
   Node client(id, ip, mac, dpdk_param_size, dpdk_params);
 
   // client.driver.setBandwidth(100000);
@@ -305,8 +363,9 @@ int clientMain(int count, int size, std::vector<Homa::IpAddress> addresses,
   // sending.
   // Then launch polling thread.
   int count_lcore = rte_lcore_count();
-  if  (count_lcore < 3) {
-    std::cout << "Need 3 lcores for running client" << std::endl;
+  int needed_lcores = isVictim ? 4 : 3;
+  if  (count_lcore < needed_lcores) {
+    std::cout << "Need 3|4 lcores for running client" << std::endl;
     return 1;
   }
   int poll_lcore_id = rte_get_next_lcore(-1, 1, 0);
@@ -326,85 +385,45 @@ int clientMain(int count, int size, std::vector<Homa::IpAddress> addresses,
   pthread_barrier_wait(bufs);
   std::cout << "STAAAAAAAAAAAARRRRRRRRTTTTTTTTTTTTTTTTTT" << std::endl;
 
-  // NOTE: Currently therse is only one server IP
-  Homa::IpAddress destAddress;
-
-  // A fix payload is used for all packets
-  size = 5000000;
-  char payload[size];
-  for (int i = 0; i < size; ++i) {
-    payload[i] = randData(gen);
-  }
-
-  Generator *iagen = createFacebookIA();
-  Generator *fbvalue = createFacebookValue();
-  Generator *ourgen = Exponential(4);
-  int addrIndex;
-  uint32_t tag;
-  uint32_t counter = 0;
-  Homa::OutMessage *message;
-  for (int i = 0; i < count; i++) {
-    // addrIndex = 0;// counter%15 == 0 ? 1: 0;
-    if (isVictim)
-        addrIndex = counter%20 == 0 ? 1: 0;
-    else 
-        addrIndex = 0;
-    counter++;
-    destAddress = addresses[addrIndex];
-    if ((uint32_t)destAddress == 0)
-      std::cout << "OOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOH " << addrIndex << std::endl;
-    // sending on port zero!
-    uint64_t id = nextId++;
-    // Homa::unique_ptr<Homa::OutMessage> message = client.transport->unsafe_alloc(0);
-    size = fbvalue->generate();
-    if (isVictim) {
-      if (addrIndex == 0) {
-        size = 3000;
-      }
-    } else {
-      size = 3000;
+  int victim_tx_lcore_id = -1;
+  tx_worker_args_t victim_arg;
+  if (isVictim) {
+    victim_arg = (tx_worker_args_t) {
+          client: &client,
+          destAddress: addresses[1],
+          size_dist: new Fixed(3000),
+          ia_dist: new Exponential(1),
+          count_message: (size_t)(count * 1.0),
+          base_id: id,
+    };
+    victim_tx_lcore_id = rte_get_next_lcore(rx_lcore_id, 1, 0);
+    ret = rte_eal_remote_launch(clientTxWorker, &victim_arg, victim_tx_lcore_id);
+    if (ret != 0) {
+      std::cout << "Failed to start Rx worker!" << std::endl;
+      return -1;
     }
-    message = client.transport->unsafe_alloc(0);
-    MessageHeader header;
-    header.id = id;
-    header.length = size;
-    message->append(&header, sizeof(MessageHeader));
-    message->append(payload, size);
-    message->setTag(id);
-    // if (_PRINT_CLIENT_) {
-    //   std::cout << "Client -> (opId: " << header.id << ")"
-    //     << std::endl;
-    // }
-    // set time stamp
-    start = PerfUtils::Cycles::rdtsc();
-    timebook[id] = start;
-    tag_type[id] = addrIndex;
-    // send the message
-    message->send(Homa::SocketAddress{destAddress, 60001});
-    if (isVictim)
-        if (addrIndex == 1) {
-        distribution_wait_time = ourgen->generate() * 1000;
-        wait((int) distribution_wait_time);
-        } else { 
-           wait(wait_time);
-        }
-    else
-        wait(wait_time);
   }
 
-  std::cout << "Tx worker done" << std::endl;
-  finish = PerfUtils::Cycles::rdtsc();
+  tx_worker_args_t arg = {
+    client: &client,
+    destAddress: addresses[0],
+    size_dist: new Fixed(3000),
+    ia_dist: new Exponential(1),
+    count_message: (size_t)(count * 1.0),
+    base_id: id,
+  };
+  clientTxWorker(&arg);
 
+  rte_eal_wait_lcore(victim_tx_lcore_id);
+  finish = PerfUtils::Cycles::rdtsc();
   // Wait until other threads are done
   rte_eal_wait_lcore(poll_lcore_id);
   rte_eal_wait_lcore(rx_lcore_id);
 
-  numFailed = num_failed_pkt;
-
   // Taking care of the shared memory
   munmap(bufs, umem_size);
   shm_unlink(SHM_PATH);
-  return numFailed;
+  return num_failed_pkt;
 }
 
 int main(int argc, char* argv[])
