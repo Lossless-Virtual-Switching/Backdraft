@@ -126,6 +126,10 @@ DpdkDriver::getQueuedBytes()
     return pImpl->getQueuedBytes();
 }
 
+bool DpdkDriver::isOverloaded() {
+  return pImpl->isOverloaded();
+}
+
 }  // namespace DPDK
 }  // namespace Drivers
 }  // namespace Homa

@@ -108,6 +108,7 @@ DpdkDriver::Impl::Impl(const char* ifname, const char* mac, const char* ip, int 
     // , bandwidthMbps(100000)  // Default bandwidth = 10 gbs
     // , bandwidthMbps(40000)  // Default bandwidth = 40 gbs
     , bandwidthMbps(25000)  // Default bandwidth = 40 gbs
+    , overloaded(false)
 {
     int s;
     cpu_set_t cpuset;
@@ -126,7 +127,8 @@ DpdkDriver::Impl::Impl(const char* ifname, const char* mac, const char* ip, int 
 
 
     // NOTICE("%d %s %s %s %s\n", argc, argv[0], argv[1], argv[2], argv[3]);
-    // NOTICE("%d %s %s %s %s\n", default_eal_argc, default_eal_argv[0], default_eal_argv[1], default_eal_argv[2], default_eal_argv[3]);
+    // NOTICE("%d %s %s %s %s\n", default_eal_argc, default_eal_argv[0],
+    // default_eal_argv[1], default_eal_argv[2], default_eal_argv[3]);
     _eal_init(argc, argv);
     // _eal_init(default_eal_argc, const_cast<char**>(default_eal_argv));
     //
@@ -136,8 +138,8 @@ DpdkDriver::Impl::Impl(const char* ifname, const char* mac, const char* ip, int 
     // restore the original thread affinity
     s = pthread_setaffinity_np(thread, sizeof(cpu_set_t), &cpuset);
     if (s != 0) {
-        throw DriverInitFailure(HERE_STR,
-                                "Unable to restore original thread affinity");
+      throw DriverInitFailure(HERE_STR,
+          "Unable to restore original thread affinity");
     }
 }
 
@@ -166,6 +168,7 @@ DpdkDriver::Impl::Impl(const char* ifname, int argc, char* argv[],
     , hasHardwareFilter(true)  // Cleared later if not applicable
     , corked(0)
     , bandwidthMbps(100000)  // Default bandwidth = 10 gbs
+    , overloaded(false)
 {
     // DPDK during initialization (rte_eal_init()) the running thread is pinned
     // to a single processor which may be not be what the applications wants.
@@ -183,7 +186,8 @@ DpdkDriver::Impl::Impl(const char* ifname, int argc, char* argv[],
     }
 
     // NOTICE("%d %s %s %s %s\n", argc, argv[0], argv[1], argv[2], argv[3]);
-    // NOTICE("%d %s %s %s %s\n", default_eal_argc, default_eal_argv[0], default_eal_argv[1], default_eal_argv[2], default_eal_argv[3]);
+    // NOTICE("%d %s %s %s %s\n", default_eal_argc, default_eal_argv[0],
+    // default_eal_argv[1], default_eal_argv[2], default_eal_argv[3]);
     _eal_init(argc, argv);
     // _eal_init(default_eal_argc, const_cast<char**>(default_eal_argv));
     if (argc > 1) {
@@ -226,6 +230,7 @@ DpdkDriver::Impl::Impl(const char* ifname,
     , hasHardwareFilter(true)  // Cleared later if not applicable
     , corked(0)
     , bandwidthMbps(100000)  // Default bandwidth = 10 gbs
+    , overloaded(false)
 {
     _init();
 }
@@ -415,9 +420,17 @@ DpdkDriver::Impl::sendPacket(Driver::Packet* packet, IpAddress destination,
     // rte_eth_tx_burst(port, 0, &mbuf, 1);
     rte_eth_tx_buffer(port, 0, tx.buffer, mbuf);
 
+    // Check if overloaded
+    if (tx.buffer->length > HIGH_WATER) {
+      overloaded = true;
+    }
+
     // Flush packets now if the driver is not corked.
     if (corked.load() < 1) {
       rte_eth_tx_buffer_flush(port, 0, tx.buffer);
+      if (tx.buffer->length <= LOW_WATER) {
+        overloaded = false;
+      }
     }
 }
 
@@ -435,6 +448,9 @@ DpdkDriver::Impl::uncork()
     if (corked.fetch_sub(1) == 1) {
         SpinLock::Lock txLock(tx.mutex);
         rte_eth_tx_buffer_flush(port, 0, tx.buffer);
+        if (tx.buffer->length <= LOW_WATER) {
+          overloaded = false;
+        }
     }
 }
 
@@ -496,20 +512,20 @@ DpdkDriver::Impl::receivePackets(uint32_t maxPackets,
             payload += VLAN_TAG_LEN;
         }
 
-	if (ether_type != rte_cpu_to_be_16(RTE_ETHER_TYPE_IPV4)) {
+  if (ether_type != rte_cpu_to_be_16(RTE_ETHER_TYPE_IPV4)) {
             VERBOSE("packet not ipv4; ether_type = %x", ether_type);
             rte_pktmbuf_free(m);
             continue;
         }
 
-	struct rte_ipv4_hdr *ip_hdr =
+  struct rte_ipv4_hdr *ip_hdr =
             // reinterpret_cast<struct ipv4_hdr *>(vlanHdr + 1);
             reinterpret_cast<struct rte_ipv4_hdr *>(payload);
         uint8_t ip_proto = ip_hdr->next_proto_id;
         headerLength += sizeof(struct rte_ipv4_hdr);
         payload += sizeof(struct rte_ipv4_hdr);
 
-	 if (!hasHardwareFilter) {
+   if (!hasHardwareFilter) {
             // Perform packet filtering by software to skip irrelevant
             // packets such as ipmi or kernel TCP/IP traffic.
             if (ip_proto != IPPROTO_HOMA) {
@@ -528,7 +544,7 @@ DpdkDriver::Impl::receivePackets(uint32_t maxPackets,
         //     }
         // }
 
-	// uint32_t srcIp = *rte_pktmbuf_mtod_offset(m, uint32_t*, headerLength);
+  // uint32_t srcIp = *rte_pktmbuf_mtod_offset(m, uint32_t*, headerLength);
         uint32_t srcIp = rte_be_to_cpu_32(uint32_t(ip_hdr->src_addr));
         // headerLength += sizeof(srcIp);
         // payload += sizeof(srcIp);
@@ -769,33 +785,32 @@ DpdkDriver::Impl::_init_vhost()
     }
     rte_eth_tx_buffer_init(tx.buffer, MAX_PKT_BURST);
 
-    // SeEt callback for unsent packets
+    // Set callback for unsent packets
+    pv_tx_data.buffer = tx.buffer;
+    pv_tx_data.stats = &tx.stats;
+    pv_tx_data.port_id = port;
+    pv_tx_data.queue_id = 0;
 
+    ret = rte_eth_tx_buffer_set_err_callback(tx.buffer,
+        bufferUnsentTxPktErrorCallback, (void *)&pv_tx_data);
 
-//     pv_tx_data.buffer = tx.buffer;
-//     pv_tx_data.stats = &tx.stats;
-//     pv_tx_data.port_id = port;
-//     pv_tx_data.queue_id = 0;
-// 
-//     ret = rte_eth_tx_buffer_set_err_callback(tx.buffer,
-// 		    bufferUnsentTxPktErrorCallback, (void *)&pv_tx_data);
-    
-//     if (ret < 0)
-//         throw DriverInitFailure(
-//             HERE_STR,
-//             StringUtil::format("rte_eth_dev_get_mtu on port %u returned "
-//                                "ENODEV; unable to read current mtu",
-//                                port));
-        // rte_exit(EXIT_FAILURhhh,
-        // "Cannot set error callback for tx buffer on port %u\n",
-        //      port_id);
+    if (ret < 0) {
+      throw DriverInitFailure(
+          HERE_STR,
+          StringUtil::format("rte_eth_dev_get_mtu on port %u returned "
+            "ENODEV; unable to read current mtu",
+            port));
+      // rte_exit(EXIT_FAILURE,
+      //     "Cannot set error callback for tx buffer on port %u\n",
+      //     port);
+    }
 
     // get the current MTU.
     ret = rte_eth_dev_get_mtu(port, &mtu);
     if (ret < 0) {
-        throw DriverInitFailure(
-            HERE_STR,
-            StringUtil::format("rte_eth_dev_get_mtu on port %u returned "
+      throw DriverInitFailure(
+          HERE_STR,
+          StringUtil::format("rte_eth_dev_get_mtu on port %u returned "
                                "ENODEV; unable to read current mtu",
                                port));
     }
@@ -1122,13 +1137,15 @@ DpdkDriver::Impl::txBurstCallback(uint16_t port_id, uint16_t queue,
  */
 void 
 DpdkDriver::Impl::bufferUnsentTxPktErrorCallback(struct rte_mbuf **unsent,
-		uint16_t count, void *userdata) {
-    struct pv_user_data * data = (struct pv_user_data *) userdata;
-    for (int i = 0; i < count; i++) {
-	rte_eth_tx_buffer(data->port_id, data->queue_id, data->buffer, unsent[i]); // Recursive problems
-    	data->stats->bufferedBytes += rte_pktmbuf_pkt_len(unsent[i]);
-    }
-
+    uint16_t count, void *userdata) {
+  struct pv_user_data * data = (struct pv_user_data *) userdata;
+  for (int i = 0; i < count; i++) {
+    // If rte_eth_tx_buffer get full then a flush will be called.
+    // In case of failer in flush this function will be called again.
+    // TODO (Farbod): I am ignoring this case
+    rte_eth_tx_buffer(data->port_id, data->queue_id, data->buffer, unsent[i]);
+    data->stats->bufferedBytes += rte_pktmbuf_pkt_len(unsent[i]);
+  }
 }
 
 }  // namespace DPDK

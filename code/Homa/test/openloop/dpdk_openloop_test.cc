@@ -257,6 +257,9 @@ int clientTxWorker(void *_arg)
   uint32_t counter = 0;
   Homa::OutMessage *message;
   for (int i = 0; i < count; i++) {
+    if (args->client->driver.isOverloaded()) {
+      std::cout << "Wow, driver is overloaded!" << std::endl;
+    }
     // sending on port zero!
     uint64_t id = nextId++;
     size = fbvalue->generate();

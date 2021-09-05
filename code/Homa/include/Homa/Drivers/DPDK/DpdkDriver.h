@@ -115,8 +115,8 @@ class DpdkDriver : public Driver {
      * @throw DriverInitFailure
      *      Thrown if DpdkDriver fails to initialize for any reason.
      */
-    DpdkDriver(const char* ifname, const char* mac, const char *ip, int argc, char* argv[],
-               const Config* const config = nullptr);
+    DpdkDriver(const char* ifname, const char* mac, const char *ip, int argc,
+        char* argv[], const Config* const config = nullptr);
 
     /// Used to signal to the DpdkDriver constructor that the DPDK EAL should
     /// not be initialized.
@@ -186,6 +186,8 @@ class DpdkDriver : public Driver {
 
     /// See Driver::getQueuedBytes();
     virtual uint32_t getQueuedBytes();
+
+    virtual bool isOverloaded();
 
   private:
     // Forward declaration of implementation class.

@@ -19,6 +19,7 @@
 #include <string>
 
 #include "Homa/Exception.h"
+#include <iostream>
 
 namespace Homa {
 
@@ -239,6 +240,11 @@ class Driver {
      * the sendPacket() call but have not yet been pushed out to the network.
      */
     virtual uint32_t getQueuedBytes() = 0;
+
+    virtual bool isOverloaded() {
+        std::cout << "isOverload is not implemented on this driver!\n" << std::endl;;
+        return false;
+    };
 };
 
 /**
