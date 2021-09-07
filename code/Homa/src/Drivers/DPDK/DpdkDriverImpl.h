@@ -100,9 +100,6 @@ enum EthPayloadType {
 
 const uint8_t IPPROTO_HOMA = 116;
 
-const uint32_t HIGH_WATER = 20;
-const uint32_t LOW_WATER = 15;
-
 /**
  * Allocated to store packet data when mbufs are not available.
  */
@@ -167,9 +164,6 @@ class DpdkDriver::Impl {
     void setBandwidth(uint32_t bw);
     IpAddress getLocalAddress();
     uint32_t getQueuedBytes();
-    bool isOverloaded() {
-      return overloaded;
-    };
 
   private:
     void _eal_init(int argc, char* argv[]);
@@ -179,7 +173,7 @@ class DpdkDriver::Impl {
                                     struct rte_mbuf* pkts[], uint16_t nb_pkts,
                                     void* user_param);
     static void bufferUnsentTxPktErrorCallback(struct rte_mbuf **unsent,
-        uint16_t count, void *userdata);
+		    uint16_t count, void *userdata);
 
     /// Name of the Linux network interface to be used by DPDK.
     std::string ifname;
@@ -272,10 +266,10 @@ class DpdkDriver::Impl {
     } tx;
 
     struct pv_user_data {
-      struct rte_eth_dev_tx_buffer * buffer;
-      Tx::Stats* stats;
-      uint64_t port_id;
-      uint8_t queue_id;
+	        struct rte_eth_dev_tx_buffer * buffer;
+		Tx::Stats* stats;
+	        uint64_t port_id;
+	     	uint8_t queue_id;
     } pv_tx_data;
 
 
@@ -288,8 +282,6 @@ class DpdkDriver::Impl {
 
     /// Effective network bandwidth, in Mbits/second.
     std::atomic<uint32_t> bandwidthMbps;
-
-    bool overloaded;
 };
 
 }  // namespace DPDK
