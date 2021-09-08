@@ -80,6 +80,9 @@ static const char USAGE[] = R"(Homa System Test.
 bool _PRINT_CLIENT_ = false;
 bool _PRINT_SERVER_ = false;
 
+// This is related to measuring the goodput
+static uint64_t start_time;
+
 struct MessageHeader {
   uint64_t id;
   uint64_t length;
@@ -190,6 +193,8 @@ int clientRxWorker(void *_arg)
     // wait(500);
   }
 
+  uint64_t end_time = PerfUtils::Cycles::rdtsc();
+
   std::cout << "Failed: " << numFailed << " Completed: " << numComplete <<
     std::endl;
 
@@ -198,8 +203,12 @@ int clientRxWorker(void *_arg)
   client->run = false;
 
   for (int i = 0; i < addresses.size(); i++) {
-    std::cout << "Result for IP: " << (uint32_t)addresses[i] << std::endl;
-    std::cout << "Goodput: " << success_counter[i] << std::endl;
+    // std::cout << "Result for IP: " << (uint32_t)addresses[i] << std::endl;
+    if(start_time != 0) // sanity check
+        std::cout << "Result for IP: " << (uint32_t)addresses[i] << "Goodput: " << success_counter[i] << " "  << success_counter[i]/PerfUtils::Cycles::toSeconds(end_time - start_time) << " RPCps" << std::endl;
+    else 
+      std::cout << "ERRRRROR in latency measurement" << std::endl;
+
     if (times[i].size() > 0) {
       std::cout << Output::basicHeader() << std::endl;
       times[i].erase(times[i].begin(), times[i].begin() + 1000);
@@ -396,15 +405,16 @@ int clientMain(int count, int size, std::vector<Homa::IpAddress> addresses,
   pthread_barrier_wait(bufs);
   std::cout << "STAAAAAAAAAAAARRRRRRRRTTTTTTTTTTTTTTTTTT" << std::endl;
 
+  start_time = PerfUtils::Cycles::rdtsc();
+
   int victim_tx_lcore_id = -1;
   tx_worker_args_t victim_arg;
-  // Generator *victim_ia_gen = new Exponential(0.1);
-  // Generator *incast_ia_gen = new Exponential(0.1);
   if (isVictim) {
     victim_arg = (tx_worker_args_t) {
           client: &client,
           destAddress: addresses[1],
           size_dist: createFacebookValue(),
+          // ia_dist: new Exponential(0.000053),
           ia_dist: new Exponential(0.00001),
           ia_dist_fn: [](Generator *g) -> double {return (g->generate());},
           count_message: (size_t)(count * VICTIM_INCAST_RATIO),
@@ -423,8 +433,8 @@ int clientMain(int count, int size, std::vector<Homa::IpAddress> addresses,
   tx_worker_args_t incast_arg = {
     client: &client,
     destAddress: addresses[0],
-    size_dist: new Fixed(5000),
-    ia_dist: new Exponential(0.000055),
+    size_dist: new Fixed(200),
+    ia_dist: new Exponential(0.000070),
     ia_dist_fn: [](Generator *g) -> double {return (g->generate());},
     // ia_dist: new Fixed(1),
     count_message: (size_t)(count * 1.0),

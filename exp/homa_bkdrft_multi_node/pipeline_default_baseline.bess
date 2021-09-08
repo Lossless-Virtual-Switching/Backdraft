@@ -29,17 +29,8 @@ for i in range(count_vhost_ports):
   port = PMDPort(name=name, vdev=vdev, num_inc_q=count_queue, num_out_q=count_queue)
   vhost_ports.append(port)
 
-worker_divisor = 5
-core_id = -1
-
-for i in range(worker_divisor):
-  bess.add_worker(i, i)
-
-def get_next_core():
-  global core_id
-  # print("core id", core_id)
-  core_id = core_id + 1
-  return core_id%worker_divisor
+bess.add_worker(0, 0)
+bess.add_worker(1, 1)
 
 
 # PCI port
@@ -58,10 +49,9 @@ else:
         # Egress
         merger = Merge()
         print(len(vhost_ports), count_vhost_ports)
-        worker_id = get_next_core()
         for index,i in enumerate(vhost_ports):
           qin1 = QueueInc(port=i, qid=0)
-          qin1.attach_task(wid=worker_id)
+          qin1.attach_task(wid=0)
           qin1 -> merger
 
         pci_port_qout = QueueOut(port=pci_port, qid=0)
@@ -69,16 +59,12 @@ else:
 
         # Ingress
         # hs = HashLB(mode='l3', gates=range(count_vhost_ports))
-
-        middle_q = Queue()
         ip = IPLookup()
-        middle_q.attach_task(wid=get_next_core())
-
         ip.add(prefix='192.168.1.1', prefix_len=32, gate=1)
-        ip.add(prefix='192.168.1.2', prefix_len=32, gate=1) # I changed here!
+        ip.add(prefix='192.168.1.2', prefix_len=32, gate=0)
         pci_port_qinc = QueueInc(port=pci_port, qid=0)
-        pci_port_qinc -> MeasurePPS() -> middle_q -> ip 
-        pci_port_qinc.attach_task(wid=get_next_core())
+        pci_port_qinc -> MeasurePPS() -> ip 
+        pci_port_qinc.attach_task(wid=1)
 
         qout1 = QueueOut(port=vhost_ports[0], qid=0)
         ip:0 -> qout1
@@ -98,10 +84,9 @@ else:
         # Egress
         merger = Merge()
         print(len(vhost_ports), count_vhost_ports)
-        worker_id = get_next_core()
         for index, i in enumerate(vhost_ports):
           qin1 = QueueInc(port=i, qid=0)
-          qin1.attach_task(wid=worker_id)
+          qin1.attach_task(wid=0)
           qin1 -> merger
 
         pci_port_qout = QueueOut(port=pci_port, qid=0)
@@ -110,9 +95,8 @@ else:
         # Ingress
         iplookup = IPLookup()
         qin1 = QueueInc(port=pci_port, qid=0)
-        qin1.attach_task(wid=get_next_core())
-
         qin1 -> iplookup
+        qin1.attach_task(wid=1)
 
         for i in range(count_vhost_ports):
           ip = "192.168.1.{}".format(i + 3)
@@ -123,5 +107,98 @@ else:
 
         iplookup.add(prefix="0.0.0.0", prefix_len=0, gate=count_vhost_ports) 
         iplookup:count_vhost_ports -> Sink()
+
+
+
+# # Outgress
+# merger = Merge()
+# for i in vhost_ports:
+#   qin1 = QueueInc(port=i, qid=0)
+#   qin1 -> merger
+# 
+# pci_port_qout = QueueOut(port=pci_port, qid=0)
+# merger -> pci_port_qout
+# # -------------------
+# 
+# # fw::ACL(rules=[{'src_ip': '192.168.1.9/32', 'drop': False}])
+# # fw::ACL(rules=[{'src_ip': '192.168.1.0/24', 'drop': False}])
+# 
+# #Ingress
+# 
+# switch = L2Forward()
+# 
+# 
+# iplookup = IPLookup()
+# qin1 = QueueInc(port=pci_port, qid=0)
+# qin1 -> VLANPop() -> switch:0 -> iplookup
+# 
+# 
+# if server:
+#   switch.add(entries=[{'addr': "1c:34:da:41:c7:14", 'gate': 0}])
+#   iplookup.add(prefix="192.168.1.9", prefix_len=32, gate=0) 
+#   iplookup.add(prefix="0.0.0.0", prefix_len=0, gate=1) 
+#   
+#   # iplookup:0 -> VLANPush() -> QueueOut(port=vhost_ports[0], qid=0)
+#   iplookup:0 -> VLANPush() -> QueueOut(port=vhost_ports[0], qid=0)
+#   iplookup:1 -> Sink()
+#   
+# else:
+#   switch.add(entries=[{'addr': "1c:34:da:41:ce:f4", 'gate': 0}])
+#   for i in range(count_vhost_ports):
+#     ip = "192.168.1.{}".format(i + 1)
+#     print(ip)
+#     iplookup.add(prefix=ip, prefix_len=32, gate=i)
+#     qout1 = QueueOut(port=vhost_ports[i], qid=0)
+#     # iplookup:i -> VLANPush() -> qout1
+#     iplookup:i -> VLANPush() -> qout1
+# 
+#   iplookup.add(prefix="0.0.0.0", prefix_len=0, gate=count_vhost_ports) 
+#   iplookup:count_vhost_ports -> Sink()
+
+# -------------------
+
+
+# # ports = []
+# cpu_id = 0
+# for i in range(0, 2 * count_cores, 2):
+#   # cpu 0-count_cores are for BESS
+#   bess.add_worker(cpu_id, cpu_id)
+# 
+#   name = 'port_{}'.format(i)
+#   socket = '/tmp/vhost_{}.sock'.format(i)
+#   vdev = 'eth_vhost{},iface={},queues={}'.format(i, socket, count_queue)
+# 
+#   if os.path.exists(socket):
+#     subprocess.call('sudo rm {}'.format(socket), shell=True)
+# 
+#   port = PMDPort(name=name, vdev=vdev, num_inc_q=count_queue, num_out_q=count_queue, rate_limiting=0)
+# 
+# 
+#   # port2
+#   j = i + 1
+#   name = 'port_{}'.format(j)
+#   socket = '/tmp/vhost_{}.sock'.format(j)
+#   vdev = 'eth_vhost{},iface={},queues={}'.format(j, socket, count_queue)
+# 
+#   if os.path.exists(socket):
+#     subprocess.call('sudo rm {}'.format(socket), shell=True)
+# 
+#   port2 = PMDPort(name=name, vdev=vdev, num_inc_q=count_queue, num_out_q=count_queue, rate_limiting=0)
+# 
+#   # ports.append(port)
+# 
+#   # qin1 = QueueInc(port=port, qid=0)
+#   qout1 = QueueOut(port=port, qid=0)
+# 
+#   qin2 = QueueInc(port=port2, qid=0)
+#   # qout2 = QueueOut(port=port2, qid=0)
+# 
+#   # qin1 -> qout2
+#   # qin2 -> qout1
+#   qin2 -> Sink()
+# 
+#   # qin1.attach_task(wid=cpu_id)
+#   qin2.attach_task(wid=cpu_id)
+#   cpu_id += 1
 
 

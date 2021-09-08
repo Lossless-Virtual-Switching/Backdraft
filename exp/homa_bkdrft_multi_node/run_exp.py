@@ -20,9 +20,10 @@ pipeline_config_file = os.path.join(cur_script_dir,
     # '../homa/pipeline_pfq.bess')
     # '../homa/pipeline.bess')
     # 'pipeline_bd.bess')
-    'pipeline_incast_bd.bess')
+    # 'pipeline_incast_bd.bess')
     # 'pipeline_incast_pfq.bess')
-    # 'pipeline_default.bess')
+    'pipeline_default.bess')
+    # 'pipeline_default_1_server.bess')
     # 'pipeline_incast_bess_bp.bess')
 
 homa_base = os.path.join(cur_script_dir, '../../code/Homa')
@@ -44,13 +45,13 @@ def _stop_everything():
 def run_system_perf_client(conf):
     client_bin = './build/test/dpdk_openloop_test'
     victim = ''
-    req_count = 2000000
+    req_count = 1000000
     if 'victim' in conf and conf['victim']:
         victim = '--victim'
         req_count = 1000000
     # cmd = ("sudo perf stat -e task-clock,cycles,instructions,cache-references,cache-misses {} 1000000 -v --delay={} --id={} "
     # cmd = ("sudo perf record -ag {} 1000000 -v --delay={} --id={} "
-    cmd = ("sudo {} {} -v --delay={} --id={} "
+    cmd = ("sudo {} {} -vvv --delay={} --id={} "
     "--barriers={} --vhost-port --iface='--vdev=virtio_user0,path={}' "
     "--dpdk-extra=--no-pci --size={} --dpdk-extra='--file-prefix=mg-{}' "
     "--dpdk-extra='-l' --dpdk-extra='{}' --vhost-port-ip={} "
