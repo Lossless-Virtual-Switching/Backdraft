@@ -124,7 +124,7 @@ Receiver::handleDataPacket(Driver::Packet* packet, IpAddress sourceIp)
     // Things that must be true (sanity check)
     assert(id == message->id);
     assert(message->driver == driver);
-    assert(message->source.ip == sourceIp);
+    assert(message->source.ip == sourceIp); // same id different ip address?!
     assert(message->source.port == be16toh(header->common.prefix.sport));
     assert(message->messageLength == Util::downCast<int>(header->totalLength));
 

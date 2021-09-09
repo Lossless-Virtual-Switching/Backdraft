@@ -42,8 +42,8 @@ namespace
 
 void signal_handler(int signal)
 {
-	gSignalStatus = signal;
-	std::cout << "Catched Signal " << gSignalStatus << std::endl;
+    gSignalStatus = signal;
+    std::cout << "Catched Signal " << gSignalStatus << std::endl;
 }
 
 static const char USAGE[] = R"(Homa System Test.
@@ -78,14 +78,14 @@ struct MessageHeader {
 } __attribute__((packed));
 
 struct Node {
-    explicit Node(uint64_t id, std::string ip, std::string mac, int dpdk_param_size, char **dpdk_params)
+    explicit Node(uint64_t id, std::string ip, std::string mac,
+            int dpdk_param_size, char **dpdk_params)
         : id(id)
-        // , driver("ens3f0")
-        // , driver("ens3f0", )
-	, driver("ens3f0", ip.c_str(), mac.c_str(), dpdk_param_size, dpdk_params)
-        , transport(Homa::Transport::create(&driver, id))
-        , thread()
-        , run(false)
+          , driver("ens3f0", ip.c_str(), mac.c_str(), dpdk_param_size,
+                  dpdk_params)
+          , transport(Homa::Transport::create(&driver, id))
+          , thread()
+          , run(false)
     {}
 
     const uint64_t id;
@@ -108,9 +108,10 @@ void wait(int ns) {
 void
 serverMain(Node* server, std::vector<Homa::IpAddress> addresses)
 {
-   // Generator *gn = new Exponential(0.1);
    Generator *gn = new Exponential(0.0002);
    int counter = 0;
+   uint64_t s = 0, t = 0;
+   std::vector<double> tput;
     while (true) {
         if (server->run.load() == false) {
             break;
@@ -129,26 +130,25 @@ serverMain(Node* server, std::vector<Homa::IpAddress> addresses)
                 std::cout << "  -> Server " << server->id
                           << " (opId: " << header.id << ")" << std::endl;
             }
-
-            // wait(gn->generate()*1000);
             wait(gn->generate());
-	    //       uint64_t t, now;
-	    //       t = now  = PerfUtils::Cycles::rdtsc();
-	    //       while (now - t < 10000 && header.id >= 100000 && header.id <= 200000) {
-	    //           now = PerfUtils::Cycles::rdtsc();
-	    //       }
-
-	    // if (header.id % 10000 == 0) { 
-	    // if (header.id > 100000 && header.id % 10000 > 0 && header.id % 10000 < 10 && counter <= 10) { 
-	    // 	wait(1000);
-            //     counter++;
-	    // }
-
-
             message->acknowledge();
+            t = PerfUtils::Cycles::rdtsc();
+            double delta = PerfUtils::Cycles::toSeconds(t - s);
+            if (delta >= 0.5) {
+                tput.push_back(counter / delta);
+                counter = 0;
+                s = t;
+            }
+            counter++;
         }
         server->transport->poll();
     }
+
+    std::cout << "Recorded Throughput" << std::endl;
+    for (size_t i = 0; i < tput.size(); i++) {
+        std::cout << tput[i] << " ";
+    }
+    std::cout << std::endl;
 }
 
 
@@ -234,16 +234,14 @@ main(int argc, char* argv[])
     std::signal(SIGINT, signal_handler);
 
 
-    // Homa::Drivers::Fake::FakeNetworkConfig::setPacketLossRate(packetLossRate);
-
     uint64_t nextServerId = 101;
     std::vector<Homa::IpAddress> addresses;
     std::vector<Node*> servers;
     for (int i = 0; i < numServers; ++i) {
         // Node* server = new Node(nextServerId++);
-	Node* server = new Node(nextServerId++, vhost_ip, vhost_mac,
-			dpdk_extra_count, dpdk_extra_params);
-	addresses.emplace_back(server->driver.getLocalAddress());
+        Node* server = new Node(nextServerId++, vhost_ip, vhost_mac,
+                dpdk_extra_count, dpdk_extra_params);
+        addresses.emplace_back(server->driver.getLocalAddress());
         servers.push_back(server);
     }
 
