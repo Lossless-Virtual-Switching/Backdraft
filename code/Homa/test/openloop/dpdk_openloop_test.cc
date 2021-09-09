@@ -1,17 +1,3 @@
-/* Copyright (c) 2019-2020, Stanford University
- *
- * Permission to use, copy, modify, and/or distribute this software for any
- * purpose with or without fee is hereby granted, provided that the above *
- * copyright notice and this permission notice appear in all copies.  * * THE
- * SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES * WITH
- * REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF * MERCHANTABILITY
- * AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR * ANY SPECIAL,
- * DIRECT, INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES * WHATSOEVER
- * RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN * ACTION OF
- * CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF OR IN
- * CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
- */
-
 #include <Homa/Debug.h>
 #include <Homa/Drivers/DPDK/DpdkDriver.h>
 #include <Homa/Homa.h>
@@ -29,7 +15,6 @@
 #include <sys/time.h>
 
 
-#include "Sender.h"
 #include "StringUtil.h"
 #include "docopt.h"
 #include "../Output.h"
@@ -100,13 +85,14 @@ struct Node {
   {}
 
   const uint64_t id;
-  // Homa::Drivers::Fake::FakeDriver driver;
   Homa::Drivers::DPDK::DpdkDriver driver;
   Homa::Transport* transport;
   std::thread thread;
   volatile std::atomic<bool> run;
 };
 
+/* Wait for some nano seconds
+ * */
 void wait(int ns) {
     uint64_t start , now;
     start = PerfUtils::Cycles::rdtsc();
@@ -126,11 +112,18 @@ int clientPollWorker(void *_arg)
   return 0;
 }
 
+struct MessageStat {
+  uint64_t start;
+  uint32_t addrIndex;
+  // uint64_t end;
+};
+
 static std::vector<Homa::IpAddress> addresses;
 static int pkt_to_finish;
 static int num_failed_pkt;
-static std::map<uint32_t, uint64_t> timebook;
-static std::map<uint32_t, uint32_t> tag_type;
+// static std::map<uint32_t, uint64_t> timebook;
+// static std::map<uint32_t, uint32_t> tag_type;
+struct MessageStat *stat_book;
 static uint64_t finish = 0;
 static bool isVictim = false;
 static uint64_t success_counter[2] = {};
@@ -149,12 +142,9 @@ int clientRxWorker(void *_arg)
   int numFailed = 0;
   int numComplete = 0;
 
-  uint64_t now = 0;
-
-  while (numFailed + numComplete < pkt_to_finish ||
-      PerfUtils::Cycles::toSeconds( now - finish) < 1) {
-    now = PerfUtils::Cycles::rdtsc();
-    done = client->transport->getDonePackets((Homa::OutMessage **)messages, size);
+  while (numFailed + numComplete < pkt_to_finish) {
+    done = client->transport->getDonePackets((Homa::OutMessage **)messages,
+        size);
     for(int i = 0; i < done; i++) {
       message = messages[i];
       status = message->getStatus();
@@ -162,23 +152,11 @@ int clientRxWorker(void *_arg)
         stop = PerfUtils::Cycles::rdtsc();
         numComplete++;
         uint32_t id = message->getTag();
-        // Homa::OutMessage::Deleter(message); // Hope this frees the Message
-        client->transport->unsafe_free_message(message); // Hope this frees the Message
+        client->transport->unsafe_free_message(message);
         {
-          auto it = timebook.find(id);
-          if (it == timebook.end()) {
-            continue;
-          }
-          start = it->second;
+          start = stat_book[id].start;
+          time_list_index = stat_book[id].addrIndex;
         }
-        {
-          auto it = tag_type.find(id);
-          if (it == tag_type.end()) {
-            continue;
-          }
-          time_list_index = it->second;
-        }
-        // time_list_index = 0;
         times[time_list_index].emplace_back(
             PerfUtils::Cycles::toSeconds(stop - start));
         success_counter[time_list_index]++;
@@ -188,7 +166,7 @@ int clientRxWorker(void *_arg)
       } else {
         std::cout << "Unknown packet" << std::endl;
       }
-      client->transport->unsafe_free_message(message); // Hope this frees the Message
+      client->transport->unsafe_free_message(message);
     }
     // wait(500);
   }
@@ -204,20 +182,26 @@ int clientRxWorker(void *_arg)
 
   for (int i = 0; i < addresses.size(); i++) {
     // std::cout << "Result for IP: " << (uint32_t)addresses[i] << std::endl;
-    if(start_time != 0) // sanity check
-        std::cout << "Result for IP: " << (uint32_t)addresses[i] << "Goodput: " << success_counter[i] << " "  << success_counter[i]/PerfUtils::Cycles::toSeconds(end_time - start_time) << " RPCps" << std::endl;
-    else 
+    if(start_time != 0) { // sanity check
+      std::cout << "Result for IP: " << (uint32_t)addresses[i] << "Goodput: "
+        << success_counter[i] << " "  <<
+        success_counter[i]/PerfUtils::Cycles::toSeconds(end_time - start_time)
+        << " RPCps" << std::endl;
+    } else  {
       std::cout << "ERRRRROR in latency measurement" << std::endl;
+    }
 
     if (times[i].size() > 0) {
       std::cout << Output::basicHeader() << std::endl;
       times[i].erase(times[i].begin(), times[i].begin() + 1000);
       times[i].erase(times[i].end() - 1000, times[i].end());
-      std::cout << Output::basic(times[i], "Homa Transport Testing") << std::endl;
+      std::cout << Output::basic(times[i], "Homa Transport Testing") <<
+        std::endl;
     } else {
       std::cout << "No latency record found!" << std::endl;
     }
-    std::cout << "=================================================" << std::endl;
+    std::cout << "=================================================" <<
+      std::endl;
   }
   return 0;
 }
@@ -258,6 +242,13 @@ int clientTxWorker(void *_arg)
     payload[i] = randData(gen);
   }
 
+  // Check that we are not violating payload bounds
+  if (count > size) {
+    std::cout << "The maximum number of messages could be " << size <<
+      std::endl;
+    exit(1);
+  }
+
   Generator *fbvalue = args->size_dist;
   Generator *ourgen = args->ia_dist;
   int addrIndex = args->addr_index;
@@ -282,14 +273,13 @@ int clientTxWorker(void *_arg)
     // }
 
     // Inter arrival
-    // wait_time = ourgen->generate() * 1000;
     wait_time = args->ia_dist_fn(ourgen);
     wait(wait_time);
 
     // set time stamp
     start = PerfUtils::Cycles::rdtsc();
-    timebook[id] = start;
-    tag_type[id] = addrIndex;
+    stat_book[id].start = start;
+    stat_book[id].addrIndex = addrIndex;
     // send the message
     message->send(Homa::SocketAddress{destAddress, 60001});
   }
@@ -305,15 +295,14 @@ int clientTxWorker(void *_arg)
  */
 int clientMain(int count, int size, std::vector<Homa::IpAddress> addresses,
     std::string ip, std::string mac, int
-    dpdk_param_size, char **dpdk_params, int barrier_count, int param_id, int wait_time)
+    dpdk_param_size, char **dpdk_params, int barrier_count, int param_id,
+    int wait_time)
 {
   size_t umem_size = sizeof(pthread_barrier_t) + 100;
   char SHM_PATH[60] = "/homa_openloop_dpdk_test";
   int ret;
   double distribution_wait_time;
   pthread_barrier_t * bufs;
-
-  pkt_to_finish = 0;
 
   // Setup shared memory it is a C code.
   // a pthread_barrier_t is shared between clients
@@ -364,19 +353,17 @@ int clientMain(int count, int size, std::vector<Homa::IpAddress> addresses,
     std::cout << "REUSED\n";
   }
 
-  // nextId = 0;
-  size_t id = param_id; // randAddrID(gen);
+  size_t id = param_id;
   Node client(id, ip, mac, dpdk_param_size, dpdk_params);
 
-  // client.driver.setBandwidth(100000);
-  // std::cout << "set bandwidth " << 100000 << std::endl;
+  client.driver.setBandwidth(100000);
+  std::cout << "set bandwidth " << 100000 << std::endl;
 
   client.run = true;
   std::cout << "ID: " << id << std::endl;
+  id = 0; // now that transport id is different we can use same sequence ids
 
-
-  // Check if there is two lcores available. One for polling and other for
-  // sending.
+  // Check if enough lcores are available.
   // Then launch polling thread.
   int count_lcore = rte_lcore_count();
   int needed_lcores = isVictim ? 4 : 3;
@@ -392,7 +379,11 @@ int clientMain(int count, int size, std::vector<Homa::IpAddress> addresses,
   }
 
   // Setting packet to finish condition before we start the RX thread
+  pkt_to_finish = 0;
   pkt_to_finish += isVictim ? count + VICTIM_INCAST_RATIO*count : count;
+
+  // Allocate per message stat array
+  stat_book = new struct MessageStat[pkt_to_finish];
 
   int rx_lcore_id = rte_get_next_lcore(poll_lcore_id, 1, 0);
   ret = rte_eal_remote_launch(clientRxWorker, &client, rx_lcore_id);
@@ -414,11 +405,10 @@ int clientMain(int count, int size, std::vector<Homa::IpAddress> addresses,
           client: &client,
           destAddress: addresses[1],
           size_dist: createFacebookValue(),
-          // ia_dist: new Exponential(0.000053),
-          ia_dist: new Exponential(0.00001),
+          ia_dist: new Exponential(0.00005),
           ia_dist_fn: [](Generator *g) -> double {return (g->generate());},
           count_message: (size_t)(count * VICTIM_INCAST_RATIO),
-          base_id: id + count,
+          base_id: id + count + 1000,
           addr_index: 1,
     };
 
@@ -433,8 +423,8 @@ int clientMain(int count, int size, std::vector<Homa::IpAddress> addresses,
   tx_worker_args_t incast_arg = {
     client: &client,
     destAddress: addresses[0],
-    size_dist: new Fixed(200),
-    ia_dist: new Exponential(0.000070),
+    size_dist: new Fixed(1700),
+    ia_dist: new Exponential(0.00005),
     ia_dist_fn: [](Generator *g) -> double {return (g->generate());},
     // ia_dist: new Fixed(1),
     count_message: (size_t)(count * 1.0),
@@ -460,6 +450,8 @@ int clientMain(int count, int size, std::vector<Homa::IpAddress> addresses,
 
 int main(int argc, char* argv[])
 {
+  // sleep(15);
+  // std::cout << "Hope debuger is connected" << std::endl;
   std::map<std::string, docopt::value> args =
     docopt::docopt(USAGE, {argv + 1, argv + argc},
         true,                 // show help if requested
