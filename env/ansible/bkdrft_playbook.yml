@@ -28,6 +28,9 @@
     #   ignore_errors: yes
     #   when: ansible_distribution == 'Ubuntu' and ansible_lsb.major_release|int < 20
     # docker
+    - name: "Homa"
+      apt:
+        name: ['cmake', 'libmnl-dev']
     - name: "install docker daemon and docker-compose"
       apt: # assume cache has been updated in previous steps
         name: ['docker', 'docker-compose']
