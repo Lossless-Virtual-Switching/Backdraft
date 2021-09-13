@@ -234,7 +234,7 @@ int do_server(void *_cntx) {
   // uint64_t current_sec;
   uint64_t last_pkt_time = 0;
   const uint64_t wait_until_exp_begins = 60 * hz; /* cycles */
-  const uint64_t termination_threshold = 10 * hz;
+  const uint64_t termination_threshold = 2 * hz;
   int run = 1;
 
   uint64_t failed_to_push = 0;

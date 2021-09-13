@@ -101,6 +101,10 @@ CommandResponse BKDRFTQueueOut::Init(const bess::pb::BKDRFTQueueOutArg &arg) {
 
   // max packets buffered for each queue (for pktbuffer)
   max_buffer_size_ = port_->tx_queue_size();
+  buffer_len_high_water = max_buffer_size_ * 7 / 8;
+  buffer_len_low_water = max_buffer_size_ / 8;
+  bp_buffer_len_high_water = buffer_len_high_water;
+
 
   // Check if has doorbell queue
   cdq_ = arg.cdq();
@@ -201,6 +205,7 @@ int BKDRFTQueueOut::SetupFlowControlBlockPool() {
     flow_state_pool_[i].qid = 0;
     flow_state_pool_[i].prio = 0;
     flow_state_pool_[i].in_use = 0;
+    flow_state_pool_[i].is_paused = false;
     if (buffering_) {
       if (per_flow_buffering_) {
         char name[20];
@@ -321,16 +326,16 @@ void BKDRFTQueueOut::BufferBatch(__attribute__((unused)) Flow *flow,
     }
   }
 
-  // ECN Mark packets
-  if (fstate->buffer->pkts >= ecn_threshold_) {
-    for (uint32_t i = 0; i < count_enqueue; i++) {
-      ecnMark(pkts[i]);
-    }
-  }
+  /* // ECN Mark packets */
+  /* if (fstate->buffer->pkts >= ecn_threshold_) { */
+  /*   for (uint32_t i = 0; i < count_enqueue; i++) { */
+  /*     ecnMark(pkts[i]); */
+  /*   } */
+  /* } */
 
   count_packets_in_buffer_ += remaining_pkts;
   bytes_in_buffer_ += remaining_bytes;
-  filled_buffers_.insert(fstate); // this buffer has some packets
+  // filled_buffers_.insert(fstate); // this buffer has some packets
 
   // LOG(INFO) << "BufferBatch total: " << count_packets_in_buffer_
   //  << " F: " << fstate->buffer->pkts << "\n";
@@ -357,7 +362,7 @@ void BKDRFTQueueOut::TrySendBufferPFQ(__attribute__((unused))Context *cntx) {
   uint32_t dequeue_size;
 
   struct flow_state *fstate;
-  // Flow *flow;
+  Flow *flow;
   // int fstate_index;
   int prio;
   int q_index;
@@ -368,7 +373,7 @@ void BKDRFTQueueOut::TrySendBufferPFQ(__attribute__((unused))Context *cntx) {
       flow_id = prio_queue_[prio][q_index];
       fstate = &flow_state_pool_[flow_id];
       qid = fstate->qid;
-      // flow = &flow_state_flow_id_[flow_id];
+      flow = &flow_state_flow_id_[flow_id];
 
       while (true) {
         // LOG(INFO) << "qid: " << (int)fstate->qid << "\n";
@@ -430,6 +435,17 @@ void BKDRFTQueueOut::TrySendBufferPFQ(__attribute__((unused))Context *cntx) {
       //   fstate->overlay_state = OverlayState::SAFE;
       //   SendOverlay(iter->first, qid, OverlayState::SAFE);
       // }
+
+      if (backpressure_ && fstate != nullptr && fstate->is_paused &&
+          fstate->buffer->pkts <= buffer_len_low_water) { 
+        // Resume
+        uint64_t ts = cntx->current_ns;
+        bess::bkdrft::BKDRFTSwDpCtrl &dropMan =
+          bess::bkdrft::BKDRFTSwDpCtrl::GetInstance();
+        dropMan.PauseFlow(ts, 10000000, *flow);
+        fstate->is_paused = false;
+        LOG(INFO) << "Resume\n";
+      }
     }
   }
 }
@@ -643,96 +659,104 @@ inline void BKDRFTQueueOut::UpdatePortStats(queue_t qid, uint16_t sent_pkts,
  * The Pause-Call per Second statistics is the number of
  * times this function is called.
  * */
-inline void BKDRFTQueueOut::Pause(Context *cntx, const Flow &flow,
-                                  const queue_t qid,
-                                  const uint64_t buffer_size) {
-  // pause the incoming queue of the flow
-  // TODO: get incomming line rate for bandwith-delay estimation
-  // Random rng;
-  uint64_t pps;
-  uint64_t duration;
+void BKDRFTQueueOut::Pause(Context *cntx, struct flow_state *fstate,
+    __attribute__((unused))const queue_t qid, __attribute__((unused))const
+    uint64_t buffer_size) {
+  /* // pause the incoming queue of the flow */
+  /* // TODO: get incomming line rate for bandwith-delay estimation */
+  /* // Random rng; */
+  const Flow &flow = flow_state_flow_id_[fstate->flow_id];
+  /* uint64_t pps; */
+  /* uint64_t duration; */
   uint64_t ts;
-  // uint64_t jitter = rng.GetRange(MIN_PAUSE_DURATION);
-  // pps = 3000000;
-  Port *p = port_;
-  pps = p->rate_[PACKET_DIR_OUT][qid].pps;
-  if (pps == 0) {
-    // LOG(INFO) << "pps is zero\n";
-    duration = MIN_PAUSE_DURATION; // 10 us
-  } else {
-    duration = ((buffer_size * 1000000000UL) / pps);
-    if (duration > MAX_PAUSE_DURATION) {
-      // LOG(INFO) << "more than max pause durtaion\n";
-      duration = MAX_PAUSE_DURATION;
-    } else if (duration < MIN_PAUSE_DURATION) {
-      // LOG(INFO) << "less than min pause duration\n";
-      duration = MIN_PAUSE_DURATION;
-    }
-  }
+  /* // uint64_t jitter = rng.GetRange(MIN_PAUSE_DURATION); */
+  /* // pps = 3000000; */
+  /* Port *p = port_; */
+  /* pps = p->rate_[PACKET_DIR_OUT][qid].pps; */
+  /* if (pps == 0) { */
+  /*   // LOG(INFO) << "pps is zero\n"; */
+  /*   duration = MIN_PAUSE_DURATION; // 10 us */
+  /* } else { */
+  /*   duration = ((buffer_size * 1000000000UL) / pps); */
+  /*   if (duration > MAX_PAUSE_DURATION) { */
+  /*     // LOG(INFO) << "more than max pause durtaion\n"; */
+  /*     duration = MAX_PAUSE_DURATION; */
+  /*   } else if (duration < MIN_PAUSE_DURATION) { */
+  /*     // LOG(INFO) << "less than min pause duration\n"; */
+  /*     duration = MIN_PAUSE_DURATION; */
+  /*   } */
+  /* } */
 
-  ts = cntx->current_ns + duration; //+ jitter;
+  /* ts = cntx->current_ns + duration; //+ jitter; */
+  ts = cntx->current_ns + 1000000000;
 
-  // LOG(INFO) << "before pauseing flow\n";
+  /* // LOG(INFO) << "before pauseing flow\n"; */
 
   bess::bkdrft::BKDRFTSwDpCtrl &dropMan =
       bess::bkdrft::BKDRFTSwDpCtrl::GetInstance();
-  dropMan.PauseFlow(ts, pps + 32, flow);
+  // dropMan.PauseFlow(ts, pps + 32, flow);
   // dropMan.PauseFlow(ts, 100000000, flow);
+  dropMan.PauseFlow(ts, 0, flow);
   pause_call_total += 1;
+  fstate->is_paused = true;
 
   // if (log_)
-  LOG(INFO) << "name: " << name_ << " pause qid: " << (int)qid << " pause duration: "
-    << duration << " until: " << ts
-    << " pps: " << pps << "\n  flow: " << FlowToString(flow) << "\n";
+  LOG(INFO) << "Pause\n";
+  /* LOG(INFO) << "name: " << name_ << " pause qid: " << (int)qid << " pause duration: " */
+  /*   << duration << " until: " << ts */
+  /*   << " pps: " << pps << "\n  flow: " << FlowToString(flow) << "\n"; */
 }
 
 void BKDRFTQueueOut::ProcessBatchWithBuffer(Context *cntx,
                                             bess::PacketBatch *batch) {
   using namespace bess::bkdrft;
-  Port *p = port_;
-  uint16_t sent_pkts = 0;
-  const int cnt = batch->cnt();
+  /* Port *p = port_; */
+  /* uint16_t sent_pkts = 0; */
+  /* const int cnt = batch->cnt(); */
   bess::Packet **pkts = batch->pkts();
   Flow flow = PacketToFlow(*(pkts[0]));
   flow_state *fstate = GetFlowState(cntx, flow); // TODO: use ffs to find free flow in the pool
   queue_t qid = fstate->qid;
-  fstate->last_used = cntx->current_ns;
+  /* fstate->last_used = cntx->current_ns; */
 
-  // Before we give away this batch let's check on our buffer.
-  // if (BKDRFTQueueOut::count_packets_in_buffer_ > 0) {
-  if (fstate->buffer->pkts > 0) {
-    // We have some packet in the buffer, to avoid packet
-    // reordering I should send the remining packets in
-    // buffer first.
 
-    // First we need to save this Batch descriptors
-    // No packet has been sent so we just pass 0
-    BufferBatch(&flow, fstate, batch, 0);
+  BufferBatch(&flow, fstate, batch, 0);
 
-    // Now let's send some packet from the buffer!
-    // TODO: try send this flow first
-    if (per_flow_buffering_) {
-      TrySendBufferPFQ(cntx);
-    } else {
-      TrySendBuffer(cntx);
-    }
-  } else {
-    // There is no packet in the buffer
-    sent_pkts = SendPacket(p, fstate, pkts, cnt, nullptr, nullptr);
+  /* // Before we give away this batch let's check on our buffer. */
+  /* // if (BKDRFTQueueOut::count_packets_in_buffer_ > 0) { */
+  /* if (fstate->buffer->pkts > 0) { */
+  /*   // We have some packet in the buffer, to avoid packet */
+  /*   // reordering I should send the remining packets in */
+  /*   // buffer first. */
 
-    if (unlikely(sent_pkts < cnt)) {
-      BufferBatch(&flow, fstate, batch, sent_pkts);
-    }
+  /*   // First we need to save this Batch descriptors */
+  /*   // No packet has been sent so we just pass 0 */
+  /*   BufferBatch(&flow, fstate, batch, 0); */
 
-    // Nothing has been dropped yet
-    UpdatePortStats(qid, sent_pkts, 0, batch);
-  }
+  /*   // Now let's send some packet from the buffer! */
+  /*   // TODO: try send this flow first */
+  /*   if (per_flow_buffering_) { */
+  /*     TrySendBufferPFQ(cntx); */
+  /*   } else { */
+  /*     TrySendBuffer(cntx); */
+  /*   } */
+  /* } else { */
+  /*   // There is no packet in the buffer */
+  /*   sent_pkts = SendPacket(p, fstate, pkts, cnt, nullptr, nullptr); */
+
+  /*   if (unlikely(sent_pkts < cnt)) { */
+  /*     BufferBatch(&flow, fstate, batch, sent_pkts); */
+  /*   } */
+
+    /* // Nothing has been dropped yet */
+    /* UpdatePortStats(qid, sent_pkts, 0, batch); */
+  /* } */
 
   // if we are buffering then we can decide based on the buffer size
   // for each flow
 
-  if (overlay_ && fstate->buffer->pkts > buffer_len_high_water
-      && cntx->current_ns - fstate->ts_last_overlay > fstate->no_overlay_duration) {
+if (overlay_ && fstate->buffer->pkts > buffer_len_high_water &&
+    cntx->current_ns - fstate->ts_last_overlay > fstate->no_overlay_duration) {
     fstate->ts_last_overlay = cntx->current_ns;
     fstate->overlay_state = OverlayState::TRIGGERED;
     uint64_t duration;
@@ -750,13 +774,13 @@ void BKDRFTQueueOut::ProcessBatchWithBuffer(Context *cntx,
       auto iter = flow_buffer_mapping_.begin();
       for (; iter != flow_buffer_mapping_.end(); iter++) {
         if (iter->second->qid == qid) {
-          Pause(cntx, iter->first, qid, iter->second->buffer->pkts);
+          Pause(cntx, iter->second, qid, iter->second->buffer->pkts);
           // LOG(INFO) << "pause: " << FlowToString(iter->first) << "\n";
         }
       }
     } else {
       // each flow has its own queue
-      Pause(cntx, flow, qid, fstate->buffer->pkts);
+      Pause(cntx, fstate, qid, fstate->buffer->pkts);
     }
   }
 }
@@ -957,8 +981,9 @@ void BKDRFTQueueOut::DeallocateFlowState(__attribute__((unused)) Context *cntx,
       prio_found = true;
     }
   }
-  if (prio_found)
+  if (prio_found) {
     prio_queue_len_[prio]--;
+  }
 
   if (per_flow_buffering_) {
     // fstate->buffer->clear();
@@ -1092,7 +1117,7 @@ struct task_result BKDRFTQueueOut::RunTask(Context *ctx,
                                            __attribute__((unused))
                                            bess::PacketBatch *batch,
                                            __attribute__((unused)) void *arg) {
-  current_ns_ = ctx->current_ns;
+  /* current_ns_ = ctx->current_ns; */
   if (cdq_) {
     TryFlushCtrlBatch();
     // TryFailedCtrlPackets();

@@ -127,11 +127,12 @@ def run_client(instance):
     cpu = ['(3,4)', '(5,6)', '(7,8)'][instance]
     # TODO: the following line is an example of code that is not suitable!
     # should switch to run_udp_app instead of this function
-    ips = [[_server_ips[1], _server_ips[0]],
+    # ips = [[_server_ips[1], _server_ips[0]],
+    ips = [[_server_ips[0],],
             [_server_ips[1]],
             [_server_ips[1]]][instance]
     mpps = 1000 * 1000
-    rate = [-1000, -20000, -20000][instance]
+    rate = [20*mpps, -20000, -20000][instance]
     _ips = ' '.join(ips)
     _cnt_flow = [1, count_flow, count_flow][instance]
     delay = [100, 100, 100]  # cycles per packet
@@ -240,35 +241,34 @@ def main():
         # Only run bess config
         return 0
 
-    count_client = 2
+    count_client = 1
+    count_server = 1
     print ('Number of active clientes: ', count_client)
     clients = []
+    servers = []
 
     # Run server
-    server_p1 = run_server(0)
-    server_p2 = run_server(1)
-    sleep(3)
+    for i in range(count_server):
+        server_p = run_server(i)
+        servers.append(server_p)
+    sleep(1)
 
     # Run client
-    global duration
+    # global duration
     for i in range(count_client):
         client_p = run_client(i)
         clients.append(client_p)
-        sleep(1)
-        duration -= 1  # next client has less time
+        # sleep(1)
+        # duration -= 1  # next client has less time
 
     # Wait
     try:
-        for proc in clients:
+        for proc in clients + servers:
             proc.wait()
-        server_p1.wait()
-        server_p2.wait()
     except KeyboardInterrupt:
         # subprocess.run('sudo pkill udp_app', shell=True)  # Stop server
-        for p in clients:
+        for p in clients + servers:
             p.kill()
-        server_p1.kill()
-        server_p2.kill()
 
     # Get output of processes
     if not DIRECT_OUTPUT:
@@ -276,14 +276,12 @@ def main():
             print('++++++ client{} ++++'.format(i))
             txt = str(proc.stdout.read().decode())
             print(txt)
-        print('++++++ server1 ++++')
-        txt = str(server_p1.stdout.read().decode())
-        print(txt)
-        txt = str(server_p1.stderr.read().decode())
-        print(txt)
-        print('++++++ server2 ++++')
-        txt = str(server_p2.stdout.read().decode())
-        print(txt)
+        for i, proc in enumerate(servers):
+            print('++++++ server{} ++++'.format(i))
+            txt = str(proc.stdout.read().decode())
+            print(txt)
+            txt = str(proc.stderr.read().decode())
+            print(txt)
         print('+++++++++++++++++++')
 
     print('----- switch stats -----')

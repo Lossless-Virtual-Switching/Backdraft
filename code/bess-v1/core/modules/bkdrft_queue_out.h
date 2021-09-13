@@ -213,6 +213,7 @@ struct flow_state {
   pktbuffer_t *buffer; // pointer to queue buffer
   bool in_use; // indicating if the object is being used by a flow
   uint64_t last_used; // keeps track of the usage
+  bool is_paused;
 } __attribute__((aligned(64)));
 
 class BKDRFTQueueOut final : public Module {
@@ -273,7 +274,7 @@ private:
   void ProcessBatchLossy(Context *ctx, bess::PacketBatch *batch);
 
   // performe a pause cal for the given flow
-  void Pause(Context *cntx, const Flow &flow, const queue_t qid,
+  void Pause(Context *cntx, struct flow_state  *fstate, const queue_t qid,
                        uint64_t buffer_size);
 
   // map a flow to a queue (or get the queue it was mapped before)
@@ -330,9 +331,9 @@ private:
   std::vector<uint64_t> overlay_per_sec;
   uint64_t stats_begin_ts_;
 
-  uint64_t buffer_len_high_water = 6;
-  uint64_t buffer_len_low_water = 16;
-  uint64_t bp_buffer_len_high_water = 6;
+  uint64_t buffer_len_high_water;
+  uint64_t buffer_len_low_water;
+  uint64_t bp_buffer_len_high_water;
 
   // a  name given to this module. currently used for loggin pause per sec
   // statistics.

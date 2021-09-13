@@ -92,6 +92,7 @@ struct vport *_new_vport(const char *name, uint16_t num_inc_q,
                          uint16_t num_out_q, uint16_t pool_size,
                          uint16_t q_size)
 {
+  printf("Creating vport with qsize: %d\n", q_size);
   uint32_t i;
   uint32_t dir;
   uint16_t num_queues[2] = {num_inc_q, num_out_q};
@@ -132,7 +133,7 @@ struct vport *_new_vport(const char *name, uint16_t num_inc_q,
   port->bar = bar;
 
   // Initialize vport_bar structure
-  strncpy(bar->name, name, PORT_NAME_LEN);
+  strncpy(bar->name, name, PORT_NAME_LEN - 1);
   bar->num_inc_q = num_inc_q;
   bar->num_out_q = num_out_q;
   bar->pool = new_llr_pool(name, SOCKET_ID_ANY, pool_size, q_size);
@@ -166,7 +167,7 @@ struct vport *_new_vport(const char *name, uint16_t num_inc_q,
 
       q_handler->total_size = q_size;
       q_handler->th_over = q_size * 7 / 8;
-      q_handler->th_goal = q_size / 10;
+      q_handler->th_goal = q_size / 8;
     }
   }
 
@@ -308,10 +309,9 @@ int recv_packets_vport(struct vport *port, uint16_t qid, void**pkts, int cnt)
   read_seg = q->reader_head;
 
   // Check if queue needs to be extended
-  // TODO: upper limit is just for testing
-  int extend = 0;
-  if (extend && _count_pkts_in_q(q) > q->th_over && q->total_size < 2048) {
-    // printf("\nWe have crossed the water mark\n");
+  uint32_t pkts_in_q = _count_pkts_in_q(q);
+  const int extend = 0;
+  if (extend && pkts_in_q > q->th_over) {
     // water mark crossed
     seg = pull_llr(port->bar->pool);
     assert(seg != NULL);
@@ -321,7 +321,9 @@ int recv_packets_vport(struct vport *port, uint16_t qid, void**pkts, int cnt)
     q->th_over = q->total_size * 7 / 8;
     // printf("Extend queue %d q: %p new list: %p next: %p\n\n",
     //     qid, &q_list->list, &seg->list, q_list->list.next);
-    // fflush(stdout);
+    // printf("Extending queue %d. Filled %d Size %ld\n", qid,
+    // _count_pkts_in_q(q), q->total_size);
+    fflush(stdout);
   }
 
   // Try to dequeue packets
@@ -340,15 +342,15 @@ read_pkts:
     }
   }
 
-  if (dequeued == 0 && q->is_paused) {
-    q->count_empty++;
-    if (q->empty_start_ts == 0) {
-      q->empty_start_ts = rte_get_timer_cycles();
-    }
-  } else if(q->empty_start_ts != 0) {
-    q->empty_cycles += rte_get_timer_cycles() - q->empty_start_ts;
-    q->empty_start_ts = 0;
-  }
+  /* if (dequeued == 0 && q->is_paused) { */
+  /*   q->count_empty++; */
+  /*   if (q->empty_start_ts == 0) { */
+  /*     q->empty_start_ts = rte_get_timer_cycles(); */
+  /*   } */
+  /* } else if(q->empty_start_ts != 0) { */
+  /*   q->empty_cycles += rte_get_timer_cycles() - q->empty_start_ts; */
+  /*   q->empty_start_ts = 0; */
+  /* } */
 
   // // Queue Deallocation
   // if (0) {

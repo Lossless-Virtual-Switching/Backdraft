@@ -46,20 +46,21 @@ int do_client(void *_cntx) {
   struct vport *virt_port = cntx->virt_port;
 
   // Testing BD_VPORT:
-  // assert(virt_port->bar != NULL);
-  // assert(virt_port->bar->pool != NULL);
-  // assert(virt_port->bar->queues[1][0].writer_head != NULL);
-  // printf("port name %s (%d, %d)\n", virt_port->bar->name, virt_port->bar->num_inc_q, virt_port->bar->num_out_q);
-  // printf("%x:%x:%x:%x:%x:%x\n",
-  //   virt_port->mac_addr[0],virt_port->mac_addr[1],virt_port->mac_addr[2],
-  //   virt_port->mac_addr[3],virt_port->mac_addr[4],virt_port->mac_addr[5]);
-  // printf("llsize %d\n", llring_free_count(&virt_port->bar->queues[1][0].writer_head->ring));
-  // assert(llring_free_count(&virt_port->bar->queues[1][0].writer_head->ring) > 0);
+  if (port_type == vport) {
+    assert(virt_port->bar != NULL);
+    assert(virt_port->bar->pool != NULL);
+    assert(virt_port->bar->queues[1][0].writer_head != NULL);
+    printf("port name %s (%d, %d)\n", virt_port->bar->name, virt_port->bar->num_inc_q, virt_port->bar->num_out_q);
+    printf("%x:%x:%x:%x:%x:%x\n",
+      virt_port->mac_addr[0],virt_port->mac_addr[1],virt_port->mac_addr[2],
+      virt_port->mac_addr[3],virt_port->mac_addr[4],virt_port->mac_addr[5]);
+    printf("llsize %d\n", llring_free_count(&virt_port->bar->queues[1][0].writer_head->ring));
+    assert(llring_free_count(&virt_port->bar->queues[1][0].writer_head->ring) > 0);
+  }
 
   uint16_t qid = cntx->default_qid;
   uint16_t count_queues = cntx->count_queues;
   struct rte_mempool *tx_mem_pool = cntx->tx_mem_pool;
-  // struct rte_mempool *rx_mem_pool = cntx->rx_mem_pool;
   struct rte_mempool *ctrl_mem_pool = cntx->ctrl_mem_pool;
   struct rte_ether_addr my_eth = cntx->my_eth;
   uint32_t src_ip = cntx->src_ip;
@@ -68,22 +69,20 @@ int do_client(void *_cntx) {
   int count_dst_ip = cntx->count_dst_ip;
   unsigned int dst_port; // = cntx->dst_port;
   int payload_length = cntx->payload_length;
-  FILE *fp = cntx->fp;
-  // FILE *fp = stdout;
+  FILE *fp = cntx->fp; // or stdout
   uint32_t count_flow = cntx->count_flow;
   uint32_t base_port_number = cntx->base_port_number;
   uint8_t use_vlan = cntx->use_vlan;
   uint8_t bidi = cntx->bidi;
   uint64_t delay_cycles = cntx->delay_cycles;
-  // int num_queues = cntx->num_queues;
   assert(count_dst_ip >= 1);
 
   uint64_t start_time, end_time;
-  uint64_t duration = (cntx->duration < 0) ? 0 : ((unsigned int)cntx->duration) * rte_get_timer_hz();
+  uint64_t duration = (cntx->duration < 0) ? 0 : ((unsigned int)cntx->duration)
+    * rte_get_timer_hz();
   uint64_t ignore_result_duration = 0;
 
   struct rte_mbuf *bufs[BURST_SIZE];
-  // struct rte_mbuf *ctrl_recv_bufs[BURST_SIZE];
   struct rte_mbuf *buf;
   char *buf_ptr;
   struct rte_ether_hdr *eth_hdr;
@@ -149,7 +148,7 @@ int do_client(void *_cntx) {
   hist = malloc(count_dst_ip * sizeof(struct p_hist *));
   for (i = 0; i < count_dst_ip; i++) {
     hist[i] = new_p_hist_from_max_value(MAX_EXPECTED_LATENCY);
-    burst_sizes[i] = 32;
+    burst_sizes[i] = BURST_SIZE;
   }
   burst = burst_sizes[0];
 
