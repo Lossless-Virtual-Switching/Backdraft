@@ -243,8 +243,8 @@ int send_packets_vport_with_bp(struct vport *port, uint16_t qid, void **pkts,
   struct llr_seg *seg;
   int32_t ret;
   int enqueued = 0;
-  uint64_t pps;
-  uint32_t count_pkts;
+  // uint64_t pps;
+  // uint32_t count_pkts;
 
   *pause_duration = 0;
 
@@ -253,11 +253,11 @@ int send_packets_vport_with_bp(struct vport *port, uint16_t qid, void **pkts,
   } else {
     q = &port->bar->queues[INC][qid];
   }
-  pps = q->rate.pps;
+  // pps = q->rate.pps;
   seg = q->writer_head;
 
 send_pkts:
-  ret = llring_enqueue_burst(&seg->ring, pkts, cnt);
+  ret = llring_sp_enqueue_burst(&seg->ring, pkts, cnt);
   ret &= 0x7fffffff;
   enqueued += ret;
   q->enqueue_pkts += ret;
@@ -273,20 +273,20 @@ send_pkts:
   }
 
   // Check if pause request should be signaled
-  count_pkts = _count_pkts_in_q(q);
-  if (count_pkts > q->th_over) {
-    if (pps > 0) {
-      *pause_duration = ((uint64_t)(count_pkts - q->th_goal)) *
-                            ((1000000000L) / pps);
-      // Just for debuging
-      // if (*pause_duration > 1000000000L) {
-      //   printf("large pause: duration: %lu q: %d pps: %ld\n",
-      //       *pause_duration, _count_pkts_in_q(q), pps);
-      // }
-    } else {
-      *pause_duration = 10000;
-    }
-  }
+  /* count_pkts = _count_pkts_in_q(q); */
+  /* if (count_pkts > q->th_over) { */
+  /*   if (pps > 0) { */
+  /*     *pause_duration = ((uint64_t)(count_pkts - q->th_goal)) * */
+  /*                           ((1000000000L) / pps); */
+  /*     // Just for debuging */
+  /*     // if (*pause_duration > 1000000000L) { */
+  /*     //   printf("large pause: duration: %lu q: %d pps: %ld\n", */
+  /*     //       *pause_duration, _count_pkts_in_q(q), pps); */
+  /*     // } */
+  /*   } else { */
+  /*     *pause_duration = 10000; */
+  /*   } */
+  /* } */
 
   return enqueued;
 }
@@ -297,7 +297,7 @@ int recv_packets_vport(struct vport *port, uint16_t qid, void**pkts, int cnt)
   struct llr_seg *read_seg;
   struct llr_seg *seg;
   int ret;
-  struct rate *rate;
+  /* struct rate *rate; */
   int dequeued = 0;
 
   if (port->_main) {
@@ -305,7 +305,7 @@ int recv_packets_vport(struct vport *port, uint16_t qid, void**pkts, int cnt)
   } else {
     q = &port->bar->queues[OUT][qid];
   }
-  rate = &q->rate;
+  /* rate = &q->rate; */
   read_seg = q->reader_head;
 
   // Check if queue needs to be extended
@@ -323,12 +323,12 @@ int recv_packets_vport(struct vport *port, uint16_t qid, void**pkts, int cnt)
     //     qid, &q_list->list, &seg->list, q_list->list.next);
     // printf("Extending queue %d. Filled %d Size %ld\n", qid,
     // _count_pkts_in_q(q), q->total_size);
-    fflush(stdout);
+    // fflush(stdout);
   }
 
   // Try to dequeue packets
 read_pkts:
-  ret = llring_dequeue_burst(&read_seg->ring, pkts, cnt);
+  ret = llring_sc_dequeue_burst(&read_seg->ring, pkts, cnt);
   dequeued += ret;
   q->dequeue_pkts += ret;
   if (ret < cnt) {
@@ -371,27 +371,27 @@ read_pkts:
   // }
 
   // Udpate queue throughput stats
-  rate->tp += dequeued;
-  uint64_t now = rte_get_timer_cycles();
-  if (now - rate->last_ts > rte_get_timer_hz()) {
-    rate->sum += rate->tp;
-    rate->sequence[rate->tail] = rate->tp;
-    rate->tail = (rate->tail + 1) % RATE_SEQUENCE_SIZE;
-    // if (rate->tail == rate->head) {
-      rate->sum -= rate->sequence[rate->head];
-      rate->head = (rate->head + 1) % RATE_SEQUENCE_SIZE;
-    // }
-    rate->tp = 0;
-    rate->last_ts = now;
-    rate->pps = rate->sum / (RATE_SEQUENCE_SIZE - 1);
-    // printf("main: %d qid: %d pps: %ld\n", port->_main, qid, rate->pps);
-    // printf("main: %d qid: %d size: %d\n",
-    //     port->_main, qid, llring_count(&read_seg->ring));
-    // printf("main: %d qid: %d empty: %ld cycles: %ld\n",
-    //     port->_main, qid, q->count_empty, q->empty_cycles);
-    q->count_empty = 0;
-    q->empty_cycles = 0;
-  }
+  /* rate->tp += dequeued; */
+  /* uint64_t now = rte_get_timer_cycles(); */
+  /* if (now - rate->last_ts > rte_get_timer_hz()) { */
+  /*   rate->sum += rate->tp; */
+  /*   rate->sequence[rate->tail] = rate->tp; */
+  /*   rate->tail = (rate->tail + 1) % RATE_SEQUENCE_SIZE; */
+  /*   // if (rate->tail == rate->head) { */
+  /*     rate->sum -= rate->sequence[rate->head]; */
+  /*     rate->head = (rate->head + 1) % RATE_SEQUENCE_SIZE; */
+  /*   // } */
+  /*   rate->tp = 0; */
+  /*   rate->last_ts = now; */
+  /*   rate->pps = rate->sum / (RATE_SEQUENCE_SIZE - 1); */
+  /*   // printf("main: %d qid: %d pps: %ld\n", port->_main, qid, rate->pps); */
+  /*   // printf("main: %d qid: %d size: %d\n", */
+  /*   //     port->_main, qid, llring_count(&read_seg->ring)); */
+  /*   // printf("main: %d qid: %d empty: %ld cycles: %ld\n", */
+  /*   //     port->_main, qid, q->count_empty, q->empty_cycles); */
+  /*   q->count_empty = 0; */
+  /*   q->empty_cycles = 0; */
+  /* } */
   return dequeued;
 }
 

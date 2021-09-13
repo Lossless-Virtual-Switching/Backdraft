@@ -44,6 +44,7 @@
 #include "message.h"
 
 #define second_ns 1000000000UL
+#define update_rate 1000000
 
 std::map<std::string, Port *> PortBuilder::all_ports_;
 
@@ -280,12 +281,11 @@ void Port::ReleaseQueues(const struct module *m, packet_dir_t dir,
   }
 }
 
-void Port::RecordRate(packet_dir_t dir, queue_t qid,
-    __attribute__((unused)) bess::Packet **pkts,
-    int packets) {
+void Port::RecordRate(packet_dir_t dir, queue_t qid, __attribute__((unused))
+    bess::Packet **pkts, int packets) {
   uint64_t now = tsc_to_ns(rdtsc());
   uint64_t diff = 0;
-  uint64_t total_bytes = 0;
+  /* uint64_t total_bytes = 0; */
   struct Rates &rate = rate_[dir][qid];
 
   // TODO: we do not need total bytes
@@ -295,15 +295,15 @@ void Port::RecordRate(packet_dir_t dir, queue_t qid,
 
   rate.packets += packets;
   rate.last_sec_packets += packets;
-  rate.bytes += total_bytes;
+  /* rate.bytes += total_bytes; */
 
   diff = now - rate.timestamp;
-  if (dir == PACKET_DIR_OUT && unlikely(diff >= second_ns)) {
+  if (dir == PACKET_DIR_OUT && diff >= update_rate) {
     rate.window_packets -= rate.samples[rate.samples_index];
     rate.samples[rate.samples_index] = rate.last_sec_packets;
     rate.window_packets += rate.last_sec_packets;
     rate.samples_index = (rate.samples_index + 1) % TP_Q_SIZE;
-    rate.pps = rate.window_packets / TP_Q_SIZE;
+    rate.pps = rate.window_packets * ((second_ns / update_rate) / TP_Q_SIZE);
     rate.timestamp = now;
 
     // For debugging

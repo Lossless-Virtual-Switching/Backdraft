@@ -129,10 +129,10 @@ def run_client(instance):
     # should switch to run_udp_app instead of this function
     # ips = [[_server_ips[1], _server_ips[0]],
     ips = [[_server_ips[0],],
-            [_server_ips[1]],
-            [_server_ips[1]]][instance]
+            [_server_ips[0]],
+            [_server_ips[0]]][instance]
     mpps = 1000 * 1000
-    rate = [20*mpps, -20000, -20000][instance]
+    rate = [-1, -1, -1][instance]
     _ips = ' '.join(ips)
     _cnt_flow = [1, count_flow, count_flow][instance]
     delay = [100, 100, 100]  # cycles per packet
@@ -146,7 +146,7 @@ def run_client(instance):
             'ips':  _ips,
             'count_flow': _cnt_flow,
             'duration': duration,
-            'source_ip': _client_ip,
+            'source_ip': _client_ip[instance],
             'port': port,
             'delay': delay[instance],
             'bidi': 'false',
@@ -241,7 +241,7 @@ def main():
         # Only run bess config
         return 0
 
-    count_client = 1
+    count_client = 2
     count_server = 1
     print ('Number of active clientes: ', count_client)
     clients = []
@@ -297,10 +297,11 @@ def main():
 
     # bessctl_do('command module client_qout0 get_pause_calls EmptyArg {}')
     FNULL = open(os.devnull, 'w') # pipe output to null
-    bessctl_do('command module server1_qout get_pause_calls EmptyArg {}',
-            stdout=FNULL)
-    bessctl_do('command module server2_qout get_pause_calls EmptyArg {}',
-            stdout=FNULL)
+
+    # bessctl_do('show pipeline')
+    for i in range(count_server):
+        cmd = 'command module bkdrft_queue_out{} get_pause_calls EmptyArg {{}}'.format(i + count_client)
+        bessctl_do(cmd, stdout=FNULL)
     bessctl_do('daemon stop', stdout=FNULL)
 
     print_pps_from_info_log()
@@ -365,7 +366,7 @@ if __name__ == '__main__':
 
     # TODO: having const ips does not scale
     _server_ips = ['10.10.1.3', '10.10.1.4']
-    _client_ip = '10.10.1.2'
+    _client_ip = ['10.10.1.2', '10.10.1.3', '10.10.1.4']
 
     if cdq and sysmod != 'bkdrft':
         print('comand data queueing is only available on bkdrft mode',

@@ -340,11 +340,11 @@ int do_server(void *_cntx) {
     }
 
     /* Increase rate limit (TODO: just for a specific experiment) */
-    if (rate_limit_change_flag == 0 && current_time - exp_begin > 32 * rte_get_tsc_hz()) {
-      printf("=============== Changing Throughput Rate ==================\n");
-      rate_limit_change_flag = 1;
-      token_limit = 6000000;
-    }
+    // if (rate_limit_change_flag == 0 && current_time - exp_begin > 32 * rte_get_tsc_hz()) {
+    //   printf("=============== Changing Throughput Rate ==================\n");
+    //   rate_limit_change_flag = 1;
+    //   token_limit = 6000000;
+    // }
 
     limit_window = token_limit * (delta_time / (double)(rte_get_timer_hz()));
     if (rate_limit && throughput >= limit_window) {
