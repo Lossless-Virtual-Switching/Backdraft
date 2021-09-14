@@ -132,10 +132,10 @@ def run_client(instance):
             [_server_ips[0]],
             [_server_ips[0]]][instance]
     mpps = 1000 * 1000
-    rate = [-1, -1, -1][instance]
+    rate = [-2 * mpps, 2 * mpps, 6 * mpps][instance]
     _ips = ' '.join(ips)
     _cnt_flow = [1, count_flow, count_flow][instance]
-    delay = [100, 100, 100]  # cycles per packet
+    delay = [0, 0, 100]  # cycles per packet
     args = {
             'bin': slow_receiver_exp,
             'cpu': cpu,
@@ -241,7 +241,7 @@ def main():
         # Only run bess config
         return 0
 
-    count_client = 2
+    count_client = 1
     count_server = 1
     print ('Number of active clientes: ', count_client)
     clients = []
@@ -299,8 +299,10 @@ def main():
     FNULL = open(os.devnull, 'w') # pipe output to null
 
     # bessctl_do('show pipeline')
-    for i in range(count_server):
-        cmd = 'command module bkdrft_queue_out{} get_pause_calls EmptyArg {{}}'.format(i + count_client)
+    count_client_vhost = 3
+    count_server_vhost = 1
+    for i in range(count_server_vhost):
+        cmd = 'command module bkdrft_queue_out{} get_pause_calls EmptyArg {{}}'.format(i + count_client_vhost)
         bessctl_do(cmd, stdout=FNULL)
     bessctl_do('daemon stop', stdout=FNULL)
 

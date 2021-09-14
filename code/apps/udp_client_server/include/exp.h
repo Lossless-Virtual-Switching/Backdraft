@@ -99,4 +99,6 @@ int check_eth_hdr_vport(uint32_t my_ip, struct rte_ether_addr *host_mac,
 int do_server(void *cntx);
 
 int do_client(void *cntx);
+
+void wait(uint64_t ns);
 #endif // __SLOW_RECEIVER_EXP_

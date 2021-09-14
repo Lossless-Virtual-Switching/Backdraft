@@ -310,15 +310,23 @@ int recv_packets_vport(struct vport *port, uint16_t qid, void**pkts, int cnt)
 
   // Check if queue needs to be extended
   uint32_t pkts_in_q = _count_pkts_in_q(q);
-  const int extend = 0;
-  if (extend && pkts_in_q > q->th_over) {
+  /* const int extend = 0; */
+  // Setting an upper bound for how long the queue can be extend...
+  if (EXTENDABLE && pkts_in_q > q->th_over &&
+      q->total_size < QUEUE_LENGTH_UPPER_BOUND) {
+    /* uint64_t b = rte_get_timer_cycles(); */
     // water mark crossed
     seg = pull_llr(port->bar->pool);
     assert(seg != NULL);
+    /* uint64_t m1 = rte_get_timer_cycles(); */
     list_add_tail(&seg->list, &read_seg->list);
+    /* uint64_t m2 = rte_get_timer_cycles(); */
     q->total_size += port->bar->pool->llr_size;
     q->th_goal = q->total_size / 10;
     q->th_over = q->total_size * 7 / 8;
+    /* uint64_t e = rte_get_timer_cycles(); */
+    /* printf("extend: pull: %ld add_tail: %ld counters: %ld total: %ld\n", m1 - */
+    /*     b, m2 - m1, e - m2, e - b); */
     // printf("Extend queue %d q: %p new list: %p next: %p\n\n",
     //     qid, &q_list->list, &seg->list, q_list->list.next);
     // printf("Extending queue %d. Filled %d Size %ld\n", qid,

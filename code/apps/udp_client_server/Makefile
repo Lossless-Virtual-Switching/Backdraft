@@ -64,6 +64,7 @@ SRCS += utils/percentile.c
 SRCS += utils/flow_rules.c
 SRCS += utils/arp.c
 SRCS += utils/zipf.c
+SRCS += utils/exponential.c
 
 OBJS = $(patsubst %.c, %.o,$(SRCS))
 

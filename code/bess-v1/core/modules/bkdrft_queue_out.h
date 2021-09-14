@@ -116,11 +116,9 @@ uint32_t pktbuffer_count(pktbuffer_t *buf) {
 int pktbuffer_enqueue(pktbuffer_t *buf, bess::Packet **pkts, uint32_t count)
 {
   int ret;
-  ret = llring_mp_enqueue_bulk(buf->ring_queue, (void **)(pkts), count);
-  if (ret == 0) {
-      return count;
-  }
-  return 0;
+  ret = llring_mp_enqueue_burst(buf->ring_queue, (void **)(pkts), count);
+  ret &= 0x7fffffff;
+  return ret;
 
   /* uint32_t cur_index = 0; // keep track of index of the external buffer */
 
@@ -283,7 +281,7 @@ struct flow_state {
   pktbuffer_t *buffer; // pointer to queue buffer
   bool in_use; // indicating if the object is being used by a flow
   uint64_t last_used; // keeps track of the usage
-  bool is_paused;
+  std::atomic<bool> is_paused;
 } __attribute__((aligned(64)));
 
 class BKDRFTQueueOut final : public Module {
@@ -386,7 +384,7 @@ private:
   // per flow queueing is not active.
   pktbuffer_t *limited_buffers_[MAX_QUEUES_PER_DIR];
 
-  uint64_t count_packets_in_buffer_;
+  std::atomic<uint64_t> count_packets_in_buffer_;
   uint64_t bytes_in_buffer_;
 
   // This map keeps track of which buffer a flow has been assigned to

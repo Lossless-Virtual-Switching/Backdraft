@@ -312,7 +312,7 @@ void BKDRFTQueueOut::BufferBatch(__attribute__((unused)) Flow *flow,
   if (unlikely(failed_pkt > 0)) {
     // Dropped packets failed to enqueue
     /* LOG(INFO) << "count_enqueue: " << count_enqueue << " count failed: " << */
-    /*   failed_pkt << std::endl; */
+    /*   failed_pkt <<"queue size: " << pktbuffer_count(fstate->buffer) << std::endl; */
     bess::Packet::Free(pkts + count_enqueue, failed_pkt);
     // Count the dropped packets
     Port *p = port_;
@@ -451,7 +451,7 @@ void BKDRFTQueueOut::TrySendBufferPFQ(__attribute__((unused))Context *cntx) {
           bess::bkdrft::BKDRFTSwDpCtrl::GetInstance();
         dropMan.PauseFlow(ts, 100000000, *flow);
         fstate->is_paused = false;
-        LOG(INFO) << "Resume\n";
+        /* LOG(INFO) << "Resume\n"; */
       }
     }
   }
@@ -711,7 +711,7 @@ void BKDRFTQueueOut::Pause(Context *cntx, struct flow_state *fstate,
   fstate->is_paused = true;
 
   // if (log_)
-  LOG(INFO) << "Pause\n";
+  /* LOG(INFO) << "Pause\n"; */
   /* LOG(INFO) << "name: " << name_ << " pause qid: " << (int)qid << " pause duration: " */
   /*   << duration << " until: " << ts */
   /*   << " pps: " << pps << "\n  flow: " << FlowToString(flow) << "\n"; */

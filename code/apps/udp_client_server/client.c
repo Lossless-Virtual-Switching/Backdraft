@@ -18,8 +18,9 @@
 #include "percentile.h"
 #include "arp.h"
 #include "zipf.h"
+#include "exponential.h"
 
-#define BURST_SIZE (32)
+#define BURST_SIZE (512)
 #define MAX_EXPECTED_LATENCY (10000) // (us)
 
 // function declarations
@@ -74,7 +75,7 @@ int do_client(void *_cntx) {
   uint32_t base_port_number = cntx->base_port_number;
   uint8_t use_vlan = cntx->use_vlan;
   uint8_t bidi = cntx->bidi;
-  uint64_t delay_cycles = cntx->delay_cycles;
+  /* uint64_t delay_cycles = cntx->delay_cycles; */
   assert(count_dst_ip >= 1);
 
   uint64_t start_time, end_time;
@@ -139,6 +140,8 @@ int do_client(void *_cntx) {
 
   struct zipfgen *dst_zipf;
   struct zipfgen *queue_zipf;
+
+  /* int tmp = 0; */
 
   pthread_t recv_thread;
 
@@ -240,15 +243,14 @@ int do_client(void *_cntx) {
       if (can_send) {
         can_send = 0;
         start_time = rte_get_timer_cycles();
-        duration = 5 * rte_get_timer_hz();
-        /* wait 10 sec for packets in the returning path */
+        // wait some time for the sent packets to return
+        duration = 2 * rte_get_timer_hz();
       } else {
         break;
       }
     }
 
     if (can_send) {
-
       // select destination ip, port and ... =================================
       dst_ip = dst_ips[selected_dst];
       if (cntx->queue_selection_distribution == DIST_ZIPF)
@@ -264,6 +266,13 @@ int do_client(void *_cntx) {
       }
       k = selected_dst;
       burst = burst_sizes[selected_dst];
+      // JUST FOR TESTING
+      /* if (tmp % 8 == 0) */
+      /*   burst = burst_sizes[selected_dst]; */
+      /* else */
+      /*   burst = 32; */
+      /* tmp++; */
+      /* tmp = tmp % 8; */
 
       if (cntx->destination_distribution == DIST_ZIPF) {
         selected_dst = dst_zipf->gen(dst_zipf) - 1;
@@ -402,16 +411,18 @@ int do_client(void *_cntx) {
       throughput[cur_flow] += nb_tx;
 
       /* delay between sending each batch */
-      if (delay_cycles > 0) {
-        // rte_delay_us_block(delay_us);
-        uint64_t now = rte_get_tsc_cycles();
-        double multiply = ((double)burst / (double)count_flow);
-        uint64_t end =
-            rte_get_tsc_cycles() + (uint64_t)(delay_cycles * multiply);
-        while (now < end) {
-          now = rte_get_tsc_cycles();
-        }
-      }
+      // Inter arrival Time
+      wait(get_exponential_sample(0.001));
+      /* if (delay_cycles > 0) { */
+      /*   // rte_delay_us_block(delay_us); */
+      /*   uint64_t now = rte_get_tsc_cycles(); */
+      /*   double multiply = ((double)burst / (double)count_flow); */
+      /*   uint64_t end = */
+      /*       rte_get_tsc_cycles() + (uint64_t)(delay_cycles * multiply); */
+      /*   while (now < end) { */
+      /*     now = rte_get_tsc_cycles(); */
+      /*   } */
+      /* } */
 
     } // end if (can_send)
   } // end of tx worker
