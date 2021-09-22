@@ -13,7 +13,7 @@
 #define RX_RING_SIZE (512)
 #define TX_RING_SIZE (512)
 
-#define NUM_MBUFS (16384)
+#define NUM_MBUFS (32768)
 #define MBUF_CACHE_SIZE (512)
 #define PRIV_SIZE 256
 
