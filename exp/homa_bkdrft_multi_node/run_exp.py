@@ -21,8 +21,8 @@ pipeline_config_file = os.path.join(cur_script_dir,
     # '../homa/pipeline.bess')
     # 'pipeline_bd.bess')
     # 'pipeline_incast_bd.bess')
-    # 'pipeline_incast_pfq.bess')
-    'pipeline_default.bess')
+    'pipeline_incast_pfq.bess')
+    # 'pipeline_default.bess')
     # 'pipeline_default_1_server.bess')
     # 'pipeline_incast_bess_bp.bess')
 
@@ -156,7 +156,7 @@ def main():
                 'path': '/tmp/vhost_{}.sock,queues={}'.format(i, 1),
                 # 'count_queue': count_queue,
                 # 'type': app_mode,
-                'mac': '9c:dc:71:5b:22:a1',
+                'mac': "1c:34:da:41:ca:b4",
                 'ip': '192.168.1.1',
                 'slow_down': slow_down,
                 'tx_pkt_length': tx_size
@@ -165,7 +165,14 @@ def main():
             server_process.append(sp)
 
         ############## SLEEEEEEEEEEEEEEEP
-        sleep(time + 10) # This means you only have 10 seconds to run the server.
+        # sleep(time + 10) # This means you only have 10 seconds to run the server.
+        print('Press Ctrl + C to exit')
+        while True:
+            try:
+                for s in server_process:
+                    s.wait()
+            except KeyboardInterrupt:
+                break
     else:
         for i in range(vhost_port_count):
             # print('ip ' + "192.168.1.{}".format(i + 1))
@@ -178,7 +185,7 @@ def main():
               'tx_pkt_length': tx_size,
               'file_prefix': i,
               'ip': "192.168.1.{}".format(i + 3),
-              'mac': "9c:dc:71:5e:0f:e1",
+              'mac': "1c:34:da:41:c7:14",
               'barriers': vhost_port_count,
               'id': i,
               # 'delay': 100 if i%2==1 else delay 
@@ -201,8 +208,9 @@ def main():
     sum_pkts = 0
     sum_bytes = 0
 
-    # ret = bessctl_do('show pipeline', subprocess.PIPE)
-    # print(ret.stdout.decode())
+    ret = bessctl_do('show pipeline', subprocess.PIPE)
+    print(ret.stdout.decode())
+
     ret = bessctl_do('show port', subprocess.PIPE)
     print(ret.stdout.decode().strip())
 
