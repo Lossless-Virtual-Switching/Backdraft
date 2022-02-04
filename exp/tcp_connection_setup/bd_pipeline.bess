@@ -1,0 +1,53 @@
+"""
+Pipeline for measuring TCP connection setup time in Backdraft
+"""
+import os
+import subprocess
+
+# Backdraft config
+backpressure = True
+lossless = True
+cdq = True
+per_flow_buffering = True
+overlay = True
+rate_limiting = overlay or backpressure
+rate = 10000
+
+
+size_q = 512
+queue_count = int(os.environ.get('queues', '1'))
+count_vhost = 3
+# Vhost Port
+sockets = [os.path.join('/tmp/', 'tmp_vhost{}.sock'.format(i)) for i in range(count_vhost)]
+ports = []
+
+subprocess.run('sudo rm /tmp/*.sock', shell=True, stderr=subprocess.PIPE)
+
+for i, socket in enumerate(sockets):
+    vdev = "eth_vhost{},iface={},queues={}".format(i, socket, queue_count)
+    # print (vdev)
+    port = PMDPort(name="tmp_vhost{}".format(i),
+            vdev=vdev,
+            num_inc_q = queue_count,
+            num_out_q = queue_count,
+            size_inc_q= size_q,
+            size_out_q= size_q,
+            rate_limiting = rate_limiting,
+            rate=rate)
+    ports.append(port)
+
+# nic = PMDPort(pci=pci, num_inc_q=queue_count, num_out_q=queue_count)
+qids = [i for i in range(queue_count)]
+qin = BKDRFTQueueInc(port=ports[0].name, qid=qids, backpressure=backpressure,
+    cdq=cdq, overlay=overlay)
+qin:0 -> BKDRFTQueueOut(port=ports[1].name, qid=qids,
+    backpressure=backpressure, lossless=lossless, cdq=cdq,
+    per_flow_buffering=per_flow_buffering, overlay=overlay,
+    mname=ports[1].name)
+
+qin = BKDRFTQueueInc(port=ports[1].name, qid=qids, backpressure=backpressure,
+    cdq=cdq, overlay=overlay)
+qin:0 -> BKDRFTQueueOut(port=ports[0].name, qid=qids, backpressure=backpressure,
+    lossless=lossless, cdq=cdq, per_flow_buffering=per_flow_buffering,
+    overlay=overlay, mname=ports[0].name)
+

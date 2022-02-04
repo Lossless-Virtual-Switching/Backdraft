@@ -13,7 +13,7 @@
 #define RX_RING_SIZE (512)
 #define TX_RING_SIZE (512)
 
-#define NUM_MBUFS (16384)
+#define NUM_MBUFS (32768)
 #define MBUF_CACHE_SIZE (512)
 #define PRIV_SIZE 256
 
@@ -307,7 +307,7 @@ int main(int argc, char *argv[]) {
 
   if (strncmp(argv[1], "vport=", 6) == 0) {
     // if starts with `vport=`
-    strncpy(port_name, argv[1] + 6, PORT_NAME_LEN);
+    strncpy(port_name, argv[1] + 6, PORT_NAME_LEN - 1);
     port_type = vport;
     SHIFT_ARGS;
   }

@@ -10,6 +10,7 @@
 // include directory
 #include "exp.h"
 #include "percentile.h"
+#include "exponential.h"
 
 #include <rte_cycles.h>
 #include <rte_ethdev.h>
@@ -234,7 +235,7 @@ int do_server(void *_cntx) {
   // uint64_t current_sec;
   uint64_t last_pkt_time = 0;
   const uint64_t wait_until_exp_begins = 60 * hz; /* cycles */
-  const uint64_t termination_threshold = 10 * hz;
+  const uint64_t termination_threshold = 2 * hz;
   int run = 1;
 
   uint64_t failed_to_push = 0;
@@ -259,7 +260,7 @@ int do_server(void *_cntx) {
   uint8_t rate_limit = 0;
   uint64_t delta_time;
   uint64_t limit_window;
-  uint8_t rate_limit_change_flag = 0;
+  /* uint8_t rate_limit_change_flag = 0; */
 
   uint8_t cdq = system_mode == system_bkdrft;
   int valid_pkt;
@@ -340,11 +341,11 @@ int do_server(void *_cntx) {
     }
 
     /* Increase rate limit (TODO: just for a specific experiment) */
-    if (rate_limit_change_flag == 0 && current_time - exp_begin > 32 * rte_get_tsc_hz()) {
-      printf("=============== Changing Throughput Rate ==================\n");
-      rate_limit_change_flag = 1;
-      token_limit = 6000000;
-    }
+    // if (rate_limit_change_flag == 0 && current_time - exp_begin > 32 * rte_get_tsc_hz()) {
+    //   printf("=============== Changing Throughput Rate ==================\n");
+    //   rate_limit_change_flag = 1;
+    //   token_limit = 6000000;
+    // }
 
     limit_window = token_limit * (delta_time / (double)(rte_get_timer_hz()));
     if (rate_limit && throughput >= limit_window) {
@@ -476,6 +477,8 @@ int do_server(void *_cntx) {
         cntx->tmp_array[0][src_port - 1001]++;
       }*/
 
+      // Service time 5ns per packet
+      wait(get_exponential_sample(0.2));
 
       /* get time stamp */
       ptr = ptr + ts_offset;
@@ -515,18 +518,18 @@ int do_server(void *_cntx) {
     }
 
     /* apply processing cost */
-    if (delay_cycles > 0) {
-      for (i = 0; i < nb_pkts_process; i++) {
-        // rte_delay_us_block(delay_us);
-        uint64_t now = rte_get_tsc_cycles();
-        uint64_t end =
-          rte_get_tsc_cycles() + delay_cycles;
-        while (now < end) {
-          now = rte_get_tsc_cycles();
-        }
-        cycles_error =(now - end) * 0.5 + 0.5 * (cycles_error);
-      }
-    }
+    /* if (delay_cycles > 0) { */
+    /*   for (i = 0; i < nb_pkts_process; i++) { */
+    /*     // rte_delay_us_block(delay_us); */
+    /*     uint64_t now = rte_get_tsc_cycles(); */
+    /*     uint64_t end = */
+    /*       rte_get_tsc_cycles() + delay_cycles; */
+    /*     while (now < end) { */
+    /*       now = rte_get_tsc_cycles(); */
+    /*     } */
+    /*     cycles_error =(now - end) * 0.5 + 0.5 * (cycles_error); */
+    /*   } */
+    /* } */
 
     if (!bidi)
       continue;

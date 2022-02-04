@@ -1,0 +1,66 @@
+syntax = "proto3";
+package bkdrft.pb;
+
+message BPQIncArg {
+  string port = 1; /// The portname to connect to (read from).
+  uint64 qid = 2; /// The queue on that port to read from. qid starts from 0.
+  bool prefetch = 3; /// When prefetch is enabled, the module will perform CPU prefetch on the first 64B of each packet onto CPU L1 cache. Default value is false.
+}
+
+message BPQOutArg {
+  string port = 1; /// The portname to connect to.
+  uint64 qid = 2; /// The queue on that port to write out to.
+}
+
+message ECNQOutArg {
+  string port = 1; /// The portname to connect to.
+  uint64 qid = 2; /// The queue on that port to write out to.
+}
+
+/**
+ * The BPQOut module function `get_summary()` retunrs the following values.
+ */
+message BPQOutCommandGetSummaryResponse {
+  uint64 rx_pause_frame = 1;
+  uint64 tx_pause_frame = 2;
+  uint64 rx_resume_frame = 3;
+  uint64 tx_resume_frame = 4;
+}
+
+/**
+ * The BPQInc module function `get_summary()` retunrs the following values.
+ */
+message BPQIncCommandGetSummaryResponse {
+  uint64 rx_pause_frame = 1;
+  uint64 tx_pause_frame = 2;
+  uint64 rx_resume_frame = 3;
+  uint64 tx_resume_frame = 4;
+}
+
+message CommandSetOverlayPortArg {
+  string port = 1;
+  uint32 qid = 2;
+}
+
+message CommandSetOverlayBrokerArg {
+  string overlay_broker_mod = 1;
+}
+
+message OBrokerCommandAddArg {
+  string prefix = 1; /// The CIDR IP part of the prefix to match uint64 prefix_len = 2; /// The prefix length
+  uint64 prefix_len = 2;
+  uint64 gate = 3; /// The number of the gate to forward matching traffic on.
+}
+
+message OBrokerCommandDeleteArg {
+  string prefix = 1; /// The CIDR IP part of the prefix to match
+  uint64 prefix_len = 2; /// The prefix length
+}
+
+message OBrokerCommandClearArg {
+}
+
+message OBrokerArg {
+  uint32 max_rules = 1; /// Maximum number of rules (default: 1024)
+  uint32 max_tbl8s = 2; /// Maximum number of IP prefixes with smaller than /24 (default: 128)
+}

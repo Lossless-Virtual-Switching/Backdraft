@@ -72,7 +72,10 @@ CommandResponse BDVPort::Init(const bess::pb::BDVPortArg &arg) {
   // setup a new vport structure and pipes make sure the
   // port_name is unique.
   LOG(INFO) << "Creating BDVPort " << port_name << "\n";
-  port_ = new_vport(port_name.c_str(), num_rxq, num_txq);
+  int poolsize = (num_rx_queues() + num_tx_queues()) * 8 + 64;
+  /* int qsize = rx_queue_size(); */
+  port_ = _new_vport(port_name.c_str(), num_rxq, num_txq, poolsize,
+      64);
 
   driver_ = "N/A";
   ptype_ = VPORT;

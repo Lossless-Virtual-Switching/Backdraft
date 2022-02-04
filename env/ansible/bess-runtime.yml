@@ -7,10 +7,15 @@
       with_items:
         - apt-transport-https
         - ca-certificates
-        - python
-        - python-pip
         - libgraph-easy-perl
         - tcpdump
+    - name: Install python
+      apt: name={{item}} update_cache=no
+      become: true
+      with_items:
+        - python
+        - python-pip
+      ignore_errors: yes
 
     - name: Install list of Python packages
       pip:

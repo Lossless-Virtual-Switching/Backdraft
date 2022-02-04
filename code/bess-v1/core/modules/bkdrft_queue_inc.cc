@@ -463,8 +463,8 @@ BKDRFTQueueInc::RunTask(Context *ctx, bess::PacketBatch *batch, void *) {
         q_status_[qid].until = entry.until;
 
         uint32_t rate = entry.rate;
-        if (rate < 32)
-          rate = 32;
+        // if (rate < 32)
+        //   rate = 32;
 
         p->limiter_.limit[PACKET_DIR_OUT][qid] = rate;
         p->limiter_.limit[PACKET_DIR_INC][qid] = rate;

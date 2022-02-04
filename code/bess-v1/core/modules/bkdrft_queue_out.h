@@ -5,7 +5,7 @@
 #include <stdint.h>
 #include <vector>
 #include <rte_hash_crc.h>
-#include <rte_ring.h>
+/* #include <rte_ring.h> */
 #include <rte_malloc.h>
 #include <rte_lcore.h>
 #include <rte_errno.h>
@@ -17,6 +17,7 @@
 
 #include "../utils/flow.h"
 #include "../utils/cuckoo_map.h"
+#include "../kmod/llring.h"
 
 
 // const queue_t MAX_QUEUES = 10000; // used MAX_QUEUES_PER_DIR from /core/port.h
@@ -24,6 +25,10 @@
 // const uint64_t buffer_len_high_water = 15000; // bytes
 // const int buffer_len_low_water = 64;
 // const uint64_t buffer_len_low_water = 6000; // bytes
+//
+
+#define SINGLE_PROD false
+#define SINGLE_CONS true
 
 const uint64_t overlay_max_pause_duration = 10000000;
 const uint32_t max_availabe_flows = 256;
@@ -51,16 +56,18 @@ enum OverlayState {
 /* pktbuffer_t ====================== */
 const static int32_t peek_size = 32;
 struct bkdrft_buffer {
-  struct rte_ring *ring_queue;
+  // struct rte_ring *ring_queue;
+  struct llring *ring_queue;
   uint32_t tail; // next index to insert packet
-  uint32_t pkts; // number of packets in peek and ring
+  /* uint32_t pkts; // number of packets in peek and ring */
   bess::Packet *peek[peek_size];  // same size as max burst
 };
 
 typedef struct bkdrft_buffer pktbuffer_t;
 
 /* create a new buffer for keeping packet pointers */
-pktbuffer_t *new_pktbuffer(char *name, uint32_t max_buffer_size)
+pktbuffer_t *new_pktbuffer(__attribute__((unused))char *name, uint32_t
+        max_buffer_size)
 {
   pktbuffer_t *buf = reinterpret_cast<pktbuffer_t *> (
       rte_malloc(NULL, sizeof(pktbuffer_t), 0));
@@ -68,24 +75,39 @@ pktbuffer_t *new_pktbuffer(char *name, uint32_t max_buffer_size)
     return nullptr;
 
   // in dpdk20: add RING_F_MP_RTS_ENQ|RING_F_MC_RTS_DEQ to flag.
-  buf->ring_queue = rte_ring_create(name, max_buffer_size, rte_socket_id(), 0);
+  // buf->ring_queue = rte_ring_create(name, max_buffer_size, rte_socket_id(), 0);
+  // buf->ring_queue = rte_ring_create(name, max_buffer_size, rte_socket_id(), 0);
+  int bytes = llring_bytes_with_slots(max_buffer_size);
+  buf->ring_queue = static_cast<llring *>(std::aligned_alloc(alignof(struct
+          llring), bytes));
   if (buf->ring_queue == nullptr) {
-    LOG(INFO) << "failed rte_ring_create() for pktbuffer_t\n";
+    LOG(INFO) << "failed to create ring for pktbuffer_t\n";
     LOG(INFO) << "errno: " << rte_errno << ": " << rte_strerror(rte_errno) << "\n";
     rte_free(buf);
     return nullptr;
   }
+  int ret = llring_init(buf->ring_queue, max_buffer_size, SINGLE_PROD, SINGLE_CONS);
+  if (ret) {
+    rte_free(buf);
+    std::free(buf->ring_queue);
+    return nullptr;
+  }
 
   buf->tail = 0;
-  buf->pkts = 0;
+  /* buf->pkts = 0; */
   return buf;
 }
 
 /* free memory alloccated for a pktbuffer */
 void free_pktbuffer(pktbuffer_t *buf)
 {
-  rte_ring_free(buf->ring_queue);
+  // rte_ring_free(buf->ring_queue);
+  std::free(buf->ring_queue);
   rte_free(buf);
+}
+
+uint32_t pktbuffer_count(pktbuffer_t *buf) {
+    return buf->tail + llring_count(buf->ring_queue);
 }
 
 /* enqueues pointer of packets to the pktbuffer_t
@@ -93,114 +115,160 @@ void free_pktbuffer(pktbuffer_t *buf)
  * */
 int pktbuffer_enqueue(pktbuffer_t *buf, bess::Packet **pkts, uint32_t count)
 {
-  uint32_t ret;
-  uint32_t cur_index = 0; // keep track of index of the external buffer
+  int ret;
+  ret = llring_mp_enqueue_burst(buf->ring_queue, (void **)(pkts), count);
+  ret &= 0x7fffffff;
+  return ret;
+
+  /* uint32_t cur_index = 0; // keep track of index of the external buffer */
 
   // find out how many packets are in the peek
   // int32_t peek_pkts = (buf->tail - buf->head) % peek_size;
-  int32_t peek_pkts = buf->tail;
+  /* int32_t peek_pkts = buf->tail; */
 
   // how many packets should be moved to the peek
-  uint32_t to_the_peek = peek_size - peek_pkts;
-  if (count < to_the_peek)
-    to_the_peek = count; // min(count, free_peek_space);
+  /* uint32_t to_the_peek = peek_size - peek_pkts; */
+  /* if (count < to_the_peek) */
+  /*   to_the_peek = count; // min(count, free_peek_space); */
 
   // move packets to peek array if there is space
-  for (;cur_index < to_the_peek; cur_index++)
-    buf->peek[buf->tail++] = pkts[cur_index];
-  buf->pkts += to_the_peek;
+  /* for (;cur_index < to_the_peek; cur_index++) */
+  /*   buf->peek[buf->tail++] = pkts[cur_index]; */
+  /* buf->pkts += to_the_peek; */
 
   // how many packets should be moved to the ring
-  uint32_t to_the_ring = count - to_the_peek;
-  if (to_the_ring == 0)
-    return to_the_peek;
+  /* uint32_t to_the_ring = count - to_the_peek; */
+  /* if (to_the_ring == 0) */
+  /*   return to_the_peek; */
 
   // move packets to ring
-  ret = rte_ring_enqueue_bulk(buf->ring_queue, (void **)(pkts + cur_index),
-                              to_the_ring, NULL);
-  ret = ret & 0x7fffffff;
+  /* ret = llring_mp_enqueue_bulk(buf->ring_queue, (void **)(pkts + cur_index), */
+  /*                             to_the_ring, NULL); */
   // if ret == 0 then failed to enqueue
-  buf->pkts += ret;
-  return ret + to_the_peek;
+  /* buf->pkts += ret; */
+  /* return ret + to_the_peek; */
+}
+
+
+/* Bring packets to peek buffer for sending.
+ * returns number of packets in the peek
+ * */
+int pktbuffer_prime(pktbuffer_t *buf)
+{
+    int ret;
+    uint32_t count_pkts = llring_count(buf->ring_queue);
+    if (count_pkts + buf->tail == 0) return 0;
+    uint32_t k = count_pkts;
+    uint32_t remaining_space_in_peek = peek_size - buf->tail;
+    if (k > remaining_space_in_peek) {
+        k = remaining_space_in_peek;
+    }
+    ret = llring_sc_dequeue_bulk(buf->ring_queue, (void **)(buf->peek +
+                buf->tail), k);
+    if (unlikely(ret)) {
+      LOG(FATAL) << "pktbuffer_prime: failed to dequee from ring\n";
+    }
+    buf->tail += k;
+    return buf->tail;
+}
+
+/* Remove sent packets from peek buffer.
+ * Returns number of packets remaining in the peek
+ * */
+int pktbuffer_flush(pktbuffer_t *buf, uint32_t sent_pkts)
+{
+    if (unlikely(sent_pkts > buf->tail)) {
+      LOG(FATAL) << "pktbuffer_flush: sent more packets than possible?!\n";
+    }
+    // shift remaining packets to the front
+    for (uint32_t i = 0; i < buf->tail - sent_pkts; i++) {
+        buf->peek[i] = buf->peek[i + sent_pkts];
+    }
+    buf->tail -= sent_pkts;
+    return buf->tail;
 }
 
 /* remove packets from the queue and if **pkts is not null
  * copies the pointers to the buffer.
  * returns number of packets dequeued.
  * */
-int pktbuffer_dequeue(pktbuffer_t *buf, bess::Packet **pkts, uint32_t count) {
-  // count should not be more than pkts available
-  if (unlikely(count > buf->pkts))
-    count = buf->pkts;
+/* int pktbuffer_dequeue(pktbuffer_t *buf, bess::Packet **pkts, uint32_t count) { */
+/*   // count should not be more than pkts available */
+/*   if (unlikely(count > buf->pkts)) */
+/*     count = buf->pkts; */
 
-  // find how many packets are in the peek
-  int32_t peek_pkts = buf->tail;
+/*   // find how many packets are in the peek */
+/*   int32_t peek_pkts = buf->tail; */
 
-  // how many to dequeue from peek
-  int32_t from_peek = count;
-  if (unlikely(from_peek > peek_pkts))
-    from_peek = peek_pkts;
+/*   // how many to dequeue from peek */
+/*   int32_t from_peek = count; */
+/*   if (unlikely(from_peek > peek_pkts)) */
+/*     from_peek = peek_pkts; */
 
-  // dequeue from peek
-  if (unlikely(pkts != nullptr)) {
-    // copy pointers from peek to the external buffer
-    for (int32_t i = 0; i < from_peek; i++)
-      pkts[i] = buf->peek[i];
-  }
+/*   // dequeue from peek */
+/*   if (unlikely(pkts != nullptr)) { */
+/*     // copy pointers from peek to the external buffer */
+/*     for (int32_t i = 0; i < from_peek; i++) */
+/*       pkts[i] = buf->peek[i]; */
+/*   } */
 
-  // move packet pointers to the 0 index
-  for (int32_t i = 0, j = from_peek; j < peek_pkts; i++, j++)
-    buf->peek[i] = buf->peek[j];
+/*   // move packet pointers to the 0 index */
+/*   for (int32_t i = 0, j = from_peek; j < peek_pkts; i++, j++) */
+/*     buf->peek[i] = buf->peek[j]; */
 
-  buf->tail -= from_peek;
-  buf->pkts -= from_peek;
+/*   buf->tail -= from_peek; */
+/*   buf->pkts -= from_peek; */
 
-  // dequeue from ring
-  int32_t ret;
-  bess::Packet *tmp_arr[peek_size];
-  // how many to dequeue from ring
-  int32_t from_ring = count - from_peek;
-  if (unlikely(from_ring != 0)) {
-    if (unlikely(pkts != nullptr)) {
-      ret = rte_ring_dequeue_bulk(buf->ring_queue, (void **)(pkts + from_peek),
-                                  from_ring, nullptr);
-    } else {
-      ret = rte_ring_dequeue_bulk(buf->ring_queue, (void **)(tmp_arr),
-                                  from_ring, nullptr);
-    }
-    if (unlikely(!ret)) {
-      LOG(FATAL) << "pktbuffer_dequeue: failed to dequee from ring\n";
-    }
-    buf->pkts -= from_ring;
-  }
+/*   // dequeue from ring */
+/*   int32_t ret; */
+/*   bess::Packet *tmp_arr[peek_size]; */
+/*   // how many to dequeue from ring */
+/*   int32_t from_ring = count - from_peek; */
+/*   if (from_ring != 0) { */
+/*     if (unlikely(pkts != nullptr)) { */
+/*       ret = llring_sc_dequeue_bulk(buf->ring_queue, (void **)(pkts + from_peek), */
+/*                                   from_ring, nullptr); */
+/*     } else { */
+/*       ret = llring_sc__dequeue_bulk(buf->ring_queue, (void **)(tmp_arr), */
+/*                                   from_ring, nullptr); */
+/*     } */
+/*     if (unlikely(!ret)) { */
+/*       LOG(INFO) << "From ring: " << from_ring << "all pkts count: " << buf->pkts << std::endl; */
+/*       LOG(FATAL) << "pktbuffer_dequeue: failed to dequee from ring\n"; */
+/*     } */
+/*     buf->pkts -= from_ring; */
+/*   } */
 
-  // update number of packets in the peek
-  peek_pkts = peek_pkts - from_peek;
-  // how much free space is on the peek
-  int32_t pull_to_peek = peek_size - peek_pkts;
-  // how many packets in the ring
-  int32_t ring_pkts = buf->pkts - peek_pkts;
-  if (pull_to_peek > ring_pkts)
-    pull_to_peek = ring_pkts;
+/*   // update number of packets in the peek */
+/*   peek_pkts = peek_pkts - from_peek; */
+/*   // how much free space is on the peek */
+/*   int32_t pull_to_peek = peek_size - peek_pkts; */
+/*   // how many packets in the ring */
+/*   int32_t ring_pkts = buf->pkts - peek_pkts; */
+/*   if (pull_to_peek > ring_pkts) */
+/*     pull_to_peek = ring_pkts; */
 
-  if (pull_to_peek > 0) {
-    // ret = rte_ring_dequeue_bulk(buf->ring_queue, (void **)(tmp_arr),
-    //                             pull_to_peek, nullptr);
-    ret = rte_ring_dequeue_bulk(buf->ring_queue,
-                                (void **)(buf->peek + buf->tail),
-                                pull_to_peek, nullptr);
-    if (unlikely(!ret)) {
-      LOG(FATAL) << "pktbuffer_dequeue: failed to pull packets to peek\n";
-    }
-    buf->tail += ret; // mail tail forward
+/*   if (pull_to_peek > 0) { */
+/*     // ret = rte_ring_dequeue_bulk(buf->ring_queue, (void **)(tmp_arr), */
+/*     //                             pull_to_peek, nullptr); */
+/*     ret = rte_ring_dequeue_bulk(buf->ring_queue, */
+/*                                 (void **)(buf->peek + buf->tail), */
+/*                                 pull_to_peek, nullptr); */
+/*     if (unlikely(!ret)) { */
+/*       LOG(INFO) << "From ring: " << pull_to_peek << " all pkts count: " << */
+/*         buf->pkts << std::endl << " real llr size: " << */
+/*         rte_ring_count(buf->ring_queue); */
+/*       LOG(FATAL) << "pktbuffer_dequeue: failed to pull packets to peek\n"; */
+/*     } */
+/*     buf->tail += ret; // mail tail forward */
 
-    // copy packet pointeres to peek
-    // for (int32_t i=0; i < ret; i++)
-    //   buf->peek[buf->tail++] = tmp_arr[i];
-  }
+/*     // copy packet pointeres to peek */
+/*     // for (int32_t i=0; i < ret; i++) */
+/*     //   buf->peek[buf->tail++] = tmp_arr[i]; */
+/*   } */
 
-  return from_peek + from_ring;
-}
+/*   return from_peek + from_ring; */
+/* } */
 /* pktbuffer_t ====================== */
 
 struct flow_state {
@@ -213,6 +281,7 @@ struct flow_state {
   pktbuffer_t *buffer; // pointer to queue buffer
   bool in_use; // indicating if the object is being used by a flow
   uint64_t last_used; // keeps track of the usage
+  std::atomic<bool> is_paused;
 } __attribute__((aligned(64)));
 
 class BKDRFTQueueOut final : public Module {
@@ -223,7 +292,11 @@ public:
   BKDRFTQueueOut()
       : Module(), port_(), count_queues_(), buffering_(), backpressure_(),
         log_(), cdq_(), per_flow_buffering_(), overlay_(),
-        pause_call_total() {}
+        pause_call_total() {
+          is_task_ = true;
+          // propagate_workers_ = false;
+          max_allowed_workers_ = Worker::kMaxWorkers;
+        }
 
   CommandResponse Init(const bess::pb::BKDRFTQueueOutArg &arg);
 
@@ -273,7 +346,7 @@ private:
   void ProcessBatchLossy(Context *ctx, bess::PacketBatch *batch);
 
   // performe a pause cal for the given flow
-  void Pause(Context *cntx, const Flow &flow, const queue_t qid,
+  void Pause(Context *cntx, struct flow_state  *fstate, const queue_t qid,
                        uint64_t buffer_size);
 
   // map a flow to a queue (or get the queue it was mapped before)
@@ -311,7 +384,7 @@ private:
   // per flow queueing is not active.
   pktbuffer_t *limited_buffers_[MAX_QUEUES_PER_DIR];
 
-  uint64_t count_packets_in_buffer_;
+  std::atomic<uint64_t> count_packets_in_buffer_;
   uint64_t bytes_in_buffer_;
 
   // This map keeps track of which buffer a flow has been assigned to
@@ -330,9 +403,9 @@ private:
   std::vector<uint64_t> overlay_per_sec;
   uint64_t stats_begin_ts_;
 
-  uint64_t buffer_len_high_water = 6;
-  uint64_t buffer_len_low_water = 16;
-  uint64_t bp_buffer_len_high_water = 6;
+  uint64_t buffer_len_high_water;
+  uint64_t buffer_len_low_water;
+  uint64_t bp_buffer_len_high_water;
 
   // a  name given to this module. currently used for loggin pause per sec
   // statistics.

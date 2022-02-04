@@ -39,23 +39,27 @@ struct Flow {
   struct EqualTo {
     bool operator()(const Flow &lf, const Flow &rf) const
     {
-      const union {
-        Flow f;
-        struct {
-          uint64_t p1; // ips
-          uint32_t p2; // ports
-          uint32_t p3; //proto
-          uint32_t p4; // eth
-          uint64_t p5; // eth
-        };
-      } &left = {.f =lf}, &right = {.f = rf};
+      /* const union { */
+      /*   Flow f; */
+      /*   struct { */
+      /*     uint64_t p1; // ips */
+      /*     uint32_t p2; // ports */
+      /*     uint32_t p3; //proto */
+      /*     uint32_t p4; // eth */
+      /*     uint64_t p5; // eth */
+      /*   }; */
+      /* } &left = {.f =lf}, &right = {.f = rf}; */
 
-      // not checking ethernet addresses
-      if (left.p1 == right.p1 && \
-          left.p2 == right.p2 && \
-          left.p3 == right.p3) {
+      /* // not checking ethernet addresses */
+      /* if (left.p1 == right.p1 && \ */
+      /*     left.p2 == right.p2 && \ */
+      /*     left.p3 == right.p3) { */
+      /*   return true; */
+      /* } */
+      if ( lf.addr_src == rf.addr_src  && lf.addr_dst == rf.addr_dst  &&
+          lf.port_src == rf.port_src  && lf.port_dst == rf.port_dst  &&
+          lf.protocol == rf.protocol)
         return true;
-      }
       return false;
     }
   };

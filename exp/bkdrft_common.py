@@ -14,8 +14,20 @@ __bessctl_bin = os.path.join(__bessctl_dir, 'bessctl')
 __bess_kmod_dir = os.path.join(__bess_dir, 'core/kmod')
 
 
+
+def override_bess_path(bess_dir_path):
+    global __bess_dir
+    global __bessctl_dir
+    global __bessctl_bin
+    global __bess_kmod_dir
+
+    __bess_dir = os.path.abspath(bess_dir_path)
+    __bessctl_dir = os.path.join(__bess_dir, 'bessctl')
+    __bessctl_bin = os.path.join(__bessctl_dir, 'bessctl')
+    __bess_kmod_dir = os.path.join(__bess_dir, 'core/kmod')
+
 # ----------- BESS --------------
-def bessctl_do(command, stdout=None, stderr=None, cpu_list=None):
+def bessctl_do(command, stdout=None, stderr=None, cpu_list=None, env=None):
     """
     Run bessctl command
     """
@@ -23,30 +35,87 @@ def bessctl_do(command, stdout=None, stderr=None, cpu_list=None):
     if cpu_list is not None:
         assert isinstance(cpu_list, str)
         cmd  = 'taskset -c {} {}'.format(cpu_list, cmd)
-    ret = subprocess.run(cmd, shell=True, stdout=stdout, stderr=stderr)
+    ret = subprocess.run(cmd, shell=True, stdout=stdout, stderr=stderr, env=env)
     return ret
 
 
-def setup_bess_pipeline(pipeline_config_path):
+def setup_bess_pipeline(pipeline_config_path, env=None):
+    """
+    Returns boolean
+    """
     # Make sure bessctl daemon is down
-    bessctl_do('daemon stop', stderr=subprocess.PIPE)
+    ret = bessctl_do('daemon stop', stderr=subprocess.PIPE)
+    # Might not be running at all
+    # if ret.stderr is not None:
+    #     return False
 
     # Run BESS config
-    ret = bessctl_do('daemon start')
-    if ret.returncode != 0:
-        print('failed to start bess daemon', file=sys.stderr)
-        return -1
+    # ret = bessctl_do('daemon start')
+    # if ret.returncode != 0:
+    #     print('failed to start bess daemon', file=sys.stderr)
+    #     return -1
     # Run a configuration (pipeline)
     cmd = 'daemon start -- run file {}'.format(pipeline_config_path)
-    ret = bessctl_do(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    ret = bessctl_do(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, env=env)
     print(ret.stdout.decode())
     print(ret.stderr.decode())
-    return 0
+    return not ret.stderr
 
 
 def load_bess_kmod():
   cmd = './install'
   return subprocess.check_call(cmd, shell=True, cwd=__bess_kmod_dir) 
+
+
+def setup_tas_engine(cfg, cpuset=None):
+    """
+    brnig tas engine up
+    * cfg: dictionary
+    {
+        dpdk-w :
+        dpdk-vdev:
+        fp-no-xsumoffload:
+        fp-no-autoscale:
+        ip-addr:
+        fp-cores-max:
+        ...
+    }
+    """
+    tas_dir = os.path.abspath(os.path.join(__cur_script_dir, '../code/tas'))
+    tas_binary = os.path.join(tas_dir, 'tas/tas')
+    print('* bin: ', tas_binary)
+    dpdk_extra = ['--dpdk-extra=-w', '--dpdk-extra="41:00.0"']
+    args = []
+    for key, value in cfg.items():
+        if  key.startswith('dpdk-'):
+            a1 = key[5:]
+            if not a1:
+                print('warning unknown config:', key)
+                continue
+            args.append('--dpdk-extra=-{}'.format(a1))
+            if not isinstance(value, bool):
+                args.append('--dpdk-extra={}'.format(value))
+            continue
+        if isinstance(value, bool):
+            args.append('--{}'.format(key))
+        else:
+            args.append('--{}={}'.format(key, value))
+    cmd = [tas_binary, ] + args
+    if cpuset is not None:
+        cmd = ['taskset', '-c', cpuset] + cmd
+    print('TAS engine:', cmd)
+    proc = subprocess.Popen(cmd)
+    return proc
+
+
+# def set_cpu_affinity(pid, cpulist):
+#     """
+#     Using taskset for setting cpu affinit
+#     pid: pid
+#     cpulist: string, 1,2,3
+#     """
+#     cmd = 'taskset -a -p {}'.format(cpulist)
+#     subprocess.check_call(cmd, shell=True)
 
 
 def get_port_packets(port_name):

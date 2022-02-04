@@ -1,0 +1,128 @@
+import os
+import json
+import subprocess
+
+
+
+config = json.load(open('/tmp/.pipeline_config.json'))
+
+count_cores = config['count_core']
+count_queue = config['count_queue']
+pci = config['pci_address']
+count_vhost_ports = config['vhost_port_count']
+server = config['server']
+
+drop_prob = 0
+if os.environ.get("DROP"):
+  drop_prob = float(os.environ.get("DROP")) 
+print("Drop Prob {}".format(drop_prob)) 
+# generating vhost port:
+vhost_ports = []
+for i in range(count_vhost_ports):
+  name = 'port_{}'.format(i)
+  socket = '/tmp/vhost_{}.sock'.format(i)
+  vdev = 'eth_vhost{},iface={},queues={}'.format(i, socket, count_queue)
+
+  if os.path.exists(socket):
+    subprocess.call('sudo rm {}'.format(socket), shell=True)
+
+  port = PMDPort(name=name, vdev=vdev, num_inc_q=count_queue, num_out_q=count_queue)
+  vhost_ports.append(port)
+
+bess.add_worker(0, 0)
+bess.add_worker(1, 1)
+bess.add_worker(2, 2)
+
+
+# PCI port
+print(pci, count_queue)
+# pci_port = PMDPort(pci=pci, num_inc_q=count_queue, num_out_q=count_queue)
+# pci_port = PMDPort(pci=pci, num_inc_q=2, num_out_q=count_queue)
+
+
+print(drop_prob)
+if drop_prob > 0:
+    pci_port = PMDPort(pci=pci, num_inc_q=count_queue, num_out_q=count_queue)
+    drop = RandomSplit(drop_rate=drop_prob, gates=[0,])
+    QueueInc(port=vhost_ports[0], qid=0)-> drop
+    drop:0 -> QueueOut(port=pci_port, qid=0)
+    QueueInc(port=pci_port, qid=0) -> QueueOut(port=vhost_ports[0], qid=0)
+else:
+    if server:
+        pci_port = PMDPort(pci=pci, num_inc_q=count_queue, num_out_q=count_queue)
+        assert(count_vhost_ports == 2)
+        # Egress
+        merger = Merge()
+        print(len(vhost_ports), count_vhost_ports)
+        for index,i in enumerate(vhost_ports):
+          qin1 = QueueInc(port=i, qid=0)
+          qin1.attach_task(wid=0)
+          qin1 -> merger
+
+        pci_port_qout = QueueOut(port=pci_port, qid=0)
+        merger -> VLANPop() -> pci_port_qout
+
+        # Ingress
+        hs = HashLB(mode='l3', gates=range(count_vhost_ports))
+        ip_lookup = IPLookup()
+        ip_lookup.add(prefix="192.168.1.1", prefix_len=32, gate=0)
+        ip_lookup.add(prefix="192.168.1.2", prefix_len=32, gate=1)
+        pci_port_qinc = QueueInc(port=pci_port, qid=0)
+        pci_port_qinc -> MeasurePPS() -> ip_lookup
+        pci_port_qinc.attach_task(wid=1)
+
+        qout1 = QueueOut(port=vhost_ports[0], qid=0)
+        ip_lookup:0 -> qout1
+        qout2 = QueueOut(port=vhost_ports[1], qid=0)
+        ip_lookup:1 -> qout2
+
+        ip_lookup.add(prefix="0.0.0.0", prefix_len=0, gate=2) 
+        ip_lookup:2 -> Sink()
+
+        # for i in range(count_vhost_ports):
+        #     qout1 = QueueOut(port=vhost_ports[i], qid=0)
+        #     hs:i -> qout1
+
+        # One server setup
+        # QueueInc(port=vhost_ports[0], qid=0) -> QueueOut(port=pci_port, qid=0)
+        # QueueInc(port=pci_port, qid=0) -> QueueOut(port=vhost_ports[0], qid=0)
+    else: 
+        # client
+        # Egress
+        pci_port = PMDPort(pci=pci, num_inc_q=2, num_out_q=count_queue)
+
+        merger = Merge()
+        print(len(vhost_ports), count_vhost_ports)
+        for index, i in enumerate(vhost_ports):
+          qin1 = QueueInc(port=i, qid=0)
+          qin1.attach_task(wid=0)
+          qin1 -> merger
+
+        pci_port_qout = QueueOut(port=pci_port, qid=0)
+        merger -> VLANPop() -> pci_port_qout
+
+        # Ingress
+        middle_q = Queue()
+        middle_q.attach_task(wid=2)
+
+        iplookup = IPLookup()
+        qin1 = QueueInc(port=pci_port, qid=0)
+        qin1 -> middle_q
+        qin1.attach_task(wid=0)
+
+        qin2 = QueueInc(port=pci_port, qid=1)
+        qin2 -> middle_q
+        qin2.attach_task(wid=1)
+
+        middle_q -> iplookup
+
+
+        for i in range(count_vhost_ports):
+          ip = "192.168.1.{}".format(i + 3)
+          print("pipline ip in IP Look UP: ", ip)
+          iplookup.add(prefix=ip, prefix_len=32, gate=i)
+          qout1 = QueueOut(port=vhost_ports[i], qid=0)
+          iplookup:i  -> qout1
+
+        iplookup.add(prefix="0.0.0.0", prefix_len=0, gate=count_vhost_ports) 
+        iplookup:count_vhost_ports -> Sink()

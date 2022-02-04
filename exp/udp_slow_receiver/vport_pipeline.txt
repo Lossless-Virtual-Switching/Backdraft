@@ -28,11 +28,11 @@ RATE_LIMIT = BP # BP or OVerlay
 
 TX_QUEUE_COUNT = CNT_Q
 RX_QUEUE_COUNT = CNT_Q
-Q_SIZE = 1024
+Q_SIZE = 64
 Q = max(TX_QUEUE_COUNT, RX_QUEUE_COUNT)
 # ======================================
 
-count_vsw_cores = 1
+count_vsw_cores = 2
 for i in range(count_vsw_cores):
     bess.add_worker(i, i)
 
@@ -98,6 +98,8 @@ host2 = BDVPort(
   rate_limiting=RATE_LIMIT,
   rate=RATE)
 
+clients = [host1, client2, client3]
+servers = [host0, host2]
 
 def bkdrft_pipeline():
     """
@@ -121,89 +123,38 @@ def bkdrft_pipeline():
         {'start': 9001, 'end': 9090, 'gate': 3},
     ])
 
-    queue_ids = [i for i in range(CNT_Q)]
-    client_qout0 = BKDRFTQueueOut(port=host1, qid=queue_ids,
-        backpressure=BP, lossless=LOSSLESS, cdq=COMMAND_Q, per_flow_buffering=PFQ,
-        ecn_threshold=ECNT, overlay=False, mname='client1')
-
-    client_qout2 = BKDRFTQueueOut(port=client2, qid=queue_ids,
-        backpressure=BP, lossless=LOSSLESS, cdq=COMMAND_Q, per_flow_buffering=PFQ,
-        ecn_threshold=ECNT, overlay=False, mname='client2')
-
-    client_qout3 = BKDRFTQueueOut(port=client3, qid=queue_ids,
-        backpressure=BP, lossless=LOSSLESS, cdq=COMMAND_Q, per_flow_buffering=PFQ,
-        ecn_threshold=ECNT, overlay=False, mname='client3')
-
-    server1_qout::BKDRFTQueueOut(port=host0.name, qid=queue_ids,
-        backpressure=BP, lossless=LOSSLESS, cdq=COMMAND_Q, per_flow_buffering=PFQ,
-        ecn_threshold=ECNT, overlay=False, mname='server1')
-
-    server2_qout::BKDRFTQueueOut(port=host2.name, qid=queue_ids,
-        backpressure=BP, lossless=LOSSLESS, cdq=COMMAND_Q,
-        per_flow_buffering=PFQ, ecn_threshold=ECNT, overlay=False,
-        mname='server2')
-
-
     loop = CNT_Q
     if COMMAND_Q:
         loop = 1
 
-
-    # q1 = Queue()
-    # q1.attach_task(wid=next_wid())
-    # q2 = Queue()
-    # q2.attach_task(wid=next_wid())
+    queue_ids = [i for i in range(CNT_Q)]
 
     for i in range(loop):
         if not COMMAND_Q:
           queue_ids = [i]
-        client_qin = BKDRFTQueueInc(port=host1,
-            qid=queue_ids, backpressure=BP, cdq=COMMAND_Q, overlay=False)
+        for i, h in enumerate(clients, start=1):
+            qin = BKDRFTQueueInc(port=h,
+                qid=queue_ids, backpressure=BP, cdq=COMMAND_Q, overlay=False)
+            qin -> router
+            qin.attach_task(wid=next_wid())
 
-        client2_qin = BKDRFTQueueInc(port=client2,
-            qid=queue_ids, backpressure=BP, cdq=COMMAND_Q, overlay=False)
+            qout = BKDRFTQueueOut(port=h, qid=queue_ids, backpressure=BP,
+                lossless=LOSSLESS, cdq=COMMAND_Q, per_flow_buffering=PFQ,
+                ecn_threshold=ECNT, overlay=False, mname='client{}'.format(i))
+            receive_side_x:i -> qout
+            qout.attach_task(wid=next_wid())
 
-        client3_qin = BKDRFTQueueInc(port=client3,
-            qid=queue_ids, backpressure=BP, cdq=COMMAND_Q, overlay=False)
+        for i, h in enumerate(servers, start=1):
+            qin = BKDRFTQueueInc(port=h,
+                qid=queue_ids, backpressure=BP, cdq=COMMAND_Q, overlay=False)
+            qin -> receive_side_x
+            qin.attach_task(wid=next_wid())
 
-        server1_qin = BKDRFTQueueInc(port=host0,
-            qid=queue_ids, backpressure=BP, cdq=COMMAND_Q, overlay=False)
-
-        server2_qin = BKDRFTQueueInc(port=host2,
-            qid=queue_ids, backpressure=BP, cdq=COMMAND_Q, overlay=False)
-
-        client_qin  -> router
-        client2_qin -> router
-        client3_qin -> router
-        server1_qin -> receive_side_x
-        server2_qin -> receive_side_x
-
-        client_qin.attach_task(wid=next_wid())
-        client2_qin.attach_task(wid=next_wid())
-        client3_qin.attach_task(wid=next_wid())
-        server1_qin.attach_task(wid=next_wid())
-        server2_qin.attach_task(wid=next_wid())
-
-    # q1 -> router
-    # q2 -> receive_side_x
-    router:1 -> server1_qout
-    router:2 -> server2_qout
-    receive_side_x:1 -> client_qout0
-    receive_side_x:2 -> client_qout2
-    receive_side_x:3 -> client_qout3
-
-
-# router = IPLookup()
-# router.add(prefix='192.0.0.0', prefix_len=8, gate=1)
-# router.add(prefix='10.0.0.0', prefix_len=8, gate=2)
-# for i in range(CNT_Q):
-#   client_qin = QueueInc(port=host1, qid=i)
-#   client_qin -> router
-#
-# server1_qout = QueueOut(port=host0, qid=0)
-# server2_qout = QueueOut(port=host2, qid=0)
-# router:1 -> server1_qout
-# router:2 -> server2_qout
+            qout = BKDRFTQueueOut(port=h, qid=queue_ids, backpressure=BP,
+                lossless=LOSSLESS, cdq=COMMAND_Q, per_flow_buffering=PFQ,
+                ecn_threshold=ECNT, overlay=False, mname='server{}'.format(i))
+            router:i -> qout
+            qout.attach_task(wid=next_wid())
 
 
 if AGENT == BESS:
@@ -227,8 +178,3 @@ else:
     print("AGENT misconfigured")
     raise Exception()
 
-# Attach to worker
-# client_qin.attach_task(wid=0)
-# client2_qin.attach_task(wid=0)
-# server1_qin.attach_task(wid=0)
-# server2_qin.attach_task(wid=0)

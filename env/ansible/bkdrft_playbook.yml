@@ -6,26 +6,38 @@
   become: true
   tasks:
     # python
-    - name: "install python2 and python3"
-      apt:
-        update_cache: yes
-        name: ['python', 'python-pip', 'python3', 'python3-pip']
-    - name: "update python2 pip"
-      command: "python2 -m pip install --upgrade pip"
-    - name: "update python3 pip"
-      command: "python3 -m pip install --upgrade pip"
-    - name: "install python3 deps"
-      command: "python3 -m pip install pyyaml && python3 -m pip install -U pyyaml"
-    - name: "install python2 deps"
-      command: "python2 -m pip install pyyaml && python2 -m pip install -U pyyaml"
+    # - name: "install python3"
+    #   apt:
+    #     update_cache: yes
+    #     name: ['python3', 'python3-pip']
+    # - name: "update python3 pip"
+    #   command: "python3 -m pip install --upgrade pip"
+    # - name: "install python3 pyyaml"
+    #   shell: "python3 -m pip install pyyaml && python3 -m pip install -U pyyaml"
+    #   ignore_errors: yes
+    # - name: "install python2"
+    #   apt:
+    #     update_cache: no
+    #     name: ['python', 'python-pip']
+    #   when: ansible_distribution == 'Ubuntu' and ansible_lsb.major_release|int < 20
+    # - name: "update python2 pip"
+    #   command: "python2 -m pip install --upgrade pip"
+    #   when: ansible_distribution == 'Ubuntu' and ansible_lsb.major_release|int < 20
+    # - name: "install python2 pyyaml"
+    #   shell: "python2 -m pip install pyyaml && python2 -m pip install -U pyyaml"
+    #   ignore_errors: yes
+    #   when: ansible_distribution == 'Ubuntu' and ansible_lsb.major_release|int < 20
     # docker
+    - name: "Homa"
+      apt:
+        name: ['cmake', 'libmnl-dev']
     - name: "install docker daemon and docker-compose"
       apt: # assume cache has been updated in previous steps
         name: ['docker', 'docker-compose']
     # TODO: install perf, linux-tools-generic $kernel version?
-    # - name: "install perf tool"
-    #   apt:
-    #     nmae: ['linux-tools']
+    - name: "install perf tool"
+      shell: "apt install --yes linux-tools-$(uname -r)"
+      ignore_errors: yes
     # protobuf
     - name: "install protobuf c++ dependency"
       apt:
@@ -35,6 +47,7 @@
         repo: "https://github.com/google/protobuf.git"
         dest: "/opt/protobuf"
         clone: yes
+        version: "aedb8d726c8d2a371d999354d44ca7e1bdbb1e73"
     - name: "building protobuf"
       shell: |
         ./autogen.sh

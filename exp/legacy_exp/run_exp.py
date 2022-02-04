@@ -85,13 +85,16 @@ def main():
 
     print('all containers and BESS pipeline has been setuped')
 
-    # Wait for client to finish
-    # Note: there is an assumption that the second container is the client
-    # TODO: Relax this assumption
-    client_container_name = containers[1]['name']
-    #client_pid = get_container_pid(client_container_name)
-    while docker_container_is_running(client_container_name):
-        sleep(1)
+    try:
+        # Wait for client to finish
+        # Note: there is an assumption that the second container is the client
+        # TODO: Relax this assumption
+        client_container_name = containers[1]['name']
+        #client_pid = get_container_pid(client_container_name)
+        while docker_container_is_running(client_container_name):
+            sleep(1)
+    except KeyboardInterrupt as e:
+        print('Experiment interrupted')
 
     # Gather experiment result
     ## iperf3 logs

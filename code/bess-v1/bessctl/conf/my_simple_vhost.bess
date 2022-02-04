@@ -1,0 +1,47 @@
+"""
+A test pipeline for use with testpmd and applications a like
+
+e.g:
+sudo ./testpmd -m 2048 --no-pci --file-prefix=m1 \
+        --vdev=virtio_user0,path=/tmp/tmp_vhost0.sock,queues=2 -- -i
+"""
+import os
+import subprocess
+import scapy.all as scapy
+
+pci = os.environ.get('PCI', '41:00.0')
+size_q = 512
+queue_count = 2
+count_vhost = 3
+# Vhost Port
+sockets = [os.path.join('/tmp/', 'tmp_vhost{}.sock'.format(i)) for i in range(count_vhost)]
+ports = []
+
+subprocess.run('sudo rm /tmp/*.sock', shell=True)
+
+for i, socket in enumerate(sockets):
+    vdev = "eth_vhost{},iface={},queues={}".format(i, socket, queue_count)
+    port = PMDPort(name="tmp_vhost{}".format(i),
+            vdev=vdev,
+            num_inc_q = queue_count,
+            num_out_q = queue_count,
+            size_inc_q= size_q,
+            size_out_q= size_q)
+    ports.append(port)
+
+nic = PMDPort(pci=pci, num_inc_q=queue_count, num_out_q=queue_count)
+
+# # Setting up overlay port
+# BPQOut(port=ports[2].name, qid=0)
+# BPQOut(port=ports[2].name, qid=1)
+
+qin = BPQInc(port=ports[0], qid=0)
+qin:0 -> BPQOut(port=ports[1], qid=0)
+# qin.set_overlay_port(port=ports[2].name, qid=0)
+qin.set_overlay_port(port=nic.name, qid=0)
+
+qin = BPQInc(port=ports[1], qid=0)
+qin:0 -> BPQOut(port=ports[0], qid=0)
+# qin.set_overlay_port(port=ports[2].name, qid=1)
+qin.set_overlay_port(port=nic.name, qid=1)
+

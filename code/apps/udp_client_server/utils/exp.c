@@ -145,3 +145,14 @@ int check_eth_hdr_vport(uint32_t my_ip,
 
   return 1;
 }
+
+void wait(uint64_t ns) {
+  uint64_t start , now, d;
+  start = rte_get_timer_cycles();
+  now = start;
+  d = (now - start) * (1000000000.0 / rte_get_timer_hz());
+  while (d < ns) {
+    now = rte_get_timer_cycles();
+    d = (now - start) * (1000000000.0 / rte_get_timer_hz());
+  }
+}

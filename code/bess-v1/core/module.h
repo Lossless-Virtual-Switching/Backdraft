@@ -56,6 +56,9 @@ using bess::gate_idx_t;
 #define MAX_TASKS_PER_MODULE 32
 #define UNCONSTRAINED_SOCKET ((0x1ull << MAX_NUMA_NODE) - 1)
 
+#define Unused __attribute__((unused))¬
+
+
 struct Context {
   // Set by task scheduler, read by modules
   uint64_t current_tsc;
@@ -99,6 +102,67 @@ static inline module_init_func_t MODULE_INIT_FUNC(
     auto base_fn = std::mem_fn(fn);
     return base_fn(static_cast<M *>(m), arg_);
   };
+}
+
+static int get_backpressure_state(__attribute__((unused)) bool &remote_overload,__attribute__((unused)) bool &local_overload, __attribute__((unused)) int action) {
+  // action true -> we have a pkt meaning: that's a local decision
+
+  /* Action map
+    overlay over: 0
+    overlay under: 1
+    local over: 2
+    local under: 3
+  */
+
+  // LOG(INFO) << "SALAM " << remote_overload << " " << local_overload << " " << action << std::endl;
+
+  // LOG(INFO) << "salam \n";
+  // return -1;
+
+  if (remote_overload && local_overload) {
+    if (action == 0) {
+      // 2 -> 1
+      local_overload = true;
+      remote_overload = false;
+      return 1;
+    } else {
+      return -1;
+    }
+  }
+  else if (local_overload && !remote_overload) {
+    if (action == 0) {
+      // 1 -> 2
+      local_overload = true;
+      remote_overload = true;
+      return 2;
+    }
+    else if (action == 3) {
+      // 1 -> 0
+      local_overload = false;
+      remote_overload = false;
+      return 0;
+    } 
+    else {
+      return -1;
+    }
+  }
+  else if (!local_overload && !remote_overload) {
+    if (action == 0) {
+      // 0 -> 2
+      local_overload = true;
+      remote_overload = true;
+      return 2;
+    } else if (action == 2) {
+      // 0 -> 1
+      local_overload = true;
+      remote_overload = false;
+      return 1;
+    } else {
+      return -1;
+    }
+  }
+  else 
+    return -1;
 }
 
 class Module;
@@ -204,7 +268,12 @@ class alignas(64) Module {
         node_constraints_(UNCONSTRAINED_SOCKET),
         min_allowed_workers_(1),
         max_allowed_workers_(1),
-        propagate_workers_(true) {}
+        propagate_workers_(true),
+        rx_pause_frame_(0),
+        tx_pause_frame_(0),
+        rx_resume_frame_(0),
+        tx_resume_frame_(0),
+        overlay_overload_(false) {}
   virtual ~Module() {}
 
   CommandResponse Init(const bess::pb::EmptyArg &arg);
@@ -392,6 +461,7 @@ class alignas(64) Module {
     if (overload_) {
       return;
     }
+
     for (auto const &p : parent_tasks_) {
       ++(p->children_overload_);
     }
@@ -410,6 +480,87 @@ class alignas(64) Module {
     }
 
     overload_ = false;
+  }
+
+  virtual void SignalOverloadBP(bess::Packet *pkt) {
+    bool to_be_freed = true;
+    int action = pkt == nullptr? 0: 2;
+    int state = get_backpressure_state(overlay_overload_, overload_, action);
+
+    rx_pause_frame_++; // We have just received a pause frame message
+
+    if (state == -1) {
+      if (pkt != nullptr)
+        bess::Packet::Free(pkt);
+      return;
+    }
+
+    for (size_t i = 0; i < igates_.size(); i++) {
+        if (!igates_[i]) {
+            continue;
+        }
+
+        const std::vector<bess::OGate *> &up_ogates = igates_[i]->ogates_upstream();
+        for (const bess::OGate *o : up_ogates) {
+            Module *m = o->module();
+            ++(m->children_overload_);
+            if (m->propagate_workers_ && m->children_overload_ == 1) {
+                to_be_freed = false;
+                tx_pause_frame_++; // Now we are sending pause frames to others too.
+                m->SignalOverloadBP(pkt);
+                // LOG(INFO) << "propagate overlaod from: "
+                //     << name_ << " to " << m->name_ << std::endl;
+            }
+        }
+    }
+
+    if (pkt != nullptr && to_be_freed)
+      bess::Packet::Free(pkt);
+
+  }
+
+  virtual void SignalUnderloadBP(bess::Packet *pkt) {
+    bool to_be_freed = true;
+    int action = pkt == nullptr? 1: 3;
+    int state = get_backpressure_state(overlay_overload_, overload_, action);
+
+    rx_resume_frame_++;
+
+    if (state == -1) {
+      if (pkt != nullptr)
+        bess::Packet::Free(pkt);
+      return;
+    }
+
+    // if (!overload_) {
+    //   bess::Packet::Free(pkt);
+    //   return;
+    // }
+
+    // if (!overlay_overload) {
+    //   bess::Packet::Free(pkt);
+    //   return;
+    // } 
+
+    for (size_t i = 0; i < igates_.size(); i++) {
+        if (!igates_[i]) {
+            continue;
+        }
+
+        const std::vector<bess::OGate *> &up_ogates = igates_[i]->ogates_upstream();
+        for (const bess::OGate *o : up_ogates) {
+            Module *m = o->module();
+            --(m->children_overload_);
+            if (m->propagate_workers_ && m->children_overload_ == 0) {
+              to_be_freed = false;
+              tx_resume_frame_++;
+              m->SignalUnderloadBP(pkt);
+            }
+        }
+    }
+
+    if (to_be_freed && pkt != nullptr)
+      bess::Packet::Free(pkt);
   }
 
  private:
@@ -489,6 +640,29 @@ class alignas(64) Module {
   // Note, one should override the `AddActiveWorker` method in more complex
   // cases.
   bool propagate_workers_;
+
+  // RX pause frame
+  // This will increament for every received overload signal
+  uint64_t rx_pause_frame_;
+
+  // TX pause frame
+  // This will increament for every call to overload for children
+  // modules
+  uint64_t tx_pause_frame_;
+
+  // RX resume frame
+  // This will increament for every received underload signal
+  uint64_t rx_resume_frame_;
+
+  // TX resume frame
+  // This will increament for every call to underload for children
+  // modules
+  uint64_t tx_resume_frame_;
+
+  // This indicates that this module is overloaded via an overlay 
+  // message received from the upstream NODE/MACHINE in the network
+  bool overlay_overload_;
+
   DISALLOW_COPY_AND_ASSIGN(Module);
 };
 

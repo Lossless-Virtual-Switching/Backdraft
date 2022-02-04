@@ -1,0 +1,16 @@
+- fig-descriptor:
+  experiment: "memcached variable throughput"
+  fig_name: "/tmp/test"
+  fig_size: [4,4]
+  x_axis_data: "/tmp/x_data.txt"
+  y_axis_data: "/tmp/y_data.txt"
+  dimension_size:
+  x_tick_labels: # [0, 150, 300, 450, 600, 750, '1K']
+  y_limit: # [0, 50]
+  x_limit: # [887013, 888413] # timestamp us (first larger time stamp)
+  x_label: "Time (us)"
+  y_label: "Throughput (Gbps)"
+  tick_rotation: # 45
+  highlight: # [700, 800] # index in x or y array
+  grid: True
+  dpi: 300

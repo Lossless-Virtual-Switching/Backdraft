@@ -1,0 +1,24 @@
+diff --git a/lib/librte_vhost/vhost.h b/lib/librte_vhost/vhost.h
+--- a/lib/librte_vhost/vhost.h
++++ b/lib/librte_vhost/vhost.h
+@@ -584,13 +584,14 @@
+ static __rte_always_inline struct virtio_net *
+ get_device(int vid)
+ {
+-	struct virtio_net *dev = vhost_devices[vid];
+-
+-	if (unlikely(!dev)) {
++	if (unlikely(vid < 0 || vid > MAX_VHOST_DEVICE)) {
+ 		RTE_LOG(ERR, VHOST_CONFIG,
+ 			"(%d) device not found.\n", vid);
++		return NULL;
+ 	}
+
++	struct virtio_net *dev = vhost_devices[vid];
++
+ 	return dev;
+ }
+
+--
+2.25.1
+

@@ -1,0 +1,177 @@
+import os
+import json
+import subprocess
+
+config = json.load(open('/tmp/.pipeline_config.json'))
+count_cores = config['count_core']
+count_queue = config['count_queue']
+pci = config['pci_address']
+count_vhost_ports = config['vhost_port_count']
+server = config['server']
+victim_ip = '192.168.1.2'
+incast_ip = '192.168.1.1'
+
+
+drop_prob = 0
+if os.environ.get("DROP"):
+  drop_prob = float(os.environ.get("DROP"))
+  print("Drop Prob {}".format(drop_prob))
+
+
+# generating vhost port:
+vhost_ports = []
+for i in range(count_vhost_ports):
+  name = 'port_{}'.format(i)
+  socket = '/tmp/vhost_{}.sock'.format(i)
+  # vdev = 'eth_vhost{},iface={},queues={}'.format(i, socket, count_queue)
+  vdev = 'eth_vhost{},iface={},queues={}'.format(i, socket, 1)
+
+  if os.path.exists(socket):
+    subprocess.call('sudo rm {}'.format(socket), shell=True)
+
+  # print(vdev)
+  port = PMDPort(name=name, vdev=vdev, num_inc_q=1, num_out_q=1)
+  vhost_ports.append(port)
+
+worker_divisor = 5
+core_id = -1
+
+for i in range(worker_divisor):
+  bess.add_worker(i, i)
+
+def get_next_core():
+  global core_id
+  # print("core id", core_id)
+  core_id = core_id + 1
+  return core_id%worker_divisor
+
+
+# PCI port
+# print(pci, count_queue, count_vhost_ports)
+pci_port = PMDPort(pci=pci, num_inc_q=count_queue, num_out_q=count_queue + 1)
+
+
+# print(drop_prob)
+if drop_prob > 0:
+    drop = RandomSplit(drop_rate=drop_prob, gates=[0,])
+    BPQInc(port=vhost_ports[0], qid=0)-> drop
+    drop:0 -> BPQOut(port=pci_port, qid=0)
+    BPQInc(port=pci_port, qid=0) -> BPQOut(port=vhost_ports[0], qid=0)
+else:
+    if server:
+        # Egress
+        assert(count_queue == 3)
+        assert(count_vhost_ports == 2)
+        # print(len(vhost_ports), count_vhost_ports)
+        for index, i in enumerate(vhost_ports):
+          qin1 = BPQInc(port=i, qid=0)
+          worker_id = get_next_core()
+          qin1.attach_task(wid=worker_id)
+          # qin1 -> merger
+          pci_port_qout = BPQOut(port=pci_port, qid=index)
+          worker_id = get_next_core() ###########
+          pci_port_qout.attach_task(wid=worker_id)
+          qin1 -> VLANPop() -> pci_port_qout
+
+        # pci_port_qout.attach_task(wid=0)
+        # merger -> pci_port_qout
+
+        # Ingress
+        assert(count_vhost_ports == 2)
+        ip = IPLookup()
+        ip.add(prefix=incast_ip, prefix_len=32, gate=0)
+        ip.add(prefix=victim_ip, prefix_len=32, gate=1)
+
+        pci_port_qinc1 = BPQInc(port=pci_port, qid=0)
+        pci_port_qinc2 = BPQInc(port=pci_port, qid=1)
+        pci_port_qinc3 = BPQInc(port=pci_port, qid=2)
+        # DANGER: two threads may try to write to the same queue of
+        # the same port (nic)
+        pci_port_qinc1.set_overlay_port(port=pci_port.name, qid=count_queue)
+        pci_port_qinc2.set_overlay_port(port=pci_port.name, qid=count_queue)
+        pci_port_qinc3.set_overlay_port(port=pci_port.name, qid=count_queue)
+        pci_port_qinc1.attach_task(wid=get_next_core())
+        pci_port_qinc2.attach_task(wid=get_next_core())
+        pci_port_qinc3.attach_task(wid=get_next_core())
+
+        pci_port_qinc1 -> ip
+        pci_port_qinc2 -> ip
+        pci_port_qinc3 -> ip
+
+        qout1 = BPQOut(port=vhost_ports[0], qid=0)
+        qout2 = BPQOut(port=vhost_ports[1], qid=0)
+        qout1.attach_task(wid=get_next_core())
+        qout2.attach_task(wid=get_next_core())
+        ip:0 -> qout1
+        ip:1 -> qout2
+    else:
+        # client
+        # Egress
+        egress_out_collection = [] # overlay
+        assert(count_queue == 3)
+        assert(count_vhost_ports == 2)
+        # print(len(vhost_ports), count_vhost_ports)
+        # For victim client
+        # It is deliberate to use QueueInc instead of BPQInc
+        qin1 = QueueInc(port=vhost_ports[0], qid=0)
+        pfq_ip = IPLookup()
+        pfq_ip.add(prefix=victim_ip, prefix_len=32, gate=0)
+        pfq_ip.add(prefix=incast_ip, prefix_len=32, gate=1)
+
+        qin1 -> VLANPop() -> pfq_ip
+        pfq_ip:0 -> incast_q::Queue() \
+           -> incast_qout::BPQOut(port=pci_port, qid=0)
+        pfq_ip:1 -> victim_q::Queue() \
+           -> victim_qout::BPQOut(port=pci_port, qid=1)
+        egress_out_collection.append(incast_qout) # overlay
+        # egress_out_collection.append(victim_qout) # overlay
+        worker_id = get_next_core()
+        qin1.attach_task(wid=worker_id)
+        victim_q.attach_task(wid=get_next_core())
+        incast_q.attach_task(wid=get_next_core())
+        victim_qout.attach_task(wid=get_next_core())
+        incast_qout.attach_task(wid=get_next_core())
+
+        # For rest of clients
+
+        qin2 = BPQInc(port=vhost_ports[1], qid=0)
+        qout2 = BPQOut(port=pci_port, qid=2)
+        egress_out_collection.append(qout2)
+        qin2 -> VLANPop() -> qout2
+        qin2.attach_task(wid=get_next_core())
+        qout2.attach_task(wid=get_next_core())
+
+
+        # qin3 = BPQInc(port=vhost_ports[2], qid=0)
+        # qout3 = BPQOut(port=pci_port, qid=3)
+        # egress_out_collection.append(qout3)
+        # qin3 -> VLANPop() -> qout3
+        # qin3.attach_task(wid=get_next_core())
+        # qout3.attach_task(wid=get_next_core())
+
+
+        # Ingress
+        iplookup = IPLookup()
+        broker = OBroker() # overlay
+        for i in range(count_queue):
+            inspector = OInspect()
+            inspector.set_overlay_broker(overlay_broker_mod=broker.name)
+            qin1 = BPQInc(port=pci_port, qid=i)
+            qin1 -> inspector -> iplookup # overlay
+            worker_id = get_next_core()
+            qin1.attach_task(wid=worker_id)
+
+        for i in range(count_vhost_ports):
+            ip = "192.168.1.{}".format(i + 3)
+            # print("pipline ip in IP Look UP: ", ip)
+            iplookup.add(prefix=ip, prefix_len=32, gate=i)
+            qout1 = BPQOut(port=vhost_ports[i], qid=0)
+            worker_id = get_next_core()
+            qout1.attach_task(wid=worker_id)
+            iplookup:i -> qout1
+            broker.add(prefix=ip, prefix_len=32, gate=i) # overlay
+            broker:i -> egress_out_collection[i] # overlay
+
+        iplookup.add(prefix="0.0.0.0", prefix_len=0, gate=count_vhost_ports)
+        iplookup:count_vhost_ports -> Sink()
+

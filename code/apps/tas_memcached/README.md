@@ -1,4 +1,11 @@
 # TAS Memcached Image
+`tas_memcached` is a docker file which has been setup for performing a
+couple of experiments which mainly had memcached as a part of the workload application.
+These setup use TAS inside a docker inorder to connect to Bess via vhost sockets.
+There are some other applications included in this docker images which is used
+in different experiments along with memcached.
+
+## Old Description
 TAS Memcached is used for running multiple instances of legacy test application
 through Tcp-Acceleration-Service on a single machine. Each image is either a
 server (memcached) or a client (mutilate).
