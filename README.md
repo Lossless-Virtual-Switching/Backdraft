@@ -2,6 +2,7 @@
 Backdraft is a new lossless virtual switch that addresses the slow receiver problem by combining three new components: (1) Dynamic Per-Flow Queuing (DPFQ) to prevent HOL blocking and provide on-demand memory usage; (2) Doorbell queues to reduce CPU overheads; (3) A new overlay network to avoid congestion spreading.
 
 ## System Architetcure
+![Backdraft](docs/pngs/bd_design.png)
 
 ## Documentation
 
