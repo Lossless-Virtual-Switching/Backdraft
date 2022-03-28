@@ -13,8 +13,7 @@ keep up with the incoming rate.
 - /
  - env: all scripts regarding environment setup
  - exp: all scripts regarding experiments in the paper
- - code: all the codes and libraries built for backdraft
- - 
+ - code: all the codes and libraries built for Backdraft
 ```
 
 ## License
