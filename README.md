@@ -14,6 +14,13 @@ keep up with the incoming rate.
  - env: all scripts regarding environment setup
  - exp: all scripts regarding experiments in the paper
  - code: all the codes and libraries built for Backdraft
+  - tas: tas library for the userspace TCP/DCTCP
+  - Homa: Homa openloop app workload generator
+  - apps: dummy applications to generate non-cooperative workload.
+  - dpdk: DPDK
+  - httpd: webserver for motivations
+  - lib: backdraft interface library
+  - tas-benchmark: tas applications
 ```
 
 ## License
