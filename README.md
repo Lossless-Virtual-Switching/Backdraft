@@ -8,9 +8,14 @@ keep up with the incoming rate.
 ## System Architetcure
 ![Backdraft](docs/pngs/bd_design.png)
 
-## Documentation
-
 ## Repo Layout
+```
+- /
+ - env: all scripts regarding environment setup
+ - exp: all scripts regarding experiments in the paper
+ - code: all the codes and libraries built for backdraft
+ - 
+```
 
 ## License
 
