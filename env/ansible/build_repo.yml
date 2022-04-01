@@ -29,3 +29,8 @@
         args:
             chdir: "{{playbook_dir}}/../../code/tas"
             creates: "{{playbook_dir}}/../../code/tas/tas/tas"
+      - name: "build udp app"
+        shell: ./make.sh
+        args:
+            chdir: "{{playbook_dir}}/../../code/apps/udp_client_server"
+            creates: "{{playbook_dir}}/../../code/apps/udp_client_server/build/udp_app"
