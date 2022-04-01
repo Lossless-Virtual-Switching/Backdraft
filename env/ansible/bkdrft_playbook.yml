@@ -11,7 +11,7 @@
         name: ['cmake', 'libmnl-dev']
     # docker
     - name: "install docker daemon and docker-compose"
-      apt: # assume cache has been updated in previous steps
+      apt: # assumes cache has been updated in previous steps
         name: ['docker', 'docker-compose']
     # install perf, linux-tools-generic
     - name: "install perf tool"
