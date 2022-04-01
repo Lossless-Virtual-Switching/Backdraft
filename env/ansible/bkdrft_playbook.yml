@@ -1,40 +1,19 @@
 ---
 
 
-- name: "Backdraft environment setup playbook"
+- name: "Backdraft dependencies playbook"
   hosts: all
   become: true
   tasks:
-    # python
-    # - name: "install python3"
-    #   apt:
-    #     update_cache: yes
-    #     name: ['python3', 'python3-pip']
-    # - name: "update python3 pip"
-    #   command: "python3 -m pip install --upgrade pip"
-    # - name: "install python3 pyyaml"
-    #   shell: "python3 -m pip install pyyaml && python3 -m pip install -U pyyaml"
-    #   ignore_errors: yes
-    # - name: "install python2"
-    #   apt:
-    #     update_cache: no
-    #     name: ['python', 'python-pip']
-    #   when: ansible_distribution == 'Ubuntu' and ansible_lsb.major_release|int < 20
-    # - name: "update python2 pip"
-    #   command: "python2 -m pip install --upgrade pip"
-    #   when: ansible_distribution == 'Ubuntu' and ansible_lsb.major_release|int < 20
-    # - name: "install python2 pyyaml"
-    #   shell: "python2 -m pip install pyyaml && python2 -m pip install -U pyyaml"
-    #   ignore_errors: yes
-    #   when: ansible_distribution == 'Ubuntu' and ansible_lsb.major_release|int < 20
-    # docker
+    # Homa
     - name: "Homa"
       apt:
         name: ['cmake', 'libmnl-dev']
+    # docker
     - name: "install docker daemon and docker-compose"
       apt: # assume cache has been updated in previous steps
         name: ['docker', 'docker-compose']
-    # TODO: install perf, linux-tools-generic $kernel version?
+    # install perf, linux-tools-generic
     - name: "install perf tool"
       shell: "apt install --yes linux-tools-$(uname -r)"
       ignore_errors: yes
@@ -74,9 +53,7 @@
       shell: 'echo GRUB_CMDLINE_LINUX_DEFAULT=\"default_hugepagesz=1G hugepagesz=1G hugepages=30\" | sudo tee -a /etc/default/grub'
     - name: "update grub"
       shell: "update-grub"
-    # TODO: Turn of hyperthreading
     # TODO: check if using mellanox NICs then install required files.
-    # TODO: compile BESS (huge pages should be setup first)
 
 
 # setup BESS env
@@ -84,7 +61,9 @@
 - import_playbook: bess-runtime.yml
 
 
-# some dependencies are installed in bess playbooks
+# build repo
+- import_playbook: build_repo.yml
+
 # build apps
 - name: "Backdraft make apps used in experiments"
   hosts: all

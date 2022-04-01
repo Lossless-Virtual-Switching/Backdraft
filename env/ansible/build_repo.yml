@@ -1,0 +1,31 @@
+- name: "Build repository"
+  hosts: all
+  become: false
+  tasks:
+      - name: "test"
+        debug: var=playbook_dir
+      - name: "build bess dpdk dependency"
+        shell: ./build.py dpdk
+        args:
+            chdir: "{{playbook_dir}}/../../code/bess-v1"
+            creates: "{{playbook_dir}}/../../code/bess-v1/deps/dpdk-19.11.1"
+      - name: "build libbkdrft"
+        shell: ./make.sh
+        args:
+            chdir: "{{playbook_dir}}/../../code/lib/bkdrft"
+            creates: "{{playbook_dir}}/../../code/lib/bkdrft/build/libbkdrft.a"
+      - name: "build libbd_vport"
+        shell: ./make.sh
+        args:
+            chdir: "{{playbook_dir}}/../../code/lib/bd_vport"
+            creates: "{{playbook_dir}}/../../code/lib/bd_vport/build/libbd_vport.a"
+      - name: "build bess"
+        shell: ./build.py bess --plugin bd_plugin
+        args:
+            chdir: "{{playbook_dir}}/../../code/bess-v1"
+            creates: "{{playbook_dir}}/../../code/bess-v1/core/bessd"
+      - name: "build tas"
+        shell: make RTE_SDK="{{playbook_dir}}/../../code/bess-v1/deps/dpdk-19.11.1/build"
+        args:
+            chdir: "{{playbook_dir}}/../../code/tas"
+            creates: "{{playbook_dir}}/../../code/tas/tas/tas"
