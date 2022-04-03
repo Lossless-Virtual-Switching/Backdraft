@@ -213,7 +213,7 @@ def run_udp_app(config):
     #         '--vdev={}'.format(conf['vdev']), '--socket-mem=128', '--']
     if mode  == 'server':
         cmd = ('sudo {bin} --no-pci --lcores="{cpu}" --file-prefix={prefix} '
-                'bidi={bidi} --vdev="{vdev}" --socket-mem=128 -- '
+                '--vdev="{vdev}" --socket-mem=128 -- bidi={bidi} '
                 '{ip} {count_queue} {sysmod} {mode} {delay}'
               ).format(bin=udp_app, mode=mode, **conf)
         # params = [conf['ip'], conf['count_queue'], conf['sysmod'], conf['mode'],
@@ -246,8 +246,9 @@ def run_udp_app(config):
     FNULL = None
     FNULL = subprocess.PIPE
     _log_cmd(cmd)
-    proc = subprocess.Popen(cmd, shell=True, close_fds=True,
-                            stdout=FNULL, stderr=subprocess.STDOUT)
+    # proc = subprocess.Popen(cmd, shell=True, close_fds=True,
+    #                         stdout=FNULL, stderr=subprocess.STDOUT)
+    proc = subprocess.Popen(cmd, shell=True, stdout=subprocess.PIPE)
     return proc
 
 
