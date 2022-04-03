@@ -12,7 +12,8 @@ class BPQInc final : public Module {
   // static const gate_idx_t kNumOGates = 5;
 
   BPQInc() : Module(), port_(), qid_(), prefetch_(), burst_(),
-	rx_pause_(0), tx_pause_(0), rx_resume_(0), tx_resume_(0) {}
+	overlay_port_(nullptr), overlay_qid_(1000), rx_pause_(0), tx_pause_(0),
+	rx_resume_(0), tx_resume_(0) {}
 
   CommandResponse Init(const bkdrft::pb::BPQIncArg &arg);
   void DeInit() override;
