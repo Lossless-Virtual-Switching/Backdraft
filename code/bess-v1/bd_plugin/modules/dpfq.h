@@ -15,8 +15,13 @@ class DPFQ final : public Module {
     is_task_ = true;
     max_allowed_workers_ = Worker::kMaxWorkers;
     // TODO: add parameter for count queue
-    for (int q = 0; q < 2; q++)
+    for (int q = 0; q < 2; q++) {
       queues_[q] = nullptr;
+      bp_state[q] = false;
+    }
+
+    propagate_workers_ = false;
+
   }
 
   CommandResponse Init(const bkdrft::pb::DPFQArg &arg);
@@ -41,6 +46,8 @@ class DPFQ final : public Module {
   int burst_;
   uint64_t size_;
   struct llring *queues_[2];
+
+  bool bp_state[2];
 
   // Accumulated statistics counters
   struct {

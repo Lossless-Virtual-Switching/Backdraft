@@ -95,9 +95,15 @@ struct task_result DPFQ::RunTask(Context *ctx, bess::PacketBatch *batch,
 
   // TODO: add parameter for count queue
   for (int q = 0; q < 2; q++) {
+
+    // if qid paused then continue
+    if (bp_state[q])
+      continue;
+
     struct llring * queue_ = queues_[q];
     uint32_t cnt = llring_sc_dequeue_burst(queue_,
         (void **)(batch->pkts() + dequeued), (burst - dequeued));
+
     if (cnt == 0) {
       continue;
     }
@@ -114,7 +120,9 @@ struct task_result DPFQ::RunTask(Context *ctx, bess::PacketBatch *batch,
   }
 
   batch->set_cnt(dequeued);
+
   RunNextModule(ctx, batch);
+
   return {.block = false,
     .packets = (unsigned) dequeued,
     .bits = (total_bytes + dequeued * pkt_overhead) * 8};
@@ -168,12 +176,51 @@ int DPFQ::HashPacket(bess::Packet *pkt)
   return -1;
 }
 
-void DPFQ::SignalOverloadBP(__attribute__((unused)) bess::Packet *pkt) {
+void DPFQ::SignalOverloadBP(bess::Packet *pkt) {
   // TODO: what to do when receiving overload signal
+  using bess::utils::Ethernet;
+  using bess::utils::Ipv4;
+  Ethernet *eth = pkt->head_data<Ethernet *>();
+  uint32_t ether_type = eth->ether_type.value();
+  Ipv4 *ip;
+  uint32_t ip_src;
+
+  LOG(INFO) << "overload out\n";
+
+  if (ether_type == Ethernet::Type::kIpv4) {
+    LOG(INFO) << "overload in\n";
+    ip = reinterpret_cast<Ipv4 *>(eth + 1);
+
+    // bess::utils::be32_t * options = reinterpret_cast<bess::utils::be32_t *>(ip + 1);
+    // assert(options->value() == 765);
+
+    ip_src = ip->src.value();
+    // TODO: here we should take care of larger numbers
+    bp_state[ip_src % 2] = true;
+  }
 }
 
-void DPFQ::SignalUnderloadBP(__attribute__((unused)) bess::Packet *pkt) {
+void DPFQ::SignalUnderloadBP(bess::Packet *pkt) {
   // TODO: what to do when receiving underload signal
+  using bess::utils::Ethernet;
+  using bess::utils::Ipv4;
+  Ethernet *eth = pkt->head_data<Ethernet *>();
+  uint32_t ether_type = eth->ether_type.value();
+  Ipv4 *ip;
+  uint32_t ip_src;
+
+  LOG(INFO) << "underload out\n";
+  if (ether_type == Ethernet::Type::kIpv4) {
+    ip = reinterpret_cast<Ipv4 *>(eth + 1);
+    LOG(INFO) << "underload in\n";
+
+    // bess::utils::be32_t * options = reinterpret_cast<bess::utils::be32_t *>(ip + 1);
+    // assert(options->value() == 764);
+
+    ip_src = ip->src.value();
+    // TODO: here we should take care of larger numbers
+    bp_state[ip_src % 2] = false;
+  }
 }
 
 ADD_MODULE(DPFQ, "dpfq", "dynamic per flow queuing")
