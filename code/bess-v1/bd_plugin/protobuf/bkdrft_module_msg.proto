@@ -64,3 +64,9 @@ message OBrokerArg {
   uint32 max_rules = 1; /// Maximum number of rules (default: 1024)
   uint32 max_tbl8s = 2; /// Maximum number of IP prefixes with smaller than /24 (default: 128)
 }
+
+
+/* DPFQ Module */
+message DPFQArg {
+}
+/* ----------------------------------- */
