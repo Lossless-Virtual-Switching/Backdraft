@@ -63,11 +63,26 @@ def remove_socks():
     subprocess.run('sudo rm /tmp/*.sock -f', shell=True)
 
 
+# Reserve some cores for Bess
+used_cores = 6
+max_cores = os.cpu_count()
+def get_core(count):
+    global used_cores
+    r = []
+    for i in range(count):
+        used_cores += 2
+        r.append(str(used_cores % max_cores))
+        if used_cores > max_cores:
+            print('Warning cores are shared between programs')
+    return ','.join(r)
+
+
 def run_server(instance):
     """
         Start a server process
     """
-    cpu = ['2', '3'][instance]  # on which cpu
+    # cpu = ['29', '30'][instance]  # on which cpu
+    cpu = get_core(1)
     server_delay = [0, slow][instance]
     args = {
             'bin': slow_receiver_exp,
@@ -117,16 +132,20 @@ def run_client(instance):
         Start a client process
     """
     port = [1008, 8989, 9002][instance]
-    cpu = ['(4-5)', '(6-7)', '(8-9)'][instance]
+    # cpu = ['(4-5)', '(6-7)', '(8-9)'][instance]
+    cpu = get_core(2)
     # TODO: the following line is an example of code that is not suitable!
     # should switch to run_udp_app instead of this function
     ips = [[_server_ips[0], ],  # latency server ip
            [_server_ips[1]],
            [_server_ips[1]]][instance]
-    rate = [1000, 1500000, -1][instance]
+    # rate = [1000, 1500000, -1][instance]
+    rate = 1500000 
     _ips = ' '.join(ips)
-    _cnt_flow = [1, count_flow, count_flow][instance]
-    delay = [0, 0, 0]  # cycles per packet
+    # _cnt_flow = [1, count_flow, count_flow][instance]
+    _cnt_flow = 50
+    # delay = [0, 0, 0][instance]  # cycles per packet
+    delay = 0
     args = {
             'bin': slow_receiver_exp,
             'cpu': cpu,
@@ -139,7 +158,7 @@ def run_client(instance):
             'duration': duration,
             'source_ip': _client_ip[instance],
             'port': port,
-            'delay': delay[instance],
+            'delay': delay,
             'bidi': 'false',
             }
     if PORT_TYPE == PMD:
@@ -208,12 +227,13 @@ def main():
     """
 
     memcached_config = [{
+        # Memcached
         'memory': 1024,
         'threads': 1,
         'name': 'tas_mem_server_1',
         'type': 'server',
         'image': 'tas_memcached',
-        'cpu': '10,11,12',
+        'cpu': get_core(3),
         'socket': '/tmp/tas_mem_server_1.sock',
         'ip': '10.10.1.4',
         'prefix': 'tas_mem_server_1',
@@ -222,20 +242,21 @@ def main():
         'tas_queues': count_queue,
         'cdq': int(cdq),
         }, {
+            # Mutilate
             'dst_ip': '10.10.1.4',
             'duration': duration,
             'warmup_time': 0,
             'wait_before_measure': 0,
-            'threads': 1,
-            'connections': 8,
+            'threads': 2,
+            'connections': 5,
             'name': 'tas_mem_client_1',
             'type': 'client',
             'image': 'tas_memcached',
-            'cpu': '13,14,15',
+            'cpu': get_core(5),
             'socket': '/tmp/tas_mem_client_1.sock',
             'ip': '172.20.1.2',
             'prefix': 'tas_mem_client_1',
-            'cpus': 3,
+            'cpus': 5,
             'tas_cores': 1,
             'tas_queues': count_queue,
             'cdq': int(cdq),
@@ -243,47 +264,47 @@ def main():
         ]
 
     rpc_config = [
-            {   # server 1
-                'port': 1234,
-                'count_flow': 100,
-                'ips': [('10.0.0.2', 1234),],  # not used for server
-                'flow_duration': 0,  # ms # not used for server
-                'message_per_sec': -1,  # not used for server
-                'message_size': 200,
-                'flow_num_msg': 0,   # not used for server
-                'count_threads': 1,
-                'name': 'rpc_server_1',
-                'type': 'server',
-                'image': 'tas_container',
-                'cpu': '16,17,18',
-                'socket': '/tmp/rpc_server_1.sock',
-                'ip': '10.10.1.6',
-                'prefix': 'rpc_server_1',
-                'cpus': 3,
-                'tas_cores': 1,
-                'tas_queues': count_queue,
-                'cdq': int(cdq),
-                }, {   # client 1
-                    'name': 'rpc_client_1',
-                    'type': 'client',
-                    'image': 'tas_container',
-                    'cpu': '19,1,8',
-                    'socket': '/tmp/rpc_client_1.sock',
-                    'ip': '172.40.1.2',
-                    'prefix': 'rpc_client_1',
-                    'cpus': 3,
-                    'tas_cores': 1,
-                    'tas_queues': count_queue,
-                    'cdq': int(cdq),
-                    'port': 7788,  # not used for client
-                    'count_flow': 4,
-                    'ips': [('10.10.1.6', 1234)],
-                    'flow_duration': 0,
-                    'message_per_sec': -1,
-                    'message_size': 300,
-                    'flow_num_msg': 0,
-                    'count_threads': 1,
-                    },
+    #         {   # server 1
+    #             'port': 1234,
+    #             'count_flow': 100,
+    #             'ips': [('10.0.0.2', 1234),],  # not used for server
+    #             'flow_duration': 0,  # ms # not used for server
+    #             'message_per_sec': -1,  # not used for server
+    #             'message_size': 200,
+    #             'flow_num_msg': 0,   # not used for server
+    #             'count_threads': 1,
+    #             'name': 'rpc_server_1',
+    #             'type': 'server',
+    #             'image': 'tas_container',
+    #             'cpu': '16,17,18',
+    #             'socket': '/tmp/rpc_server_1.sock',
+    #             'ip': '10.10.1.6',
+    #             'prefix': 'rpc_server_1',
+    #             'cpus': 3,
+    #             'tas_cores': 1,
+    #             'tas_queues': count_queue,
+    #             'cdq': int(cdq),
+    #             }, {   # client 1
+    #                 'name': 'rpc_client_1',
+    #                 'type': 'client',
+    #                 'image': 'tas_container',
+    #                 'cpu': '19,20,21',
+    #                 'socket': '/tmp/rpc_client_1.sock',
+    #                 'ip': '172.40.1.2',
+    #                 'prefix': 'rpc_client_1',
+    #                 'cpus': 3,
+    #                 'tas_cores': 1,
+    #                 'tas_queues': count_queue,
+    #                 'cdq': int(cdq),
+    #                 'port': 7788,  # not used for client
+    #                 'count_flow': 4,
+    #                 'ips': [('10.10.1.6', 1234)],
+    #                 'flow_duration': 0,
+    #                 'message_per_sec': -1,
+    #                 'message_size': 300,
+    #                 'flow_num_msg': 0,
+    #                 'count_threads': 1,
+    #                 },
                 ]
 
 
@@ -311,7 +332,7 @@ def main():
         return 1
 
     print('==============================')
-    print('         UDP Testbed')
+    print('    Performance Testbed')
     print('==============================')
 
     # Update configuration
@@ -321,54 +342,54 @@ def main():
     remove_socks()
     file_path = pipeline_config_file
     ret = bessctl_do('daemon start -- run file {}'.format(file_path))
+    if ret.returncode:
+        print('Bess failed')
+        return 1
 
     if bess_only:
         # Only run bess config
         return 0
 
-    count_client = 1
-    clients = []
-
     # Run server
-    server_p1 = run_server(0)
+    # server_p1 = run_server(0)
     mem_server = spin_up_memcached(memcached_config[0])
-    rpc_server = spin_up_tas(rpc_config[0])
+    # rpc_server = spin_up_tas(rpc_config[0])
     bg_server = run_server(1)
     sleep(3)
     # Run client
-    client_p = run_client(0)
+    # client_p = run_client(0)
     mem_client = spin_up_memcached(memcached_config[1])
-    rpc_client = spin_up_tas(rpc_config[1])
+    # rpc_client = spin_up_tas(rpc_config[1])
     bg_client = run_client(1)
 
     # Wait
-    client_p.wait()
+    # client_p.wait()
     bg_client.wait()
     while docker_container_is_running(memcached_config[1]['name']):
         sleep(3)
-    server_p1.wait()
+    # server_p1.wait()
     bg_server.wait()
 
     # Get output of processes
     if not DIRECT_OUTPUT:
-        print('++++++ Latency Client ++++')
-        txt = str(client_p.stdout.read().decode())
-        print(txt)
-        print('++++++ Incast Client ++++')
+        # print('++++++ Latency Client ++++')
+        # txt = str(client_p.stdout.read().decode())
+        # print(txt)
+        print('++++++ Memcached Client ++++')
         txt = get_docker_container_logs(memcached_config[1]['name'])
         print(txt)
         print('++++++ Background Client ++++')
         txt = str(bg_client.stdout.read().decode())
         print(txt)
-        print('++++++ RPC Client ++++')
-        txt = get_docker_container_logs(rpc_config[1]['name'])
-        print(txt)
-        print('++++++ Latency Server ++++')
-        txt = str(server_p1.stdout.read().decode())
-        print(txt)
-        txt = str(server_p1.stderr.read().decode())
-        print(txt)
-        print('++++++ Incast Server ++++')
+        # print('++++++ RPC Client ++++')
+        # txt = get_docker_container_logs(rpc_config[1]['name'])
+        # print(txt)
+        # print('++++++ Latency Server ++++')
+        # txt = str(server_p1.stdout.read().decode())
+        # print(txt)
+        # txt = str(server_p1.stderr.read().decode())
+        # print(txt)
+        print('++++++ Memcached Server ++++')
         txt = get_docker_container_logs(memcached_config[0]['name'])
         print(txt)
         print('++++++ Background Server ++++')
@@ -376,18 +397,18 @@ def main():
         print(txt)
         txt = str(bg_server.stderr.read().decode())
         print(txt)
-        print('++++++ RPC Server ++++')
-        txt = get_docker_container_logs(rpc_config[0]['name'])
-        print(txt)
+        # print('++++++ RPC Server ++++')
+        # txt = get_docker_container_logs(rpc_config[0]['name'])
+        # print(txt)
         print('+++++++++++++++++++')
 
     print('----- switch stats -----')
-    print('Latency Server\n')
-    p = bessctl_do('show port ex_vhost0', stdout=subprocess.PIPE)
-    txt = p.stdout.decode()
-    print(txt)
+    # print('Latency Server\n')
+    # p = bessctl_do('show port ex_vhost0', stdout=subprocess.PIPE)
+    # txt = p.stdout.decode()
+    # print(txt)
 
-    print('Incast Server\n')
+    print('Memcached Server\n')
     p = bessctl_do('show port ex_vhost2', stdout=subprocess.PIPE)
     txt = p.stdout.decode()
     print(txt)
@@ -397,17 +418,17 @@ def main():
     txt = p.stdout.decode()
     print(txt)
 
-    print('RPC Server\n')
-    p = bessctl_do('show port rpc_server', stdout=subprocess.PIPE)
-    txt = p.stdout.decode()
-    print(txt)
+    # print('RPC Server\n')
+    # p = bessctl_do('show port rpc_server', stdout=subprocess.PIPE)
+    # txt = p.stdout.decode()
+    # print(txt)
 
-    print('Latency Client\n')
-    p = bessctl_do('show port ex_vhost1', stdout=subprocess.PIPE)
-    txt = p.stdout.decode()
-    print(txt)
+    # print('Latency Client\n')
+    # p = bessctl_do('show port ex_vhost1', stdout=subprocess.PIPE)
+    # txt = p.stdout.decode()
+    # print(txt)
 
-    print('Incast Client\n')
+    print('Memcached Client\n')
     p = bessctl_do('show port ex_vhost3', stdout=subprocess.PIPE)
     txt = p.stdout.decode()
     print(txt)
@@ -417,21 +438,21 @@ def main():
     txt = p.stdout.decode()
     print(txt)
 
-    print('RPC Client\n')
-    p = bessctl_do('show port rpc_client', stdout=subprocess.PIPE)
-    txt = p.stdout.decode()
-    print(txt)
+    # print('RPC Client\n')
+    # p = bessctl_do('show port rpc_client', stdout=subprocess.PIPE)
+    # txt = p.stdout.decode()
+    # print(txt)
 
     # bessctl_do('command module client_qout0 get_pause_calls EmptyArg {}')
     FNULL = open(os.devnull, 'w') # pipe output to null
-    bessctl_do('command module server1_qout get_pause_calls EmptyArg {}',
-            stdout=FNULL)
+    # bessctl_do('command module server1_qout get_pause_calls EmptyArg {}',
+    #         stdout=FNULL)
     bessctl_do('command module server2_qout get_pause_calls EmptyArg {}',
             stdout=FNULL)
     bessctl_do('command module server3_qout get_pause_calls EmptyArg {}',
             stdout=FNULL)
-    bessctl_do('command module server4_qout get_pause_calls EmptyArg {}',
-            stdout=FNULL)
+    # bessctl_do('command module server4_qout get_pause_calls EmptyArg {}',
+    #         stdout=FNULL)
     bessctl_do('daemon stop', stdout=FNULL)
 
     # Kill docker containers
@@ -453,8 +474,8 @@ if __name__ == '__main__':
     parser.add_argument('delay', type=int,
       help='processing cost for each packet in cpu cycles '
            '(for both client and server)')
-    parser.add_argument('--count_flow', type=int, default=1,
-      help='number of flows, per each core. used for client app')
+    # parser.add_argument('--count_flow', type=int, default=1,
+    #   help='number of flows, per each core. used for client app')
     parser.add_argument('--cdq', action='store_true', default=False,
       help='enable command data queueing')
     parser.add_argument('--bp', action='store_true', default=False,
@@ -472,7 +493,7 @@ if __name__ == '__main__':
     args = parser.parse_args()
     count_queue = args.count_queue
     sysmod = args.mode
-    count_flow = args.count_flow
+    # count_flow = args.count_flow
     slow = args.delay
     bess_only = args.bessonly
     bp = args.bp
