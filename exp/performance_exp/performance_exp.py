@@ -39,6 +39,13 @@ def stop_everything(containers):
     print('stop any thing running from previous tries')
     for c in containers:
         name = c['name']
+        image = c.get('image')
+        raddr = c.get('remote_addr')
+        if raddr:
+            continue
+        if not image  or image == 'udp_app':
+            subprocess.run('sudo pkill udp_app', shell=True)
+            continue
         subprocess.run('sudo docker stop -t 0 {}'.format(name),
                 shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
         subprocess.run('sudo docker rm {}'.format(name),
