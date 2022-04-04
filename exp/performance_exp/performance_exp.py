@@ -62,8 +62,9 @@ def setup_pipeline():
     print('=' * 40)
 
     # pipeline_file = os.path.join('./pipelines', 'simple_pipeline.bess')
-    pipeline_file = os.path.join('./pipelines', 'bp_pipeline.bess')
+    # pipeline_file = os.path.join('./pipelines', 'bp_pipeline.bess')
     # pipeline_file = os.path.join('./pipelines', 'dpfq_pipeline.bess')
+    pipeline_file = os.path.join('./pipelines', 'bp_dpfq_pipeline.bess')
     print('experiment pipeline:', pipeline_file)
     ret = bessctl_do('daemon start -- run file {}'.format(pipeline_file))
     if ret.returncode:
