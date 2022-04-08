@@ -18,10 +18,12 @@ keep up with the incoming rate.
   - Homa: Homa openloop app workload generator
   - apps: dummy applications to generate non-cooperative workload.
   - dpdk: DPDK
-  - httpd: webserver for motivations
   - lib: backdraft interface library
   - tas-benchmark: tas applications
 ```
+
+For installing Backdraft look [here](./INSTALL.md) and for some
+details about experiments look [here](./exp/notes/README.md).
 
 ## License
 
