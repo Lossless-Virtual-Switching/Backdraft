@@ -5,3 +5,4 @@ exp/analysis/stats*
 *.o
 *.a
 code/apps/dpdk_netperf/build/*
+code/bess-v1/core/kmod/bess.mod

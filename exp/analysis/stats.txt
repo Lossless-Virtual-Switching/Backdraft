@@ -1,9 +1,0 @@
-99.9 percentile latency 7.787134000000078 us
-99.99 percentile latency 1741.0949892965184 us
-Max Latency 7.6634055 ms
-#lpd 42662.0
-#hpd 21818.0
-lprrx 6.2176844818468 Mpps
-hprrx 0.53138936965038 Mpps
-lprtx 6.2154151397095 Mpps
-hprtx 0.53149080976112 Mpps

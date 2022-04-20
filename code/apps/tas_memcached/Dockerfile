@@ -34,9 +34,10 @@ RUN cd post-loom/code/dpdk; \
     make;
 
 # setup mutilate
-RUN git clone https://github.com/erfan111/mutilate; \
+RUN git clone https://github.com/Lossless-Virtual-Switching/mutilate; \
     cd mutilate; \
-    scons
+    mv SConstruct3 SConstruct; \
+    scons;
 
 # SOCKPERF was not used in experiment
 # setup sockperf

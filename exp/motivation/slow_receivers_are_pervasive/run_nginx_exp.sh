@@ -3,8 +3,7 @@
 
 # GLOBAL VARIABLES
 server_ip=node0
-# server_port=11211
-# NOTE: it is overrided
+# NOTE: server_cores is overrided
 server_cores=4
 
 wrk_threads=16
@@ -12,6 +11,7 @@ wrk_connections=80
 wrk_duration=20
 
 remote_machines=(node2 node3 node4)
+EXP_SSH_USER=$USER
 
 # FUNCTIONS
 function check_env {
@@ -50,6 +50,7 @@ function run_nginx_server {
   fi
   sed_cmd="s/\(worker_processes\)\s\([1-9][0-9]*\)/\1 $server_cores/g"
   sudo sed -i "$sed_cmd" /etc/nginx/nginx.conf
+  sudo systemctl start nginx.service
   sudo nginx -s reload
   echo Nginx reloaded
 }
