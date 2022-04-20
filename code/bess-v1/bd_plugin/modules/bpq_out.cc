@@ -151,8 +151,9 @@ void BPQOut::Buffer(bess::Packet **pkts, int cnt)
       // LOG(INFO) << "Signal overload bpq_out: " << std::endl;
       tx_pause_++;
       SignalOverloadBP(pkt);
+      // LOG(INFO) << "generating overload message" << std::endl;
     } else {
-	    LOG(INFO) << "Something wrong with packet allocation" << std::endl;
+      LOG(INFO) << "Something wrong with packet allocation" << std::endl;
     }
   }
 
@@ -269,10 +270,11 @@ struct task_result BPQOut::RunTask(Context *, bess::PacketBatch *, void *) {
       // bess::Packet *pkt = bess::Packet::copy(mbufs_[cnt - 1]);
       if (pkt) {
         FillBkdrftHeader(pkt, false);
-	tx_resume_++;
+        tx_resume_++;
         SignalUnderloadBP(pkt);
+        // LOG(INFO) << "generating underload message" << std::endl;
       } else {
-	      LOG(INFO) << "Someting wrong with memory allocation (underload)" << std::endl;
+        LOG(INFO) << "Someting wrong with memory allocation (underload)" << std::endl;
       }
     }
 

@@ -92,6 +92,7 @@ if [ ! "${socket_file:0:1}" = "/" ]; then  # TODO: this check fails under (sh) i
 fi
 socket_name=$(basename $socket_file)
 
+# -it --rm --entrypoint /bin/bash
 sudo docker run \
 	--name=$container_name \
 	--privileged \
@@ -113,4 +114,3 @@ sudo docker run \
 	--log-opt max-size="20m" \
         --network none \
 	$container_image_name
-

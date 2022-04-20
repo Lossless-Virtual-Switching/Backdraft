@@ -81,8 +81,8 @@ function run_memcached_server {
   echo $server_cmd
   if [ $EXPERIMENT -eq $FIXED_VALUE_BG ]
   then
-    echo "Running Background Program (sysbenc)" 
-    # --rate=10000 
+    echo "Running Background Program (sysbenc)"
+    # --rate=10000
     taskset -c 1-$server_cores sysbench --threads=$server_cores \
       --time=$((mutilate_duration + mutilate_warmup + 10)) --forced-shutdown=2 cpu run
   fi
@@ -95,15 +95,19 @@ function install_mutilate {
   then
     sudo apt-get update
     sudo apt-get install -y scons libevent-dev gengetopt libzmq3-dev
-    echo "Mutilate is not setup (this scripts is not yet installing it)"
-    exit 1
-    # git clone https://$MEM_GIT_USER:$MEM_GIT_PASS@github.com/fshahinfar1/mutilate.git
-    # cd mutilate
-    # if [ "$VERSION_ID" -eq "20.04" ]
-    # then
-    #   mv SConstruct3 SConstruct
-    # fi
-    # scons
+    git clone https://github.com/Lossless-Virtual-Switching/mutilate
+  fi
+  cd mutilate
+  if [ ! -f ./mutilate ]
+  then
+    # build the repo
+    if [ "$VERSION_ID" = "20.04" ] && [ -f SConstruct3 ]
+    then
+      mv SConstruct3 SConstruct
+    else
+      echo "if your system does not have python2 then rename SConstruct3 as SConstruct"
+    fi
+    scons
   fi
   cd $tmp
 }
@@ -112,7 +116,7 @@ function run_agent {
   pkill mutilate
   sleep 1
   if [ -e $FINISH_FILE ]
-  then 
+  then
     rm $FINISH_FILE
   fi
   cd $HOME

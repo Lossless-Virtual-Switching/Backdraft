@@ -504,7 +504,8 @@ class alignas(64) Module {
         for (const bess::OGate *o : up_ogates) {
             Module *m = o->module();
             ++(m->children_overload_);
-            if (m->propagate_workers_ && m->children_overload_ == 1) {
+            // if (m->propagate_workers_ && m->children_overload_ == 1) {
+            if (m->children_overload_ == 1) {
                 to_be_freed = false;
                 tx_pause_frame_++; // Now we are sending pause frames to others too.
                 m->SignalOverloadBP(pkt);
@@ -551,7 +552,8 @@ class alignas(64) Module {
         for (const bess::OGate *o : up_ogates) {
             Module *m = o->module();
             --(m->children_overload_);
-            if (m->propagate_workers_ && m->children_overload_ == 0) {
+            // if (m->propagate_workers_ && m->children_overload_ == 0) {
+            if (m->children_overload_ == 0) {
               to_be_freed = false;
               tx_resume_frame_++;
               m->SignalUnderloadBP(pkt);

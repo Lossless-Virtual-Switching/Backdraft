@@ -1,0 +1,32 @@
+- name: memcached
+  image: tas_memcached
+  type: server
+  cpu: '10,12,14,16'
+  cpus: 4
+  socket: '/tmp/ex_vhost0.sock'
+  prefix: memcached_server
+  ip: '192.168.1.50'
+  tas_cores: 1
+  tas_queues: 1
+  cdq: 0
+  memory: 1024
+  threads: 1
+- name: udp_server
+  image: udp_app
+  type: server
+  cpu: '20'
+  prefix: udp_server
+  vdev: 'virtio_user0,path=/tmp/ex_vhost1.sock,queues=1'
+  ip: '192.168.1.51'
+  count_queue: 1
+  sysmod: 'bess'
+  bidi: 'true'
+  delay: 0
+  # - name: mutilate
+  #   image: mutilate
+  #   type: client
+  #   dst_ip: '192.168.1.50'
+  #   duration: 10
+  #   threads: 2
+  #   connections: 5
+  #   remote_addr: fshahi5@amd009.utah.cloudlab.us

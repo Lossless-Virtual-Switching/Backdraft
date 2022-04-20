@@ -12,13 +12,13 @@ pip install pyyaml
 res=$(which ansible)
 if [ -z "$res" ]; then
   res=$(apt-cache search ^ansible\$)
-  if [ ! -z "$res" ]; then 
+  if [ ! -z "$res" ]; then
     sudo apt-get install -yy ansible
-  else 
+  else
     echo please install ansible and retry
     exit 1
   fi
-  
+
 fi
 
 ansible-playbook -i localhost, -c local bkdrft_playbook.yml -e 'ansible_python_interpreter=/usr/bin/python3'
@@ -28,5 +28,5 @@ echo "should the system be rebooted? (yes/no)"
 read confirm
 if [ "$confirm" = "yes" ]; then
   echo rebooting the system...
-  sudo reboot 
+  sudo reboot
 fi

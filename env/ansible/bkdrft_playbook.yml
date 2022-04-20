@@ -1,16 +1,19 @@
 ---
 
 
-- name: "Backdraft environment setup playbook"
+- name: "Backdraft dependencies playbook"
   hosts: all
   become: true
   tasks:
+    # Homa
     - name: "Homa"
       apt:
         name: ['cmake', 'libmnl-dev']
-    - name: "Install docker daemon and docker-compose"
+    # docker
+    - name: "install docker daemon and docker-compose"
       apt: # assumes cache has been updated in previous steps
         name: ['docker', 'docker-compose']
+    # install perf, linux-tools-generic
     - name: "install perf tool"
       shell: "apt install --yes linux-tools-$(uname -r)"
       ignore_errors: yes
@@ -50,9 +53,7 @@
       shell: 'echo GRUB_CMDLINE_LINUX_DEFAULT=\"default_hugepagesz=1G hugepagesz=1G hugepages=30\" | sudo tee -a /etc/default/grub'
     - name: "update grub"
       shell: "update-grub"
-    # TODO: Turn off hyperthreading
-    # TODO: Check if using mellanox NICs then install required files.
-    # TODO: Compile BESS (huge pages should be setup first)
+    # TODO: check if using mellanox NICs then install required files.
 
 
 # setup BESS env
@@ -60,7 +61,9 @@
 - import_playbook: bess-runtime.yml
 
 
-# some dependencies are installed in bess playbooks
+# build repo
+# - import_playbook: build_repo.yml
+
 # build apps
 - name: "Backdraft make apps used in experiments"
   hosts: all

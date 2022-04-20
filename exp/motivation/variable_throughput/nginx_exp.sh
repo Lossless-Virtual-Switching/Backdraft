@@ -98,6 +98,8 @@ links+=(http://$server_ip:$server_port/conference/nsdi21/files/nsdi21-liu-guyue.
 # echo
 
 
+_curdir=`dirname $0`
+_curdir=`realpath $_curdir`
 NGINX_EXPERIMENT_FIN_FILE=/tmp/_nginx_exp_finished
 # This is function has the main role of running the experiment
 function run_exp {
@@ -110,14 +112,14 @@ function run_exp {
   # ab=ab
   # else set the path
   # ab=/users/$EXP_SSH_USER/httpd-ab/support/ab
-  ab=/proj/uic-dcs-PG0/$EXP_SSH_USER/httpd-ab/support/ab
+  ab=$_curdir/../../../code/httpd-ab/support/ab
   req=10000
   concurrent=1
   k=0
   # echo "Trace files are here:"
   for link in ${links[@]}
   do
-    k=$((k+1)) 
+    k=$((k+1))
     filename=`basename $link`
     filename=${filename%.*}
     filename="${k}_${filename}"
@@ -142,7 +144,7 @@ done
 # Start experiment on local machine
 run_exp
 wait
-echo Local machine is finished 
+echo Local machine is finished
 
 
 # Wait until other machines are done
@@ -164,7 +166,7 @@ trace_files=()
 k=0
 for link in ${links[@]}
 do
-  k=$((k+1)) 
+  k=$((k+1))
   filename=`basename $link`
   filename=${filename%.*}
   filename="${k}_${filename}"
