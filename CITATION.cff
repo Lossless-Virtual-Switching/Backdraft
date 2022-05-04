@@ -1,0 +1,20 @@
+cff-version: 1.2.0
+message: "If you use this software, please cite it as below."
+authors:
+- family-names: "Sanane"
+  given-names: "Alireza"
+  orcid: "hhttps://orcid.org/0000-0001-6461-1650"
+- family-names: "Shahinfar"
+  given-names: "Farbod"
+  orcid: "https://orcid.org/0000-0000-0000-0000"
+- family-names: "Antichi"
+  given-names: "Gianni"
+  orcid: "https://orcid.org/0000-0000-0000-0000"
+- family-names: "Stephens"
+  given-names: "Brent"
+  orcid: "https://orcid.org/0000-0000-0000-0000"
+title: "Backdraft: a Lossless Virtual Switch that Prevents the Slow Receiver Problem"
+version: 1.0.0
+doi: "https://www.usenix.org/conference/nsdi22/presentation/sanaee"
+date-released: 2022-05-04
+url: "https://github.com/Lossless-Virtual-Switching/Backdraft"
