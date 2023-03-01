@@ -1,5 +1,5 @@
 # Backdraft
-Backdraft is a new lossless virtual switch that addresses the slow receiver problem by combining three new components: (1) Dynamic Per-Flow Queuing (DPFQ) to prevent HOL blocking and provide on-demand memory usage; (2) Doorbell queues to reduce CPU overheads; (3) A new overlay network to avoid congestion spreading.
+Backdraft is a new lossless virtual switch that addresses the slow receiver problem by combining three new components: (1) Dynamic Per-Flow Queuing (DPFQ) to prevent HOL blocking and provide on-demand memory usage; (2) Doorbell queues to reduce CPU overheads; (3) A new overlay network to avoid congestion spreading. Our NSDI22 Paper describes the Backdraft design and its rationale.
 
 [[Paper]](https://www.usenix.org/system/files/nsdi22-paper-sanaee.pdf)
 [[Slide]](https://www.usenix.org/system/files/nsdi22_slides_sanaee.pdf)
